@@ -3273,6 +3273,9 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "minimum": 1
                 },
+                "nested_enable": {
+                    "type": "boolean"
+                },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
                 },
@@ -3316,6 +3319,11 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/common.BaseReference"
                     }
+                },
+                "login_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
                 },
                 "password": {
                     "type": "string"

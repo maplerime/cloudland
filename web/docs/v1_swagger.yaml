@@ -327,6 +327,8 @@ definitions:
       memory:
         minimum: 1
         type: integer
+      nested_enable:
+        type: boolean
       primary_interface:
         $ref: '#/definitions/apis.InterfacePayload'
       root_passwd:
@@ -363,6 +365,10 @@ definitions:
         maxItems: 16
         minItems: 0
         type: array
+      login_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
       password:
         type: string
     type: object
