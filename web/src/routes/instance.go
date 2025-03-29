@@ -40,24 +40,9 @@ type InstanceAdmin struct{}
 
 type InstanceView struct{}
 
-type NetworkRoute struct {
-	Network string `json:"network"`
-	Netmask string `json:"netmask"`
-	Gateway string `json:"gateway"`
-}
-
 type ExecutionCommand struct {
 	Control string
 	Command string
-}
-
-type InstanceNetwork struct {
-	Type    string          `json:"type,omitempty"`
-	Address string          `json:"ip_address"`
-	Netmask string          `json:"netmask"`
-	Link    string          `json:"link"`
-	ID      string          `json:"id"`
-	Routes  []*NetworkRoute `json:"routes,omitempty"`
 }
 
 type NetworkLink struct {
@@ -501,12 +486,19 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 }
 
 func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
+	ctx, db := GetContextDB(ctx)
 	for _, iface := range instance.Interfaces {
 		err = a.deleteInterface(ctx, iface)
 		if err != nil {
 			logger.Error("Failed to delete interface", err)
 			continue
 		}
+		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
+			"interface": 0}).Error
+		if err != nil {
+			logger.Error("Failed to update instance", err)
+		}
+		return
 	}
 	return
 }
@@ -558,24 +550,24 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	}
 	vlans := []*VlanInfo{}
 	instNetworks := []*InstanceNetwork{}
+	sitesInfo := []*SiteIpSubnetInfo{}
 	instLinks := []*NetworkLink{}
 	primary := primaryIface.Subnet
 	primaryIP := primaryIface.IpAddress
 	primaryMac := primaryIface.MacAddress
 	inbound := primaryIface.Inbound
 	outbound := primaryIface.Outbound
-	gateway := strings.Split(primary.Gateway, "/")[0]
-	instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
 	iface, err := a.createInterface(ctx, primary, primaryIP, primaryMac, instance, "eth0", inbound, outbound, primaryIface.SecurityGroups, zoneID)
 	if err != nil {
 		logger.Errorf("Allocate address for primary subnet %s--%s/%s failed, %v", primary.Name, primary.Network, primary.Netmask, err)
 		return
 	}
 	interfaces = append(interfaces, iface)
-	address := strings.Split(iface.Address.Address, "/")[0]
-	instNetwork := &InstanceNetwork{Address: address, Netmask: primary.Netmask, Type: "ipv4", Link: iface.Name, ID: "network0"}
-	instNetwork.Routes = append(instNetwork.Routes, instRoute)
-	instNetworks = append(instNetworks, instNetwork)
+	instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, 0)
+	if err != nil {
+		logger.Errorf("Failed to get instance networks, %v", err)
+		return
+	}
 	instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 	err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
 	if err != nil {
@@ -587,7 +579,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		logger.Error("Get security data for interface failed", err)
 		return
 	}
-	vlans = append(vlans, &VlanInfo{Device: "eth0", Vlan: primary.Vlan, Inbound: inbound, Outbound: outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: primary.Gateway, Router: primary.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SecRules: securityData})
+	vlans = append(vlans, &VlanInfo{Device: "eth0", Vlan: primary.Vlan, Inbound: inbound, Outbound: outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: primary.Gateway, Router: primary.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SecRules: securityData, SitesIpInfo: sitesInfo})
 	for i, ifaceInfo := range secondaryIfaces {
 		subnet := ifaceInfo.Subnet
 		ifname := fmt.Sprintf("eth%d", i+1)
@@ -599,14 +591,11 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			return
 		}
 		interfaces = append(interfaces, iface)
-		address = strings.Split(iface.Address.Address, "/")[0]
-		instNetworks = append(instNetworks, &InstanceNetwork{
-			Address: address,
-			Netmask: subnet.Netmask,
-			Type:    "ipv4",
-			Link:    iface.Name,
-			ID:      fmt.Sprintf("network%d", i+1),
-		})
+		instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, i+1)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
 		if err != nil {
@@ -618,7 +607,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			logger.Error("Get security data for interface failed", err)
 			return
 		}
-		vlans = append(vlans, &VlanInfo{Device: ifname, Vlan: subnet.Vlan, Inbound: inbound, Outbound: outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SecRules: securityData})
+		vlans = append(vlans, &VlanInfo{Device: ifname, Vlan: subnet.Vlan, Inbound: inbound, Outbound: outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SecRules: securityData, SitesIpInfo: sitesInfo})
 	}
 	var instKeys []string
 	for _, key := range keys {
@@ -655,9 +644,9 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 
 func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instance, rootPasswd string) (metadata string, err error) {
 	vlans := []*VlanInfo{}
-	instNetworks := []*InstanceNetwork{}
 	instLinks := []*NetworkLink{}
 	volumes := []*VolumeInfo{}
+	var instNetworks []*InstanceNetwork
 	var instKeys []string
 	for _, key := range instance.Keys {
 		instKeys = append(instKeys, key.PublicKey)
@@ -673,23 +662,16 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 	dns := ""
 	for i, iface := range instance.Interfaces {
 		subnet := iface.Address.Subnet
-		address := strings.Split(iface.Address.Address, "/")[0]
-		instNetwork := &InstanceNetwork{
-			Address: address,
-			Netmask: subnet.Netmask,
-			Type:    "ipv4",
-			Link:    iface.Name,
-			ID:      fmt.Sprintf("network%d", i+1),
-		}
-		gateway := strings.Split(subnet.Gateway, "/")[0]
 		if iface.PrimaryIf {
-			instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
-			instNetwork.Routes = append(instNetwork.Routes, instRoute)
 			dns = subnet.NameServer
 		}
-		instNetworks = append(instNetworks, instNetwork)
+		instNetworks, _, err = GetInstanceNetworks(ctx, iface, iface.SiteSubnets, i)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
-		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: address, MacAddr: iface.MacAddr})
+		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr})
 	}
 	osCode := "linux"
 	if instance.Image != nil {

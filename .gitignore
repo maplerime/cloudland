@@ -30,6 +30,7 @@
 #Others
 wget-log
 /deploy/hosts/hosts
+/web/.version
 /web/clbase
 /web/clapi
 /web/src/public/misc/openshift/ocd.conf*
