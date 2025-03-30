@@ -5,6 +5,10 @@
     owner: cland
     group: cland
 
+- name: install certtool
+  apt: name=gnutls-bin state=latest
+  tags: [web_conf]
+
 - name: generate cland certs
   script: gencert.sh
   tags: [web_conf]
