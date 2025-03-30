@@ -89,12 +89,6 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 			return
 		}
 	}
-	if hyper.RouteIP == "" {
-		_, err = SystemRouter(ctx, []string{args[0], args[1], args[2]})
-		if err != nil {
-			logger.Error("Failed to create system router", err)
-		}
-	}
 	hyper.Hostname = hyperName
 	hyper.Status = int32(hyperStatus)
 	hyper.VirtType = "kvm-x86_64"
@@ -118,6 +112,12 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	if err != nil {
 		logger.Error("Failed to create or update hyper resource", err)
 		return
+	}
+	if hyper.RouteIP == "" {
+		_, err = SystemRouter(ctx, []string{args[0], args[1], args[2]})
+		if err != nil {
+			logger.Error("Failed to create system router", err)
+		}
 	}
 	return
 }
