@@ -216,7 +216,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		secgroups = append(secgroups, secgroup)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups)
+	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, payload.SiteSubnets)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)

@@ -49,15 +49,12 @@ type InstanceNetwork struct {
         Routes  []*NetworkRoute `json:"routes,omitempty"`
 }
 
-type AddressInfo struct {
-	ID      int64  `json:"id"`
-	Address string `json:"address"`
-}
-
 type SiteIpSubnetInfo struct {
-	SiteVlan  int64         `json:"vlan"`
+	SiteID    int64         `json:"site_id"`
+	SiteVlan  int64         `json:"site_vlan"`
+	InternalIp string        `json:"internal_ip"`
 	Gateway   string        `json:"gateway"`
-	Addresses []*AddressInfo `json:"addresses"`
+	Addresses []string     `json:"addresses"`
 }
 
 type VlanInfo struct {
@@ -337,6 +334,7 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
         for _, site := range siteSubnets {
 		siteInfo := &SiteIpSubnetInfo{
 			SiteVlan: site.Vlan,
+			InternalIp: iface.Address.Address,
 			Gateway: site.Gateway,
 		}
                 siteAddrs := []*model.Address{}
@@ -354,10 +352,7 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
                                 Link:    iface.Name,
                                 ID:      fmt.Sprintf("network%d", netID),
                         })
-			siteInfo.Addresses = append(siteInfo.Addresses, &AddressInfo{
-				ID: addr.ID,
-				Address: addr.Address,
-			})
+			siteInfo.Addresses = append(siteInfo.Addresses, addr.Address)
                 }
 		sitesInfo = append(sitesInfo, siteInfo)
                 if toUpdate {

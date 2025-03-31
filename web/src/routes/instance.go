@@ -721,6 +721,11 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}
 	}
+	_, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, 0)
+	if err != nil {
+		logger.Errorf("Failed to get instance networks, %v", err)
+		return
+	}
 	err = db.Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error
 	if err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
@@ -765,7 +770,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	if instance.Hyper == -1 {
 		control = "toall="
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s'", instance.ID, instance.RouterID, bootVolumeUUID)
+	sitesJson, err := json.Marshal(sitesInfo)
+	if err != nil {
+		logger.Errorf("Failed to marshal sites info, %v", err)
+		return
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, sitesJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)

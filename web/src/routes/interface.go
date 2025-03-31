@@ -158,6 +158,22 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
+	if siteSubnets != nil {
+		needUpdate = true
+		for _, site := range iface.SiteSubnets {
+			err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
+			if err != nil {
+				logger.Error("Failed to update interface", err)
+			}
+		}
+		for _, site := range siteSubnets {
+			err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
+			if err != nil {
+				logger.Error("Failed to update interface", err)
+			}
+		}
+		iface.SiteSubnets = siteSubnets
+	}
 	if needUpdate || needRemoteUpdate {
 		if err = db.Model(iface).Save(iface).Error; err != nil {
 			logger.Debug("Failed to save interface", err)
