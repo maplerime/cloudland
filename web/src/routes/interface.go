@@ -158,19 +158,49 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
-	if siteSubnets != nil {
+	if iface.PrimaryIf && siteSubnets != nil {
 		needUpdate = true
+		_, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, 0)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
+		var jsonData []byte
+		jsonData, err = json.Marshal(sitesInfo)
+		if err != nil {
+			logger.Errorf("Failed to marshal instance json data, %v", err)
+			return
+		}
 		for _, site := range iface.SiteSubnets {
 			err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
 			if err != nil {
 				logger.Error("Failed to update interface", err)
 			}
 		}
+		control := fmt.Sprintf("inter=%d", instance.Hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_sites_ip.sh '%d'<<EOF\n%s\nEOF", subnet.RouterID, jsonData)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Update vm nic command execution failed", err)
+			return
+		}
 		for _, site := range siteSubnets {
 			err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 			if err != nil {
 				logger.Error("Failed to update interface", err)
 			}
+		}
+		_, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, 0)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
+		control := fmt.Sprintf("inter=%d", instance.Hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/apply_sites_ip.sh '%d' '%s' 'update_meta'<<EOF\n%s\nEOF", subnet.RouterID, iface.Address.Address, jsonData)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Update vm nic command execution failed", err)
+			return
 		}
 		iface.SiteSubnets = siteSubnets
 	}

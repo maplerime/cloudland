@@ -3,11 +3,13 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 2 ] && echo "$0 <router> <int_ip>" && exit -1
+[ $# -lt 2 ] && echo "$0 <router> <int_ip> <update_meta> <vm_ID>" && exit -1
 
 ID=$1
 router=router-$ID
 int_ip=${2%/*}
+update_meta=$3
+vm_ID=inst-$4
 sites=$(cat)
 nsite=$(jq length <<< $sites)
 i=0
@@ -27,6 +29,16 @@ while [ $i -lt $nsite ]; do
 	ip netns exec $router ipset add site-$site_ID $address
         ip netns exec $router ip addr add $address dev $ext_dev
         ip netns exec $router arping -c 3 -U -I $ext_dev $ext_ip
+        if [ $j -eq 0 ]; then
+            sites_json="$sites_json,"
+        fi
+	sites_json="$sites_json,{
+            \"type\": \"ipv4\",
+            \"ip_address\": \"$ext_ip/32\",
+            \"netmask\": \"255.255.255.255\",
+            \"link\": \"eth0\",
+            \"id\": \"network0\"
+        }"
 	gw_mac=$(ip netns exec $router arping -c 1 -I $ext_dev $gateway | grep 'Unicast reply' | awk '{print $5}' | tr -d '[]')
         let j=$j+1
     done
@@ -39,3 +51,15 @@ while [ $i -lt $nsite ]; do
     ip netns exec $router setsid python3 ./forward_pkt.py "$queue_id" "$ext_dev" "$gw_mac" &
     let i=$i+1
 done
+
+if [ "$update_meta" = "true" ]; then
+    tmp_mnt=/tmp/mnt-$vm_ID
+    working_dir=/tmp/$vm_ID
+    mkdir -p $tmp_mnt $working_dir
+    virsh qemu-agent-command "$vm_ID" '{"execute":"cloud-init clean"}'
+    mount ${cache_dir}/meta/${vm_ID}.iso $tmp_mnt
+    cp -r $tmp_mnt/* $working_dir
+    net_json=$(cat $working_dir/network_data.json)
+    networks="[$(jq -r .networks[0] <<<$net_json)$sites_json]" 
+    echo "$net_json" | jq --argjson new_networks "$networks" '.networks |= (map(select(.id == "network0")) + $new_networks)'
+fi

@@ -216,6 +216,11 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		secgroups = append(secgroups, secgroup)
 	}
+	if iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
+		logger.Errorf("Only primary interface can have site subnets")
+		ErrorResponse(c, http.StatusBadRequest, "Only primary interface can have site subnets", err)
+		return
+	}
 	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, payload.SiteSubnets)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)

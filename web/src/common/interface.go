@@ -313,24 +313,24 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
                 Link:    iface.Name,
                 ID:      fmt.Sprintf("network%d", netID),
         }
-        if iface.PrimaryIf {
-                gateway := strings.Split(subnet.Gateway, "/")[0]
-                instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
-                instNetwork.Routes = append(instNetwork.Routes, instRoute)
-        }
-        instNetworks = append(instNetworks, instNetwork)
         toUpdate := true
-        if len(siteSubnets) == 0 {
-                err = db.Where("interface = ?", iface.ID).Find(&iface.SiteSubnets).Error
-                if err != nil {
-                        logger.Errorf("Failed to query site subnet(s), %v", err)
-                        return
-                }
-                siteSubnets = iface.SiteSubnets
-                toUpdate = false
-        } else {
-                iface.SiteSubnets = siteSubnets
-        }
+	if iface.PrimaryIf {
+		gateway := strings.Split(subnet.Gateway, "/")[0]
+		instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
+		instNetwork.Routes = append(instNetwork.Routes, instRoute)
+		instNetworks = append(instNetworks, instNetwork)
+		if len(siteSubnets) == 0 {
+			err = db.Where("interface = ?", iface.ID).Find(&iface.SiteSubnets).Error
+			if err != nil {
+				logger.Errorf("Failed to query site subnet(s), %v", err)
+				return
+			}
+			siteSubnets = iface.SiteSubnets
+			toUpdate = false
+		} else {
+			iface.SiteSubnets = siteSubnets
+		}
+	}
         for _, site := range siteSubnets {
 		siteInfo := &SiteIpSubnetInfo{
 			SiteVlan: site.Vlan,
@@ -347,7 +347,7 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
                         address := fmt.Sprintf("%s/32", strings.Split(addr.Address, "/")[0])
                         instNetworks = append(instNetworks, &InstanceNetwork{
                                 Address: address,
-                                Netmask: site.Netmask,
+                                Netmask: "255.255.255.255",
                                 Type:    "ipv4",
                                 Link:    iface.Name,
                                 ID:      fmt.Sprintf("network%d", netID),
