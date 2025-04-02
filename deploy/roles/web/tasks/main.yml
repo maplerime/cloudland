@@ -5,6 +5,10 @@
     owner: cland
     group: cland
 
+- name: install certtool
+  apt: name=gnutls-bin state=latest
+  tags: [web_conf]
+
 - name: generate cland certs
   script: gencert.sh
   tags: [web_conf]
@@ -73,7 +77,3 @@
     daemon_reload: yes
     state: restarted
   tags: [fe_srv,console]
-
-- name: allow ports for clbase clapi and consoleproxy
-  script: firewall.sh
-  tags: [firewall]
