@@ -395,7 +395,7 @@ definitions:
         type: string
       volumes:
         items:
-          $ref: '#/definitions/common.ResourceReference'
+          $ref: '#/definitions/apis.VolumeInfoResponse'
         type: array
       vpc:
         $ref: '#/definitions/common.ResourceReference'
@@ -436,6 +436,10 @@ definitions:
         items:
           $ref: '#/definitions/common.BaseReference'
         type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
     type: object
   apis.InterfacePayload:
     properties:
@@ -458,6 +462,10 @@ definitions:
         minimum: 0
         type: integer
       security_groups:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      site_subnets:
         items:
           $ref: '#/definitions/common.BaseReference'
         type: array
@@ -491,6 +499,10 @@ definitions:
       security_groups:
         items:
           $ref: '#/definitions/common.ResourceReference'
+        type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/apis.SiteSubnetInfo'
         type: array
       subnet:
         $ref: '#/definitions/common.ResourceReference'
@@ -774,6 +786,23 @@ definitions:
     - direction
     - protocol
     type: object
+  apis.SiteSubnetInfo:
+    properties:
+      created_at:
+        type: string
+      gateway:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      network:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.SubnetListResponse:
     properties:
       limit:
@@ -969,6 +998,23 @@ definitions:
   apis.VersionResponse:
     properties:
       version:
+        type: string
+    type: object
+  apis.VolumeInfoResponse:
+    properties:
+      booting:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      target:
+        type: string
+      updated_at:
         type: string
     type: object
   apis.VolumeListResponse:

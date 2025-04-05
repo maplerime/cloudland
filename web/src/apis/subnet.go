@@ -34,6 +34,12 @@ type SubnetResponse struct {
 	Type       SubnetType         `json:"type"`
 }
 
+type SiteSubnetInfo struct {
+	*ResourceReference
+	Network    string             `json:"network"`
+	Gateway    string             `json:"gateway"`
+}
+
 type SubnetListResponse struct {
 	Offset  int               `json:"offset"`
 	Total   int               `json:"total"`
