@@ -333,6 +333,7 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
 	}
         for _, site := range siteSubnets {
 		siteInfo := &SiteIpSubnetInfo{
+			SiteID: site.ID,
 			SiteVlan: site.Vlan,
 			InternalIp: iface.Address.Address,
 			Gateway: site.Gateway,

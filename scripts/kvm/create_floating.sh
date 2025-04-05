@@ -24,6 +24,7 @@ ip netns list | grep -q $router
 
 ./create_route_table.sh $ID $ext_vlan
 
+table=fip-$ext_vlan
 ext_dev=te-${ID}-${ext_vlan}
 ip netns exec $router ip addr add $ext_cidr dev $ext_dev
 ip netns exec $router ip route add default via $ext_gw table $table

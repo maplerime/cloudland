@@ -529,6 +529,10 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, subnet *model.Subne
 			err = fmt.Errorf("Not authorized")
 			return
 		}
+	} else if subnet.Type == "site" {
+		logger.Error("Not allowed to create interface in site subnet")
+		err = fmt.Errorf("Bad request")
+		return
 	}
 	iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups)
 	if err != nil {
@@ -715,16 +719,19 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		err = fmt.Errorf("Not authorized")
 		return
 	}
+	sitesInfo := []*SiteIpSubnetInfo{}
 	for _, iface := range instance.Interfaces {
 		err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance.LoginPort, iface)
 		if err != nil {
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}
-	}
-	_, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, 0)
-	if err != nil {
-		logger.Errorf("Failed to get instance networks, %v", err)
-		return
+		if iface.PrimaryIf {
+			_, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, 0)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+		}
 	}
 	err = db.Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error
 	if err != nil {

@@ -174,39 +174,6 @@
   ignore_errors: yes
   tags: [be_srv]
 
-- name: set compute services NetworkManager
-  systemd: 
-    name: "{{ item }}"
-    enabled: true
-    state: started
-  with_items:
-    - 'NetworkManager'
-  tags: [be_srv, netplan]
-
-- name: change netplan renderer
-  script: change_netplan_renderer.sh
-  register: need_to_reboot
-  tags: [be_srv, netplan]
-
-- name: reboot compute node if needed
-  vars:
-    need_reboot: "{{ need_to_reboot.stdout_lines[0] }}"
-  ansible.builtin.reboot:
-  when: 
-    - need_reboot == 'need_to_reboot'
-    - inventory_hostname != ansible_hostname
-  tags: [netplan]
-
-- name: stop and mask networkd
-  systemd:
-    name: "{{ item }}"
-    enabled: false
-    masked: yes
-    state: stopped
-  with_items:
-    - 'systemd-networkd'
-  tags: [be_srv, netplan]
-
 - name: Create .ssh directory if not exists
   file:
     path: ~/.ssh
@@ -232,6 +199,17 @@
   file:
     path: ~/.ssh/id_rsa.pub
     state: absent
+  tags: [ssh_key]
+
+- name: Create or update SSH config file
+  blockinfile:
+    path: /root/.ssh/config
+    block: |
+      Host *
+        StrictHostKeyChecking no
+        UserKnownHostsFile /dev/null
+    create: yes
+    mode: '0644'
   tags: [ssh_key]
 
 - name: allow necessary ports for hypervisor
@@ -297,6 +275,7 @@
   pip:
     name: docker
     executable: pip3
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Check if Docker is running
@@ -313,6 +292,7 @@
     name: docker.io
     state: present
   when: docker_status.rc != 0
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Start Docker service if not running
@@ -322,6 +302,7 @@
     state: started
     enabled: yes
   when: docker_status.rc != 0
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Run libvirt-exporter in Docker
@@ -335,6 +316,7 @@
       - "/var/run/libvirt:/var/run/libvirt"
     privileged: yes
     restart_policy: always
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Create directory for monitor scripts
@@ -368,6 +350,7 @@
   ignore_errors: yes
   changed_when: false
   when: pkg_install is succeeded
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Ensure systemd override directory exists
@@ -377,6 +360,7 @@
     owner: root
     group: root
     mode: '0755'
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Configure Node Exporter with textfile directory
@@ -390,6 +374,7 @@
     mode: '0644'
     owner: root
     group: root
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Apply systemd configuration changes
@@ -398,6 +383,7 @@
     daemon_reload: yes
     name: prometheus-node-exporter
   changed_when: false
+  ignore_errors: yes
   tags: [monitor]
 
 - name: Ensure service started with new config is enabled and started
@@ -411,4 +397,38 @@
   until: service_status.status.ActiveState == "active"
   retries: 3
   delay: 5
+  ignore_errors: yes
   tags: [monitor]
+
+- name: set compute services NetworkManager
+  systemd: 
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  with_items:
+    - 'NetworkManager'
+  tags: [be_srv, netplan]
+
+- name: change netplan renderer
+  script: change_netplan_renderer.sh
+  register: need_to_reboot
+  tags: [be_srv, netplan]
+
+- name: stop and mask networkd
+  systemd:
+    name: "{{ item }}"
+    enabled: false
+    masked: yes
+    state: stopped
+  with_items:
+    - 'systemd-networkd'
+  tags: [be_srv, netplan]
+
+- name: reboot compute node if needed
+  vars:
+    need_reboot: "{{ need_to_reboot.stdout_lines[0] }}"
+  ansible.builtin.reboot:
+  when: 
+    - need_reboot == 'need_to_reboot'
+    - inventory_hostname != ansible_hostname
+  tags: [netplan]

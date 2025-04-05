@@ -11,7 +11,7 @@ cat >tmp.json <<EOF
     },
     "site_subnets": [
         {
-            "id": "eb8b4ea9-c885-48c1-ab87-c63804859b71"
+            "id": "8791a228-43ae-477e-8c72-e68a7b11ecca"
         }
     ],
     "inbound": 100,
