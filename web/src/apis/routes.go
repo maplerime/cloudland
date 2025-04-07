@@ -47,6 +47,7 @@ func Register() (r *gin.Engine) {
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
+	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
@@ -147,6 +148,22 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/instances/network/his_data", monitorAPI.GetNetwork)
 			metricsGroup.POST("/instances/traffic/his_data", monitorAPI.GetTraffic)
 			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
+
+			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
+			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules) 
+			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
+			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
+
+			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
+			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
+
+			//metricsGroup.PUT("/alarm/rules/:id/status", alarmAPI.ToggleRuleStatus)
+			//metricsGroup.POST("alarm/bw-rules/link", alarmAPI.LinkBWRuleToVM)
+			//metricsGroup.POST("alarm/bw-rules/unlink", alarmAPI.UnlinkBWRuleFromVM)
+			//metricsGroup.POST("alarm/bw/rules", alarmAPI.CreateBWRules)
+			//metricsGroup.DELETE("alarm/bw/rules/:id", alarmAPI.DeleteBWRule)
+			//metricsGroup.GET("alarm/bw/rules/:id", alarmAPI.GetBWRules)
+
 		}
 
 	}
