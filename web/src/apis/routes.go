@@ -147,6 +147,22 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/instances/network/his_data", monitorAPI.GetNetwork)
 			metricsGroup.POST("/instances/traffic/his_data", monitorAPI.GetTraffic)
 			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
+
+			metricsGroup.PUT("/alarm/rules/:id/status", alarmAPI.ToggleRuleStatus)
+			metricsGroup.POST("/alarm/webhook", alarmAPI.HandleAlertWebhook)
+			metricsGroup.GET("/alarm/alerts/current", alarmAPI.GetCurrentAlarms)
+			metricsGroup.GET("/alarm/alerts/history", alarmAPI.GetHistoryAlarm)
+
+			metricsGroup.POST("alarm/cpu/rules", alarmAPI.CreateCPURule)
+			metricsGroup.GET("alarm/cpu/rules/:id", alarmAPI.GetCPURules)
+			metricsGroup.DELETE("alarm/cpu/rules/:id", alarmAPI.DeleteCPURule)
+
+			//metricsGroup.POST("alarm/bw-rules/link", alarmAPI.LinkBWRuleToVM)
+			//metricsGroup.POST("alarm/bw-rules/unlink", alarmAPI.UnlinkBWRuleFromVM)
+			//metricsGroup.POST("alarm/bw/rules", alarmAPI.CreateBWRules)
+			//metricsGroup.DELETE("alarm/bw/rules/:id", alarmAPI.DeleteBWRule)
+			//metricsGroup.GET("alarm/bw/rules/:id", alarmAPI.GetBWRules)
+
 		}
 
 	}

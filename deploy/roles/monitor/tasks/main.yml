@@ -10,6 +10,24 @@
   set_fact:
     hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
 
+- name: Validate WDS configuration
+  fail:
+    msg: "wds_address must be configured with a valid value when wds group exists"
+  when:
+    - "'wds' in groups"
+    - "wds_address | default('') | length == 0 or wds_admin | default('') | length == 0 or wds_pass | default('') | length == 0"
+
+- name: Extract WDS monitor server credentials
+  set_fact:
+    wds_monitor_server_ip: "{{ wds_address | regex_replace('^(?:https?://)?([0-9.]+)(?:.*)$', '\\1') }}"
+    wds_monitor_server_admin: "{{ wds_admin }}"
+    wds_monitor_server_pass: "{{ wds_pass }}"
+  when:
+    - "'wds' in groups"
+    - "wds_address is defined and wds_address | length > 0"
+    - "wds_admin is defined and wds_admin | length > 0"
+    - "wds_pass is defined and wds_pass | length > 0"
+
 - name: Generate node exporters config block
   set_fact:
     node_exporters_block: |
@@ -28,19 +46,91 @@
           - targets: ['{{ ip }}:9177']
           {% endfor %}
 
-- name: Update apt cache
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  apt:
-    update_cache: yes
+- name: Validate Alertmanager variables
+  fail:
+    msg: "Must define {{ item }} for task"
+  when: vars[item] | default('') | length == 0
+  with_items:
+    - smtp_host
+    - alert_sender
+    - smtp_user
+    - smtp_pass
+    - receiver_name
+    - alert_recipient
   tags: [monitor]
 
 - name: Install packages for monitor server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   apt:
-    name: ['prometheus', 'prometheus-node-exporter']
+    name: 
+      - prometheus={{ prometheus_version | default("2.31.2") }}
+      - prometheus-node-exporter={{ node_exporter_version | default("1.3.1") }}
+      - prometheus-alertmanager={{ alertmanager_version | default("0.23.0") }}
     state: present
+  tags: [monitor]
+
+- name: Create Alertmanager system directories
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+  with_items:
+    - /etc/alertmanager
+    - /var/lib/alertmanager
+  tags: [monitor]
+
+- name: Configure and enable Alertmanager
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  block:
+    - name: Configure Alertmanager
+      copy:
+        dest: /etc/alertmanager/alertmanager.yml
+        content: |
+          global:
+            smtp_smarthost: '{{ smtp_host }}:587'
+            smtp_from: '{{ alert_sender }}'
+            smtp_auth_username: '{{ smtp_user }}'
+            smtp_auth_password: '{{ smtp_pass }}'
+            smtp_require_tls: true
+          route:
+            group_by: ['alertname']
+            group_wait: 30s
+            group_interval: 5m
+            repeat_interval: 3h
+            receiver: '{{ receiver_name }}'
+          receivers:
+          - name: '{{ receiver_name }}'
+            email_configs:
+            - to: '{{ alert_recipient }}'
+              send_resolved: true
+        owner: prometheus
+        group: prometheus
+        mode: 0640
+    
+    - name: Enable Alertmanager service
+      systemd:
+        name: alertmanager
+        enabled: yes
+        state: restarted
+  tags: [monitor]
+
+- name: Verify Alertmanager running status
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  uri:
+    url: http://localhost:9093/-/healthy
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: alertmanager_health
+  until: alertmanager_health.status == 200
+  retries: 6
+  delay: 10
   tags: [monitor]
 
 - name: Configure Prometheus server
@@ -57,6 +147,54 @@
     dest: /etc/prometheus/prometheus.yml
     owner: prometheus
     group: prometheus
+  tags: [monitor]
+
+- name: Create alert rules directory structure
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  with_items:
+    - /etc/prometheus/rules_available
+    - /etc/prometheus/rules_enabled
+  tags: [monitor]
+
+- name: Deploy CPU alert rules
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  template:
+    src: files/cpu-alerts.yml.j2
+    dest: /etc/prometheus/rules.d/cpu.yml
+    owner: prometheus
+    group: prometheus
+    mode: 0640
+  tags: [monitor]
+
+- name: Deploy bandwidth alert rules
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  template:
+    src: files/bw-alerts.yml.j2
+    dest: /etc/prometheus/rules.d/bw.yml
+    owner: prometheus
+    group: prometheus
+    mode: 0640
+  tags: [monitor]
+
+- name: Update Prometheus config to load enabled rules
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  replace:
+    path: /etc/prometheus/prometheus.yml
+    regexp: '^rule_files:'
+    replace: |
+      rule_files:
+        - rules_enabled/*.yml
+    backup: yes
   tags: [monitor]
 
 - name: Update Prometheus with node exporters block
@@ -178,4 +316,34 @@
     force_basic_auth: yes
   ignore_errors: true
   changed_when: false
+  tags: [monitor]
+
+- name: Add monitor section to config.toml
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /opt/cloudland/web/conf/config.toml
+    block: |
+      [monitor]
+      host = "{{ prometheus_server_ip }}"
+      port = 9090
+    create: yes
+  tags: [monitor]
+
+- name: Add WDS monitor section to config.toml
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /opt/cloudland/web/conf/config.toml
+    block: |
+      [WDS]
+      host = "{{ wds_monitor_server_ip }}"
+      port = 9090
+      admin = "{{ wds_monitor_server_admin }}"
+      password = "{{ wds_monitor_server_pass }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - WDS"
+    create: yes
+  when:
+    - "'wds' in groups"
+    - "wds_address is defined"
   tags: [monitor]
