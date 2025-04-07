@@ -75,6 +75,12 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/vpcs/:id", vpcAPI.Delete)
 		authGroup.PATCH("/api/v1/vpcs/:id", vpcAPI.Patch)
 
+		authGroup.GET("/api/v1/ipgroups", ipgroupAPI.List)
+		authGroup.POST("/api/v1/ipgroups", ipgroupAPI.Create)
+		authGroup.GET("/api/v1/ipgroups/:id", ipgroupAPI.Get)
+		authGroup.DELETE("/api/v1/ipgroups/:id", ipgroupAPI.Delete)
+		authGroup.PATCH("/api/v1/ipgroups/:id", ipgroupAPI.Patch)
+
 		authGroup.GET("/api/v1/subnets", subnetAPI.List)
 		authGroup.POST("/api/v1/subnets", subnetAPI.Create)
 		authGroup.GET("/api/v1/subnets/:id", subnetAPI.Get)
