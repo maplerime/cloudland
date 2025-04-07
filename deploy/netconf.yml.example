@@ -9,3 +9,11 @@ disk_ratio: 1
 domain_name: example.com
 monitor_vip: localhost
 monitor_monitor_access_port: 9090
+smtp_host: "smtp.qiye.aliyun.com"
+alert_sender: "monitor@yourcompany.com"
+smtp_user: "alert_sender"
+smtp_pass: "your_smtp_password"
+receiver_name: "cloudland_alert"
+alert_recipient: "devops@yourcompany.com"
+slack_webhook_url: "https://hooks.slack.com/services/XXX/YYY/ZZZ"
+alert_webhook_url: "127.0.0.1:8255"
