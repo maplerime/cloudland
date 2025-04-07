@@ -163,6 +163,7 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
+	logger.Debugf("list ipgroup 1")
 	if limit == 0 {
 		limit = 16
 	}
@@ -171,7 +172,9 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
+	logger.Debugf("list ipgroup 2")
 	total, ipgroups, err := ipgroupAdmin.List(c.Req.Context(), offset, limit, order, query)
+	logger.Debugf("list ipgroup 3")
 	if err != nil {
 		logger.Error("Failed to list ipgroup(s)", err)
 		c.Data["ErrorMsg"] = err.Error()
