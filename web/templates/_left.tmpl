@@ -27,6 +27,9 @@
         <a {{ if eq .Link "/routers" }} class="active item" {{ else }} class="item" {{ end }} href="/routers">
             {{.i18n.Tr "VPCs"}}
         </a>
+        <a {{ if eq .Link "/ipgroups" }} class="active item" {{ else }} class="item" {{ end }} href="/ipgroups">
+            {{.i18n.Tr "IpGroups"}}
+        </a>
         <a {{ if eq .Link "/subnets" }} class="active item" {{ else }} class="item" {{ end }} href="/subnets">
             {{.i18n.Tr "Subnets"}}
         </a>

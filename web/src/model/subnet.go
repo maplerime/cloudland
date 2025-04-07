@@ -10,6 +10,14 @@ import (
 	"web/src/dbs"
 )
 
+type IpGroup struct {
+	Model
+	Owner   int64     `gorm:"default:1"` /* The organization ID of the resource */
+	Name    string    `gorm:"unique_index:idx_router_subnet;type:varchar(64)"`
+	Type    string    `gorm:"type:varchar(30);default:'normal'"`
+	Subnets []*Subnet `gorm:"foreignkey:group",gorm:"PRELOAD:false"`
+}
+
 type Subnet struct {
 	Model
 	Owner        int64  `gorm:"default:1"` /* The organization ID of the resource */
@@ -27,6 +35,7 @@ type Subnet struct {
 	RouterID     int64   `gorm:"unique_index:idx_router_subnet"`
 	Router       *Router `gorm:"foreignkey:RouterID"`
 	Routes       string  `gorm:"type:varchar(256)"`
+	Group        int64
 }
 
 type Address struct {
@@ -45,4 +54,5 @@ type Address struct {
 func init() {
 	dbs.AutoMigrate(&Subnet{})
 	dbs.AutoMigrate(&Address{})
+	dbs.AutoMigrate(&IpGroup{})
 }
