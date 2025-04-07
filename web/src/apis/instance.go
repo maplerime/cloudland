@@ -456,6 +456,10 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 		if err != nil {
 			return
 		}
+		if site.Interface > 0 {
+			err = fmt.Errorf("Site subnet is not available")
+			return
+		}
 		ifaceInfo.SiteSubnets = append(ifaceInfo.SiteSubnets, site)
 	}
 	if ifacePayload.IpAddress != "" {

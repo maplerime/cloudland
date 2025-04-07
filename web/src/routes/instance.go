@@ -731,6 +731,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
 			}
+			for _, site := range iface.SiteSubnets {
+				err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
+				if err != nil {
+					logger.Error("Failed to update interface", err)
+				}
+			}
 		}
 	}
 	err = db.Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error
@@ -921,7 +927,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, instance := range instances {
-		if err = db.Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+		if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			return
 		}
@@ -1579,6 +1585,31 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	var siteSubnets []*model.Subnet
+	sites := c.QueryTrim("sites")
+	s := strings.Split(sites, ",")
+	for i := 0; i < len(s); i++ {
+		sID, err := strconv.Atoi(s[i])
+		if err != nil {
+			logger.Error("Invalid site subnet ID", err)
+			continue
+		}
+		var site *model.Subnet
+		site, err = subnetAdmin.Get(ctx, int64(sID))
+		if err != nil {
+			logger.Error("Get site subnet failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if site.Interface > 0 {
+			logger.Error("Site subnet is not available", err)
+			c.Data["ErrorMsg"] = "Site subnet is not available"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		siteSubnets = append(siteSubnets, site)
+	}
 	macAddr, err := v.checkNetparam(primarySubnet, ipAddr, primaryMac)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -1639,12 +1670,13 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		IpAddress:      ipAddr,
 		MacAddress:     macAddr,
 		SecurityGroups: securityGroups,
+		SiteSubnets:    siteSubnets,
 		Inbound:        1000,
 		Outbound:       1000,
 	}
 	subnets := c.QueryTrim("subnets")
 	var secondaryIfaces []*InterfaceInfo
-	s := strings.Split(subnets, ",")
+	s = strings.Split(subnets, ",")
 	for i := 0; i < len(s); i++ {
 		sID, err := strconv.Atoi(s[i])
 		if err != nil {
