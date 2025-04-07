@@ -1,0 +1,32 @@
+{{template "_head" .}}
+<div class="user signup">
+	<div class="ui middle very relaxed page grid">
+        <div class="column" >
+            <form class="ui form" action="{{.Link}}" method="post" autocomplete="off">
+                <h3 class="ui top attached header">
+                    {{.i18n.Tr "Update Ip Group"}}
+                </h3>
+                <div class="ui attached segment">
+                    <div class="inline field">
+                        <label for="name">{{.i18n.Tr "Name"}}</label>
+                        <input id="name" name="name" type="text" value="{{ .IpGroup.Name }}">
+                    </div>
+                    <div class="inline field">
+                        <label for="isdefault">{{.i18n.Tr "Type"}}</label>
+                        <select name="type" id="type" class="ui selection dropdown">
+                             <option value="a" {{ if eq .IpGroup.Type "a" }}selected{{ end }}>{{.i18n.Tr "a"}}</option>
+                             <option value="b" {{ if eq .IpGroup.Type "b" }}selected{{ end }}>{{.i18n.Tr "b"}}</option>
+                             <option value="c" {{ if eq .IpGroup.Type "c" }}selected{{ end }}>{{.i18n.Tr "c"}}</option>
+                        </select>
+                    </div>
+                    <div class="inline field">
+                        <label></label>
+                        <button class="ui green button">{{.i18n.Tr "Update"}}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+	</div>
+</div>
+{{template "_footer" .}}
+
