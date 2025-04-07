@@ -10,6 +10,9 @@
         <a {{ if eq .Link "/keys" }} class="active item" {{ else }} class="item" {{ end }} href="/keys">
             {{.i18n.Tr "Keys"}}
         </a>
+        <a {{ if eq .Link "/dictionaries" }} class="active item" {{ else }} class="item" {{ end }} href="/dictionaries">
+            {{.i18n.Tr "Dictionaries"}}
+        </a>
         <div class="header item">{{.i18n.Tr "Compute_Storage"}}</div>
         <a {{ if eq .Link "/instances" }} class="active item" {{ else }} class="item" {{ end }} href="/instances">
             {{.i18n.Tr "Instances"}}
@@ -26,6 +29,9 @@
         <div class="header item">{{.i18n.Tr "Network_Security"}}</div>
         <a {{ if eq .Link "/routers" }} class="active item" {{ else }} class="item" {{ end }} href="/routers">
             {{.i18n.Tr "VPCs"}}
+        </a>
+        <a {{ if eq .Link "/ipgroups" }} class="active item" {{ else }} class="item" {{ end }} href="/ipgroups">
+            {{.i18n.Tr "IpGroups"}}
         </a>
         <a {{ if eq .Link "/subnets" }} class="active item" {{ else }} class="item" {{ end }} href="/subnets">
             {{.i18n.Tr "Subnets"}}
