@@ -28,6 +28,13 @@
           - targets: ['{{ ip }}:9177']
           {% endfor %}
 
+- name: Update apt cache
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  apt:
+    update_cache: yes
+  tags: [monitor]
+
 - name: Install packages for monitor server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -169,18 +176,6 @@
     user: admin
     password: admin
     force_basic_auth: yes
-  ignore_errors: yes
+  ignore_errors: true
   changed_when: false
-  tags: [monitor]
-
-- name: Add monitor section to config.toml
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  blockinfile:
-    path: /opt/cloudland/web/conf/config.toml
-    block: |
-      [monitor]
-      host = "{{ prometheus_server_ip }}"
-      port = 9090
-    create: yes
   tags: [monitor]

@@ -21,7 +21,7 @@
   tags: [ntp]
 
 - name: remove unattended-upgrade
-  service: name=unattended-upgrade state=absent
+  apt: name=unattended-upgrade state=absent
   tags: [upgrade]
 
 - name: upgrade all packages

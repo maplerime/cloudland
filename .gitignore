@@ -32,6 +32,7 @@ wget-log
 /deploy/hosts/hosts
 /web/clbase
 /web/clapi
+/web/.version
 /web/src/public/misc/openshift/ocd.conf*
 /web/src/public/novnc
 /deploy/*.retry
