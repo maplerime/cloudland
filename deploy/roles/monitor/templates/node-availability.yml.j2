@@ -1,0 +1,23 @@
+groups:
+- name: node-availability
+  rules:
+  - alert: ComputeNodeDown
+    expr: up{job="prometheus_node_exporter", node_type="compute"} == 0
+    for: {{ node_down_duration | default("5m") }}
+    labels:
+      severity: critical
+      node_type: compute
+    annotations:
+      summary: "hyper node {{ $labels.instance }} offline"
+      description: "Compute node {{ $labels.instance }} It has been unreachable for more than {{ node_down_duration | default("5m") }} minutes."
+      alert_type: "node-unavailable"
+  - alert: ManagementNodeDown
+    expr: up{job="prometheus_node_exporter", node_type="management"} == 0
+    for: {{ node_down_duration | default("5m") }}
+    labels:
+      severity: critical
+      node_type: management
+    annotations:
+      summary: "Management node {{ $labels.instance }} offline"
+      description: "Management node {{ $labels.instance }} has been unreachable for more than {{ node_down_duration | default("5m") }} minutes"
+      alert_type: "node-unavailable"
