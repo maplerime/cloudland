@@ -15,7 +15,7 @@ type IpGroup struct {
 	Owner   int64     `gorm:"default:1"` /* The organization ID of the resource */
 	Name    string    `gorm:"unique_index:idx_router_subnet;type:varchar(64)"`
 	Type    string    `gorm:"type:varchar(30);default:'normal'"`
-	Subnets []*Subnet `gorm:"foreignkey:group",gorm:"PRELOAD:false"`
+	Subnets []*Subnet `gorm:"foreignkey:Group;association_foreignkey:ID;PRELOAD:false"`
 }
 
 type Subnet struct {
@@ -35,7 +35,7 @@ type Subnet struct {
 	RouterID     int64   `gorm:"unique_index:idx_router_subnet"`
 	Router       *Router `gorm:"foreignkey:RouterID"`
 	Routes       string  `gorm:"type:varchar(256)"`
-	Group        int64
+	Group        int64   `gorm:"default:0"`
 }
 
 type Address struct {
