@@ -131,7 +131,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		logger.Error("Image status not available")
 		return
 	}
-	if image.Size >= int64(flavor.Disk)*1024*1024*1024 {
+	if image.Size > int64(flavor.Disk)*1024*1024*1024 {
 		err = fmt.Errorf("Flavor disk size is not enough for the image")
 		logger.Error(err)
 		return
@@ -385,7 +385,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 
-	if image.Size >= int64(flavor.Disk)*1024*1024*1024 {
+	if image.Size > int64(flavor.Disk)*1024*1024*1024 {
 		err = fmt.Errorf("Flavor disk size is not enough for the image")
 		logger.Error(err)
 		return

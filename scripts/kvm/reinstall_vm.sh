@@ -85,11 +85,14 @@ else
         echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create boot volume based on snapshot $snapshot_name, $volume_ret!'"
         exit -1
     fi
-    expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
-    ret_code=$(echo $expand_ret | jq -r .ret_code)
-    if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
-        exit -1
+    volume_size=$(wds_curl GET "api/v2/sync/block/volumes/$volume_id" | jq -r '.volume_detail.volume_size')
+    if [ "$fsize" -gt "$volume_size" ]; then
+        expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
+        ret_code=$(echo $expand_ret | jq -r .ret_code)
+        if [ "$ret_code" != "0" ]; then
+            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
+            exit -1
+        fi
     fi
     vhost_ret=$(wds_curl POST "api/v2/sync/block/vhost" "{\"name\": \"$vhost_name\"}")
     vhost_id=$(echo $vhost_ret | jq -r .id)
