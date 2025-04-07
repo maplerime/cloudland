@@ -246,37 +246,35 @@ func (v *IpGroupView) Change(c *macaron.Context, store session.Store) {
 }
 
 func (v *IpGroupView) Patch(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	userID, err := strconv.Atoi(id)
+	ipgroupID, err := strconv.Atoi(id)
 	if err != nil {
 		logger.Error("Failed to get input id, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckUser(int64(userID))
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	password := c.QueryTrim("password")
-	members := c.QueryStrings("members")
-	_, err = userAdmin.Update(c.Req.Context(), int64(userID), password, members)
+	redirectTo := "../ipgroups"
+	name := c.QueryTrim("name")
+	ipgrouptype := c.QueryTrim("type")
+	ipgroup, err := ipgroupAdmin.Get(ctx, int64(ipgroupID))
 	if err != nil {
-		logger.Error("Failed to update password, %v", err)
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
+		c.HTML(500, err.Error())
 		return
 	}
-	c.HTML(200, "ok")
+	err = ipgroupAdmin.Update(ctx, ipgroup, name, ipgrouptype)
+	if err != nil {
+		c.HTML(500, err.Error())
+		return
+	}
+	c.Redirect(redirectTo)
+	return
 }
 
 func (v *IpGroupView) Delete(c *macaron.Context, store session.Store) (err error) {
