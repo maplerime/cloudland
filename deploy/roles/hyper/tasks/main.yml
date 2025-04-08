@@ -1,6 +1,6 @@
 - name: install common packages
   apt:
-    name: ['jq', 'wget', 'mkisofs', 'network-manager', 'net-tools', 'python3-pip']
+    name: ['jq', 'wget', 'mkisofs', 'network-manager', 'net-tools', 'python3-pip', 'libnetfilter-queue-dev']
     update_cache: yes
     state: present
   ignore_errors: yes
@@ -13,8 +13,12 @@
   ignore_errors: yes
   tags: [be_pkg]
 
-- pip:
-    name: pyparsing
+- name: Install required pip packages
+  pip:
+    name:
+      - pyparsing
+      - netfilterqueue
+      - scapy
     executable: pip3
   ignore_errors: yes
   tags: [be_pkg]
