@@ -3298,6 +3298,11 @@
                         "$ref": "#/definitions/common.BaseReference"
                     }
                 },
+                "login_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
                 "password": {
                     "type": "string"
                 }
@@ -3360,7 +3365,7 @@
                 "volumes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/common.ResourceReference"
+                        "$ref": "#/definitions/apis.VolumeInfoResponse"
                     }
                 },
                 "vpc": {
@@ -3820,7 +3825,10 @@
             ],
             "properties": {
                 "is_default": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "enum": [
+                        true
+                    ]
                 },
                 "name": {
                     "type": "string",
@@ -4211,6 +4219,32 @@
             "type": "object",
             "properties": {
                 "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VolumeInfoResponse": {
+            "type": "object",
+            "properties": {
+                "booting": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }

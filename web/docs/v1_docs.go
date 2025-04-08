@@ -3305,6 +3305,11 @@ const docTemplatev1 = `{
                         "$ref": "#/definitions/common.BaseReference"
                     }
                 },
+                "login_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
                 "password": {
                     "type": "string"
                 }
@@ -3367,7 +3372,7 @@ const docTemplatev1 = `{
                 "volumes": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/common.ResourceReference"
+                        "$ref": "#/definitions/apis.VolumeInfoResponse"
                     }
                 },
                 "vpc": {
@@ -3827,7 +3832,10 @@ const docTemplatev1 = `{
             ],
             "properties": {
                 "is_default": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "enum": [
+                        true
+                    ]
                 },
                 "name": {
                     "type": "string",
@@ -4218,6 +4226,32 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VolumeInfoResponse": {
+            "type": "object",
+            "properties": {
+                "booting": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
