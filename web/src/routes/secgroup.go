@@ -220,7 +220,7 @@ func (a *SecgroupAdmin) RemovePortForInterfaceSecgroups(ctx context.Context, por
 		for _, sg := range iface.SecurityGroups {
 			_, err = secruleAdmin.DeleteRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
 			if err != nil {
-				logger.Error("Failed to create security rule", err)
+				logger.Error("Failed to remove security rule", err)
 				return
 			}
 		}
@@ -411,6 +411,7 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			err = db.Take(secgroup.Router).Error
 			if err != nil {
 				logger.Error("DB failed to qeury router", err)
+				err = nil
 				continue
 			}
 		}

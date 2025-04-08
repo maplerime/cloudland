@@ -33,6 +33,8 @@ wget-log
 /web/.version
 /web/clbase
 /web/clapi
+/web/.version
+/web/apitest/tmp.json
 /web/src/public/misc/openshift/ocd.conf*
 /web/src/public/novnc
 /deploy/*.retry

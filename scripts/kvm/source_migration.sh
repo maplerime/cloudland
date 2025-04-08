@@ -15,7 +15,6 @@ migration_type=$6
 state=error
 
 vm_xml=$(virsh dumpxml $vm_ID)
-virsh undefine $vm_ID
 if [ "$migration_type" = "warm" ]; then
     virsh migrate --persistent --live $vm_ID qemu+ssh://$target_hyper/system
     if [ $? -ne 0 ]; then
@@ -34,6 +33,7 @@ else
         virsh destroy $vm_ID
     fi
 fi
+virsh undefine $vm_ID
 ./clear_source_vhost.sh
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)

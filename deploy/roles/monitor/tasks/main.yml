@@ -28,6 +28,13 @@
           - targets: ['{{ ip }}:9177']
           {% endfor %}
 
+- name: Update apt cache
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  apt:
+    update_cache: yes
+  tags: [monitor]
+
 - name: Install packages for monitor server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true

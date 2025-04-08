@@ -3305,6 +3305,11 @@ const docTemplatev1 = `{
                         "$ref": "#/definitions/common.BaseReference"
                     }
                 },
+                "login_port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1
+                },
                 "password": {
                     "type": "string"
                 }
@@ -3845,7 +3850,10 @@ const docTemplatev1 = `{
             ],
             "properties": {
                 "is_default": {
-                    "type": "boolean"
+                    "type": "boolean",
+                    "enum": [
+                        true
+                    ]
                 },
                 "name": {
                     "type": "string",
