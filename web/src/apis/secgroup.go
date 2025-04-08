@@ -231,6 +231,7 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 			var instance *model.Instance
 			instance, err = instanceAdmin.Get(ctx, iface.Instance)
 			if err != nil {
+				err = nil
 				continue
 			}
 			owner := orgAdmin.GetOrgName(instance.Owner)
