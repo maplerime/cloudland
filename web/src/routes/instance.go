@@ -1136,7 +1136,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, subnets, err := subnetAdmin.List(ctx, 0, -1, "", "")
+	_, subnets, err := subnetAdmin.List(ctx, 0, -1, "", "interface = 0")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
