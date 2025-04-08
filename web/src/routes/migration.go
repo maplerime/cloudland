@@ -115,11 +115,12 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				task1.Summary = "No qualified target"
 				task1.Status = "not_doing"
 				migration.Status = "not_doing"
-				err = db.Model(migration).Save(migration).Error
-				if err != nil {
-					logger.Error("Failed to update save migration, %v", err)
+				mErr := db.Model(migration).Save(migration).Error
+				if mErr != nil {
+					logger.Error("Failed to update save migration, %v", mErr)
 					return
 				}
+				err = nil
 				continue
 			}
 			control = "select=" + hyperGroup
@@ -312,6 +313,7 @@ func (v *MigrationView) Create(c *macaron.Context, store session.Store) {
 		instID, err := strconv.Atoi(inst)
 		if err != nil {
 			logger.Error("Invalid instance ID", err)
+			err = nil
 			continue
 		}
 		var instance *model.Instance
