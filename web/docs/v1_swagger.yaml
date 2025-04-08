@@ -354,6 +354,10 @@ definitions:
         maxItems: 16
         minItems: 0
         type: array
+      login_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
       password:
         type: string
     type: object
@@ -395,7 +399,7 @@ definitions:
         type: string
       volumes:
         items:
-          $ref: '#/definitions/common.ResourceReference'
+          $ref: '#/definitions/apis.VolumeInfoResponse'
         type: array
       vpc:
         $ref: '#/definitions/common.ResourceReference'
@@ -705,6 +709,8 @@ definitions:
   apis.SecurityGroupPatchPayload:
     properties:
       is_default:
+        enum:
+        - true
         type: boolean
       name:
         maxLength: 32
@@ -969,6 +975,23 @@ definitions:
   apis.VersionResponse:
     properties:
       version:
+        type: string
+    type: object
+  apis.VolumeInfoResponse:
+    properties:
+      booting:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      target:
+        type: string
+      updated_at:
         type: string
     type: object
   apis.VolumeListResponse:

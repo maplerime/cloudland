@@ -68,7 +68,7 @@ func (v *SecgroupAPI) Get(c *gin.Context) {
 	secgroup, err := secgroupAdmin.GetSecgroupByUUID(ctx, uuID)
 	if err != nil {
 		logger.Errorf("Failed to get secgroup %s, %+v", uuID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid vpc query", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
 		return
 	}
 	secgroupResp, err := v.getSecgroupResponse(ctx, secgroup)
@@ -97,7 +97,7 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 	secgroup, err := secgroupAdmin.GetSecgroupByUUID(ctx, uuID)
 	if err != nil {
 		logger.Errorf("Failed to get secgroup %s, %+v", uuID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid vpc query", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
 		return
 	}
 	payload := &SecurityGroupPatchPayload{}
@@ -108,6 +108,11 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Patching secgroup %s with %+v", uuID, payload)
+	if payload.IsDefault == false {
+		logger.Errorf("Not allowed to patch default security group to false")
+		ErrorResponse(c, http.StatusBadRequest, "Not allowed to patch default security group to false", err)
+		return
+	}
 	err = secgroupAdmin.Update(ctx, secgroup, payload.Name, payload.IsDefault)
 	if err != nil {
 		logger.Errorf("Failed to patch secgroup %s, %+v", uuID, err)
