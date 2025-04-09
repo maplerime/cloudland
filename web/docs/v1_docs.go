@@ -3428,6 +3428,12 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/common.BaseReference"
                     }
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
@@ -3462,6 +3468,12 @@ const docTemplatev1 = `{
                     "minimum": 0
                 },
                 "security_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "site_subnets": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/common.BaseReference"
@@ -3508,6 +3520,12 @@ const docTemplatev1 = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/common.ResourceReference"
+                    }
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.SiteSubnetInfo"
                     }
                 },
                 "subnet": {
@@ -3928,6 +3946,32 @@ const docTemplatev1 = `{
                     ]
                 },
                 "remote_cidr": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.SiteSubnetInfo": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "gateway": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }

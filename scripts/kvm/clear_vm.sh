@@ -9,6 +9,7 @@ ID=$1
 vm_ID=inst-$ID
 router=$2
 boot_volume=$3
+ip=${2%/*}
 vm_xml=$(virsh dumpxml $vm_ID)
 virsh undefine $vm_ID
 cmd="virsh destroy $vm_ID"
@@ -19,7 +20,7 @@ for (( i=1; i <= $count; i++ )); do
     ./clear_sg_chain.sh $vif_dev
 done
 ./clear_local_router.sh $router
-
+async_exec ./async_job/clear_sites_ip.sh "$router"
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 if [ -z "$wds_address" ]; then	
