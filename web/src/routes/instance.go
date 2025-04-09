@@ -505,6 +505,7 @@ func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.In
 		err = a.deleteInterface(ctx, iface)
 		if err != nil {
 			logger.Error("Failed to delete interface", err)
+			err = nil
 			continue
 		}
 	}
@@ -1430,6 +1431,7 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 				kID, err := strconv.Atoi(k[i])
 				if err != nil {
 					logger.Error("Invalid key ID", err)
+					err = nil
 					continue
 				}
 				var key *model.Key
@@ -1593,6 +1595,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		for i := 0; i < len(sg); i++ {
 			sgID, err := strconv.Atoi(sg[i])
 			if err != nil {
+				err = nil
 				continue
 			}
 			var secgroup *model.SecurityGroup
@@ -1650,6 +1653,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		sID, err := strconv.Atoi(s[i])
 		if err != nil {
 			logger.Error("Invalid secondary subnet ID", err)
+			err = nil
 			continue
 		}
 		var subnet *model.Subnet
@@ -1682,6 +1686,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		kID, err := strconv.Atoi(k[i])
 		if err != nil {
 			logger.Error("Invalid key ID", err)
+			err = nil
 			continue
 		}
 		var key *model.Key

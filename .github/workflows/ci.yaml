@@ -8,7 +8,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check branch
-        if: github.base_ref == 'main' && github.head_ref != 'staging'
+        if: github.base_ref == 'main' && (github.head_ref != 'staging' || github.head_ref != 'hotfix')
         run: |
-          echo "ERROR: You can only merge to main from staging."
+          echo "ERROR: You can only merge to main from staging or hotfix."
           exit 1

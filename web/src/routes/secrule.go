@@ -42,17 +42,20 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 		err = secgroupAdmin.GetInterfaceSecgroups(ctx, iface)
 		if err != nil {
 			logger.Error("DB failed to get interface related security groups, %v", err)
+			err = nil
 			continue
 		}
 		securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
 		if err != nil {
 			logger.Error("DB failed to get security data, %v", err)
+			err = nil
 			continue
 		}
 		var jsonData []byte
 		jsonData, err = json.Marshal(securityData)
 		if err != nil {
 			logger.Error("Failed to marshal security json data, %v", err)
+			err = nil
 			continue
 		}
 		logger.Debugf("iface: %+v", iface)
@@ -60,6 +63,7 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 		err = db.Take(instance).Error
 		if err != nil {
 			logger.Error("DB failed to get instance, %v", err)
+			err = nil
 			continue
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
