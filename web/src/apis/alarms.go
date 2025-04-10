@@ -10,23 +10,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
-	"text/template" // 移动到标准库分组
+	"text/template"
 	"time"
-
-	// 项目内部包
+    "os/user"
 	"web/src/common"
 	"web/src/model"
 
-	// 第三方包
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	//"github.com/google/uuid"
 	"github.com/jinzhu/gorm"
 )
 
 type AlarmAPI struct {
-	operator *common.AlarmOperator // 添加 operator 字段
+	operator *common.AlarmOperator
 }
 
 var alarmAPI = &AlarmAPI{
@@ -147,7 +146,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成规则内容失败"})
 		return
 	}
-	generalContent := editCPURuleContent(rawContent, vmList)
+	generalContent := addExcludedVMsToRule(rawContent, vmList)
 	specialContent, err := genspecialCPURuleContent(rules, vmList, groupUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "特殊规则生成失败: " + err.Error()})
@@ -258,84 +257,19 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		Owner string           `json:"owner" binding:"required"`
 		Rules []common.CPURule `json:"rules" binding:"required,min=1"`
 	}
-	fmt.Printf("step0\n")	
+	fmt.Printf("step0\n")
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-    groupUUID := uuid.New().String()
-
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"call get link vm error": err.Error()})
-		return
-	}
-
-	var excludeVMs []string
-	if len(vmLinks) > 0 {
-        for _, link := range vmLinks {
-            excludeVMs = append(excludeVMs, link.VMName)
-        }
-    }
-	fmt.Printf("step0.1\n")	
-	// 生成规则内容
-	generalRaw, err := generateCPURuleContent(req.Rules)
-	fmt.Printf("完整规则内容：\n%s\n", generalRaw)
-	fmt.Printf("err内容：\n%s\n", err)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"generate general rules failed": err.Error()})
-		return
-	}
-	fmt.Printf("step1：\n%s\n", err)
-	generalContent := generalRaw
-    if len(excludeVMs) > 0 {
-        generalContent = editCPURuleContent(generalRaw, excludeVMs)
-    }
-
-	var specialContent string
-    if len(excludeVMs) > 0 {
-        if specialContent, err = genspecialCPURuleContent(req.Rules, excludeVMs, groupUUID); err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "generate special rules failed: " + err.Error()})
-            return
-        }
-    }
-	fmt.Printf("step2：\n%s\n", err)
-	fmt.Printf("RulesEnabled is: %s\n",  RulesEnabled)
-	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
-	fmt.Printf("generalPath is: %s\n",  RulesEnabled)
-	fmt.Printf("specialPath is: %s\n",  specialPath)
-	if err := os.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"write general rules filed failed": err.Error()})
-        return
-    }
-	if len(excludeVMs) > 0 {
-        if err := os.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
-            c.JSON(http.StatusInternalServerError,gin.H{"write special rules filed failed": err.Error()})
-            return
-        }
-        enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupUUID))
-		fmt.Printf("1enabledPath is: %s\n",  enabledPath)
-        if err := os.Symlink(specialPath, enabledPath); err != nil && !os.IsExist(err) {
-            c.JSON(http.StatusInternalServerError, gin.H{"enable special rules filed failed": err.Error()})
-            return
-        }
-    }else {
-        enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID))
-		fmt.Printf("2enabledPath is: %s\n",  enabledPath)
-        if err := os.Symlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "enable general rules filed failed: " + err.Error()})
-            return
-        }
-    }
-	fmt.Printf("step3：\n%s\n", err)	
+	fmt.Printf("step1\n")	
 	group := &model.RuleGroupV2{
 		Name:      req.Name,
 		Type:      RuleTypeCPU,
 		Owner:     req.Owner,
 		Enabled:   true,
 	}
-	fmt.Printf("step4：\n%s\n", err)
+	fmt.Printf("step2\n")
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
 		c.JSON(
             http.StatusInternalServerError, 
@@ -343,7 +277,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
         )
         return
 	}
-	fmt.Printf("step5：\n%s\n", err)
+	fmt.Printf("step3\n")
 	for _, rule := range req.Rules {
         detail := &model.CPURuleDetail{
             GroupUUID:  group.UUID, 
@@ -358,9 +292,101 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
             return
         }
     }
-	fmt.Printf("step6：\n%s\n", err)	
+	fmt.Printf("step4\n")	
 
+    groupUUID := group.UUID
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"call get link vm error": err.Error()})
+		return
+	}
+    pu, err := user.Lookup("prometheus")
+    if err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "查找prometheus用户失败: " + err.Error()})
+        return
+    }
+    uid, _ := strconv.Atoi(pu.Uid)
+    gid, _ := strconv.Atoi(pu.Gid)
+	var excludeVMs []string
+	if len(vmLinks) > 0 {
+        for _, link := range vmLinks {
+            excludeVMs = append(excludeVMs, link.VMName)
+        }
+    }
+	fmt.Printf("step5\n")	
+	// 生成规则内容
+	generalRaw, err := generateCPURuleContent(req.Rules)
+	fmt.Printf("完整规则内容：\n%s\n", generalRaw)
+	fmt.Printf("err内容：\n%s\n", err)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"generate general rules failed": err.Error()})
+		return
+	}
+	fmt.Printf("step6：\n%s\n", err)
+	generalContent := generalRaw
+    if len(excludeVMs) > 0 {
+        generalContent = addExcludedVMsToRule(generalRaw, excludeVMs)
+    }
+
+	var specialContent string
+    if len(excludeVMs) > 0 {
+        if specialContent, err = genspecialCPURuleContent(req.Rules, excludeVMs, groupUUID); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "generate special rules failed: " + err.Error()})
+            return
+        }
+    }
+	fmt.Printf("step7：\n%s\n", err)
+	fmt.Printf("RulesEnabled is: %s\n",  RulesEnabled)
+	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
+	fmt.Printf("generalPath is: %s\n",  RulesEnabled)
+	fmt.Printf("specialPath is: %s\n",  specialPath)
+	if err := os.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"write general rules filed failed": err.Error()})
+        return
+    }
+	if err := os.Chown(generalPath, uid, gid); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"error": "set file owner filed: " + err.Error()})
+        return
+    }
+	if len(excludeVMs) > 0 {
+        if err := os.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
+            c.JSON(http.StatusInternalServerError,gin.H{"write special rules filed failed": err.Error()})
+            return
+        }
+		if err := os.Chown(specialPath, uid, gid); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "set file owner filed: " + err.Error()})
+            return
+        }
+        enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupUUID))
+		fmt.Printf("1enabledPath is: %s\n",  enabledPath)
+        if err := os.Symlink(specialPath, enabledPath); err != nil && !os.IsExist(err) {
+            c.JSON(http.StatusInternalServerError, gin.H{"enable special rules filed failed": err.Error()})
+            return
+        }
+		if err := os.Lchown(enabledPath, uid, gid); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "set file link failed: " + err.Error()})
+            return
+        }
+    }else {
+        enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID))
+		fmt.Printf("2enabledPath is: %s\n",  enabledPath)
+        if err := os.Symlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "enable general rules filed failed: " + err.Error()})
+            return
+        }
+		if err := os.Lchown(enabledPath, uid, gid); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "set file link failed: " + err.Error()})
+            return
+        }
+    }
 	reloadPrometheus()
+	c.JSON(http.StatusOK, gin.H{
+        "status": "success",
+        "data": gin.H{
+            "group_uuid":    groupUUID,
+            "enabled":      true,
+        },
+    })
 }
 
 // 修改生成函数参数类型
@@ -462,7 +488,8 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
         ruleDetails := make([]gin.H, 0, len(details))
         for _, d := range details {
             ruleDetails = append(ruleDetails, gin.H{
-                "id":            d.ID,
+				"id":          	 d.ID,
+                "uuid":          d.UUID,
                 "name":          d.Name,
                 "duration":      d.Duration,
                 "over":          d.Over,
@@ -509,6 +536,24 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
         c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
         return
     }
+	fmt.Printf("wngzhe DeleteCPURule step0")
+	if _, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID); err != nil {
+        if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+                "error": "rules not existed",
+                "code":  "RESOURCE_NOT_FOUND",
+                "uuid":  groupUUID,
+            })
+        } else {
+            c.JSON(http.StatusInternalServerError, gin.H{
+                "error": "server internal failure",
+                "code":  "INTERNAL_ERROR",
+                "uuid":  groupUUID,
+            })
+        }
+        return
+    }
+	fmt.Printf("wngzhe DeleteCPURule step1")
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
     var excludeVMs []string
     if err == nil {
@@ -516,36 +561,35 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
             excludeVMs = append(excludeVMs, link.VMName)
         }
     }
+	fmt.Printf("[DeleteCPURule] vmLinks: %v", vmLinks)
+	fmt.Printf("[DeleteCPURule] excludeVMs: %v", excludeVMs)
 	fmt.Printf("wngzhe DeleteCPURule step1")
-	generalPath, _ := rulePaths(RuleTypeCPU, groupUUID)
-    if content, err := os.ReadFile(generalPath); err == nil {
-        newContent := editCPURuleContent(string(content), excludeVMs)
-		fmt.Printf("[Debug] 完整规则修改内容:\n%s\n", newContent)
-        _ = atomicWrite(generalPath, newContent)
+	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
+	fmt.Printf("[DeleteCPURule] generalPath: %v", generalPath)
+	if len(excludeVMs) > 0 {
+        if content, err := os.ReadFile(generalPath); err == nil {
+            newContent := removeExcludedVMs(string(content), excludeVMs)
+            _ = atomicWrite(generalPath, newContent)
+        }
     }
-	// 执行数据库事务
+
 	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, RuleTypeCPU); err != nil {
-		log.Printf("[DeleteCPURule] DB operation failed: %v", err)
+		fmt.Printf("[DeleteCPURule] DB operation failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB operation failed: " + err.Error()})
 		return
 	}
 	fmt.Printf("wngzhe DeleteCPURule step2")
 	// 更新通用规则文件（移出黑名单）
-	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
     enabledPaths := []string{
         filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupUUID)),
         filepath.Join(RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID)),
     }
 
-	// 统一删除文件
 	for _, path := range append([]string{generalPath, specialPath}, enabledPaths...) {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-			log.Printf("[DeleteCPURule] file delete failed [Path:%s]: %v", path, err)
-		}
+		os.Remove(path)
 	}
 	fmt.Printf("wngzhe DeleteCPURule step3")
-	// 异步重载配置
-	go reloadPrometheus()
+	reloadPrometheus()
 
 	fmt.Printf("wngzhe DeleteCPURule step4")
 	c.JSON(http.StatusOK, gin.H{
@@ -555,6 +599,38 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 			"deleted_files": []string{generalPath, specialPath},
 		},
 	})
+}
+
+func removeExcludedVMs(original string, excludeVMs []string) string {
+    // 匹配现有的实例排除规则
+    re := regexp.MustCompile(`instance!~"([^"]*)"`)
+    matches := re.FindStringSubmatch(original)
+    
+    // 解析现有黑名单
+    existingVMs := make(map[string]bool)
+    if len(matches) > 1 {
+        for _, vm := range strings.Split(matches[1], "|") {
+            existingVMs[vm] = true
+        }
+    }
+    
+    // 移除需要排除的VM
+    for _, vm := range excludeVMs {
+        delete(existingVMs, vm)
+    }
+    
+    // 生成新的排除规则
+    var newExclusion string
+    if len(existingVMs) > 0 {
+        var vmList []string
+        for vm := range existingVMs {
+            vmList = append(vmList, vm)
+        }
+        newExclusion = fmt.Sprintf(`,instance!~"%s"`, strings.Join(vmList, "|"))
+    }
+    
+    // 替换原始内容
+    return re.ReplaceAllString(original, newExclusion)
 }
 
 func (a *AlarmAPI) getLinkedVMs(groupUUID string) ([]string, error) {
@@ -718,7 +794,7 @@ func genspecialCPURuleContent(rules []common.CPURule, vmList []string, groupID s
 }
 
 // 编辑通用规则内容
-func editCPURuleContent(original string, excludeVMs []string) string {
+func addExcludedVMsToRule(original string, excludeVMs []string) string {
 	exclusion := ""
 	if len(excludeVMs) > 0 {
 		exclusion = fmt.Sprintf(",instance!~\"%s\"", strings.Join(excludeVMs, "|"))
@@ -764,7 +840,7 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "规则生成失败"})
 			return
 		}
-		generalContent := editCPURuleContent(rawContent, vmList)
+		generalContent := addExcludedVMsToRule(rawContent, vmList)
 		os.WriteFile(generalPath, []byte(generalContent), 0640)
 	}
 
