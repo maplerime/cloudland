@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
-
+	"github.com/google/uuid"
 	"web/src/model"
 	"web/src/utils/log"
 
@@ -17,6 +17,7 @@ type ListRuleGroupsParams struct {
 	RuleType string
 	Page     int
 	PageSize int
+	GroupUUID string
 }
 
 // 在文件顶部添加以下结构体定义（约在23行附近）
@@ -24,7 +25,7 @@ type (
 	// 虚拟机关联表
 	VMRuleLink struct {
 		ID        uint      `gorm:"primaryKey;autoIncrement"`
-		GroupID   string    `gorm:"type:varchar(36);index;not null"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index;not null"`
 		VMName    string    `gorm:"type:varchar(255);index;not null"`
 		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
@@ -43,20 +44,20 @@ type (
 
 	// CPU规则表
 	CPURule struct {
-		ID        int       `gorm:"primaryKey;autoIncrement"`
-		GroupID   string    `gorm:"type:varchar(36);index"`
-		Name      string    `gorm:"size:255"`
-		Duration  int       `gorm:"check:duration >= 1"`
-		Threshold int       `gorm:"check:threshold >= 1"`
-		Cooldown  int       `gorm:"check:cooldown >= 1"`
-		Recovery  int       `gorm:"check:recovery >= 0"`
+		ID           int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name         string    `gorm:"size:255"`
+		Duration     int 	   `gorm:"check:duration >= 1"`
+        Over         int       `json:"over" gorm:"check:over >= 1"`                // 对应请求参数中的 over
+        DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`           // 对应请求参数中的 down_to
+        DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"` // 对应请求参数中的 down_duration
 		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	// 带宽规则表
 	BWRule struct {
 		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupID      string    `gorm:"type:varchar(36);index"`
+		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
 		Name         string    `gorm:"size:255"`
 		InDuration   int       `gorm:"check:in_duration >= 1"`
 		InThreshold  int       `gorm:"check:in_threshold >= 1"`
@@ -72,21 +73,21 @@ type AlarmOperator struct {
 	DB *gorm.DB // 改为可导出字段
 }
 
-func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupID string, rules *[]model.CPURuleDetail) error {
+func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupUUID string, rules *[]model.CPURuleDetail) error {
 	ctx, db := GetContextDB(ctx)
-	return db.Where("group_id = ?", groupID).Find(rules).Error
+	return db.Where("group_uuid = ?", groupUUID).Find(rules).Error
 }
 
 // 新增带锁查询实现
-func (a *AlarmOperator) GetRuleGroupByID(ctx context.Context, groupID string) (*model.RuleGroupV2, error) {
+func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID string) (*model.RuleGroupV2, error) {
 	ctx, db := GetContextDB(ctx)
 	var group model.RuleGroupV2
 	err := db.Set("gorm:query_option", "FOR UPDATE").
-		Where("id = ?", groupID).
+		Where("group_uuid = ?", groupUUID).
 		Preload("CPURuleDetails").
 		Take(&group).Error
 	if err != nil {
-		alarmLogger.Error("规则组查询失败", "groupID", groupID, "error", err)
+		alarmLogger.Error("规则组查询失败", "groupID", groupUUID, "error", err)
 		return nil, fmt.Errorf("规则组查询失败: %w", err)
 	}
 	return &group, nil
@@ -111,17 +112,17 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 }
 
 // 批量关联虚拟机实现
-func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, groupID string, vmNames []string) error {
+func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmNames []string) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, vmName := range vmNames {
 			link := &model.VMRuleLink{
-				GroupID: groupID,
+				GroupUUID: GroupUUID,
 				VMName:  vmName,
 			}
 			if err := tx.Create(link).Error; err != nil {
 				alarmLogger.Error("创建关联记录失败",
-					"groupID", groupID,
+					"GroupUUID", GroupUUID,
 					"vmName", vmName,
 					"error", err)
 				return fmt.Errorf("创建关联失败: %w", err)
@@ -132,68 +133,78 @@ func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, groupID string, vmName
 }
 
 // 在 AlarmOperator 结构体添加以下方法
-func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, id, ruleType string) error {
+func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType string) error {
 	ctx, db := GetContextDB(ctx)
-	result := db.Where("id = ? AND type = ?", id, ruleType).
+	result := db.Where("uuid = ? AND type = ?", groupUUID, ruleType).
 		Delete(&model.RuleGroupV2{})
 	if result.Error != nil {
-		alarmLogger.Error("规则组删除失败", "id", id, "type", ruleType, "error", result.Error)
+		alarmLogger.Error("规则组删除失败", "groupUUID", groupUUID, "type", ruleType, "error", result.Error)
 	}
 	return result.Error
 }
 
 // 新增虚拟机关联操作方法
-func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupID, vmName, ruleType string) (int64, error) {
+func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmName, ruleType string) (int64, error) {
 	ctx, db := GetContextDB(ctx)
-	result := db.Where("group_id = ? AND vm_name = ?", groupID, vmName).
+	result := db.Where("group_uuid = ? AND vm_name = ?", groupUUID, vmName).
 		Delete(&model.VMRuleLink{})
 	if result.Error != nil {
 		alarmLogger.Error("删除虚拟机关联失败",
-			"groupID", groupID,
+			"groupUUID", groupUUID,
 			"vmName", vmName,
 			"error", result.Error)
 	}
 	return result.RowsAffected, result.Error
 }
 
-// 新增获取关联VM列表方法
-// 新增获取关联VM的方法
-func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupID string) ([]model.VMRuleLink, error) {
+func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]model.VMRuleLink, error) {
 	ctx, db := GetContextDB(ctx)
 	var links []model.VMRuleLink
-	if err := db.Where("group_id = ?", groupID).Find(&links).Error; err != nil {
-		alarmLogger.Error("获取关联VM失败", "groupID", groupID, "error", err)
+	query := db.Model(&model.VMRuleLink{})
+
+	// 添加条件判断
+	if groupUUID != "" {
+		query = query.Where("group_uuid = ?", groupUUID)
+	} else {
+		// 添加注释说明全表查询场景
+		alarmLogger.Debug("执行全量关联VM查询")
+	}
+
+	if err := query.Find(&links).Error; err != nil {
+		alarmLogger.Error("获取关联VM失败", 
+			"groupUUID", groupUUID,
+			"error", err)
 		return nil, err
 	}
 	return links, nil
 }
 
-func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupID, ruleType string) error {
+func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		// 删除规则组（添加完整查询条件）
-		if err := tx.Where("id = ? AND type = ?", groupID, ruleType).
+		if err := tx.Where("id = ? AND type = ?", groupUUID, ruleType).
 			Delete(&model.RuleGroupV2{}).Error; err != nil {
-			alarmLogger.Error("规则组删除失败", "groupID", groupID, "error", err)
+			alarmLogger.Error("规则组删除失败", "groupUUID", groupUUID, "error", err)
 			return fmt.Errorf("规则组删除失败: %w", err)
 		}
 
 		switch ruleType {
 		case "cpu":
 			// 使用本地CPURule结构体
-			if err := tx.Where("group_id = ?", groupID).
-				Delete(&CPURule{}).Error; err != nil {
+			if err := tx.Where("group_uuid = ?", groupUUID).
+				Delete(&model.CPURuleDetail{}).Error; err != nil {
 				alarmLogger.Error("CPU规则删除失败",
-					"groupID", groupID,
+					"group_uuid", groupUUID,
 					"error", err)
 				return fmt.Errorf("CPU规则删除失败: %w", err)
 			}
 		case "bw":
 			// 使用本地BWRule结构体
-			if err := tx.Where("group_id = ?", groupID).
+			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&BWRule{}).Error; err != nil {
 				alarmLogger.Error("带宽规则删除失败",
-					"groupID", groupID,
+					"group_uuid", groupUUID,
 					"error", err)
 				return fmt.Errorf("带宽规则删除失败: %w", err)
 			}
@@ -202,10 +213,10 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 		}
 
 		// 删除虚拟机关联（使用本地VMRuleLink结构体）
-		if err := tx.Where("group_id = ?", groupID).
+		if err := tx.Where("group_uuid = ?", groupUUID).
 			Delete(&VMRuleLink{}).Error; err != nil {
 			alarmLogger.Error("虚拟机关联删除失败",
-				"groupID", groupID,
+				"groupUUID", groupUUID,
 				"error", err)
 			return fmt.Errorf("虚拟机关联删除失败: %w", err)
 		}
@@ -240,7 +251,7 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	// 构建基础查询
 	query := db.Model(&model.RuleGroupV2{})
 	if params.RuleType != "" {
-		query = query.Where("type = ?", params.RuleType)
+		query = query.Where("uuid = ?", params.GroupUUID)
 	}
 
 	// 获取总数
@@ -273,21 +284,21 @@ func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID strin
 		Update("trigger_cnt", gorm.Expr("trigger_cnt + 1")).Error
 }
 
-func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupID string, rules []CPURule) error {
+func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, rules []CPURule) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range rules {
 			rule := &CPURule{
-				GroupID:   groupID,
-				Name:      rules[i].Name,
-				Duration:  rules[i].Duration,
-				Threshold: rules[i].Threshold,
-				Cooldown:  rules[i].Cooldown,
-				Recovery:  rules[i].Recovery,
+				GroupUUID:    groupUUID,
+				Name:         rules[i].Name,
+				Duration:     rules[i].Duration,
+				Over:         rules[i].Over,
+				DownDuration: rules[i].DownDuration,
+				DownTo:       rules[i].DownTo,
 			}
 			if err := tx.Create(rule).Error; err != nil {
 				alarmLogger.Error("创建CPU规则失败",
-					"groupID", groupID,
+					"groupUUID", groupUUID,
 					"rule", rules[i],
 					"error", err)
 				return fmt.Errorf("创建CPU规则失败: %w", err)
@@ -298,12 +309,12 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupID string, rule
 }
 
 // 修正后的带宽规则创建方法（匹配数据库模型）
-func (a *AlarmOperator) CreateBWRules(ctx context.Context, groupID string, rules []BWRule) error {
+func (a *AlarmOperator) CreateBWRules(ctx context.Context, groupUUID string, rules []BWRule) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range rules {
 			rule := &model.BWRuleDetail{
-				GroupID:      groupID,
+				GroupUUID:      groupUUID,
 				Name:         rules[i].Name,
 				InDuration:   rules[i].InDuration,
 				InThreshold:  rules[i].InThreshold,
@@ -312,7 +323,7 @@ func (a *AlarmOperator) CreateBWRules(ctx context.Context, groupID string, rules
 			}
 			if err := tx.Create(rule).Error; err != nil {
 				alarmLogger.Error("创建带宽规则失败",
-					"groupID", groupID,
+					"groupUUID", groupUUID,
 					"rule", rules[i],
 					"error", err)
 				return fmt.Errorf("创建带宽规则失败: %w", err)
@@ -322,14 +333,27 @@ func (a *AlarmOperator) CreateBWRules(ctx context.Context, groupID string, rules
 	})
 }
 
-// 修正后的规则组创建方法（保持上下文一致性）
 func (a *AlarmOperator) CreateRuleGroup(ctx context.Context, group *model.RuleGroupV2) error {
-	ctx, db := GetContextDB(ctx)
-	if err := db.Create(group).Error; err != nil {
-		alarmLogger.Error("规则组创建失败",
-			"groupID", group.ID,
-			"error", err)
-		return fmt.Errorf("规则组创建失败: %w", err)
-	}
-	return nil
+    ctx, db := GetContextDB(ctx)
+    if err := db.Create(group).Error; err != nil {
+        alarmLogger.Error("规则组创建失败",
+            "UUID", uuid.New().String(),
+            "GroupUUID", group.UUID,
+            "error", err)
+        return fmt.Errorf("规则组创建失败: %w", err)
+    }
+    return nil
+}
+
+func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.CPURuleDetail) error {
+    ctx, db := GetContextDB(ctx)
+	detail.UUID = uuid.NewString()
+    if err := db.Create(detail).Error; err != nil {
+        alarmLogger.Error("创建CPU规则明细失败",
+            "groupUUID", detail.GroupUUID,
+            "ruleName", detail.Name,
+            "error", err)
+        return fmt.Errorf("创建CPU规则明细失败: %w", err)
+    }
+    return nil
 }

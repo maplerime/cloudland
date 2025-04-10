@@ -1,54 +1,56 @@
 package model
 
 import (
-	"time"
-
+	"fmt"
 	"web/src/dbs" // 通过dbs包获取数据库实例
 )
 
-// 初始化数据库连接（与interface.go模式一致）
 func init() {
-	dbs.AutoMigrate(&RuleGroupV2{}, &CPURuleDetail{}, &BWRuleDetail{}, &VMRuleLink{})
+	fmt.Printf("alarm rules dbstep1")
+	dbs.AutoMigrate(
+        &RuleGroupV2{},
+        &CPURuleDetail{},
+        &BWRuleDetail{},
+        &VMRuleLink{},
+    )
+	logger.Debugf("Alert system tables migrated successfully")
+}
+func (RuleGroupV2) TableName() string {
+	return "rule_group_v2" // 明确指定表名
 }
 
-// 新增规则组表
 type RuleGroupV2 struct {
-	ID         string `gorm:"type:varchar(36);primaryKey"`
-	Name       string `gorm:"type:varchar(128);uniqueIndex"`
+	Model
+	Name       string `gorm:"type:varchar(128);uniqueIndex;column:name"`
 	Type       string `gorm:"type:varchar(32)"`
-	Owner      string `gorm:"type:varchar(255);index"` // 修改为字符串类型
+	Owner      string `gorm:"type:varchar(255);index"`
 	Enabled    bool   `gorm:"default:true"`
 	TriggerCnt int    `gorm:"default:0"`
-	Model
-	CreatedAt time.Time `gorm:"index"`
 }
 
-// CPU规则详情表
 type CPURuleDetail struct {
 	Model
-	GroupID   string `gorm:"type:varchar(36);index"` // 外键关联RuleGroupV2
-	Name      string `gorm:"type:varchar(128)"`      // 规则名称
-	Threshold int    `gorm:"check:threshold >= 1"`   // 阈值百分比
-	Duration  int    `gorm:"check:duration >= 1"`    // 持续时间(秒)
-	Cooldown  int    `gorm:"check:cooldown >= 1"`    // 冷却时间
-	Recovery  int    `gorm:"check:recovery <= 100"`  // 恢复阈值
+	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
+	Name         string `gorm:"type:varchar(128);column:name"`
+	Over         int    `gorm:"column:over;check:over >= 1"`
+	Duration     int    `gorm:"check:duration >= 1"`
+	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
+	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
 }
 
-// 带宽规则详情表
 type BWRuleDetail struct {
 	Model
-	GroupID      string `gorm:"type:varchar(36);index"` // 外键关联RuleGroupV2
+    GroupUUID   string `gorm:"column:group_uuid;type:varchar(36);index;not null"`
 	Name         string `gorm:"type:varchar(128)"`
-	InThreshold  int    `gorm:"check:in_threshold >= 1"` // 入站阈值(Mbps)
+	InThreshold  int    `gorm:"check:in_threshold >= 1"`
 	InDuration   int    `gorm:"check:in_duration >= 1"`
-	OutThreshold int    `gorm:"check:out_threshold >= 1"` // 出站阈值(Mbps)
+	OutThreshold int    `gorm:"check:out_threshold >= 1"`
 	OutDuration  int    `gorm:"check:out_duration >= 1"`
 }
 
-// 现有结构体补充索引（原VMRuleLink结构保持不变）
 type VMRuleLink struct {
 	Model
-	GroupID   string `gorm:"type:varchar(36);index"` // 外键关联RuleGroupV2
+    GroupUUID string `gorm:"column:group_uuid;type:varchar(36);index;not null"`
 	VMName    string `gorm:"type:varchar(128);index"`
 	Interface string `gorm:"type:varchar(32)"`
 }

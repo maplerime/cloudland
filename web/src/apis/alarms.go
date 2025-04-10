@@ -54,13 +54,10 @@ type RuleDetail struct {
 	ID      int    `gorm:"primaryKey;autoIncrement"`
 	GroupID string `gorm:"type:varchar(36);index"`
 	Name    string `json:"name"`
-	// 修正字段映射关系
 	Duration          int `json:"duration"`      // 对应duration字段
 	Threshold         int `json:"over"`          // 对应over字段
 	Cooldown          int `json:"down_duration"` // 对应down_duration
 	RecoveryThreshold int `json:"down_to"`       // 对应down_to
-	// 新增必要的时间字段
-	CreatedAt time.Time `gorm:"autoCreateTime"`
 }
 
 // 修改后的带宽规则生成器（添加索引）
@@ -108,17 +105,17 @@ func rulePaths(ruleType, groupID string) (generalPath string, specialPath string
 }
 
 func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
-	groupID := c.Param("group_id")
+	groupUUID := c.Param("group_uuid")
 	vmName := c.Param("vm_name")
 
 	// 使用operator替代直接数据库操作
-	if err := a.operator.BatchLinkVMs(c.Request.Context(), groupID, []string{vmName}); err != nil {
+	if err := a.operator.BatchLinkVMs(c.Request.Context(), groupUUID, []string{vmName}); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
 	// 获取规则组改为使用operator方法
-	group, err := a.operator.GetRuleGroupByID(c.Request.Context(), groupID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -128,7 +125,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	}
 
 	// 获取关联VM列表改为使用operator方法
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupID)
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取VM列表失败"})
 		return
@@ -141,17 +138,17 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	}
 
 	// 获取原始规则
-	rules := a.getRulesFromDB(groupID)
+	rules := a.getRulesFromDB(groupUUID)
 
 	// 生成规则内容（使用operator返回的group.Type）
-	generalPath, specialPath := rulePaths(group.Type, groupID)
+	generalPath, specialPath := rulePaths(group.Type, groupUUID)
 	rawContent, err := generateCPURuleContent(rules)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成规则内容失败"})
 		return
 	}
 	generalContent := editCPURuleContent(rawContent, vmList)
-	specialContent, err := genspecialCPURuleContent(rules, vmList, groupID)
+	specialContent, err := genspecialCPURuleContent(rules, vmList, groupUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "特殊规则生成失败: " + err.Error()})
 		return
@@ -167,7 +164,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		return
 	}
 
-	enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupID))
+	enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupUUID))
 	if err := os.Symlink(specialPath, enabledPath); err != nil && !os.IsExist(err) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "规则激活失败"})
 		return
@@ -183,10 +180,10 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 
 // 修改解绑接口
 func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
-	groupID := c.Param("group_id")
+	groupUUID := c.Param("group_uuid")
 	vmName := c.Param("vm_name")
 
-	group, err := a.operator.GetRuleGroupByID(c.Request.Context(), groupID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -195,14 +192,14 @@ func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
 
 	// 修改前：DeleteVMLink
 	// 修改后使用operator方法
-	deleted, err := a.operator.DeleteVMLink(c.Request.Context(), groupID, vmName, ruleType)
+	deleted, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmName, ruleType)
 	if err != nil || deleted == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "解绑失败"})
 		return
 	}
 
 	// 获取更新后的VM列表改为使用operator方法
-	vms, err := a.operator.GetLinkedVMs(c.Request.Context(), groupID)
+	vms, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取VM列表失败"})
 		return
@@ -213,11 +210,11 @@ func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
 	}
 
 	// 更新规则文件（统一到组文件）
-	rules := a.getRulesFromDB(groupID)
-	_, specialPath := rulePaths(RuleTypeCPU, groupID)
+	rules := a.getRulesFromDB(groupUUID)
+	_, specialPath := rulePaths(RuleTypeCPU, groupUUID)
 
 	// 生成新的特殊规则内容
-	specialContent, err := genspecialCPURuleContent(rules, vmList, groupID)
+	specialContent, err := genspecialCPURuleContent(rules, vmList, groupUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "规则更新失败"})
 		return
@@ -261,58 +258,107 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		Owner string           `json:"owner" binding:"required"`
 		Rules []common.CPURule `json:"rules" binding:"required,min=1"`
 	}
-
+	fmt.Printf("step0\n")	
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	// 生成规则ID
-	groupID := uuid.New().String() // 生成唯一规则ID
-	// 该ID会同时存储到数据库和规则文件中
+    groupUUID := uuid.New().String()
 
-	// 获取已关联VM列表
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupID)
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取VM关联列表失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"call get link vm error": err.Error()})
 		return
 	}
 
-	// 生成排除列表
 	var excludeVMs []string
-	for _, link := range vmLinks {
-		excludeVMs = append(excludeVMs, link.VMName)
-	}
-
+	if len(vmLinks) > 0 {
+        for _, link := range vmLinks {
+            excludeVMs = append(excludeVMs, link.VMName)
+        }
+    }
+	fmt.Printf("step0.1\n")	
 	// 生成规则内容
 	generalRaw, err := generateCPURuleContent(req.Rules)
+	fmt.Printf("完整规则内容：\n%s\n", generalRaw)
+	fmt.Printf("err内容：\n%s\n", err)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "规则生成失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"generate general rules failed": err.Error()})
 		return
 	}
-	generalContent := editCPURuleContent(generalRaw, excludeVMs)
-	specialContent, _ := genspecialCPURuleContent(req.Rules, excludeVMs, groupID)
+	fmt.Printf("step1：\n%s\n", err)
+	generalContent := generalRaw
+    if len(excludeVMs) > 0 {
+        generalContent = editCPURuleContent(generalRaw, excludeVMs)
+    }
 
-	enabledPath := RulesEnabled
-	// 保存文件
-	generalPath, specialPath := rulePaths(RuleTypeCPU, groupID)
-	os.WriteFile(generalPath, []byte(generalContent), 0640)
-	os.WriteFile(specialPath, []byte(specialContent), 0640)
-	os.Symlink(generalPath, enabledPath)
-
-	// 数据库存储
+	var specialContent string
+    if len(excludeVMs) > 0 {
+        if specialContent, err = genspecialCPURuleContent(req.Rules, excludeVMs, groupUUID); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "generate special rules failed: " + err.Error()})
+            return
+        }
+    }
+	fmt.Printf("step2：\n%s\n", err)
+	fmt.Printf("RulesEnabled is: %s\n",  RulesEnabled)
+	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
+	fmt.Printf("generalPath is: %s\n",  RulesEnabled)
+	fmt.Printf("specialPath is: %s\n",  specialPath)
+	if err := os.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
+        c.JSON(http.StatusInternalServerError, gin.H{"write general rules filed failed": err.Error()})
+        return
+    }
+	if len(excludeVMs) > 0 {
+        if err := os.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
+            c.JSON(http.StatusInternalServerError,gin.H{"write special rules filed failed": err.Error()})
+            return
+        }
+        enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupUUID))
+		fmt.Printf("1enabledPath is: %s\n",  enabledPath)
+        if err := os.Symlink(specialPath, enabledPath); err != nil && !os.IsExist(err) {
+            c.JSON(http.StatusInternalServerError, gin.H{"enable special rules filed failed": err.Error()})
+            return
+        }
+    }else {
+        enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID))
+		fmt.Printf("2enabledPath is: %s\n",  enabledPath)
+        if err := os.Symlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "enable general rules filed failed: " + err.Error()})
+            return
+        }
+    }
+	fmt.Printf("step3：\n%s\n", err)	
 	group := &model.RuleGroupV2{
-		ID:        groupID,
 		Name:      req.Name,
 		Type:      RuleTypeCPU,
 		Owner:     req.Owner,
 		Enabled:   true,
-		CreatedAt: time.Now(),
 	}
+	fmt.Printf("step4：\n%s\n", err)
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "规则组创建失败"})
-		return
+		c.JSON(
+            http.StatusInternalServerError, 
+            gin.H{ "error": "operator failed: " + err.Error(),},
+        )
+        return
 	}
+	fmt.Printf("step5：\n%s\n", err)
+	for _, rule := range req.Rules {
+        detail := &model.CPURuleDetail{
+            GroupUUID:  group.UUID, 
+            Name:       rule.Name,
+            Over:       rule.Over,
+        	Duration:   rule.Duration,
+        	DownDuration: rule.DownDuration,
+        	DownTo:     rule.DownTo,
+        }
+        if err := a.operator.CreateCPURuleDetail(c.Request.Context(), detail); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "创建规则明细失败: " + err.Error()})
+            return
+        }
+    }
+	fmt.Printf("step6：\n%s\n", err)	
 
 	reloadPrometheus()
 }
@@ -320,7 +366,24 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 // 修改生成函数参数类型
 func generateCPURuleContent(rules []common.CPURule) (string, error) {
 	var sb strings.Builder
+	fmt.Printf("正在生成CPU规则，共 %d 条规则\n", len(rules))
 	for i, rule := range rules {
+		fmt.Printf("生成规则详情 #%d:\n"+
+		"名称: %s\n"+
+		"触发阈值: %d%%\n"+
+		"持续时间: %ds\n"+
+		"恢复阈值: %d%%\n"+
+		"冷却时间: %ds\n",
+		i, rule.Name, rule.Over, 
+		rule.Duration, rule.DownTo, rule.DownDuration)
+		if rule.Over <= 0 || rule.DownTo <= 0 {
+			return "", fmt.Errorf("规则 #%d 校验失败：阈值参数必须大于0", i)
+		}
+		if rule.Over <= rule.DownTo {
+			return "", fmt.Errorf("规则 #%d 校验失败：触发阈值(%d%%)必须大于恢复阈值(%d%%)", 
+				i, rule.Over, rule.DownTo)
+		}
+		
 		sb.WriteString(fmt.Sprintf(`
   - alert: HighCPUUsage_%s_%d
     expr: avg by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[1m])) * 100 > %d
@@ -328,7 +391,7 @@ func generateCPURuleContent(rules []common.CPURule) (string, error) {
     labels:
       severity: warning
     annotations:
-      summary: "High CPU Usage ({{ $value }}%%)"
+      summary: "High CPU Usage ({{ $value }})"
       description: "Instance {{ $labels.instance }} has high CPU usage for %d seconds"
 
   - alert: CPUUsageRecovered_%s_%d
@@ -337,12 +400,15 @@ func generateCPURuleContent(rules []common.CPURule) (string, error) {
     labels:
       severity: info
     annotations:
-      summary: "CPU Usage Recovered ({{ $value }}%%)"`,
-			rule.Name, i, rule.Threshold,
-			rule.Duration, rule.Duration, // 修正参数顺序
-			rule.Name, i, rule.Recovery, // 使用正确的 Recovery 字段
-			rule.Cooldown)) // 使用正确的 Cooldown 字段
+      summary: "CPU Usage Recovered ({{ $value }})"`,
+			rule.Name, i, rule.Over,
+			rule.Duration, rule.Duration, 
+			rule.Name, i, rule.DownTo,
+			rule.DownDuration))
 	}
+	result := sb.String()
+	fmt.Printf("生成完整规则内容：\n%s\n", result)
+	fmt.Printf("wngzhe return nil")
 	return sb.String(), nil
 }
 
@@ -356,6 +422,7 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 			RuleType: RuleTypeCPU,
 			Page:     page,
 			PageSize: pageSize,
+			GroupUUID: c.Param("id"),
 		})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
@@ -420,12 +487,12 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 }
 
 // 事务处理函数
-func (a *AlarmAPI) deleteCPURuleTransaction(groupID string, vmList *[]string) error {
-	return a.operator.DeleteRuleGroupWithDependencies(context.Background(), groupID, RuleTypeCPU)
+func (a *AlarmAPI) deleteCPURuleTransaction(groupUUID string, vmList *[]string) error {
+	return a.operator.DeleteRuleGroupWithDependencies(context.Background(), groupUUID, RuleTypeCPU)
 }
 
-func (a *AlarmAPI) getLinkedVMs(groupID string) ([]string, error) {
-	vmLinks, err := a.operator.GetLinkedVMs(context.Background(), groupID)
+func (a *AlarmAPI) getLinkedVMs(groupUUID string) ([]string, error) {
+	vmLinks, err := a.operator.GetLinkedVMs(context.Background(), groupUUID)
 	if err != nil {
 		return nil, fmt.Errorf("获取VM列表失败: %w", err)
 	}
@@ -575,10 +642,10 @@ func genspecialCPURuleContent(rules []common.CPURule, vmList []string, groupID s
         description: "特殊CPU告警 - 实例 {{ $labels.instance }} 使用率超过 %d%% 持续 %d 秒"`,
 			rule.Name, i,
 			strings.Join(vmList, "|"), // 匹配所有关联的VM实例
-			rule.Threshold,
+			rule.Over,
 			rule.Duration,
 			groupID, // 添加规则组ID作为标签
-			rule.Threshold,
+			rule.Over,
 			rule.Duration))
 	}
 	return sb.String(), nil
@@ -594,10 +661,10 @@ func editCPURuleContent(original string, excludeVMs []string) string {
 }
 
 func (a *AlarmAPI) EnableRules(c *gin.Context) {
-	groupID := c.Param("id")
+	groupUUID := c.Param("id")
 
 	// 使用operator获取规则组
-	group, err := a.operator.GetRuleGroupByID(c.Request.Context(), groupID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -609,7 +676,7 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 	}
 
 	// 获取关联的VM列表
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupID)
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取VM关联失败"})
 		return
@@ -621,11 +688,11 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 	}
 
 	enabledPath := RulesEnabled
-	generalPath, specialPath := rulePaths(group.Type, groupID)
+	generalPath, specialPath := rulePaths(group.Type, groupUUID)
 
 	// 检查文件是否存在
 	if _, err := os.Stat(generalPath); os.IsNotExist(err) {
-		rules := a.getRulesFromDB(groupID)
+		rules := a.getRulesFromDB(groupUUID)
 		rawContent, err := generateCPURuleContent(rules)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "规则生成失败"})
@@ -636,8 +703,8 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 	}
 
 	if _, err := os.Stat(specialPath); os.IsNotExist(err) {
-		rules := a.getRulesFromDB(groupID)
-		specialContent, _ := genspecialCPURuleContent(rules, vmList, groupID)
+		rules := a.getRulesFromDB(groupUUID)
+		specialContent, _ := genspecialCPURuleContent(rules, vmList, groupUUID)
 		os.WriteFile(specialPath, []byte(specialContent), 0640)
 	}
 
@@ -647,7 +714,7 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 	}
 
 	// 使用operator更新状态
-	if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupID, true); err != nil {
+	if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupUUID, true); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "状态更新失败"})
 		return
 	}
@@ -656,10 +723,10 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 }
 
 func (a *AlarmAPI) DisableRules(c *gin.Context) {
-	groupID := c.Param("id")
+	groupUUID := c.Param("id")
 
 	// 使用operator获取规则组
-	group, err := a.operator.GetRuleGroupByID(c.Request.Context(), groupID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -677,7 +744,7 @@ func (a *AlarmAPI) DisableRules(c *gin.Context) {
 	}
 
 	// 使用operator更新状态
-	if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupID, false); err != nil {
+	if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupUUID, false); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "状态更新失败"})
 		return
 	}
@@ -737,10 +804,11 @@ func (a *AlarmAPI) getRulesFromDB(groupID string) []common.CPURule {
 	var result []common.CPURule
 	for _, r := range rules {
 		result = append(result, common.CPURule{
-			Name:      r.Name,
-			Threshold: r.Threshold,
-			Duration:  r.Duration,
-			Cooldown:  r.Cooldown,
+			Name:        r.Name,
+			Over:   r.Over,
+			Duration:    r.Duration,
+			DownDuration:    r.DownDuration,
+			DownTo:      r.DownTo,
 		})
 	}
 	return result
