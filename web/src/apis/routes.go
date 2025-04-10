@@ -153,9 +153,10 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/alerts/current", alarmAPI.GetCurrentAlarms)
 			metricsGroup.GET("/alarm/alerts/history", alarmAPI.GetHistoryAlarm)
 
-			metricsGroup.POST("alarm/cpu/rules", alarmAPI.CreateCPURule)
-			metricsGroup.GET("alarm/cpu/rules/:id", alarmAPI.GetCPURules)
-			metricsGroup.DELETE("alarm/cpu/rules/:id", alarmAPI.DeleteCPURule)
+			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
+			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules) 
+			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
+			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
 
 			//metricsGroup.POST("alarm/bw-rules/link", alarmAPI.LinkBWRuleToVM)
 			//metricsGroup.POST("alarm/bw-rules/unlink", alarmAPI.UnlinkBWRuleFromVM)

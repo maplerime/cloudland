@@ -251,8 +251,11 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	// 构建基础查询
 	query := db.Model(&model.RuleGroupV2{})
 	if params.RuleType != "" {
-		query = query.Where("uuid = ?", params.GroupUUID)
-	}
+        query = query.Where("type = ?", params.RuleType)
+    }
+    if params.GroupUUID != "" {
+        query = query.Where("uuid = ?", params.GroupUUID)
+    }
 
 	// 获取总数
 	if err := query.Count(&total).Error; err != nil {
@@ -274,6 +277,18 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	}
 
 	return groups, total, nil
+}
+
+func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string) ([]model.CPURuleDetail, error) {
+    ctx, db := GetContextDB(ctx)
+    var details []model.CPURuleDetail
+    if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+        alarmLogger.Error("query CPU rules detail failed",
+            "groupUUID", groupUUID,
+            "error", err)
+        return nil, fmt.Errorf("query CPU rules detail failed: %w", err)
+    }
+    return details, nil
 }
 
 // 新增触发次数更新方法

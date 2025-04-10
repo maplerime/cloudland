@@ -415,30 +415,83 @@ func generateCPURuleContent(rules []common.CPURule) (string, error) {
 func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	groupUUID := c.Param("uuid")
+	if page < 1 {
+        page = 1
+    }
+    if pageSize < 1 || pageSize > 1000 {
+        pageSize = 20  // 仅当非法值时重置为默认值
+    }
+
+	fmt.Printf("[Debug] 查询参数 => RuleType:%s GroupUUID:%s Page:%d PageSize:%d\n", 
+        RuleTypeCPU, groupUUID, page, pageSize)
+	queryParams := common.ListRuleGroupsParams{
+        RuleType: RuleTypeCPU,
+        Page:     page,
+        PageSize: pageSize,
+    }
+    
+    // 当存在UUID时添加精确查询条件
+    if groupUUID != "" {
+        queryParams.GroupUUID = groupUUID
+        queryParams.PageSize = 1 // 单个查询时限制为1条
+    }
 
 	// 使用operator分页查询
-	groups, total, err := a.operator.ListRuleGroups(c.Request.Context(),
-		common.ListRuleGroupsParams{ // 使用统一的分页参数结构
-			RuleType: RuleTypeCPU,
-			Page:     page,
-			PageSize: pageSize,
-			GroupUUID: c.Param("id"),
-		})
+	fmt.Printf("[Debug] 查询参数结构 => RuleType:%s Page:%d PageSize:%d GroupUUID:%s\n", 
+        queryParams.RuleType, queryParams.Page, queryParams.PageSize, queryParams.GroupUUID)
+	fmt.Printf("GetCPURules: groupUUID is: %s\n",  groupUUID)
+	fmt.Printf("GetCPURules: queryParams => %+v\n", queryParams)
+	groups, total, err := a.operator.ListRuleGroups(c.Request.Context(), queryParams)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询失败"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "query rules group failed: " + err.Error()})
 		return
 	}
+	fmt.Printf("wngzhe ListRuleGroups result - groups: %+v\n", groups)
+	fmt.Printf("wngzhe ListRuleGroups result - total records: %d\n", total)
+    // 构建响应数据结构
+    responseData := make([]gin.H, 0, len(groups))
+    for _, group := range groups {
+        details, err := a.operator.GetCPURuleDetails(c.Request.Context(), group.UUID)
+		fmt.Printf("wngzhe ListRuleGroups result - details: %+v\n", details)
+        if err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "function get cpu rule detailed failed: " + err.Error()})
+            return
+        }
 
-	response := gin.H{
-		"data": groups,
-		"meta": gin.H{
-			"total":        total,
-			"current_page": page,
-			"per_page":     pageSize,
-			"total_pages":  int(math.Ceil(float64(total) / float64(pageSize))),
-		},
-	}
-	c.JSON(http.StatusOK, response)
+        ruleDetails := make([]gin.H, 0, len(details))
+        for _, d := range details {
+            ruleDetails = append(ruleDetails, gin.H{
+                "id":            d.ID,
+                "name":          d.Name,
+                "duration":      d.Duration,
+                "over":          d.Over,
+                "down_to":       d.DownTo,
+                "down_duration": d.DownDuration,
+            })
+        }
+
+        responseData = append(responseData, gin.H{
+            "id":          group.ID,
+            "uuid":        group.UUID,
+            "name":        group.Name,
+            "status":      group.TriggerCnt,
+            "create_time": group.CreatedAt.Format(time.RFC3339),
+            "rules":       ruleDetails,
+            "enabled":     group.Enabled,
+        })
+    }
+
+    // 返回标准化响应
+    c.JSON(http.StatusOK, gin.H{
+        "data": responseData,
+        "meta": gin.H{
+            "total":        total,
+            "current_page": page,
+            "per_page":     pageSize,
+            "total_pages":  int(math.Ceil(float64(total)/float64(pageSize))),
+        },
+    })
 }
 
 func cleanExpiredRules(dir string, retention time.Duration) {
@@ -451,44 +504,57 @@ func cleanExpiredRules(dir string, retention time.Duration) {
 }
 
 func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
-	groupID := c.Param("id")
-	var vmList []string
-
+	groupUUID := c.Param("uuid")
+    if groupUUID == "" {
+        c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
+        return
+    }
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+    var excludeVMs []string
+    if err == nil {
+        for _, link := range vmLinks {
+            excludeVMs = append(excludeVMs, link.VMName)
+        }
+    }
+	fmt.Printf("wngzhe DeleteCPURule step1")
+	generalPath, _ := rulePaths(RuleTypeCPU, groupUUID)
+    if content, err := os.ReadFile(generalPath); err == nil {
+        newContent := editCPURuleContent(string(content), excludeVMs)
+		fmt.Printf("[Debug] 完整规则修改内容:\n%s\n", newContent)
+        _ = atomicWrite(generalPath, newContent)
+    }
 	// 执行数据库事务
-	if err := a.deleteCPURuleTransaction(groupID, &vmList); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, RuleTypeCPU); err != nil {
+		log.Printf("[DeleteCPURule] DB operation failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "DB operation failed: " + err.Error()})
 		return
 	}
-
+	fmt.Printf("wngzhe DeleteCPURule step2")
 	// 更新通用规则文件（移出黑名单）
-	generalPath, _ := rulePaths(RuleTypeCPU, groupID)
-	if content, err := os.ReadFile(generalPath); err == nil {
-		newContent := editCPURuleContent(string(content), []string{})
-		_ = atomicWrite(generalPath, newContent) // 静默失败不影响主流程
-	}
+	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
+    enabledPaths := []string{
+        filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupUUID)),
+        filepath.Join(RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID)),
+    }
 
-	// 清理相关文件
-	_, specialPath := rulePaths(RuleTypeCPU, groupID)
-	enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-special-%s.yml", groupID))
-
-	// 原子删除文件（允许文件不存在）
-	os.Remove(generalPath) // 删除通用规则文件
-	os.Remove(specialPath) // 删除特殊规则文件
-	os.Remove(enabledPath) // 删除启用链接
-
-	// 异步重载配置
-	go func() {
-		if err := reloadPrometheus(); err != nil {
-			log.Printf("[DeleteCPURule] 配置重载失败: %v", err)
+	// 统一删除文件
+	for _, path := range append([]string{generalPath, specialPath}, enabledPaths...) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			log.Printf("[DeleteCPURule] file delete failed [Path:%s]: %v", path, err)
 		}
-	}()
+	}
+	fmt.Printf("wngzhe DeleteCPURule step3")
+	// 异步重载配置
+	go reloadPrometheus()
 
-	c.JSON(http.StatusOK, gin.H{"status": "success"})
-}
-
-// 事务处理函数
-func (a *AlarmAPI) deleteCPURuleTransaction(groupUUID string, vmList *[]string) error {
-	return a.operator.DeleteRuleGroupWithDependencies(context.Background(), groupUUID, RuleTypeCPU)
+	fmt.Printf("wngzhe DeleteCPURule step4")
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data": gin.H{
+			"deleted_group": groupUUID,
+			"deleted_files": []string{generalPath, specialPath},
+		},
+	})
 }
 
 func (a *AlarmAPI) getLinkedVMs(groupUUID string) ([]string, error) {
