@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"time"
+	"unsafe"
 	"github.com/google/uuid"
 	"web/src/model"
 	"web/src/utils/log"
@@ -78,19 +79,37 @@ func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupUUID stri
 	return db.Where("group_uuid = ?", groupUUID).Find(rules).Error
 }
 
-// 新增带锁查询实现
-func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID string) (*model.RuleGroupV2, error) {
-	ctx, db := GetContextDB(ctx)
-	var group model.RuleGroupV2
-	err := db.Set("gorm:query_option", "FOR UPDATE").
-		Where("group_uuid = ?", groupUUID).
-		Preload("CPURuleDetails").
-		Take(&group).Error
-	if err != nil {
-		alarmLogger.Error("规则组查询失败", "groupID", groupUUID, "error", err)
-		return nil, fmt.Errorf("规则组查询失败: %w", err)
-	}
-	return &group, nil
+func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
+    
+    fmt.Printf("wngzhe GetCPURulesByGroupUUID step0")
+    groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+        RuleType:  ruleType,
+        GroupUUID: groupUUID,
+        PageSize:  1,
+    })
+    if err != nil || len(groups) == 0 {
+        alarmLogger.Error("规则组查询失败", "groupID", groupUUID, "error", err)
+        return nil, fmt.Errorf("规则组查询失败: %w", err)
+    }
+
+    fmt.Printf("wngzhe GetCPURulesByGroupUUID step1")
+    details, err := a.GetCPURuleDetails(ctx, groupUUID)
+    if err != nil {
+        alarmLogger.Error("规则详情查询失败", "groupID", groupUUID, "error", err)
+        return nil, fmt.Errorf("规则详情查询失败: %w", err)
+    }
+	fmt.Printf("wngzhe GetCPURulesByGroupUUID step3")
+	type ResultGroup struct {
+        model.RuleGroupV2
+        Details []model.CPURuleDetail
+    }
+    result := &ResultGroup{
+        RuleGroupV2: groups[0],
+        Details:     details,
+    }
+	fmt.Printf("wngzhe [GetCPURulesByGroupUUID] result: %v", result)
+    
+    return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 }
 
 // 状态更新事务实现
@@ -180,49 +199,43 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 }
 
 func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) error {
-	ctx, db := GetContextDB(ctx)
-	return db.Transaction(func(tx *gorm.DB) error {
-		// 删除规则组（添加完整查询条件）
-		if err := tx.Where("id = ? AND type = ?", groupUUID, ruleType).
-			Delete(&model.RuleGroupV2{}).Error; err != nil {
-			alarmLogger.Error("规则组删除失败", "groupUUID", groupUUID, "error", err)
-			return fmt.Errorf("规则组删除失败: %w", err)
-		}
+    ctx, db := GetContextDB(ctx)
+	fmt.Printf("[DeleteRuleGroupWithDependencies] step 0")
+    return db.Transaction(func(tx *gorm.DB) error {
+        // 首先删除依赖项
+        switch ruleType {
+        case "cpu":
+            if err := tx.Where("group_uuid = ?", groupUUID).
+                Delete(&model.CPURuleDetail{}).Error; err != nil {
+                alarmLogger.Error("CPU规则删除失败", "group_uuid", groupUUID, "error", err)
+                return fmt.Errorf("CPU规则删除失败: %w", err)
+            }
+        case "bw":
+            if err := tx.Where("group_uuid = ?", groupUUID).
+                Delete(&model.BWRuleDetail{}).Error; err != nil {
+                alarmLogger.Error("带宽规则删除失败", "group_uuid", groupUUID, "error", err)
+                return fmt.Errorf("带宽规则删除失败: %w", err)
+            }
+        default:
+            return fmt.Errorf("未知的规则类型: %s", ruleType)
+        }
+		fmt.Printf("[DeleteRuleGroupWithDependencies] step 1")
+        // 然后删除虚拟机关联
+        if err := tx.Where("group_uuid = ?", groupUUID).
+            Delete(&model.VMRuleLink{}).Error; err != nil {
+            alarmLogger.Error("虚拟机关联删除失败", "groupUUID", groupUUID, "error", err)
+            return fmt.Errorf("虚拟机关联删除失败: %w", err)
+        }
+		fmt.Printf("[DeleteRuleGroupWithDependencies] step 2")
+        // 最后删除规则组
+        if err := tx.Where("uuid = ? AND type = ?", groupUUID, ruleType).
+            Delete(&model.RuleGroupV2{}).Error; err != nil {
+            alarmLogger.Error("规则组删除失败", "groupUUID", groupUUID, "error", err)
+            return fmt.Errorf("规则组删除失败: %w", err)
+        }
 
-		switch ruleType {
-		case "cpu":
-			// 使用本地CPURule结构体
-			if err := tx.Where("group_uuid = ?", groupUUID).
-				Delete(&model.CPURuleDetail{}).Error; err != nil {
-				alarmLogger.Error("CPU规则删除失败",
-					"group_uuid", groupUUID,
-					"error", err)
-				return fmt.Errorf("CPU规则删除失败: %w", err)
-			}
-		case "bw":
-			// 使用本地BWRule结构体
-			if err := tx.Where("group_uuid = ?", groupUUID).
-				Delete(&BWRule{}).Error; err != nil {
-				alarmLogger.Error("带宽规则删除失败",
-					"group_uuid", groupUUID,
-					"error", err)
-				return fmt.Errorf("带宽规则删除失败: %w", err)
-			}
-		default:
-			return fmt.Errorf("未知的规则类型: %s", ruleType)
-		}
-
-		// 删除虚拟机关联（使用本地VMRuleLink结构体）
-		if err := tx.Where("group_uuid = ?", groupUUID).
-			Delete(&VMRuleLink{}).Error; err != nil {
-			alarmLogger.Error("虚拟机关联删除失败",
-				"groupUUID", groupUUID,
-				"error", err)
-			return fmt.Errorf("虚拟机关联删除失败: %w", err)
-		}
-
-		return nil
-	})
+        return nil
+    })
 }
 
 // 补充分页函数实现

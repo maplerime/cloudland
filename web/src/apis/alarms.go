@@ -114,7 +114,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	}
 
 	// 获取规则组改为使用operator方法
-	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, RuleTypeCPU)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -182,7 +182,7 @@ func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
 	groupUUID := c.Param("group_uuid")
 	vmName := c.Param("vm_name")
 
-	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, RuleTypeCPU)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -537,7 +537,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
         return
     }
 	fmt.Printf("wngzhe DeleteCPURule step0")
-	if _, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID); err != nil {
+	if _, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, RuleTypeCPU); err != nil {
         if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
                 "error": "rules not existed",
@@ -806,7 +806,7 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 	groupUUID := c.Param("id")
 
 	// 使用operator获取规则组
-	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, RuleTypeCPU)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
@@ -868,7 +868,7 @@ func (a *AlarmAPI) DisableRules(c *gin.Context) {
 	groupUUID := c.Param("id")
 
 	// 使用operator获取规则组
-	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID)
+	group, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, RuleTypeCPU)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "规则组不存在"})
 		return
