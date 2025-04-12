@@ -68,6 +68,9 @@ type InstanceResponse struct {
 	Interfaces  []*InterfaceResponse  `json:"interfaces"`
 	Volumes     []*VolumeInfoResponse `json:"volumes"`
 	Flavor      string                `json:"flavor"`
+	Cpu         int32                 `json:"cpu"`
+	Memory      int32                 `json:"memory"`
+	Disk        int32                 `json:"disk"`
 	Image       *ResourceReference    `json:"image"`
 	Keys        []*ResourceReference  `json:"keys"`
 	PasswdLogin bool                  `json:"passwd_login"`
@@ -520,6 +523,9 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	}
 	if instance.Flavor != nil {
 		instanceResp.Flavor = instance.Flavor.Name
+		instanceResp.Cpu = instance.Flavor.Cpu
+		instanceResp.Memory = instance.Flavor.Memory
+		instanceResp.Disk = instance.Flavor.Disk
 	}
 	if instance.Zone != nil {
 		instanceResp.Zone = instance.Zone.Name
@@ -577,8 +583,16 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
 	logger.Debugf("List instances with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
+
+	var conditions []string
+
+	if queryStr != "" {
+		queryStr = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
+		conditions = append(conditions, queryStr)
+	}
 
 	if vpcID != "" {
 		logger.Debugf("Filtering instances by VPC ID: %s", vpcID)
@@ -593,6 +607,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		logger.Debugf("The router with vpc_id: %+v\n", router)
 		logger.Debugf("The router_id in vpc is: %d", router.ID)
 		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+		conditions = append(conditions, queryStr)
 	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -611,7 +626,8 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	finalQuery := strings.Join(conditions, " AND ")
+	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), orderStr, finalQuery)
 	if err != nil {
 		logger.Errorf("Failed to list instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list instances", err)
