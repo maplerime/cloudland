@@ -510,10 +510,11 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},
-		Hostname:  instance.Hostname,
-		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status,
-		Reason:    instance.Reason,
+		Hostname:    instance.Hostname,
+		LoginPort:   int(instance.LoginPort),
+		Status:      instance.Status,
+		Reason:      instance.Reason,
+		PasswdLogin: instance.PasswdLogin,
 	}
 	if instance.Image != nil {
 		instanceResp.Image = &ResourceReference{
