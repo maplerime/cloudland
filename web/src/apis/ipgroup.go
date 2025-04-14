@@ -13,6 +13,7 @@ import (
 	"strconv"
 
 	. "web/src/common"
+	"web/src/dbs"
 	"web/src/model"
 	"web/src/routes"
 
@@ -24,9 +25,14 @@ var ipgroupAdmin = &routes.IpGroupAdmin{}
 
 type IpGroupAPI struct{}
 
+type IpGroupType struct {
+	Type int `json:"type" binding:"omitempty"`
+}
+
 type IpGroupResponse struct {
 	*ResourceReference
-	Type string `json:"type"`
+	Type     int    `json:"type"`
+	TypeName string `json:"type_name"`
 }
 
 type IpGroupListResponse struct {
@@ -38,12 +44,12 @@ type IpGroupListResponse struct {
 
 type IpGroupPayload struct {
 	Name string `json:"name" binding:"required,min=2,max=32"`
-	Type string `json:"type" binding:"omitempty,oneof=a b c"`
+	IpGroupType
 }
 
 type IpGroupPatchPayload struct {
 	Name string `json:"name" binding:"required,min=2,max=32"`
-	Type string `json:"type" binding:"omitempty,oneof=a b c"`
+	IpGroupType
 }
 
 // @Summary get a ipgroup
@@ -60,7 +66,7 @@ func (v *IpGroupAPI) Get(c *gin.Context) {
 	uuID := c.Param("id")
 	ipgroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet query", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid ip group query", err)
 		return
 	}
 	ipgroupResp, err := v.getIpGroupResponse(ctx, ipgroup)
@@ -91,21 +97,37 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+
 	ipgroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet query", err)
+		return
+	}
+
+	// 校验 TypeID 是否有效
+	var dictionaryEntry model.Dictionary
+	db := dbs.DB()
+	if err := db.Where("id = ? AND type = ?", payload.Type, "ipgroup").First(&dictionaryEntry).Error; err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid type ID", err)
+		return
+	}
+
 	name := ipgroup.Name
 	if payload.Name != "" {
 		name = payload.Name
 		logger.Debugf("Update name to %s", name)
 	}
-	ipgrouptype := ipgroup.Type
-	if payload.Type != "" {
+
+	ipgrouptype := int(ipgroup.Type.ID)
+	if payload.Type != 0 && ipgrouptype != payload.Type {
 		ipgrouptype = payload.Type
-		logger.Debugf("Update type to %s", ipgrouptype)
+		logger.Debugf("Update type to %d", ipgrouptype)
 	}
+
 	err = ipgroupAdmin.Update(ctx, ipgroup, name, ipgrouptype)
 	if err != nil {
-		logger.Errorf("Failed to patch secgroup %s, %+v", uuID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Patch security group failed", err)
+		logger.Errorf("Failed to patch ipgroup %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch ipgroup failed", err)
 		return
 	}
 	ipgroupResp, err := v.getIpGroupResponse(ctx, ipgroup)
@@ -115,7 +137,6 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 	}
 	logger.Debugf("Patch ipgroup successfully, %s, %+v", uuID, ipgroupResp)
 	c.JSON(http.StatusOK, ipgroupResp)
-
 }
 
 // @Summary delete a ipgroup
@@ -164,9 +185,18 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
+
+	// 校验 TypeID 是否有效
+	var dictionaryEntry model.Dictionary
+	db := dbs.DB()
+	if err := db.Where("id = ? AND type = ?", payload.Type, "ipgroup").First(&dictionaryEntry).Error; err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid type ID", err)
+		return
+	}
+
 	subnet, err := ipgroupAdmin.Create(ctx, payload.Name, payload.Type)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Failed to create subnet", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipgroup", err)
 		return
 	}
 	ipgroupResp, err := v.getIpGroupResponse(ctx, subnet)
@@ -187,7 +217,8 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipgroup *model.IpGr
 			CreatedAt: ipgroup.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: ipgroup.UpdatedAt.Format(TimeStringForMat),
 		},
-		Type: ipgroup.Type,
+		Type:     int(ipgroup.Type.ID),
+		TypeName: ipgroup.Type.Name,
 	}
 	return
 }
@@ -235,6 +266,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
+		ipgroupListResp.IpGroups[i].TypeName = subnet.Type.Name
 	}
 	c.JSON(http.StatusOK, ipgroupListResp)
 }

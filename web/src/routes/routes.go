@@ -32,6 +32,7 @@ import (
 
 var UrlBefore string
 var logger = rlog.MustGetLogger("routes")
+var dictionaryView = &DictionaryView{}
 
 func runArgs(cfg string) (args []interface{}) {
 	host := "127.0.0.1"
@@ -148,6 +149,12 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/volumes/:id", volumeView.Delete)
 	m.Get("/volumes/:id", volumeView.Edit)
 	m.Post("/volumes/:id", volumeView.Patch)
+	m.Get("/ipgroups", ipgroupView.List)
+	m.Get("/ipgroups/new", ipgroupView.New)
+	m.Post("/ipgroups/new", ipgroupView.Create)
+	m.Delete("/ipgroups/:id", ipgroupView.Delete)
+	m.Get("/ipgroups/:id", ipgroupView.Edit)
+	m.Post("/ipgroups/:id", ipgroupView.Patch)
 	m.Get("/subnets", subnetView.List)
 	m.Get("/subnets/new", subnetView.New)
 	m.Post("/subnets/new", subnetView.Create)
@@ -185,6 +192,12 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/secgroups/:sgid/secrules/:id", secruleView.Delete)
 	m.Get("/secgroups/:sgid/secrules/:id", secruleView.Edit)
 	m.Post("/secgroups/:sgid/secrules/:id", secruleView.Patch)
+	m.Get("/dictionaries", dictionaryView.List)
+	m.Get("/dictionaries/new", dictionaryView.New)
+	m.Post("/dictionaries/new", dictionaryView.Create)
+	m.Delete("/dictionaries/:id", dictionaryView.Delete)
+	m.Get("/dictionaries/:id", dictionaryView.Edit)
+	m.Post("/dictionaries/:id", dictionaryView.Patch)
 	m.Get("/error", func(c *macaron.Context) {
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")
 		c.HTML(500, "error")

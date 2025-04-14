@@ -34,7 +34,7 @@ type IpGroupAdmin struct{}
 
 type IpGroupView struct{}
 
-func (a *IpGroupAdmin) Create(ctx context.Context, name string, ipgrouptype string) (ipgroup *model.IpGroup, err error) {
+func (a *IpGroupAdmin) Create(ctx context.Context, name string, ipgrouptype int) (ipgroup *model.IpGroup, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
@@ -49,8 +49,8 @@ func (a *IpGroupAdmin) Create(ctx context.Context, name string, ipgrouptype stri
 		}
 	}()
 	ipgroup = &model.IpGroup{
-		Name: name,
-		Type: ipgrouptype,
+		Name:   name,
+		TypeID: int64(ipgrouptype),
 	}
 	err = db.Create(ipgroup).Error
 	return
@@ -66,7 +66,7 @@ func (a *IpGroupAdmin) Get(ctx context.Context, id int64) (ipgroup *model.IpGrou
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	ipgroup = &model.IpGroup{Model: model.Model{ID: id}}
-	err = db.Where(where).Take(ipgroup).Error
+	err = db.Where(where).Preload("Type").Take(ipgroup).Error
 	if err != nil {
 		logger.Error("Failed to query ipgroup, %v", err)
 		return
@@ -100,7 +100,7 @@ func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipgro
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	ipgroup = &model.IpGroup{}
-	err = db.Where(where).Where("uuid = ?", uuID).Take(ipgroup).Error
+	err = db.Where(where).Where("uuid = ?", uuID).Preload("Type").Take(ipgroup).Error
 	if err != nil {
 		logger.Error("Failed to query ipgroup, %v", err)
 		return
@@ -114,7 +114,19 @@ func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipgro
 	return
 }
 
-func (a *IpGroupAdmin) Update(ctx context.Context, ipgroup *model.IpGroup, name string, ipgrouptype string) (err error) {
+func (a *IpGroupAdmin) GetIpGroup(ctx context.Context, reference *BaseReference) (ipgroup *model.IpGroup, err error) {
+	if reference == nil || (reference.ID == "" && reference.Name == "") {
+		err = fmt.Errorf("IpGroup base reference must be provided with either uuid or name")
+		return
+	}
+	if reference.ID != "" {
+		ipgroup, err = a.GetIpGroupByUUID(ctx, reference.ID)
+		return
+	}
+	return
+}
+
+func (a *IpGroupAdmin) Update(ctx context.Context, ipgroup *model.IpGroup, name string, ipgrouptype int) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -124,8 +136,8 @@ func (a *IpGroupAdmin) Update(ctx context.Context, ipgroup *model.IpGroup, name 
 	if name != "" && ipgroup.Name != name {
 		ipgroup.Name = name
 	}
-	if ipgrouptype != "" && ipgroup.Type != ipgrouptype {
-		ipgroup.Type = ipgrouptype
+	if ipgrouptype != 0 && ipgroup.TypeID != int64(ipgrouptype) {
+		ipgroup.TypeID = int64(ipgrouptype)
 	}
 	err = db.Model(ipgroup).Updates(ipgroup).Error
 	if err != nil {
@@ -153,7 +165,7 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(query).Find(&ipgroups).Error; err != nil {
+	if err = db.Preload("Type").Where(query).Find(&ipgroups).Error; err != nil {
 		return
 	}
 
@@ -217,7 +229,14 @@ func (v *IpGroupView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	var ipGroupTypes []model.Dictionary
+	if err := db.Where("type = ?", "ipgroup").Find(&ipGroupTypes).Error; err != nil {
+		c.Data["ErrorMsg"] = "Failed to load ipgroup types"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	c.Data["IpGroup"] = ipgroup
+	c.Data["IpGroupTypes"] = ipGroupTypes
 	c.HTML(200, "ipgroups_patch")
 }
 
@@ -239,12 +258,17 @@ func (v *IpGroupView) Change(c *macaron.Context, store session.Store) {
 	redirectTo := "../ipgroups"
 	name := c.QueryTrim("name")
 	ipgrouptype := c.QueryTrim("type")
+	ipgrouptypeInt, err := strconv.Atoi(ipgrouptype) // 将 string 转换为 int
+	if err != nil {
+		c.HTML(500, err.Error())
+		return
+	}
 	ipgroup, err := ipgroupAdmin.Get(ctx, int64(ipgroupID))
 	if err != nil {
 		c.HTML(500, err.Error())
 		return
 	}
-	err = ipgroupAdmin.Update(ctx, ipgroup, name, ipgrouptype)
+	err = ipgroupAdmin.Update(ctx, ipgroup, name, ipgrouptypeInt)
 	if err != nil {
 		c.HTML(500, err.Error())
 		return
@@ -254,37 +278,40 @@ func (v *IpGroupView) Change(c *macaron.Context, store session.Store) {
 }
 
 func (v *IpGroupView) Patch(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	ctx := c.Req.Context()
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	userID, err := strconv.Atoi(id)
+	ipgroupID, err := strconv.Atoi(id)
 	if err != nil {
 		logger.Error("Failed to get input id, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckUser(int64(userID))
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	password := c.QueryTrim("password")
-	members := c.QueryStrings("members")
-	_, err = userAdmin.Update(c.Req.Context(), int64(userID), password, members)
+	redirectTo := "../ipgroups"
+	name := c.QueryTrim("name")
+	ipgrouptype := c.QueryTrim("type")
+	ipgrouptypeInt, err := strconv.Atoi(ipgrouptype) // 将 string 转换为 int
 	if err != nil {
-		logger.Error("Failed to update password, %v", err)
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
+		c.HTML(500, err.Error())
 		return
 	}
-	c.HTML(200, "ok")
+	ipgroup, err := ipgroupAdmin.Get(ctx, int64(ipgroupID))
+	if err != nil {
+		c.HTML(500, err.Error())
+		return
+	}
+	err = ipgroupAdmin.Update(ctx, ipgroup, name, ipgrouptypeInt)
+	if err != nil {
+		c.HTML(500, err.Error())
+		return
+	}
+	c.Redirect(redirectTo)
+	return
 }
 
 func (v *IpGroupView) Delete(c *macaron.Context, store session.Store) (err error) {
@@ -331,6 +358,14 @@ func (v *IpGroupView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	var ipGroupTypes []model.Dictionary
+	db := dbs.DB() // 获取数据库连接
+	if err := db.Where("type = ?", "ipgroup").Find(&ipGroupTypes).Error; err != nil {
+		c.Data["ErrorMsg"] = "Failed to load ipgroup types"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Data["IpGroupTypes"] = ipGroupTypes
 	c.HTML(200, "ipgroups_new")
 }
 
@@ -339,8 +374,21 @@ func (v *IpGroupView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "/ipgroups"
 	name := c.QueryTrim("name")
 	ipgrouptype := c.QueryTrim("type")
+	ipgrouptypeInt, err := strconv.Atoi(ipgrouptype) // 将 string 转换为 int
+	if err != nil {
+		c.HTML(500, err.Error())
+		return
+	}
 
-	_, err := ipgroupAdmin.Create(ctx, name, ipgrouptype)
+	var dictionaryEntry model.Dictionary
+	db := dbs.DB() // 获取数据库连接
+	if err := db.Where("id = ? AND type = ?", int64(ipgrouptypeInt), "ipgroup").First(&dictionaryEntry).Error; err != nil {
+		c.Data["ErrorMsg"] = "Invalid type ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	_, err = ipgroupAdmin.Create(ctx, name, ipgrouptypeInt)
 	if err != nil {
 		logger.Error("Failed to create ipgroup, %v", err)
 		c.HTML(500, "500")

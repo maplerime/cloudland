@@ -12,12 +12,12 @@
                         <input id="name" name="name" type="text" value="{{ .IpGroup.Name }}">
                     </div>
                     <div class="inline field">
-                        <label for="isdefault">{{.i18n.Tr "Type"}}</label>
+                        <label for="type">{{.i18n.Tr "Type"}}</label>
                         <select name="type" id="type" class="ui selection dropdown">
-                             <option value="a" {{ if eq .IpGroup.Type "a" }}selected{{ end }}>{{.i18n.Tr "a"}}</option>
-                             <option value="b" {{ if eq .IpGroup.Type "b" }}selected{{ end }}>{{.i18n.Tr "b"}}</option>
-                             <option value="c" {{ if eq .IpGroup.Type "c" }}selected{{ end }}>{{.i18n.Tr "c"}}</option>
-                        </select>
+                               {{range $key, $value := .IpGroupType}}
+                                   <option value="{{$key}}" {{if eq $key $.IpGroup.Type}}selected{{end}}>{{$value}}</option>
+                               {{end}}
+                           </select>
                     </div>
                     <div class="inline field">
                         <label></label>
