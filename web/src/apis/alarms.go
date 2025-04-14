@@ -13,14 +13,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
     "os/user"
 	"web/src/common"
 	"web/src/model"
 
 	"github.com/gin-gonic/gin"
-	//"github.com/google/uuid"
 	"github.com/jinzhu/gorm"
 )
 
@@ -410,27 +408,27 @@ func generateCPURuleContent(rules []common.CPURule) (string, error) {
 				i, rule.Over, rule.DownTo)
 		}
 		
-		sb.WriteString(fmt.Sprintf(`
-  - alert: HighCPUUsage_%s_%d
-    expr: avg by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[1m])) * 100 > %d
-    for: "%ds"
-    labels:
-      severity: warning
-    annotations:
-      summary: "High CPU Usage ({{ $value }})"
-      description: "Instance {{ $labels.instance }} has high CPU usage for %d seconds"
-
-  - alert: CPUUsageRecovered_%s_%d
-    expr: avg by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[1m])) * 100 < %d
-    for: "%ds"
-    labels:
-      severity: info
-    annotations:
-      summary: "CPU Usage Recovered ({{ $value }})"`,
-			rule.Name, i, rule.Over,
-			rule.Duration, rule.Duration, 
-			rule.Name, i, rule.DownTo,
-			rule.DownDuration))
+		sb.WriteString(fmt.Sprintf(`- alert: HighCPUUsage_%s_%d
+  expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 > %d
+  for: "%ds"
+  labels:
+    severity: warning
+  annotations:
+    summary: "High CPU Usage ({{ $value }})"
+    description: "Instance {{ $labels.instance }} has high CPU usage for %d seconds"
+- alert: CPUUsageRecovered_%s_%d
+  expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 < %d
+  for: "%ds"
+  labels:
+    severity: info
+  annotations:
+    summary: "CPU Usage Recovered ({{ $value }})"
+    description: "Instance {{ $labels.instance }} CPU usage has recovered below threshold for %d seconds"
+ `,  // 在反引号前添加换行符
+		rule.Name, i, rule.Over,
+		rule.Duration, rule.Duration, 
+		rule.Name, i, rule.DownTo,
+		rule.DownDuration, rule.DownDuration))
 	}
 	result := sb.String()
 	fmt.Printf("生成完整规则内容：\n%s\n", result)
@@ -666,46 +664,6 @@ func (a *AlarmAPI) ToggleRuleStatus(c *gin.Context) {
 	if err := reloadPrometheus(); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置重载失败"})
 		return
-	}
-}
-
-// 新增模板生成函数（放在 generateCPURuleContent 函数上方）
-func generateRuleContent(ruleType, templatePath string, rules interface{}) (string, error) {
-	// 读取模板文件
-	tmplData, err := os.ReadFile(templatePath) // 替换为 os.ReadFile
-	if err != nil {
-		return "", fmt.Errorf("读取模板文件失败: %w", err)
-	}
-
-	// 创建模板
-	tmpl, err := template.New(ruleType + "_alert_rules").Parse(string(tmplData))
-	if err != nil {
-		return "", fmt.Errorf("解析模板失败: %w", err)
-	}
-
-	// 执行模板渲染
-	var output strings.Builder
-	err = tmpl.Execute(&output, map[string]interface{}{
-		"Rules": rules,
-		"Type":  ruleType,
-	})
-	if err != nil {
-		return "", fmt.Errorf("模板渲染失败: %w", err)
-	}
-
-	// 根据规则类型选择后续处理
-	switch ruleType {
-	case RuleTypeCPU:
-		// 先获取内容再处理错误
-		content, err := generateCPURuleContent(rules.([]common.CPURule))
-		if err != nil {
-			return "", fmt.Errorf("CPU规则生成失败: %w", err)
-		}
-		return content, nil
-	case RuleTypeBW:
-		return generateBWRuleContent(rules.([]common.BWRule))
-	default:
-		return "", fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
 
