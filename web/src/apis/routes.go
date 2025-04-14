@@ -75,6 +75,12 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/vpcs/:id", vpcAPI.Delete)
 		authGroup.PATCH("/api/v1/vpcs/:id", vpcAPI.Patch)
 
+		authGroup.GET("/api/v1/dictionaries", dictionaryAPI.List)
+		authGroup.POST("/api/v1/dictionaries", dictionaryAPI.Create)
+		authGroup.GET("/api/v1/dictionaries/:id", dictionaryAPI.Get)
+		authGroup.DELETE("/api/v1/dictionaries/:id", dictionaryAPI.Delete)
+		authGroup.PATCH("/api/v1/dictionaries/:id", dictionaryAPI.Patch)
+
 		authGroup.GET("/api/v1/ipgroups", ipgroupAPI.List)
 		authGroup.POST("/api/v1/ipgroups", ipgroupAPI.Create)
 		authGroup.GET("/api/v1/ipgroups/:id", ipgroupAPI.Get)

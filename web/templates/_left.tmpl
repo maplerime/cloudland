@@ -10,6 +10,9 @@
         <a {{ if eq .Link "/keys" }} class="active item" {{ else }} class="item" {{ end }} href="/keys">
             {{.i18n.Tr "Keys"}}
         </a>
+        <a {{ if eq .Link "/dictionaries" }} class="active item" {{ else }} class="item" {{ end }} href="/dictionaries">
+            {{.i18n.Tr "Dictionaries"}}
+        </a>
         <div class="header item">{{.i18n.Tr "Compute_Storage"}}</div>
         <a {{ if eq .Link "/instances" }} class="active item" {{ else }} class="item" {{ end }} href="/instances">
             {{.i18n.Tr "Instances"}}

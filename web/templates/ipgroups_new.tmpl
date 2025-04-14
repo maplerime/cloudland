@@ -23,11 +23,11 @@
 									<div class="ui selection dropdown">
 									  <input id="type" name="type" type="hidden">
 									  <i class="dropdown icon"></i>
-									  <div class="default text">{{.i18n.Tr "Instance Address"}}</div>
+									  <div class="default text">{{.i18n.Tr "Type"}}</div>
 									  <div class="menu">
-										<div class="item" data-value="a" data-text="a">a</div>
-                                        <div class="item" data-value="b" data-text="b">b</div>
-                                        <div class="item" data-value="c" data-text="c">c</div>
+									    {{range .IpGroupTypes}}
+                                            <div class="item" data-value="{{.ID}}" data-text="{{.Name}}">{{.Name}}</div>
+                                        {{end}}
 									  </div>
 									</div>
 								</div>

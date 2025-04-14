@@ -27,6 +27,7 @@
 									{{ end }}
 									<th>{{.i18n.Tr "UUID"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
+			                        <th>{{.i18n.Tr "Group"}}</th>
 			                        <th>{{.i18n.Tr "Network"}}</th>
 			                        <th>{{.i18n.Tr "Netmask"}}</th>
 			                        <th>{{.i18n.Tr "VPC"}}</th>
@@ -47,6 +48,11 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
+			                        <td>
+                        {{ if .Group }}
+                        {{ .Group.Name }}
+                        {{ end }}
+                                            </td>
 			                        <td>{{.Network}}</td>
 			                        <td>{{.Netmask}}</td>
 			                        <td>
@@ -54,6 +60,7 @@
 						{{ .Router.Name }}
 						{{ end }}
                                     		</td>
+
 						{{ if $.IsAdmin }}
 			                        <td>{{.Vlan}}</td>
 			                        <td>{{.OwnerInfo.Name}}</td>

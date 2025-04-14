@@ -221,7 +221,7 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, gateway, start, end, dns, routes string) (subnet *model.Subnet, err error) {
+func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, gateway, start, end, dns, routes string, ipgroup *model.IpGroup) (subnet *model.Subnet, err error) {
 	return
 }
 
@@ -283,7 +283,7 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 	return
 }
 
-func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router) (subnet *model.Subnet, err error) {
+func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipgroup *model.IpGroup) (subnet *model.Subnet, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -327,6 +327,10 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 	var routerID int64
 	if router != nil {
 		routerID = router.ID
+	}
+	var groupID int64
+	if ipgroup != nil {
+		groupID = ipgroup.ID
 	}
 	_, ipNet, err := net.ParseCIDR(network)
 	if err != nil {
@@ -376,6 +380,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		Vlan:         int64(vlan),
 		Type:         rtype,
 		RouterID:     routerID,
+		GroupID:      groupID,
 	}
 	err = db.Create(subnet).Error
 	if err != nil {
@@ -494,7 +499,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Where(where).Where(query).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Router").Preload("Group").Where(where).Where(query).Find(&subnets).Error; err != nil {
 		return
 	}
 	permit := memberShip.CheckPermission(model.Admin)
@@ -594,7 +599,14 @@ func (v *SubnetView) New(c *macaron.Context, store session.Store) {
 		logger.Error("Database failed to query gateways", err)
 		return
 	}
+	groups := []*model.IpGroup{}
+	err = DB().Find(&groups).Error
+	if err != nil {
+		logger.Error("Database failed to query groups", err)
+		return
+	}
 	c.Data["Routers"] = routers
+	c.Data["Groups"] = groups
 	c.HTML(200, "subnets_new")
 }
 
@@ -621,7 +633,7 @@ func (v *SubnetView) Edit(c *macaron.Context, store session.Store) {
 		return
 	}
 	subnet := &model.Subnet{Model: model.Model{ID: id}}
-	err = DB().Take(subnet).Error
+	err = DB().Preload("Group").Take(subnet).Error
 	if err != nil {
 		logger.Error("Database failed to query subnet", err)
 		return
@@ -640,8 +652,15 @@ func (v *SubnetView) Edit(c *macaron.Context, store session.Store) {
 			}
 		}
 	}
+	groups := []*model.IpGroup{}
+	err = DB().Find(&groups).Error
+	if err != nil {
+		logger.Error("Database failed to query groups", err)
+		return
+	}
 	subnet.Gateway = strings.Split(subnet.Gateway, "/")[0]
 	c.Data["Subnet"] = subnet
+	c.Data["Groups"] = groups
 	c.HTML(200, "subnets_patch")
 }
 
@@ -724,6 +743,7 @@ func (v *SubnetView) checkRoutes(network, netmask, gateway, start, end, dns, rou
 }
 
 func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -754,13 +774,24 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	end := c.QueryTrim("end")
 	dns := c.QueryTrim("dns")
 	routes := c.QueryTrim("routes")
+	groupID := c.QueryInt64("group")
+	var ipgroup *model.IpGroup
+	if groupID > 0 {
+		ipgroup, err = ipgroupAdmin.Get(ctx, groupID)
+		if err != nil {
+			logger.Error("Get ipgroup failed ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(404, "404")
+			return
+		}
+	}
 	routeJson, err := v.checkRoutes(network, netmask, gateway, start, end, dns, routes, id)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err = subnetAdmin.Update(c.Req.Context(), id, name, gateway, start, end, dns, routeJson)
+	_, err = subnetAdmin.Update(c.Req.Context(), id, name, gateway, start, end, dns, routeJson, ipgroup)
 	if err != nil {
 		logger.Error("Create subnet failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -778,6 +809,7 @@ func (v *SubnetView) Create(c *macaron.Context, store session.Store) {
 	rtype := c.QueryTrim("rtype")
 	network := c.QueryTrim("network")
 	routerID := c.QueryInt64("router")
+	groupID := c.QueryInt64("group")
 	gateway := c.QueryTrim("gateway")
 	start := c.QueryTrim("start")
 	end := c.QueryTrim("end")
@@ -807,7 +839,17 @@ func (v *SubnetView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	_, err = subnetAdmin.Create(ctx, vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router)
+	var ipgroup *model.IpGroup
+	if groupID > 0 {
+		ipgroup, err = ipgroupAdmin.Get(ctx, groupID)
+		if err != nil {
+			logger.Error("Get ipgroup failed ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(404, "404")
+			return
+		}
+	}
+	_, err = subnetAdmin.Create(ctx, vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipgroup)
 	if err != nil {
 		logger.Error("Create subnet failed ", err)
 		c.Data["ErrorMsg"] = err.Error()
