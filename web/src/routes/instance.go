@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
@@ -348,7 +347,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, fl
 	return
 }
 
-func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, flavor *model.Flavor, rootPasswd string, keys []*model.Key) (err error) {
+func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, flavor *model.Flavor, rootPasswd string, keys []*model.Key, loginPort int) (err error) {
 	logger.Debugf("Reinstall instance %d with image %d and flavor %d", instance.ID, image.ID, flavor.ID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -393,25 +392,42 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	}
 
 	// change vm status to reinstalling
-	var loginPort int32
-	switch instance.LoginPort {
-	case 22, 3389:
-		if image.OSCode == "windows" {
-			loginPort = 3389
-		} else {
-			loginPort = 22
+	if loginPort <= 0 {
+		switch instance.LoginPort {
+		case 22, 3389:
+			if image.OSCode == "windows" {
+				loginPort = 3389
+			} else {
+				loginPort = 22
+			}
+		default:
+			loginPort = int(instance.LoginPort)
 		}
-	default:
-		loginPort = instance.LoginPort
 	}
-	logger.Debug("Login Port is: %d", loginPort)
+	logger.Debugf("Login Port is: %d", loginPort)
+
+	// update security group rules
+	if loginPort != int(instance.LoginPort) {
+		for _, iface := range instance.Interfaces {
+			err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance.LoginPort, iface)
+			if err != nil {
+				logger.Errorf("Failed to remove security rule", err)
+			}
+			err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
+			if err != nil {
+				logger.Errorf("Failed to create security rule", err)
+				return
+			}
+		}
+	}
+
 	passwdLogin := false
 	if rootPasswd != "" {
 		passwdLogin = true
 		logger.Debug("Root password login enabled")
 	}
 	instance.Status = "reinstalling"
-	instance.LoginPort = loginPort
+	instance.LoginPort = int32(loginPort)
 	instance.PasswdLogin = passwdLogin
 	instance.FlavorID = flavor.ID
 	instance.Flavor = flavor
@@ -1445,8 +1461,9 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 				instKeys = append(instKeys, key)
 			}
 		}
+		loginPort := c.QueryInt("login_port")
 
-		err = instanceAdmin.Reinstall(ctx, instance, image, flavor, rootPasswd, instKeys)
+		err = instanceAdmin.Reinstall(ctx, instance, image, flavor, rootPasswd, instKeys, loginPort)
 		if err != nil {
 			logger.Error("Reinstall failed", err)
 			c.Data["ErrorMsg"] = err.Error()
