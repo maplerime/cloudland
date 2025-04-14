@@ -391,15 +391,8 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 func generateCPURuleContent(rules []common.CPURule) (string, error) {
 	var sb strings.Builder
 	fmt.Printf("正在生成CPU规则，共 %d 条规则\n", len(rules))
+	sb.WriteString("groups:\n- name: cpu_alerts\n  rules:")
 	for i, rule := range rules {
-		fmt.Printf("生成规则详情 #%d:\n"+
-		"名称: %s\n"+
-		"触发阈值: %d%%\n"+
-		"持续时间: %ds\n"+
-		"恢复阈值: %d%%\n"+
-		"冷却时间: %ds\n",
-		i, rule.Name, rule.Over, 
-		rule.Duration, rule.DownTo, rule.DownDuration)
 		if rule.Over <= 0 || rule.DownTo <= 0 {
 			return "", fmt.Errorf("规则 #%d 校验失败：阈值参数必须大于0", i)
 		}
@@ -407,24 +400,24 @@ func generateCPURuleContent(rules []common.CPURule) (string, error) {
 			return "", fmt.Errorf("规则 #%d 校验失败：触发阈值(%d%%)必须大于恢复阈值(%d%%)", 
 				i, rule.Over, rule.DownTo)
 		}
-		
-		sb.WriteString(fmt.Sprintf(`- alert: HighCPUUsage_%s_%d
-  expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 > %d
-  for: "%ds"
-  labels:
-    severity: warning
-  annotations:
-    summary: "High CPU Usage ({{ $value }})"
-    description: "Instance {{ $labels.instance }} has high CPU usage for %d seconds"
-- alert: CPUUsageRecovered_%s_%d
-  expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 < %d
-  for: "%ds"
-  labels:
-    severity: info
-  annotations:
-    summary: "CPU Usage Recovered ({{ $value }})"
-    description: "Instance {{ $labels.instance }} CPU usage has recovered below threshold for %d seconds"
- `,  // 在反引号前添加换行符
+		sb.WriteString(fmt.Sprintf(`
+  - alert: HighCPUUsage_%s_%d
+    expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 > %d
+    for: "%ds"
+    labels:
+      severity: warning
+    annotations:
+      summary: "High CPU Usage ({{ $value }})"
+      description: "Instance {{ $labels.instance }} has high CPU usage for %d seconds"
+  - alert: CPUUsageRecovered_%s_%d
+    expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 < %d
+    for: "%ds"
+    labels:
+      severity: info
+    annotations:
+      summary: "CPU Usage Recovered ({{ $value }})"
+      description: "Instance {{ $labels.instance }} CPU usage has recovered below threshold for %d seconds"
+    `,
 		rule.Name, i, rule.Over,
 		rule.Duration, rule.Duration, 
 		rule.Name, i, rule.DownTo,
