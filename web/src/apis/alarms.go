@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -79,21 +80,12 @@ func generateBWRuleContent(rules []common.BWRule) (string, error) {
 	return sb.String(), nil
 }
 
-/****************** 辅助函数 ******************/
 func reloadPrometheus() error {
-	client := &http.Client{Timeout: 5 * time.Second}
-	req, _ := http.NewRequest("POST", "http://localhost:9090/-/reload", nil)
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("prometheus reload failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("prometheus reload error: %s", resp.Status)
-	}
-	return nil
+    cmd := exec.Command("sudo", "systemctl", "kill", "-s", "SIGHUP", "prometheus.service")
+    if output, err := cmd.CombinedOutput(); err != nil {
+        return fmt.Errorf("SIGHUP operation failed: %v, output: %s", err, string(output))
+    }
+    return nil
 }
 
 func rulePaths(ruleType, groupID string) (generalPath string, specialPath string) {
@@ -139,7 +131,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 
 	// 生成规则内容（使用operator返回的group.Type）
 	generalPath, specialPath := rulePaths(group.Type, groupUUID)
-	rawContent, err := generateCPURuleContent(rules)
+	rawContent, err := generateCPURuleContent(rules, group.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "生成规则内容失败"})
 		return
@@ -313,7 +305,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
     }
 	fmt.Printf("step5\n")	
 	// 生成规则内容
-	generalRaw, err := generateCPURuleContent(req.Rules)
+	generalRaw, err := generateCPURuleContent(req.Rules, group.Name)
 	fmt.Printf("完整规则内容：\n%s\n", generalRaw)
 	fmt.Printf("err内容：\n%s\n", err)
 	if err != nil {
@@ -388,10 +380,10 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 }
 
 // 修改生成函数参数类型
-func generateCPURuleContent(rules []common.CPURule) (string, error) {
+func generateCPURuleContent(rules []common.CPURule, groupName string) (string, error) {
 	var sb strings.Builder
 	fmt.Printf("正在生成CPU规则，共 %d 条规则\n", len(rules))
-	sb.WriteString("groups:\n- name: cpu_alerts\n  rules:")
+	sb.WriteString(fmt.Sprintf("groups:\n- name: %s\n  rules:", groupName))
 	for i, rule := range rules {
 		if rule.Over <= 0 || rule.DownTo <= 0 {
 			return "", fmt.Errorf("规则 #%d 校验失败：阈值参数必须大于0", i)
@@ -580,7 +572,10 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		os.Remove(path)
 	}
 	fmt.Printf("wngzhe DeleteCPURule step3")
-	reloadPrometheus()
+	if err := reloadPrometheus(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "配置重载失败"})
+		return
+	}
 
 	fmt.Printf("wngzhe DeleteCPURule step4")
 	c.JSON(http.StatusOK, gin.H{
@@ -786,7 +781,7 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 	// 检查文件是否存在
 	if _, err := os.Stat(generalPath); os.IsNotExist(err) {
 		rules := a.getRulesFromDB(groupUUID)
-		rawContent, err := generateCPURuleContent(rules)
+		rawContent, err := generateCPURuleContent(rules, group.Name)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "规则生成失败"})
 			return
