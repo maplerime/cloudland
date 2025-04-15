@@ -394,7 +394,7 @@ func generateCPURuleContent(rules []common.CPURule, groupName string, excludeVMs
     expr: |-
       (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total%s[1m]))
         / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 > %d
-    for: "%ds"
+    for: %ds
     labels:
       severity: warning
     annotations:
@@ -404,7 +404,7 @@ func generateCPURuleContent(rules []common.CPURule, groupName string, excludeVMs
     expr: |-
       (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total%s[1m]))
         / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 < %d
-    for: "%ds"
+    for: %ds
     labels:
       severity: info
     annotations:
