@@ -305,7 +305,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
     }
 	fmt.Printf("step5\n")	
 	// 生成规则内容
-	generalRaw, err := generateCPURuleContent(req.Rules, group.Name)
+	generalRaw, err := generateCPURuleContent(req.Rules, group.Name, excludeVMs...)
 	fmt.Printf("完整规则内容：\n%s\n", generalRaw)
 	fmt.Printf("err内容：\n%s\n", err)
 	if err != nil {
@@ -313,24 +313,9 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		return
 	}
 	fmt.Printf("step6：\n%s\n", err)
-	generalContent := generalRaw
-    if len(excludeVMs) > 0 {
-        generalContent = addExcludedVMsToRule(generalRaw, excludeVMs)
-    }
-
-	var specialContent string
-    if len(excludeVMs) > 0 {
-        if specialContent, err = genspecialCPURuleContent(req.Rules, excludeVMs, groupUUID); err != nil {
-            c.JSON(http.StatusInternalServerError, gin.H{"error": "generate special rules failed: " + err.Error()})
-            return
-        }
-    }
-	fmt.Printf("step7：\n%s\n", err)
-	fmt.Printf("RulesEnabled is: %s\n",  RulesEnabled)
 	generalPath, specialPath := rulePaths(RuleTypeCPU, groupUUID)
-	fmt.Printf("generalPath is: %s\n",  RulesEnabled)
 	fmt.Printf("specialPath is: %s\n",  specialPath)
-	if err := os.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
+	if err := os.WriteFile(generalPath, []byte(generalRaw), 0640); err != nil {
         c.JSON(http.StatusInternalServerError, gin.H{"write general rules filed failed": err.Error()})
         return
     }
@@ -338,7 +323,15 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
         c.JSON(http.StatusInternalServerError, gin.H{"error": "set file owner filed: " + err.Error()})
         return
     }
+	fmt.Printf("step7：\n%s\n", err)
 	if len(excludeVMs) > 0 {
+		fmt.Printf("excludeVMs existing but may uelsess for this part\n")
+		/*
+    	var specialContent string
+		if specialContent, err = genspecialCPURuleContent(req.Rules, excludeVMs, groupUUID); err != nil {
+            c.JSON(http.StatusInternalServerError, gin.H{"error": "generate special rules failed: " + err.Error()})
+            return
+        }
         if err := os.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
             c.JSON(http.StatusInternalServerError,gin.H{"write special rules filed failed": err.Error()})
             return
@@ -357,6 +350,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
             c.JSON(http.StatusInternalServerError, gin.H{"error": "set file link failed: " + err.Error()})
             return
         }
+		*/
     }else {
         enabledPath := filepath.Join(RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID))
 		fmt.Printf("2enabledPath is: %s\n",  enabledPath)
@@ -379,11 +373,14 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
     })
 }
 
-// 修改生成函数参数类型
-func generateCPURuleContent(rules []common.CPURule, groupName string) (string, error) {
+func generateCPURuleContent(rules []common.CPURule, groupName string, excludeVMs ...string) (string, error) {
 	var sb strings.Builder
 	fmt.Printf("正在生成CPU规则，共 %d 条规则\n", len(rules))
 	sb.WriteString(fmt.Sprintf("groups:\n- name: %s\n  rules:", groupName))
+	filter := ""
+    if len(excludeVMs) > 0 && len(excludeVMs[0]) > 0 {
+        filter = fmt.Sprintf(`{instance!~"%s"}`, strings.Join(excludeVMs, "|"))
+    }
 	for i, rule := range rules {
 		if rule.Over <= 0 || rule.DownTo <= 0 {
 			return "", fmt.Errorf("规则 #%d 校验失败：阈值参数必须大于0", i)
@@ -394,31 +391,36 @@ func generateCPURuleContent(rules []common.CPURule, groupName string) (string, e
 		}
 		sb.WriteString(fmt.Sprintf(`
   - alert: HighCPUUsage_%s_%d
-    expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 > %d
+    expr: |-
+      (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total%s[1m]))
+        / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 > %d
     for: "%ds"
     labels:
       severity: warning
     annotations:
-      summary: "High CPU Usage ({{ $value }})"
-      description: "Instance {{ $labels.instance }} has high CPU usage for %d seconds"
+      summary: "High VM Usage ({{ $value }})"
+      description: "VM {{ $labels.domain }} has high CPU usage for %d seconds"
   - alert: CPUUsageRecovered_%s_%d
-    expr: (1 - avg by (instance)(rate(node_cpu_seconds_total{mode="idle"}[1m])) / avg by (instance)(rate(node_cpu_seconds_total[1m]))) * 100 < %d
+    expr: |-
+      (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total%s[1m]))
+        / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 < %d
     for: "%ds"
     labels:
       severity: info
     annotations:
-      summary: "CPU Usage Recovered ({{ $value }})"
-      description: "Instance {{ $labels.instance }} CPU usage has recovered below threshold for %d seconds"
-    `,
-		rule.Name, i, rule.Over,
-		rule.Duration, rule.Duration, 
-		rule.Name, i, rule.DownTo,
-		rule.DownDuration, rule.DownDuration))
+      summary: "VM CPU Usage Recovered ({{ $value }})"
+      description: "VM {{ $labels.domain }} CPU usage has recovered below threshold for %d seconds"`,
+            rule.Name, i, filter,
+            rule.Over,
+            rule.Duration, rule.Duration,
+            rule.Name, i, filter,
+            rule.DownTo,
+            rule.DownDuration, rule.DownDuration))
 	}
 	result := sb.String()
 	fmt.Printf("生成完整规则内容：\n%s\n", result)
 	fmt.Printf("wngzhe return nil")
-	return sb.String(), nil
+	return sb.String() + "\n", nil
 }
 
 func (a *AlarmAPI) GetCPURules(c *gin.Context) {
@@ -703,49 +705,42 @@ func (a *AlarmAPI) HandleAlertWebhook(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"processed": true})
 }
 
-// 生成特殊规则内容
-// 修改函数签名添加 groupID 参数
 func genspecialCPURuleContent(rules []common.CPURule, vmList []string, groupID string) (string, error) {
-	if len(rules) == 0 {
-		return "", fmt.Errorf("空规则列表")
-	}
+    if len(rules) == 0 {
+        return "", fmt.Errorf("empty rule list")
+    }
 
-	var sb strings.Builder
-	sb.WriteString("groups:\n- name: special_cpu_alerts\n  rules:\n")
+    var sb strings.Builder
+    sb.WriteString("groups:\n- name: special_cpu_alerts\n  rules:\n")
 
-	for i, rule := range rules {
-		sb.WriteString(fmt.Sprintf(`
+    for i, rule := range rules {
+        sb.WriteString(fmt.Sprintf(`
   - alert: SpecialCPU_%s_%d
-    expr: avg by (instance) (
-        rate(node_cpu_seconds_total{
-            mode!="idle",
-            instance=~"%s"
-        }[1m])
-    ) * 100 > %d
+    expr: (sum by (domainname) (rate(libvirt_domain_info_vcpu_time_seconds{domainname=~"%s"}[1m])) 
+           / on (domainname) group_left(vcpus) libvirt_domain_info_vcpus) * 100 > %d
     for: "%ds"
     labels:
         rule_group: "%s"
         severity: critical
     annotations:
-        description: "特殊CPU告警 - 实例 {{ $labels.instance }} 使用率超过 %d%% 持续 %d 秒"`,
-			rule.Name, i,
-			strings.Join(vmList, "|"), // 匹配所有关联的VM实例
-			rule.Over,
-			rule.Duration,
-			groupID, // 添加规则组ID作为标签
-			rule.Over,
-			rule.Duration))
-	}
-	return sb.String(), nil
+        description: "Special CPU Alert - VM {{ $labels.domainname }} ({{ $labels.vcpus }} cores) exceeded %d%% for %d seconds"`,
+            rule.Name, i,
+            strings.Join(vmList, "|"),
+            rule.Over,
+            rule.Duration,
+            groupID,
+            rule.Over,
+            rule.Duration))
+    }
+    return sb.String(), nil
 }
 
-// 编辑通用规则内容
 func addExcludedVMsToRule(original string, excludeVMs []string) string {
-	exclusion := ""
-	if len(excludeVMs) > 0 {
-		exclusion = fmt.Sprintf(",instance!~\"%s\"", strings.Join(excludeVMs, "|"))
-	}
-	return strings.ReplaceAll(original, "{mode!=\"idle\"}", fmt.Sprintf("{mode!=\"idle\"%s}", exclusion))
+    exclusion := ""
+    if len(excludeVMs) > 0 {
+        exclusion = fmt.Sprintf(`,instance!~"%s"`, strings.Join(excludeVMs, "|"))
+    }
+    return strings.ReplaceAll(original, "{__vm_exclusion__}", fmt.Sprintf("{%s}", exclusion))
 }
 
 func (a *AlarmAPI) EnableRules(c *gin.Context) {
