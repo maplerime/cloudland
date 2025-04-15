@@ -420,8 +420,8 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 		hypervisor = *payload.Hypervisor
 	}
 	if flavor == nil && (payload.Cpu <= 0 || payload.Memory <= 0 || payload.Disk <= 0) {
-		err = fmt.Errorf("no valid configuration")
-		logger.Error(err)
+		logger.Errorf("no valid configuration")
+		ErrorResponse(c, http.StatusBadRequest, "no valid configuration", nil)
 		return
 	}
 	if payload.Cpu <= 0 {
