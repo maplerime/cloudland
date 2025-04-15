@@ -427,7 +427,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		logger.Debug("Root password login enabled")
 	}
 	instance.Status = "reinstalling"
-	instance.LoginPort = loginPort
+	instance.LoginPort = int32(loginPort)
 	instance.PasswdLogin = passwdLogin
 	instance.ImageID = image.ID
 	instance.Image = image
