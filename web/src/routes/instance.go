@@ -426,15 +426,21 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		passwdLogin = true
 		logger.Debug("Root password login enabled")
 	}
+	instance.Status = "reinstalling"
+	instance.LoginPort = loginPort
+	instance.PasswdLogin = passwdLogin
+	instance.ImageID = image.ID
+	instance.Image = image
+	instance.Cpu = cpu
+	instance.Memory = memory
+	instance.Disk = disk
+	instance.Keys = keys
+	if err = db.Save(&instance).Error; err != nil {
+		logger.Error("Failed to save instance", err)
+		return
+	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
-		"flavor_id":    0,
-		"status":       "reinstalling",
-		"login_port":   loginPort,
-		"passwd_login": passwdLogin,
-		"image_id":     image.ID,
-		"cpu":          cpu,
-		"memory":       memory,
-		"disk":         disk,
+		"flavor_id": 0,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
