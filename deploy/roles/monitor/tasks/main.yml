@@ -1,9 +1,6 @@
-- name: handlers
-  block:
-  - name: reload alertmanager systemd
-    systemd:
-      daemon_reload: yes
-    tags: [monitor]
+- name: Set Docker version
+  set_fact:
+    docker_version: "5:20.10.17~3-0~ubuntu-focal"
 
 - name: Set scrape interval variable
   set_fact:
@@ -82,74 +79,80 @@
   file:
     path: "{{ item }}"
     state: directory
-    owner: prometheus
-    group: prometheus
+    owner: 65534
+    group: 65534
   with_items:
     - /etc/alertmanager
     - /var/lib/alertmanager
   tags: [monitor]
 
-- name: Install Alertmanager 0.26.0
+- name: Create prometheus data directory with nobody owner
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /var/lib/prometheus/data
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+
+- name: Setup Alertmanager with Docker
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   block:
-    - name: Download Alertmanager
-      get_url:
-        url: https://github.com/prometheus/alertmanager/releases/download/v0.26.0/alertmanager-0.26.0.linux-amd64.tar.gz
-        dest: /tmp/alertmanager.tar.gz
-    
-    - name: Extract binary
-      unarchive:
-        src: /tmp/alertmanager.tar.gz
-        dest: /usr/local/bin/
-        remote_src: yes
-        extra_opts: "--strip-components=1 --wildcards '*/alertmanager*'"
-        owner: root
-        group: root
-        mode: 0755
-  tags: [monitor]
+    - name: Install Docker prerequisites
+      apt:
+        name: 
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+        state: present
 
-- name: Configure Alertmanager systemd service
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  copy:
-    dest: /etc/systemd/system/prometheus-alertmanager.service
-    content: |
-      [Unit]
-      Description=Prometheus Alertmanager
-      After=network.target
-      
-      [Service]
-      User=prometheus
-      Group=prometheus
-      ExecStart=/usr/local/bin/alertmanager \
-        --config.file=/etc/alertmanager/alertmanager.yml \
-        --storage.path=/var/lib/alertmanager
-      Restart=always
-      
-      [Install]
-      WantedBy=multi-user.target
-    mode: 0644
-  tags: [monitor]
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        id: "0EBFCD88"
 
-- name: Enable Alertmanager service
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  block:
-    - name: Reload systemd
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker CE
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Ensure Docker is running
       systemd:
-        daemon_reload: yes
-  tags: [monitor]
+        name: docker
+        enabled: yes
+        state: started
 
-- name: Configure and enable Alertmanager
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  block:
+    - name: Create alertmanager directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: 65534
+        group: 65534
+        mode: 0775
+      with_items:
+        - /etc/alertmanager
+        - /var/lib/alertmanager
+
+    - name: Pull Alertmanager image
+      docker_image:
+        name: quay.io/prometheus/alertmanager
+        tag: v0.26.0
+
     - name: Configure Alertmanager
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
       copy:
         dest: /etc/alertmanager/alertmanager.yml
         content: |
-          retention: 720h 
           global:
             smtp_smarthost: '{{ smtp_host }}:587'
             smtp_from: '{{ alert_sender }}'
@@ -169,14 +172,32 @@
               send_resolved: true
         owner: prometheus
         group: prometheus
-        mode: 0640
+        mode: 0644
+      tags: [monitor]
     
-    - name: Enable Alertmanager service
-      systemd:
-        name: prometheus-alertmanager
-        enabled: yes
-        state: restarted
-  tags: [monitor]
+    - name: Setup Alertmanager with Docker
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      block:
+        - name: Run Alertmanager container
+          docker_container:
+            name: alertmanager
+            image: quay.io/prometheus/alertmanager:v0.26.0
+            state: started
+            restart_policy: unless-stopped
+            volumes:
+              - /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+              - /var/lib/alertmanager:/data
+              - /etc/localtime:/etc/localtime:ro
+            ports:
+              - "9093:9093"
+            command: 
+              - "--config.file=/etc/alertmanager/alertmanager.yml"
+              - "--storage.path=/data"
+              - "--data.retention=720h"
+              - "--log.level=debug"
+            user: "65534:65534"
+      tags: [monitor]
 
 - name: Verify Alertmanager running status
   delegate_to: "{{ prometheus_server_ip }}"
@@ -200,6 +221,10 @@
       global:
         scrape_interval: {{ scrape_interval }}s
         evaluation_interval: 15s
+
+      rule_files:
+        - /etc/prometheus/rules_enabled/*.yml
+
       scrape_configs:
         - job_name: 'prometheus'
           static_configs:
@@ -222,6 +247,17 @@
     - /etc/prometheus/rules_enabled
     - /etc/prometheus/general_rules
     - /etc/prometheus/special_rules
+    - /var/log/prometheus
+  tags: [monitor]
+
+- name: Ensure rule_files declaration exists
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /etc/prometheus/prometheus.yml
+    insertafter: '^global:'
+    line: 'rule_files:'
+    backup: yes
   tags: [monitor]
 
 - name: Update Prometheus config to load enabled rules
@@ -229,9 +265,8 @@
   become: true
   lineinfile:
     path: /etc/prometheus/prometheus.yml
-    insertafter: '^global:'
+    insertafter: '^rule_files:'
     line: '  - /etc/prometheus/rules_enabled/*.yml'
-    insertbefore: '^scrape_configs:'
     backup: yes
   tags: [monitor]
 
@@ -290,10 +325,18 @@
       ExecStart=
       ExecStart=/usr/bin/prometheus \
         --config.file=/etc/prometheus/prometheus.yml \
-        --storage.tsdb.retention.time=720h
+        --storage.tsdb.retention.time=720h \
+        --storage.tsdb.path=/var/lib/prometheus/data \
+        --log.level=info \
+        --log.format=json
     mode: 0644
-  notify:
-    - reload prometheus systemd
+  tags: [monitor]
+
+- name: Force reload systemd after config change
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  systemd:
+    daemon_reload: yes
   tags: [monitor]
 
 - name: reload prometheus systemd
