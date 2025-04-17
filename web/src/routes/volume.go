@@ -304,10 +304,10 @@ func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err 
 
 // list data volumes
 func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, volumes []*model.Volume, err error) {
-	return a.ListVolume(ctx, offset, limit, order, query, "all")
+	return a.ListVolume(ctx, offset, limit, order, query, "all", 0)
 }
 
-func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
+func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string, instanceID int) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	db := DB()
 	if limit == 0 {
@@ -334,6 +334,15 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 		return
 	}
 
+	if instanceID > 0 {
+		query = fmt.Sprintf("instance_id=%d", instanceID)
+		if where != "" {
+			where = fmt.Sprintf("%s and %s", where, query)
+		} else {
+			where = query
+		}
+	}
+
 	volumes = []*model.Volume{}
 	if booting_where != "" {
 		if err = db.Model(&model.Volume{}).Where(where).Where(query).Where(booting_where).Count(&total).Error; err != nil {
@@ -345,14 +354,8 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 		}
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if booting_where != "" {
-		if err = db.Preload("Instance").Where(where).Where(query).Find(&volumes).Error; err != nil {
-			return
-		}
-	} else {
-		if err = db.Preload("Instance").Where(where).Where(query).Where(booting_where).Find(&volumes).Error; err != nil {
-			return
-		}
+	if err = db.Preload("Instance").Where(where).Where(query).Where(booting_where).Find(&volumes).Error; err != nil {
+		return
 	}
 	permit := memberShip.CheckPermission(model.Admin)
 	if permit {
@@ -388,7 +391,7 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, volumes, err := volumeAdmin.ListVolume(c.Req.Context(), offset, limit, order, query, "all")
+	total, volumes, err := volumeAdmin.ListVolume(c.Req.Context(), offset, limit, order, query, "all", 0)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
