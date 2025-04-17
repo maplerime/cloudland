@@ -3221,15 +3221,23 @@ const docTemplatev1 = `{
         "apis.InstancePayload": {
             "type": "object",
             "required": [
-                "flavor",
                 "hostname",
                 "image",
+                "primary_interface",
                 "zone"
             ],
             "properties": {
                 "count": {
                     "type": "integer",
                     "maximum": 16,
+                    "minimum": 1
+                },
+                "cpu": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "disk": {
+                    "type": "integer",
                     "minimum": 1
                 },
                 "flavor": {
@@ -3260,6 +3268,13 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "maximum": 65535,
                     "minimum": 0
+                },
+                "memory": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "nested_enable": {
+                    "type": "boolean"
                 },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
@@ -3318,8 +3333,14 @@ const docTemplatev1 = `{
         "apis.InstanceResponse": {
             "type": "object",
             "properties": {
+                "cpu": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
+                },
+                "disk": {
+                    "type": "integer"
                 },
                 "flavor": {
                     "type": "string"
@@ -3349,6 +3370,9 @@ const docTemplatev1 = `{
                     }
                 },
                 "login_port": {
+                    "type": "integer"
+                },
+                "memory": {
                     "type": "integer"
                 },
                 "name": {
