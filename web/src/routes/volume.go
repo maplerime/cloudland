@@ -345,8 +345,14 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 		}
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Instance").Where(where).Where(query).Find(&volumes).Error; err != nil {
-		return
+	if booting_where != "" {
+		if err = db.Preload("Instance").Where(where).Where(query).Find(&volumes).Error; err != nil {
+			return
+		}
+	} else {
+		if err = db.Preload("Instance").Where(where).Where(query).Where(booting_where).Find(&volumes).Error; err != nil {
+			return
+		}
 	}
 	permit := memberShip.CheckPermission(model.Admin)
 	if permit {
