@@ -249,14 +249,16 @@ func (v *VolumeAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	instanceID := 0
+	instanceID := int64(0)
 	if instanceIDStr != "" {
-		instanceID, err = strconv.Atoi(instanceIDStr)
+		var instance *model.Instance
+		instance, err = instanceAdmin.GetInstanceByUUID(ctx, instanceIDStr)
 		if err != nil {
-			logger.Errorf("Invalid query instance_id: %s, %+v", instanceIDStr, err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid query instance_id: "+instanceIDStr, err)
+			logger.Errorf("Failed to get instance, %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
 			return
 		}
+		instanceID = instance.ID
 	}
 	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), orderStr, nameStr, typeStr, instanceID)
 	if err != nil {

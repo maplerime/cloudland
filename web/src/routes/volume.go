@@ -307,7 +307,7 @@ func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return a.ListVolume(ctx, offset, limit, order, query, "all", 0)
 }
 
-func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string, instanceID int) (total int64, volumes []*model.Volume, err error) {
+func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string, instanceID int64) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	db := DB()
 	if limit == 0 {
