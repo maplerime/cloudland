@@ -359,7 +359,7 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	}
 	permit := memberShip.CheckPermission(model.Admin)
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		db = dbs.ResetSortBy(db, "-created_at")
 		for _, vol := range volumes {
 			vol.OwnerInfo = &model.Organization{Model: model.Model{ID: vol.Owner}}
 			if err = db.Take(vol.OwnerInfo).Error; err != nil {

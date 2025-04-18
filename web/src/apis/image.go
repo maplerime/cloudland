@@ -213,7 +213,8 @@ func (v *ImageAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List images with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
+	orderStr := c.DefaultQuery("order", "-created_at")
+	logger.Debugf("List images with offset %s, limit %s, query %s, order %s", offsetStr, limitStr, queryStr, orderStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		logger.Errorf("Invalid query offset %s, %+v", offsetStr, err)
@@ -231,7 +232,7 @@ func (v *ImageAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, images, err := imageAdmin.List(int64(offset), int64(limit), "-created_at", queryStr)
+	total, images, err := imageAdmin.List(int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
 		logger.Errorf("Failed to list images %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list images", err)

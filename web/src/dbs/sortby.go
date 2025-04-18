@@ -28,6 +28,10 @@ func Sortby(db *gorm.DB, s string, m ...[2]string) *gorm.DB {
 	return db
 }
 
+func ResetSortBy(db *gorm.DB, s string, m ...[2]string) *gorm.DB {
+	return Sortby(db.New(), s, m...)
+}
+
 // NewOrders new orders
 // s: sort string defined in api handbook collections sorting
 // m: mappings

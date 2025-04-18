@@ -586,7 +586,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	queryStr := c.DefaultQuery("query", "")
 	orderStr := c.DefaultQuery("order", "-created_at")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
-	logger.Debugf("List instances with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
+	logger.Debugf("List instances with offset %s, limit %s, query %s, order %s, vpc_id %s", offsetStr, limitStr, queryStr, orderStr, vpcID)
 
 	var conditions []string
 

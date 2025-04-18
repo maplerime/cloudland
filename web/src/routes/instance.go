@@ -937,7 +937,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		logger.Errorf("Failed to query instance(s), %v", err)
 		return
 	}
-	db = db.Offset(0).Limit(-1)
+	db = dbs.ResetSortBy(db, "-created_at")
 	for _, instance := range instances {
 		if err = db.Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
