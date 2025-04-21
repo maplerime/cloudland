@@ -120,12 +120,11 @@ func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID st
     return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 }
 
-
 func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID string, enabled bool) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.RuleGroupV2{}).
-			Where("id = ?", groupID).
+			Where("uuid = ?", groupID).
 			Update("enabled", enabled)
 		if result.Error != nil {
 			alarmLogger.Error("update satus failed", "groupID", groupID, "error", result.Error)
@@ -139,18 +138,18 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 }
 
 
-func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmNames []string) error {
+func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUUIDs []string) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
-		for _, vmName := range vmNames {
+		for _, vmUUID := range vmUUIDs {
 			link := &model.VMRuleLink{
 				GroupUUID: GroupUUID,
-				VMName:  vmName,
+				VMUUID:    vmUUID,
 			}
 			if err := tx.Create(link).Error; err != nil {
 				alarmLogger.Error("create link failed",
 					"GroupUUID", GroupUUID,
-					"vmName", vmName,
+					"vmUUID", vmUUID,
 					"error", err)
 				return fmt.Errorf("create link failed: %w", err)
 			}
@@ -170,14 +169,14 @@ func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType
 	return result.Error
 }
 
-func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmName, ruleType string) (int64, error) {
+func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, ruleType string) (int64, error) {
 	ctx, db := GetContextDB(ctx)
-	result := db.Where("group_uuid = ? AND vm_name = ?", groupUUID, vmName).
+	result := db.Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID).
 		Delete(&model.VMRuleLink{})
 	if result.Error != nil {
 		alarmLogger.Error("delete link failed",
 			"groupUUID", groupUUID,
-			"vmName", vmName,
+			"vmUUID", vmUUID,
 			"error", result.Error)
 	}
 	return result.RowsAffected, result.Error
@@ -206,9 +205,8 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 
 func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) error {
     ctx, db := GetContextDB(ctx)
-	fmt.Printf("[DeleteRuleGroupWithDependencies] step 0")
     return db.Transaction(func(tx *gorm.DB) error {
-        // 首先删除依赖项
+        // delete detail db 
         switch ruleType {
         case "cpu":
             if err := tx.Where("group_uuid = ?", groupUUID).
@@ -225,15 +223,13 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
         default:
             return fmt.Errorf("unknow type: %s", ruleType)
         }
-		fmt.Printf("[DeleteRuleGroupWithDependencies] step 1")
-        // 然后删除虚拟机关联
+        // delete link db
         if err := tx.Where("group_uuid = ?", groupUUID).
             Delete(&model.VMRuleLink{}).Error; err != nil {
             alarmLogger.Error("failed to del vm link", "groupUUID", groupUUID, "error", err)
             return fmt.Errorf("failed to del vm link: %w", err)
         }
-		fmt.Printf("[DeleteRuleGroupWithDependencies] step 2")
-        // 最后删除规则组
+        // delete group rule db
         if err := tx.Where("uuid = ? AND type = ?", groupUUID, ruleType).
             Delete(&model.RuleGroupV2{}).Error; err != nil {
             alarmLogger.Error("group del failed", "groupUUID", groupUUID, "error", err)

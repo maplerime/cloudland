@@ -160,6 +160,7 @@
             smtp_auth_username: '{{ smtp_user }}'
             smtp_auth_password: '{{ smtp_pass }}'
             smtp_require_tls: true
+
           route:
             group_by: ['alertname']
             group_wait: 30s
@@ -167,29 +168,36 @@
             repeat_interval: 3h
             receiver: '{{ receiver_name }}'
             routes:
+            - match:
+                alert_type: cpu
+              receiver: 'cpu-webhook'
+              continue: true
             - match_re:
                 severity: critical|warning
               receiver: 'webhook-notifier'
-            - match_re:
-                alert_type: cpu
-              receiver: 'cpu-webhook'
-              retry_interval: 1m
-              repeat_interval: 1h
+              continue: true
+
           receivers:
           - name: '{{ receiver_name }}'
             email_configs:
             - to: '{{ alert_recipient }}'
               send_resolved: true
+
           - name: 'webhook-notifier'
             webhook_configs:
-            - url: 'https://{{ prometheus_server_ip }}:{{ rest_port }}/api/v1/alerts/process'
+            - url: 'https://127.0.0.1:{{ rest_port }}/api/v1/alerts/process'
               send_resolved: true
+              http_config:
+                tls_config:
+                  insecure_skip_verify: true
+
           - name: 'cpu-webhook'
             webhook_configs:
-            - url: 'https://{{ prometheus_server_ip }}::{{ rest_port }}/api/v1/alerts/process'
+            - url: 'https://127.0.0.1:{{ rest_port }}/api/v1/alerts/process'
               send_resolved: true
-              tls_config:
-                insecure_skip_verify: true
+              http_config:
+                tls_config:
+                  insecure_skip_verify: true
         owner: prometheus
         group: prometheus
         mode: 0644

@@ -50,7 +50,7 @@ type BWRuleDetail struct {
 
 type VMRuleLink struct {
 	Model
-    GroupUUID string `gorm:"column:group_uuid;type:varchar(36);index;not null"`
-	VMName    string `gorm:"type:varchar(128);index"`
+	GroupUUID string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
+	VMUUID    string `gorm:"column:vm_uuid;type:varchar(36);index"`
 	Interface string `gorm:"type:varchar(32)"`
 }

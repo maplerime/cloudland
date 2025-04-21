@@ -150,14 +150,18 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
 
 			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
-			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules) 
+			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules)
+			metricsGroup.GET("/alarm/cpu/active-rules", alarmAPI.GetActiveRules) 
 			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
 			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
 
 			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
 			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
+			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
+                        authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
+			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
+			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
 
-			//metricsGroup.PUT("/alarm/rules/:id/status", alarmAPI.ToggleRuleStatus)
 			//metricsGroup.POST("alarm/bw-rules/link", alarmAPI.LinkBWRuleToVM)
 			//metricsGroup.POST("alarm/bw-rules/unlink", alarmAPI.UnlinkBWRuleFromVM)
 			//metricsGroup.POST("alarm/bw/rules", alarmAPI.CreateBWRules)
