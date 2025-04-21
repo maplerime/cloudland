@@ -114,6 +114,7 @@ func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []str
 		err = db.Model(user).Where(user).Take(user).Error
 		if err != nil || user.ID <= 0 {
 			logger.Error("Failed to query user", err)
+			err = nil
 			continue
 		}
 		member := &model.Member{
@@ -128,6 +129,7 @@ func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []str
 		err = db.Create(member).Error
 		if err != nil {
 			logger.Error("Failed to create member", err)
+			err = nil
 			continue
 		}
 	}
@@ -153,6 +155,7 @@ func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []str
 		err = db.Where(member).Delete(member).Error
 		if err != nil {
 			logger.Error("Failed to delete member", err)
+			err = nil
 			continue
 		}
 	}
@@ -160,6 +163,7 @@ func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []str
 		err = db.Model(&model.Member{}).Where("user_name = ? and org_id = ?", user, orgID).Update("role", roles[i]).Error
 		if err != nil {
 			logger.Error("Failed to update member", err)
+			err = nil
 			continue
 		}
 	}

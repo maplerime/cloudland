@@ -32,7 +32,7 @@ type MigrationAdmin struct{}
 type MigrationView struct{}
 
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
-	logger.Debugf("Start migrating instances to %d", name, tgtHyper)
+	logger.Debugf("Start migrating instances to %d", tgtHyper)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
@@ -60,6 +60,9 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 	}
 	for _, instance := range instances {
+		if instance.Status == "migrating" {
+			continue
+		}
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
 		err = db.Where(sourceHyper).Take(sourceHyper).Error
 		if err != nil {
@@ -73,7 +76,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 		if instance.Hyper == tgtHyper {
 			logger.Error("No need to migrate if source and target hypervisors are the same")
-			err = fmt.Errorf("No need to migrate if source and target hypervisors are the same")
 			continue
 		}
 		task1 := &model.Task{
@@ -113,11 +115,12 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				task1.Summary = "No qualified target"
 				task1.Status = "not_doing"
 				migration.Status = "not_doing"
-				err = db.Model(migration).Save(migration).Error
-				if err != nil {
-					logger.Error("Failed to update save migration, %v", err)
+				mErr := db.Model(migration).Save(migration).Error
+				if mErr != nil {
+					logger.Error("Failed to update save migration, %v", mErr)
 					return
 				}
+				err = nil
 				continue
 			}
 			control = "select=" + hyperGroup
@@ -310,6 +313,7 @@ func (v *MigrationView) Create(c *macaron.Context, store session.Store) {
 		instID, err := strconv.Atoi(inst)
 		if err != nil {
 			logger.Error("Invalid instance ID", err)
+			err = nil
 			continue
 		}
 		var instance *model.Instance

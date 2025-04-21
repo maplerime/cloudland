@@ -529,6 +529,7 @@ func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.In
 		err = a.deleteInterface(ctx, iface)
 		if err != nil {
 			logger.Error("Failed to delete interface", err)
+			err = nil
 			continue
 		}
 	}
@@ -715,6 +716,10 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: address, MacAddr: iface.MacAddr})
 	}
+	osCode := "linux"
+	if instance.Image != nil {
+		osCode = instance.Image.OSCode
+	}
 	instData := &InstanceData{
 		Userdata:   instance.Userdata,
 		DNS:        dns,
@@ -725,7 +730,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		Keys:       instKeys,
 		RootPasswd: rootPasswd,
 		LoginPort:  int(instance.LoginPort),
-		OSCode:     instance.Image.OSCode,
+		OSCode:     osCode,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -1390,19 +1395,19 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 	}
 	if c.Req.Method == "GET" {
 		images := []*model.Image{}
-		if err := db.Find(&images).Error; err != nil {
+		if err = db.Find(&images).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(500, "500")
 			return
 		}
 		flavors := []*model.Flavor{}
-		if err := db.Find(&flavors).Error; err != nil {
+		if err = db.Find(&flavors).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(500, "500")
 			return
 		}
 		keys := []*model.Key{}
-		if err := db.Find(&keys).Error; err != nil {
+		if err = db.Find(&keys).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(500, "500")
 			return
@@ -1419,7 +1424,8 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		if imageID <= 0 {
 			imageID = instance.ImageID
 		}
-		image, err := imageAdmin.Get(ctx, imageID)
+		var image *model.Image
+		image, err = imageAdmin.Get(ctx, imageID)
 		if err != nil {
 			c.Data["ErrorMsg"] = "No valid image"
 			c.HTML(http.StatusBadRequest, "error")
@@ -1432,7 +1438,8 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		}
 		cpu, memory, disk := instance.Cpu, instance.Memory, instance.Disk
 		if flavorID > 0 {
-			flavor, err := flavorAdmin.Get(ctx, flavorID)
+			var flavor *model.Flavor
+			flavor, err = flavorAdmin.Get(ctx, flavorID)
 			if err != nil {
 				logger.Errorf("No valid flavor", err)
 				c.Data["ErrorMsg"] = "No valid flavor"
@@ -1456,6 +1463,7 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 				kID, err := strconv.Atoi(k[i])
 				if err != nil {
 					logger.Error("Invalid key ID", err)
+					err = nil
 					continue
 				}
 				var key *model.Key
@@ -1620,6 +1628,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		for i := 0; i < len(sg); i++ {
 			sgID, err := strconv.Atoi(sg[i])
 			if err != nil {
+				err = nil
 				continue
 			}
 			var secgroup *model.SecurityGroup
@@ -1677,6 +1686,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		sID, err := strconv.Atoi(s[i])
 		if err != nil {
 			logger.Error("Invalid secondary subnet ID", err)
+			err = nil
 			continue
 		}
 		var subnet *model.Subnet
@@ -1709,6 +1719,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		kID, err := strconv.Atoi(k[i])
 		if err != nil {
 			logger.Error("Invalid key ID", err)
+			err = nil
 			continue
 		}
 		var key *model.Key
