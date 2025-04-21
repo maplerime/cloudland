@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
@@ -228,7 +227,7 @@ func (a *SecgroupAdmin) RemovePortForInterfaceSecgroups(ctx context.Context, por
 	return
 }
 
-func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool, router *model.Router) (secgroup *model.SecurityGroup, err error) {
+func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool, router *model.Router, rules []*model.SecurityRule) (secgroup *model.SecurityGroup, err error) {
 	memberShip := GetMemberShip(ctx)
 	owner := memberShip.OrgID
 	var routerID int64
@@ -260,40 +259,50 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 		logger.Error("DB failed to create security group, %v", err)
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "udp", 1, 65535, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "icmp", -1, -1, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "icmp", -1, -1, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
+	if rules == nil {
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "udp", 1, 65535, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "icmp", -1, -1, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+		_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "ingress", "icmp", -1, -1, secgroup)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
+		}
+	} else {
+		for _, rule := range rules {
+			_, err = secruleAdmin.Create(ctx, rule.RemoteIp, rule.Direction, rule.Protocol, rule.PortMin, rule.PortMax, secgroup)
+			if err != nil {
+				logger.Error("Failed to create security rule", err)
+				return
+			}
+		}
 	}
 	if router != nil {
 		var subnets []*model.Subnet
@@ -609,7 +618,7 @@ func (v *SecgroupView) Create(c *macaron.Context, store session.Store) {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(404, "404")
 	}
-	_, err = secgroupAdmin.Create(ctx, name, isDef, router)
+	_, err = secgroupAdmin.Create(ctx, name, isDef, router, nil)
 	if err != nil {
 		logger.Error("Failed to create security group, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
