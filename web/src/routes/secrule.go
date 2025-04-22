@@ -251,7 +251,7 @@ func (a *SecruleAdmin) Delete(ctx context.Context, secrule *model.SecurityRule, 
 	return
 }
 
-func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order string, secgroup *model.SecurityGroup) (total int64, secrules []*model.SecurityRule, err error) {
+func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order string, secgroup *model.SecurityGroup, direction string) (total int64, secrules []*model.SecurityRule, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
 	if !permit {
@@ -272,6 +272,9 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 	wm := memberShip.GetWhere()
 	if wm != "" {
 		where = fmt.Sprintf("%s and %s", where, wm)
+	}
+	if direction != "" {
+		where = fmt.Sprintf("%s and direction = '%s'", where, direction)
 	}
 	secrules = []*model.SecurityRule{}
 	if err = db.Model(&model.SecurityRule{}).Where(where).Count(&total).Error; err != nil {
@@ -319,7 +322,7 @@ func (v *SecruleView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	total, secrules, err := secruleAdmin.List(ctx, offset, limit, order, secgroup)
+	total, secrules, err := secruleAdmin.List(ctx, offset, limit, order, secgroup, "")
 	if err != nil {
 		logger.Error("Failed to list security rule(s)", err)
 		c.Data["ErrorMsg"] = err.Error()

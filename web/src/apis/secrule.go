@@ -203,7 +203,8 @@ func (v *SecruleAPI) List(c *gin.Context) {
 	uuID := c.Param("id")
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
-	logger.Debugf("List secrules for SG %s, offset:%s, limit:%s", uuID, offsetStr, limitStr)
+	directionStr := c.DefaultQuery("direction", "")
+	logger.Debugf("List secrules for SG %s, offset:%s, limit:%s, direction:%s", uuID, offsetStr, limitStr, directionStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		logger.Errorf("Failed to parse offset: %s, %+v", offsetStr, err)
@@ -228,7 +229,13 @@ func (v *SecruleAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to get security group", err)
 		return
 	}
-	total, secrules, err := secruleAdmin.List(ctx, int64(offset), int64(limit), "-created_at", secgroup)
+	if directionStr != "" && directionStr != "ingress" && directionStr != "egress" {
+		errStr := "Invalid query direction, should be ingress or egress"
+		logger.Errorf(errStr)
+		ErrorResponse(c, http.StatusBadRequest, errStr, errors.New(errStr))
+		return
+	}
+	total, secrules, err := secruleAdmin.List(ctx, int64(offset), int64(limit), "-created_at", secgroup, directionStr)
 	if err != nil {
 		logger.Errorf("Failed to list secrules, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list secrules", err)
