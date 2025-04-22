@@ -311,16 +311,18 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 			logger.Error("Failed to create security rule", err)
 			return
 		}
-		for _, subnet := range subnets {
-			_, err = secruleAdmin.Create(ctx, subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
-			if err != nil {
-				logger.Error("Failed to create security rule", err)
-				return
-			}
-			_, err = secruleAdmin.Create(ctx, subnet.Network, "ingress", "udp", 1, 65535, secgroup)
-			if err != nil {
-				logger.Error("Failed to create security rule", err)
-				return
+		if rules != nil {
+			for _, subnet := range subnets {
+				_, err = secruleAdmin.Create(ctx, subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
+				if err != nil {
+					logger.Error("Failed to create security rule", err)
+					return
+				}
+				_, err = secruleAdmin.Create(ctx, subnet.Network, "ingress", "udp", 1, 65535, secgroup)
+				if err != nil {
+					logger.Error("Failed to create security rule", err)
+					return
+				}
 			}
 		}
 		if isDefault {
@@ -414,6 +416,7 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		logger.Error("DB failed to query security group(s), %v", err)
 		return
 	}
+	db = dbs.ResetSortBy(db.Offset(0).Limit(-1), "-created_at")
 	for _, secgroup := range secgroups {
 		if secgroup.RouterID > 0 {
 			secgroup.Router = &model.Router{Model: model.Model{ID: secgroup.RouterID}}
@@ -427,7 +430,6 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	}
 	permit = memberShip.CheckPermission(model.Admin)
 	if permit {
-		db = db.Offset(0).Limit(-1)
 		for _, sg := range secgroups {
 			sg.OwnerInfo = &model.Organization{Model: model.Model{ID: sg.Owner}}
 			if err = db.Take(sg.OwnerInfo).Error; err != nil {

@@ -45,7 +45,7 @@ type SecurityGroupPayload struct {
 	Name      string                 `json:"name" binding:"required,min=2,max=32"`
 	VPC       *BaseReference         `json:"vpc" binding:"omitempty"`
 	IsDefault bool                   `json:"is_default" binding:"omitempty"`
-	Rules     []*SecurityRulePayload `json:"rules" binding:"omitempty"`
+	Rules     []*SecurityRulePayload `json:"rules" binding:"omitempty,dive"`
 }
 
 type SecurityGroupPatchPayload struct {
@@ -256,10 +256,12 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 			owner := orgAdmin.GetOrgName(instance.Owner)
 			targetIface.FromInstance = &InstanceInfo{
 				ResourceReference: &ResourceReference{
-					ID:    instance.UUID,
-					Owner: owner,
+					ID:        instance.UUID,
+					Owner:     owner,
+					CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 				},
 				Hostname: instance.Hostname,
+				Status:   instance.Status,
 			}
 		}
 		secgroupResp.TargetInterfaces = append(secgroupResp.TargetInterfaces, targetIface)
@@ -280,6 +282,7 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", ""))
 	logger.Debugf("List secgroups with offset %s, limit %s, query %s, vpc_id %s", offsetStr, limitStr, queryStr, vpcID)
 
@@ -316,7 +319,7 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
 		logger.Errorf("Failed to list secgroups, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list secgroups", err)

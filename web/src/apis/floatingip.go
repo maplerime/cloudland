@@ -39,6 +39,7 @@ type TargetInterface struct {
 type InstanceInfo struct {
 	*ResourceReference
 	Hostname string `json:"hostname"`
+	Status   string `json:"status,omitempty"`
 }
 
 type FloatingIpResponse struct {
