@@ -42,10 +42,9 @@ type SecurityGroupListResponse struct {
 }
 
 type SecurityGroupPayload struct {
-	Name      string                 `json:"name" binding:"required,min=2,max=32"`
-	VPC       *BaseReference         `json:"vpc" binding:"omitempty"`
-	IsDefault bool                   `json:"is_default" binding:"omitempty"`
-	Rules     []*SecurityRulePayload `json:"rules" binding:"omitempty,dive"`
+	Name      string         `json:"name" binding:"required,min=2,max=32"`
+	VPC       *BaseReference `json:"vpc" binding:"omitempty"`
+	IsDefault bool           `json:"is_default" binding:"omitempty"`
 }
 
 type SecurityGroupPatchPayload struct {
@@ -187,20 +186,7 @@ func (v *SecgroupAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	var rules []*model.SecurityRule
-	if payload.Rules != nil {
-		rules = make([]*model.SecurityRule, len(payload.Rules))
-		for i, rule := range payload.Rules {
-			rules[i] = &model.SecurityRule{
-				RemoteIp:  rule.RemoteCIDR,
-				Direction: rule.Direction,
-				Protocol:  rule.Protocol,
-				PortMin:   rule.PortMin,
-				PortMax:   rule.PortMax,
-			}
-		}
-	}
-	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.IsDefault, router, rules)
+	secgroup, err := secgroupAdmin.Create(ctx, payload.Name, payload.IsDefault, router)
 	if err != nil {
 		logger.Errorf("Failed to create secgroup %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

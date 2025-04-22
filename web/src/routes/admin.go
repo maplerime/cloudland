@@ -79,7 +79,7 @@ func adminInit() {
 		}
 		memberShip.Role = model.Admin
 		ctx = memberShip.SetContext(ctx)
-		_, _ = secgroupAdmin.Create(ctx, SystemDefaultSGName, true, nil, nil)
+		_, _ = secgroupAdmin.Create(ctx, SystemDefaultSGName, true, nil)
 	}
 	return
 }
