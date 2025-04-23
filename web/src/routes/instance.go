@@ -921,7 +921,8 @@ func joinSecgroup(db *gorm.DB, secgroupID string) *gorm.DB {
 	if secgroupID != "" {
 		db = db.Joins("JOIN interfaces ON interfaces.instance = instances.id").
 			Joins("JOIN secgroup_ifaces ON secgroup_ifaces.interface_id = interfaces.id").
-			Where("secgroup_ifaces.security_group_id = ?", secgroupID).
+			Joins("JOIN security_groups ON security_groups.id = secgroup_ifaces.security_group_id").
+			Where("security_groups.uuid = ?", secgroupID).
 			Group("instances.id")
 	}
 	return db
