@@ -185,6 +185,7 @@ func (v *VPCAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	logger.Debugf("List vpcs, offset:%s, limit:%s, query:%s", offsetStr, limitStr, queryStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -204,7 +205,7 @@ func (v *VPCAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, routers, err := routerAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, routers, err := routerAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
 	if err != nil {
 		logger.Errorf("Failed to list vpcs, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list vpcs", err)

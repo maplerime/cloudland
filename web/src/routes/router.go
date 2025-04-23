@@ -305,7 +305,7 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	}
 	permit := memberShip.CheckPermission(model.Admin)
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		db = dbs.ResetSortBy(db, "-created_at")
 		for _, router := range routers {
 			router.OwnerInfo = &model.Organization{Model: model.Model{ID: router.Owner}}
 			if err = db.Take(router.OwnerInfo).Error; err != nil {
