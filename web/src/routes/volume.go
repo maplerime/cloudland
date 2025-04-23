@@ -478,7 +478,7 @@ func (v *VolumeView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
+	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "", "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, err.Error())

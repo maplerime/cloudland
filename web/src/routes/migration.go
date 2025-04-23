@@ -284,7 +284,7 @@ func (v *MigrationView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
+	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "", "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)

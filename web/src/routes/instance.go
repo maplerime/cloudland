@@ -917,7 +917,17 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 	return int(instance.ID), nil
 }
 
-func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, instances []*model.Instance, err error) {
+func joinSecgroup(db *gorm.DB, secgroupID string) *gorm.DB {
+	if secgroupID != "" {
+		db = db.Joins("JOIN interfaces ON interfaces.instance = instances.id").
+			Joins("JOIN secgroup_ifaces ON secgroup_ifaces.interface_id = interfaces.id").
+			Where("secgroup_ifaces.security_group_id = ?", secgroupID).
+			Group("instances.id")
+	}
+	return db
+}
+
+func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query, secgroupID string) (total int64, instances []*model.Instance, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
@@ -937,11 +947,12 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 
 	where := memberShip.GetWhere()
 	instances = []*model.Instance{}
-	if err = db.Model(&model.Instance{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	dbCount := joinSecgroup(db.Model(&model.Instance{}).Where(where).Where(query), secgroupID)
+	if err = dbCount.Count(&total).Error; err != nil {
 		return
 	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Where(query).Find(&instances).Error; err != nil {
+	dbList := joinSecgroup(dbs.Sortby(db.Offset(offset).Limit(limit), order), secgroupID)
+	if err = dbList.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Where(query).Find(&instances).Error; err != nil {
 		logger.Errorf("Failed to query instance(s), %v", err)
 		return
 	}
@@ -1000,7 +1011,7 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 		query = fmt.Sprintf("router_id = %d", routerID)
 	}
 
-	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
+	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
@@ -1034,7 +1045,7 @@ func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	_, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
+	_, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

@@ -536,13 +536,13 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},
-		Hostname:  instance.Hostname,
-		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status,
-		Reason:    instance.Reason,
-		Cpu:       instance.Cpu,
-		Memory:    instance.Memory,
-		Disk:      instance.Disk,
+		Hostname:    instance.Hostname,
+		LoginPort:   int(instance.LoginPort),
+		Status:      instance.Status,
+		Reason:      instance.Reason,
+		Cpu:         instance.Cpu,
+		Memory:      instance.Memory,
+		Disk:        instance.Disk,
 		PasswdLogin: instance.PasswdLogin,
 	}
 	if instance.Image != nil {
@@ -614,6 +614,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	orderStr := c.DefaultQuery("order", "-created_at")
+	securityGroupID := c.DefaultQuery("security_group_id", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
 	logger.Debugf("List instances with offset %s, limit %s, query %s, order %s, vpc_id %s", offsetStr, limitStr, queryStr, orderStr, vpcID)
 
@@ -657,7 +658,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		return
 	}
 	finalQuery := strings.Join(conditions, " AND ")
-	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), orderStr, finalQuery)
+	total, instances, err := instanceAdmin.List(ctx, int64(offset), int64(limit), orderStr, finalQuery, securityGroupID)
 	if err != nil {
 		logger.Errorf("Failed to list instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list instances", err)
