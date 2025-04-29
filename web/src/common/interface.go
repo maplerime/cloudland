@@ -152,7 +152,7 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup) (iface *model.Interface, err error) {
+func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	primary := false
 	if ifaceName == "eth0" {
@@ -178,6 +178,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		Mtu:            1450,
 		RouterID:       subnet.RouterID,
 		SecurityGroups: secgroups,
+		AllowSpoofing:  allowSpoofing,
 	}
 	logger.Debugf("Interface: %v", iface)
 	if ifType == "instance" {

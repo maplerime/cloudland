@@ -545,7 +545,7 @@ func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interf
 	return
 }
 
-func (a *InstanceAdmin) createInterface(ctx context.Context, subnet *model.Subnet, address, mac string, instance *model.Instance, ifname string, inbound, outbound int32, secgroups []*model.SecurityGroup, zoneID int64) (iface *model.Interface, err error) {
+func (a *InstanceAdmin) createInterface(ctx context.Context, subnet *model.Subnet, address, mac string, instance *model.Instance, ifname string, inbound, outbound int32, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	memberShip := GetMemberShip(ctx)
 	if subnet.Type == "public" {
 		permit := memberShip.CheckPermission(model.Admin)
@@ -559,7 +559,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, subnet *model.Subne
 		err = fmt.Errorf("Bad request")
 		return
 	}
-	iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups)
+	iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups, allowSpoofing)
 	if err != nil {
 		logger.Error("Failed to create interface")
 		return
@@ -586,7 +586,12 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	primaryMac := primaryIface.MacAddress
 	inbound := primaryIface.Inbound
 	outbound := primaryIface.Outbound
-	iface, err := a.createInterface(ctx, primary, primaryIP, primaryMac, instance, "eth0", inbound, outbound, primaryIface.SecurityGroups, zoneID)
+	allowSpoofing := false
+	if len(primaryIface.SiteSubnets) > 0 {
+		allowSpoofing = true
+	}
+
+	iface, err := a.createInterface(ctx, primary, primaryIP, primaryMac, instance, "eth0", inbound, outbound, primaryIface.SecurityGroups, allowSpoofing)
 	if err != nil {
 		logger.Errorf("Allocate address for primary subnet %s--%s/%s failed, %v", primary.Name, primary.Network, primary.Netmask, err)
 		return
@@ -614,7 +619,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		ifname := fmt.Sprintf("eth%d", i+1)
 		inbound = ifaceInfo.Inbound
 		outbound = ifaceInfo.Outbound
-		iface, err = a.createInterface(ctx, subnet, ifaceInfo.IpAddress, ifaceInfo.MacAddress, instance, ifname, inbound, outbound, ifaceInfo.SecurityGroups, zoneID)
+		iface, err = a.createInterface(ctx, subnet, ifaceInfo.IpAddress, ifaceInfo.MacAddress, instance, ifname, inbound, outbound, ifaceInfo.SecurityGroups, false)
 		if err != nil {
 			logger.Errorf("Allocate address for secondary subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
 			return
