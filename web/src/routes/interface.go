@@ -113,7 +113,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where(where).Find(&interfaces).Error; err != nil {
+	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where(where).Find(&interfaces).Error; err != nil {
 		logger.Debug("DB failed to query security rule(s), %v", err)
 		return
 	}
