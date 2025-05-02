@@ -44,6 +44,26 @@
                     	</div>
                     </div>
                     <div class="inline field">
+                        <label for="sites">{{.i18n.Tr "Site Subnets"}}</label>
+                        <select name="sites" id="sites" multiple="" class="ui multiple selection dropdown">
+                            {{ $IfaceSites := .IfaceSites }}
+            		    {{ range .SiteSubnets }}
+                              {{ $siteID := .ID }}
+                              {{ $selected := false }}
+            		      {{ range $IfaceSites }}
+                                {{ if eq .ID $siteID }}
+                                  {{ $selected = true }}
+                                {{ end }}
+                              {{ end }}
+                              {{ if $selected }}
+                                  <option value="{{ .ID }}" selected>{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ else }}
+                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ end }}
+                            {{ end }}
+                        </select>
+		    </div>
+                    <div class="inline field">
                         <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>
                         <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">
                             {{ $IfaceSecgroups := .IfaceSecgroups }}

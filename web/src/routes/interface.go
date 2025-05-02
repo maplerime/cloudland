@@ -159,52 +159,70 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
-	if iface.PrimaryIf && iface.SiteSubnets != nil {
-		needUpdate = true
-		sitesInfo := []*SiteIpSubnetInfo{}
-		_, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, 0)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		var oldSiteJson []byte
-		oldSiteJson, err = json.Marshal(sitesInfo)
-		if err != nil {
-			logger.Errorf("Failed to marshal instance json data, %v", err)
-			return
-		}
-		for _, site := range iface.SiteSubnets {
-			err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
-			if err != nil {
-				logger.Error("Failed to update interface", err)
+	if iface.PrimaryIf {
+		same := false
+		if len(iface.SiteSubnets) == len(siteSubnets) {
+			same = true
+			for _, ifaceSite := range iface.SiteSubnets {
+				found := false
+				for _, site := range siteSubnets {
+					if ifaceSite.ID == site.ID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					same = false
+				}
 			}
 		}
-		control := fmt.Sprintf("inter=%d", instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_sites_ip.sh '%d'<<EOF\n%s\nEOF", instance.RouterID, oldSiteJson)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Update vm nic command execution failed", err)
-			return
+		if !same {
+			needUpdate = true
+			sitesInfo := []*SiteIpSubnetInfo{}
+			_, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, 0)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			var oldSiteJson []byte
+			oldSiteJson, err = json.Marshal(sitesInfo)
+			if err != nil {
+				logger.Errorf("Failed to marshal instance json data, %v", err)
+				return
+			}
+			for _, site := range iface.SiteSubnets {
+				err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
+				if err != nil {
+					logger.Error("Failed to update interface", err)
+				}
+			}
+			control := fmt.Sprintf("inter=%d", instance.Hyper)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_sites_ip.sh '%d'<<EOF\n%s\nEOF", instance.RouterID, oldSiteJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Update vm nic command execution failed", err)
+				return
+			}
+			_, sitesInfo, err = GetInstanceNetworks(ctx, iface, siteSubnets, 0)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			var newSiteJson []byte
+			newSiteJson, err = json.Marshal(sitesInfo)
+			if err != nil {
+				logger.Errorf("Failed to marshal instance json data, %v", err)
+				return
+			}
+			control = fmt.Sprintf("inter=%d", instance.Hyper)
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_sites_ip.sh '%d' '%s' 'true' '%d'<<EOF\n%s\nEOF", instance.RouterID, iface.Address.Address, instance.ID, newSiteJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Update vm nic command execution failed", err)
+				return
+			}
+			iface.SiteSubnets = siteSubnets
 		}
-		var newSiteJson []byte
-		newSiteJson, err = json.Marshal(sitesInfo)
-		if err != nil {
-			logger.Errorf("Failed to marshal instance json data, %v", err)
-			return
-		}
-		_, sitesInfo, err = GetInstanceNetworks(ctx, iface, siteSubnets, 0)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		control = fmt.Sprintf("inter=%d", instance.Hyper)
-		command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_sites_ip.sh '%d' '%s' 'update_meta'<<EOF\n%s\nEOF", instance.RouterID, iface.Address.Address, newSiteJson)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Update vm nic command execution failed", err)
-			return
-		}
-		iface.SiteSubnets = siteSubnets
 	}
 	if needUpdate || needRemoteUpdate {
 		if err = db.Model(iface).Save(iface).Error; err != nil {
@@ -245,8 +263,14 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		return
 	}
 	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
-	if err = db.Preload("Address").Preload("SecurityGroups").Take(iface).Error; err != nil {
+	if err = db.Preload("Address").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error; err != nil {
 		logger.Error("Security group query failed", err)
+		return
+	}
+	_, siteSubnets, err := subnetAdmin.List(c.Req.Context(), 0, -1, "", "", fmt.Sprintf("type = 'site' and (interface = 0 or interface = %d)", iface.ID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
 		return
 	}
 	_, secgroups, err := secgroupAdmin.List(c.Req.Context(), 0, -1, "", fmt.Sprintf("router_id = %d", iface.SecurityGroups[0].RouterID))
@@ -257,7 +281,9 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 	}
 	c.Data["Interface"] = iface
 	c.Data["Secgroups"] = secgroups
+	c.Data["SiteSubnets"] = siteSubnets
 	c.Data["IfaceSecgroups"] = iface.SecurityGroups
+	c.Data["IfaceSites"] = iface.SiteSubnets
 	c.HTML(200, "interfaces_patch")
 }
 
@@ -425,7 +451,28 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			secgroups = append(secgroups, secgroup)
 		}
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, []*model.Subnet{})
+	sites := c.QueryStrings("sites")
+	siteSubnets := []*model.Subnet{}
+	if len(sites) > 0 {
+		for _, site := range sites {
+			siteID, err := strconv.Atoi(site)
+			if err != nil {
+				logger.Debug("Invalid site subnet ID, %v", err)
+				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			siteSubnet, err := subnetAdmin.Get(ctx, int64(siteID))
+			if err != nil {
+				logger.Debug("Failed to query site subnet, %v", err)
+				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			siteSubnets = append(siteSubnets, siteSubnet)
+		}
+	}
+	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, siteSubnets)
 	if err != nil {
 		logger.Debug("Failed to update interface", err)
 		c.Data["ErrorMsg"] = err.Error()
