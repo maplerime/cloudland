@@ -24,8 +24,16 @@ type MonitorAPI struct{}
 
 var monitorAPI = &MonitorAPI{}
 
-var (
+type cacheItem struct {
+	uuid       string
+	instanceID int
+}
 
+var (
+	cacheSize   = 10
+	cacheExpire = 30 * time.Minute
+	cacheList   = make([]cacheItem, 0, cacheSize)
+	lastAccess  time.Time
 	// Prometheus API path
 	PrometheusQueryPath      = "/api/v1/query"
 	PrometheusQueryRangePath = "/api/v1/query_range"
@@ -263,6 +271,29 @@ type VolumeMonResponse struct {
 	} `json:"data"`
 }
 
+func getInstanceIDFromCache(uuid string) (int, bool) {
+	if time.Since(lastAccess) > cacheExpire {
+		cacheList = cacheList[:0]
+		return 0, false
+	}
+
+	for _, item := range cacheList {
+		if item.uuid == uuid {
+			lastAccess = time.Now()
+			return item.instanceID, true
+		}
+	}
+	return 0, false
+}
+func addToCache(uuid string, instanceID int) {
+	if len(cacheList) >= cacheSize {
+		cacheList = cacheList[1:]
+	}
+
+	cacheList = append(cacheList, cacheItem{uuid, instanceID})
+	lastAccess = time.Now()
+}
+
 func parseUnixTime(timeStr string) (int64, error) {
 	if timestamp, err := strconv.ParseInt(timeStr, 10, 64); err == nil {
 		return timestamp, nil
@@ -338,6 +369,10 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 	var instanceIDs []string
 	for _, uuid := range request.ID {
 		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
+			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			continue
+		}
 		instanceID, err := routes.GetDBIndexByInstanceUUID(c, uuid)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -350,6 +385,7 @@ func (api *MonitorAPI) GetTraffic(c *gin.Context) {
 		}
 		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		addToCache(uuid, instanceID)
 	}
 
 	// validate time params
@@ -417,6 +453,10 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 	var instanceIDs []string
 	for _, uuid := range request.ID {
 		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
+			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			continue
+		}
 		instanceID, err := routes.GetDBIndexByInstanceUUID(c, uuid)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -429,6 +469,7 @@ func (api *MonitorAPI) GetCPU(c *gin.Context) {
 		}
 		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		addToCache(uuid, instanceID)
 	}
 
 	// validate time params
@@ -488,6 +529,10 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 	var instanceIDs []string
 	for _, uuid := range request.ID {
 		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
+			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			continue
+		}
 		instanceID, err := routes.GetDBIndexByInstanceUUID(c, uuid)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -500,6 +545,7 @@ func (api *MonitorAPI) GetMemory(c *gin.Context) {
 		}
 		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		addToCache(uuid, instanceID)
 	}
 
 	// validate time params
@@ -569,6 +615,10 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 	var instanceIDs []string
 	for _, uuid := range request.ID {
 		logger.Debug("Attempting to convert UUID: %s\n", uuid)
+		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
+			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			continue
+		}
 		instanceID, err := routes.GetDBIndexByInstanceUUID(c, uuid)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -581,6 +631,7 @@ func (api *MonitorAPI) GetDisk(c *gin.Context) {
 		}
 		logger.Debug("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		addToCache(uuid, instanceID)
 	}
 
 	// validate time params
@@ -979,6 +1030,11 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 	var instanceIDs []string
 	for _, uuid := range request.ID {
 		logger.Info("Attempting to convert UUID: %s\n", uuid)
+		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
+			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+			continue
+		}
+
 		instanceID, err := routes.GetDBIndexByInstanceUUID(c, uuid)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -991,6 +1047,7 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 		}
 		logger.Info("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
+		addToCache(uuid, instanceID)
 	}
 
 	// validate time params
