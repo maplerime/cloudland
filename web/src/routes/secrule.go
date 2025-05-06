@@ -142,7 +142,7 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, remoteIp, direction
 
 }
 
-func (a *SecruleAdmin) Create(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
 	if !permit {
@@ -170,6 +170,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, remoteIp, direction, protocol
 		Protocol:  protocol,
 		PortMin:   portMin,
 		PortMax:   portMax,
+		Name:      name,
 	}
 	err = db.Create(secrule).Error
 	if err != nil {
@@ -436,7 +437,7 @@ func (v *SecruleView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, remoteIp, direction, protocol, int32(portMin), int32(portMax), secgroup)
+	_, err = secruleAdmin.Create(ctx, "", remoteIp, direction, protocol, int32(portMin), int32(portMax), secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

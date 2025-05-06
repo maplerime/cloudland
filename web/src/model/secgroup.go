@@ -28,6 +28,7 @@ type SecurityRule struct {
 	Model
 	Owner         int64 `gorm:"default:1"` /* The organization ID of the resource */
 	Secgroup      int64
+	Name          string `gorm:"type:varchar(32)"`
 	RemoteIp      string `gorm:"type:varchar(32)"`
 	RemoteGroupID int64
 	RemoteGroup   *SecurityGroup `gorm:"foreignkey:RemoteGroupID"`
