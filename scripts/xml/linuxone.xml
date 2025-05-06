@@ -46,6 +46,7 @@
       <address type='ccw' cssid='0xfe' ssid='0x0' devno='0x0004'/>
     </video>
     <memballoon model='virtio'>
+      <stats period='10'/>
       <alias name='balloon0'/>
       <address type='ccw' cssid='0xfe' ssid='0x0' devno='0x0002'/>
     </memballoon>
