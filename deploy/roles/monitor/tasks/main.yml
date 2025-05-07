@@ -160,7 +160,6 @@
             smtp_auth_username: '{{ smtp_user }}'
             smtp_auth_password: '{{ smtp_pass }}'
             smtp_require_tls: true
-
           route:
             group_by: ['alertname']
             group_wait: 30s
@@ -182,7 +181,6 @@
             email_configs:
             - to: '{{ alert_recipient }}'
               send_resolved: true
-
           - name: 'webhook-notifier'
             webhook_configs:
             - url: 'https://127.0.0.1:{{ rest_port }}/api/v1/alerts/process'
