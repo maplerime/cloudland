@@ -614,9 +614,10 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	orderStr := c.DefaultQuery("order", "-created_at")
+	statusStr := c.DefaultQuery("status", "")
 	securityGroupID := c.DefaultQuery("security_group_id", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
-	logger.Debugf("List instances with offset %s, limit %s, query %s, order %s, vpc_id %s", offsetStr, limitStr, queryStr, orderStr, vpcID)
+	logger.Debugf("List instances with offset %s, limit %s, query %s, order %s, vpc_id %s, status %s", offsetStr, limitStr, queryStr, orderStr, vpcID, statusStr)
 
 	var conditions []string
 
@@ -638,6 +639,11 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		logger.Debugf("The router with vpc_id: %+v\n", router)
 		logger.Debugf("The router_id in vpc is: %d", router.ID)
 		queryStr = fmt.Sprintf("router_id = %d", router.ID)
+		conditions = append(conditions, queryStr)
+	}
+	if statusStr != "" {
+		logger.Debugf("Filtering instances by status: %s", statusStr)
+		queryStr = fmt.Sprintf("status = '%s'", statusStr)
 		conditions = append(conditions, queryStr)
 	}
 	offset, err := strconv.Atoi(offsetStr)
