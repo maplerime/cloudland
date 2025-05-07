@@ -9,6 +9,28 @@ definitions:
       token:
         type: string
     type: object
+  apis.DictionaryListResponse:
+    properties:
+      dictionaries:
+        items:
+          $ref: '#/definitions/apis.DictionaryResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.DictionaryResponse:
+    properties:
+      category:
+        type: string
+      name:
+        type: string
+      value:
+        type: string
+    type: object
   apis.FlavorListResponse:
     properties:
       flavors:
@@ -516,6 +538,60 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
+  apis.IpGroupListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      subnets:
+        items:
+          $ref: '#/definitions/apis.IpGroupResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.IpGroupPatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      type:
+        type: integer
+    required:
+    - name
+    - type
+    type: object
+  apis.IpGroupPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      type:
+        type: integer
+    required:
+    - name
+    - type
+    type: object
+  apis.IpGroupResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      type:
+        type: integer
+      type_name:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.KeyListResponse:
     properties:
       keys:
@@ -726,8 +802,6 @@ definitions:
   apis.SecurityGroupPatchPayload:
     properties:
       is_default:
-        enum:
-        - true
         type: boolean
       name:
         maxLength: 32
@@ -824,6 +898,8 @@ definitions:
         type: string
       gateway:
         type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
       name:
         maxLength: 32
         minLength: 2
@@ -856,6 +932,8 @@ definitions:
         type: string
       gateway:
         type: string
+      group:
+        $ref: '#/definitions/common.ResourceReference'
       id:
         type: string
       name:
@@ -1208,6 +1286,109 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /dictionaries:
+    get:
+      consumes:
+      - application/json
+      description: list dictionaries
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.DictionaryListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list dictionaries
+      tags:
+      - Compute
+  /dictionaries/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a dictionary
+      parameters:
+      - description: Dictionary ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a dictionary
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a dictionary
+      parameters:
+      - description: Dictionary UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.DictionaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a dictionary
+      tags:
+      - Compute
+    patch:
+      consumes:
+      - application/json
+      description: patch a dictionary
+      parameters:
+      - description: Dictionary patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.DictionaryResponse'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.DictionaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a dictionary
+      tags:
+      - Compute
   /flavors:
     get:
       consumes:
@@ -1931,6 +2112,127 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a interface
+      tags:
+      - Network
+  /ipgroup/{id}:
+    get:
+      consumes:
+      - application/json
+      description: get a ipGroup
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a ipGroup
+      tags:
+      - Network
+  /ipgroups:
+    get:
+      consumes:
+      - application/json
+      description: list ipGroup
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list ipGroup
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a ipGroup
+      parameters:
+      - description: IpGroup create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.IpGroupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a ipGroup
+      tags:
+      - Network
+  /ipgroups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a ipGroup
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a ipGroup
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a ipGroup
+      parameters:
+      - description: Subnet patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.IpGroupPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a ipGroup
       tags:
       - Network
   /keys:

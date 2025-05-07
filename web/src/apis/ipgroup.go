@@ -43,17 +43,17 @@ type IpGroupListResponse struct {
 }
 
 type IpGroupPayload struct {
-	Name string `json:"name" binding:"required,min=2,max=32"`
-	IpGroupType
+	Name        string `json:"name" binding:"required,min=2,max=32"`
+	IpGroupType int    `json:"type" binding:"required"`
 }
 
 type IpGroupPatchPayload struct {
-	Name string `json:"name" binding:"required,min=2,max=32"`
-	IpGroupType
+	Name        string `json:"name" binding:"required,min=2,max=32"`
+	IpGroupType int    `json:"type" binding:"required"`
 }
 
-// @Summary get a ipgroup
-// @Description get a ipgroup
+// @Summary get a ipGroup
+// @Description get a ipGroup
 // @tags Network
 // @Accept  json
 // @Produce json
@@ -64,21 +64,21 @@ type IpGroupPatchPayload struct {
 func (v *IpGroupAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	ipgroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
+	ipGroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid ip group query", err)
 		return
 	}
-	ipgroupResp, err := v.getIpGroupResponse(ctx, ipgroup)
+	ipGroupResp, err := v.getIpGroupResponse(ctx, ipGroup)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	c.JSON(http.StatusOK, ipgroupResp)
+	c.JSON(http.StatusOK, ipGroupResp)
 }
 
-// @Summary patch a ipgroup
-// @Description patch a ipgroup
+// @Summary patch a ipGroup
+// @Description patch a ipGroup
 // @tags Network
 // @Accept  json
 // @Produce json
@@ -98,49 +98,49 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 		return
 	}
 
-	ipgroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
+	ipGroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet query", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid ipGroup query", err)
 		return
 	}
 
 	// 校验 TypeID 是否有效
 	var dictionaryEntry model.Dictionary
 	db := dbs.DB()
-	if err := db.Where("id = ? AND type = ?", payload.Type, "ipgroup").First(&dictionaryEntry).Error; err != nil {
+	if err := db.Where("id = ? AND type = ?", payload.IpGroupType, "ipgroup").First(&dictionaryEntry).Error; err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid type ID", err)
 		return
 	}
 
-	name := ipgroup.Name
+	name := ipGroup.Name
 	if payload.Name != "" {
 		name = payload.Name
 		logger.Debugf("Update name to %s", name)
 	}
 
-	ipgrouptype := int(ipgroup.Type.ID)
-	if payload.Type != 0 && ipgrouptype != payload.Type {
-		ipgrouptype = payload.Type
-		logger.Debugf("Update type to %d", ipgrouptype)
+	ipGroupType := int(ipGroup.DictionaryType.ID)
+	if payload.IpGroupType != 0 && ipGroupType != payload.IpGroupType {
+		ipGroupType = payload.IpGroupType
+		logger.Debugf("Update type to %d", ipGroupType)
 	}
 
-	err = ipgroupAdmin.Update(ctx, ipgroup, name, ipgrouptype)
+	err = ipgroupAdmin.Update(ctx, ipGroup, name, ipGroupType)
 	if err != nil {
-		logger.Errorf("Failed to patch ipgroup %s, %+v", uuID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Patch ipgroup failed", err)
+		logger.Errorf("Failed to patch ipGroup %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch ipGroup failed", err)
 		return
 	}
-	ipgroupResp, err := v.getIpGroupResponse(ctx, ipgroup)
+	ipGroupResp, err := v.getIpGroupResponse(ctx, ipGroup)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch ipgroup successfully, %s, %+v", uuID, ipgroupResp)
-	c.JSON(http.StatusOK, ipgroupResp)
+	logger.Debugf("Patch ipgroup successfully, %s, %+v", uuID, ipGroupResp)
+	c.JSON(http.StatusOK, ipGroupResp)
 }
 
-// @Summary delete a ipgroup
-// @Description delete a ipgroup
+// @Summary delete a ipGroup
+// @Description delete a ipGroup
 // @tags Network
 // @Accept  json
 // @Produce json
@@ -151,24 +151,24 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 func (v *IpGroupAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	logger.Debugf("Delete ipgroup %s", uuID)
-	ipgroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
+	logger.Debugf("Delete ipGroup %s", uuID)
+	ipGroup, err := ipgroupAdmin.GetIpGroupByUUID(ctx, uuID)
 	if err != nil {
-		logger.Errorf("Failed to get ipgroup %s, %+v", uuID, err)
+		logger.Errorf("Failed to get ipGroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
-	err = ipgroupAdmin.Delete(ctx, ipgroup)
+	err = ipgroupAdmin.Delete(ctx, ipGroup)
 	if err != nil {
-		logger.Errorf("Failed to delete ipgroup %s, %+v", uuID, err)
+		logger.Errorf("Failed to delete ipGroup %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to delete", err)
 		return
 	}
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// @Summary create a ipgroup
-// @Description create a ipgroup
+// @Summary create a ipGroup
+// @Description create a ipGroup
 // @tags Network
 // @Accept  json
 // @Produce json
@@ -176,7 +176,7 @@ func (v *IpGroupAPI) Delete(c *gin.Context) {
 // @Success 200 {object} IpGroupResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /subnets [post]
+// @Router /ipgroups [post]
 func (v *IpGroupAPI) Create(c *gin.Context) {
 	ctx := c.Request.Context()
 	payload := &IpGroupPayload{}
@@ -189,42 +189,42 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 	// 校验 TypeID 是否有效
 	var dictionaryEntry model.Dictionary
 	db := dbs.DB()
-	if err := db.Where("id = ? AND type = ?", payload.Type, "ipgroup").First(&dictionaryEntry).Error; err != nil {
+	if err := db.Where("id = ? AND type = ?", payload.IpGroupType, "ipgroup").First(&dictionaryEntry).Error; err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid type ID", err)
 		return
 	}
 
-	subnet, err := ipgroupAdmin.Create(ctx, payload.Name, payload.Type)
+	ipGroup, err := ipgroupAdmin.Create(ctx, payload.Name, payload.IpGroupType)
 	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipgroup", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipGroup", err)
 		return
 	}
-	ipgroupResp, err := v.getIpGroupResponse(ctx, subnet)
+	ipGroupResp, err := v.getIpGroupResponse(ctx, ipGroup)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	c.JSON(http.StatusOK, ipgroupResp)
+	c.JSON(http.StatusOK, ipGroupResp)
 }
 
-func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipgroup *model.IpGroup) (ipgroupResp *IpGroupResponse, err error) {
-	owner := orgAdmin.GetOrgName(ipgroup.Owner)
-	ipgroupResp = &IpGroupResponse{
+func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGroup) (ipGroupResp *IpGroupResponse, err error) {
+	owner := orgAdmin.GetOrgName(ipGroup.Owner)
+	ipGroupResp = &IpGroupResponse{
 		ResourceReference: &ResourceReference{
-			ID:        ipgroup.UUID,
-			Name:      ipgroup.Name,
+			ID:        ipGroup.UUID,
+			Name:      ipGroup.Name,
 			Owner:     owner,
-			CreatedAt: ipgroup.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: ipgroup.UpdatedAt.Format(TimeStringForMat),
+			CreatedAt: ipGroup.CreatedAt.Format(TimeStringForMat),
+			UpdatedAt: ipGroup.UpdatedAt.Format(TimeStringForMat),
 		},
-		Type:     int(ipgroup.Type.ID),
-		TypeName: ipgroup.Type.Name,
+		Type:     int(ipGroup.DictionaryType.ID),
+		TypeName: ipGroup.DictionaryType.Name,
 	}
 	return
 }
 
-// @Summary list ipgroup
-// @Description list ipgroup
+// @Summary list ipGroup
+// @Description list ipGroup
 // @tags Network
 // @Accept  json
 // @Produce json
@@ -266,7 +266,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
-		ipgroupListResp.IpGroups[i].TypeName = subnet.Type.Name
+		ipgroupListResp.IpGroups[i].TypeName = subnet.DictionaryType.Name
 	}
 	c.JSON(http.StatusOK, ipgroupListResp)
 }

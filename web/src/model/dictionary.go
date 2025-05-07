@@ -12,19 +12,19 @@ import (
 
 type IpGroup struct {
 	Model
-	Owner   int64       `gorm:"default:1"` /* The organization ID of the resource */
-	Name    string      `gorm:"unique_index:idx_router_subnet;type:varchar(64)"`
-	TypeID  int64       `gorm:"index"`
-	Type    *Dictionary `gorm:"foreignkey:TypeID"`
-	Subnets []*Subnet   `gorm:"foreignkey:GroupID;"`
+	Owner          int64       `gorm:"default:1"` /* The organization ID of the resource */
+	Name           string      `gorm:"unique_index:idx_router_subnet;type:varchar(64)"`
+	TypeID         int64       `gorm:"index"`
+	DictionaryType *Dictionary `gorm:"foreignKey:TypeID;references:ID"`
+	Subnets        []*Subnet   `gorm:"foreignkey:GroupID;"`
 }
 
 type Dictionary struct {
 	Model
-	Owner int64  `gorm:"default:1"`              /* The organization ID of the resource */
-	Type  string `gorm:"type:varchar(64);index"` // 用于区分服务对象
-	Name  string `gorm:"type:varchar(64)"`
-	Value string `gorm:"unique_index"`
+	Owner    int64  `gorm:"default:1"` /* The organization ID of the resource */
+	Category string `gorm:"column:category;type:varchar(64);index"`
+	Name     string `gorm:"type:varchar(64)"`
+	Value    string `gorm:"unique_index"`
 }
 
 func init() {

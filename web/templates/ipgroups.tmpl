@@ -25,7 +25,7 @@
 			                        <th>{{.i18n.Tr "ID"}}</th>
 			                        <th>{{.i18n.Tr "UUID"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
-			                        <th>{{.i18n.Tr "Type"}}</th>
+			                        <th>{{.i18n.Tr "Type"}}</th>	
 			                        <th>{{.i18n.Tr "Edit"}}</th>
                                     <th>{{.i18n.Tr "Delete"}}</th>
 		                        </tr>
@@ -37,7 +37,13 @@
 			                        <td>{{.ID}}</td>
 			                        <td>{{.UUID}}</td>
 			                        <td>{{.Name}}</td>
-			                        <td>{{.Type.Name}}</td>
+			                        <td>
+									{{ if .DictionaryType }}
+										{{ .DictionaryType.Name }}
+									{{ else }}
+										未知类型
+									{{ end }}
+									</td>
 			                        <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a></td>
                                     <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>

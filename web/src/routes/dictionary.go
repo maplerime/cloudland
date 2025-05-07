@@ -17,7 +17,7 @@ var dictionaryAdmin = &DictionaryAdmin{}
 
 type DictionaryAdmin struct{}
 
-func (a *DictionaryAdmin) Create(ctx context.Context, typename string, name string, value string) (dictionary *model.Dictionary, err error) {
+func (a *DictionaryAdmin) Create(ctx context.Context, category string, name string, value string) (dictionary *model.Dictionary, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
@@ -32,9 +32,9 @@ func (a *DictionaryAdmin) Create(ctx context.Context, typename string, name stri
 		}
 	}()
 	dictionary = &model.Dictionary{
-		Type:  typename,
-		Name:  name,
-		Value: value,
+		Category: category,
+		Name:     name,
+		Value:    value,
 	}
 	err = db.Create(dictionary).Error
 	return
@@ -78,7 +78,7 @@ func (a *DictionaryAdmin) GetDictionaryByUUID(ctx context.Context, uuID string) 
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	dictionaries = &model.Dictionary{}
-	err = db.Where(where).Where("uuid = ?", uuID).Preload("Type").Take(dictionaries).Error
+	err = db.Where(where).Where("uuid = ?", uuID).Take(dictionaries).Error
 	if err != nil {
 		logger.Error("Failed to query dictionaries, %v", err)
 		return
@@ -86,15 +86,15 @@ func (a *DictionaryAdmin) GetDictionaryByUUID(ctx context.Context, uuID string) 
 	return
 }
 
-func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictionary, typename string, name string, value string) (dictionary *model.Dictionary, err error) {
+func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictionary, category string, name string, value string) (dictionary *model.Dictionary, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	if typename != "" && dictionaries.Type != typename {
-		dictionaries.Type = typename
+	if category != "" && dictionaries.Category != category {
+		dictionaries.Category = category
 	}
 	if name != "" && dictionaries.Name != name {
 		dictionaries.Name = name
@@ -174,12 +174,12 @@ func (v *DictionaryView) New(c *macaron.Context, store session.Store) {
 func (v *DictionaryView) Create(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "/dictionaries"
-	typename := c.QueryTrim("type")
+	category := c.QueryTrim("category")
 	name := c.QueryTrim("name")
 	value := c.QueryTrim("value")
 
 	var err error
-	_, err = dictionaryAdmin.Create(ctx, typename, name, value)
+	_, err = dictionaryAdmin.Create(ctx, category, name, value)
 	if err != nil {
 		logger.Error("Failed to create dictionary, %v", err)
 		c.HTML(500, "500")
@@ -231,7 +231,7 @@ func (v *DictionaryView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 	redirectTo := "../dictionaries"
-	typename := c.QueryTrim("typename")
+	category := c.QueryTrim("category")
 	name := c.QueryTrim("name")
 	value := c.QueryTrim("value")
 	dictionaries, err := dictionaryAdmin.Get(ctx, int64(dictionaryID))
@@ -239,7 +239,7 @@ func (v *DictionaryView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	dictionaries, err = dictionaryAdmin.Update(ctx, dictionaries, typename, name, value)
+	dictionaries, err = dictionaryAdmin.Update(ctx, dictionaries, category, name, value)
 	if err != nil {
 		c.HTML(500, err.Error())
 		return

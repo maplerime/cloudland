@@ -23,7 +23,7 @@
                         <thead>
                             <tr>
                                 <th>{{.i18n.Tr "ID"}}</th>
-                                <th>{{.i18n.Tr "Type"}}</th>
+                                <th>{{.i18n.Tr "Category"}}</th>
                                 <th>{{.i18n.Tr "Name"}}</th>
                                 <th>{{.i18n.Tr "Value"}}</th>
                                 <th>{{.i18n.Tr "Edit"}}</th>
@@ -35,7 +35,7 @@
                             {{ range .Dictionaries }}
                             <tr>
                                 <td>{{.ID}}</td>
-                                <td>{{.Type}}</td>
+                                <td>{{.Category}}</td>
                                 <td>{{.Name}}</td>
                                 <td>{{.Value}}</td>
                                 <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a></td>
