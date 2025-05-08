@@ -2,8 +2,6 @@ package apis
 
 import (
 	"bytes"
-	"os"
-
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +9,7 @@ import (
 	"log"
 	"math"
 	"net/http"
+	"os"
 
 	"path/filepath"
 	"regexp"
@@ -229,26 +228,10 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "General rule file reflash failed"})
 		return
 	}
-	uid, gid, err := common.GetUser("prometheus")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "check prometheus user failed: " + err.Error()})
-		return
-	}
-
-	if err := common.SetFileOwner(generalPath, uid, gid); err != nil {
-		log.Printf("Set general file owner failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set general file owner failed: " + err.Error()})
-		return
-	}
 
 	if err := common.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
 		log.Printf("Failed to write special rules: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Special rule file reflash failed"})
-		return
-	}
-	if err := common.SetFileOwner(specialPath, uid, gid); err != nil {
-		log.Printf("Set special file owner failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set special file owner failed: " + err.Error()})
 		return
 	}
 
@@ -257,11 +240,6 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	if err := common.CreateSymlink(specialPath, enabledPath); err != nil && !os.IsExist(err) {
 		log.Printf("Rule activation failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Rule activation failed"})
-		return
-	}
-	if err := common.SetSymlinkOwner(enabledPath, uid, gid); err != nil {
-		log.Printf("Set symlink owner failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set symlink owner failed: " + err.Error()})
 		return
 	}
 
@@ -431,27 +409,18 @@ func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
 	}
 
 	// Atomic write operations
-	if err := common.AtomicWrite(generalPath, generalContent); err != nil {
+	if err = common.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
 		log.Printf("General rule update failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "General rule update failed"})
 		return
 	}
-	uid, gid, err := common.GetUser("prometheus")
-	if err == nil {
-		common.SetFileOwner(generalPath, uid, gid)
-	}
-
 	// 处理特殊规则文件和符号链接
 	enabledPath := filepath.Join(common.RulesEnabled, fmt.Sprintf("%s-special-%s.yml", ruleType, groupUUID))
 	if len(vmList) > 0 {
-		if err := common.AtomicWrite(specialPath, specialContent); err != nil {
+		if err := common.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
 			log.Printf("Special rule update failed: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Special rule update failed"})
 			return
-		}
-		uid, gid, err := common.GetUser("prometheus")
-		if err == nil {
-			common.SetSymlinkOwner(enabledPath, uid, gid)
 		}
 	} else {
 		if err := common.RemoveFile(specialPath); err != nil && !os.IsNotExist(err) {
@@ -528,11 +497,6 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"call get link vm error": err.Error()})
 		return
 	}
-	uid, gid, err := common.GetUser("prometheus")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "check prometheus user failed: " + err.Error()})
-		return
-	}
 	var excludeVMs []string
 	if len(vmLinks) > 0 {
 		for _, link := range vmLinks {
@@ -555,17 +519,9 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"write general rules filed failed": err.Error()})
 		return
 	}
-	if err := common.SetFileOwner(generalPath, uid, gid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set file owner filed: " + err.Error()})
-		return
-	}
 	enabledPath := filepath.Join(common.RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID))
 	if err := common.CreateSymlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "enable general rules filed failed: " + err.Error()})
-		return
-	}
-	if err := common.SetSymlinkOwner(enabledPath, uid, gid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set file link failed: " + err.Error()})
 		return
 	}
 	common.ReloadPrometheus()
@@ -695,7 +651,11 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	if len(excludeVMs) > 0 {
 		if content, err := os.ReadFile(generalPath); err == nil {
 			newContent := removeExcludedVMs(string(content), excludeVMs)
-			_ = common.AtomicWrite(generalPath, newContent)
+			if err := common.WriteFile(generalPath, []byte(newContent), 0640); err != nil {
+				log.Printf("General rule update failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "General rule update failed"})
+				return
+			}
 		}
 	}
 
@@ -881,12 +841,9 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "check prometheus user failed: " + err.Error()})
 		return
 	}
-
-	if err == nil {
-		for _, link := range enabledLinks {
-			if err := common.SetSymlinkOwner(link, uid, gid); err != nil {
-				log.Printf("Failed to set permissions for %s: %v", link, err)
-			}
+	for _, link := range enabledLinks {
+		if err := common.SetSymlinkOwner(link, uid, gid); err != nil {
+			log.Printf("Failed to set permissions for %s: %v", link, err)
 		}
 	}
 
@@ -1556,13 +1513,6 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		return
 	}
 
-	// Get prometheus user info
-	uid, gid, err := common.GetUser("prometheus")
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "check prometheus user failed: " + err.Error()})
-		return
-	}
-
 	// Process VM list
 	var vmList []string
 	if len(vmLinks) > 0 {
@@ -1589,19 +1539,11 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"write general rules filed failed": err.Error()})
 		return
 	}
-	if err := common.SetFileOwner(generalPath, uid, gid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set file owner filed: " + err.Error()})
-		return
-	}
 
 	// Create symlink
 	enabledPath := filepath.Join(common.RulesEnabled, fmt.Sprintf("bw-general-%s.yml", groupUUID))
 	if err := common.CreateSymlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "enable general rules filed failed: " + err.Error()})
-		return
-	}
-	if err := common.SetSymlinkOwner(enabledPath, uid, gid); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "set file link failed: " + err.Error()})
 		return
 	}
 
@@ -1740,7 +1682,12 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	if len(excludeVMs) > 0 {
 		if content, err := os.ReadFile(generalPath); err == nil {
 			newContent := removeExcludedVMs(string(content), excludeVMs)
-			_ = common.AtomicWrite(generalPath, newContent)
+			if err := common.WriteFile(generalPath, []byte(newContent), 0640); err != nil {
+				log.Printf("General rule update failed: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "General rule update failed"})
+				return
+			}
+
 		}
 	}
 

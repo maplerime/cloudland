@@ -1,15 +1,20 @@
 package common
 
 import (
+	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 	"unsafe"
 	"web/src/model"
@@ -36,7 +41,28 @@ var (
 	alarmPrometheusSSHPort int
 	isRemotePrometheus     bool
 	sshKeyPath             string
+	prometheusClient       *PrometheusClient
 )
+
+type PrometheusClient struct {
+	BaseURL    string
+	HTTPClient *http.Client
+}
+
+type RuleFileRequest struct {
+	Operation string `json:"operation"` // 操作类型: write, symlink, chown, reload, delete
+	FileUser  string `json:"file_user"` // 文件所有者用户名
+	Content   string `json:"content"`   // 规则文件内容
+	FilePath  string `json:"file_path"` // 文件路径
+	LinkPath  string `json:"link_path"` // 链接路径(用于symlink)
+}
+
+// RuleFileResponse 表示规则文件操作响应
+type RuleFileResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	Path    string `json:"path,omitempty"`
+}
 
 type ListRuleGroupsParams struct {
 	RuleType  string
@@ -142,6 +168,18 @@ func init() {
 	isRemotePrometheus = !isLocalIP(alarmPrometheusIP)
 	if !isRemotePrometheus || alarmPrometheusIP == "" {
 		alarmPrometheusIP = "localhost"
+	}
+	if isRemotePrometheus {
+		baseURL := fmt.Sprintf("http://%s:%d", alarmPrometheusIP, alarmPrometheusPort)
+		certFile := viper.GetString("monitor.cert")
+		keyFile := viper.GetString("monitor.key")
+		client, err := NewPrometheusClient(baseURL, certFile, keyFile)
+		if err != nil {
+			alarmLogger.Errorf("初始化Prometheus客户端失败: %v", err)
+		} else {
+			prometheusClient = client
+			alarmLogger.Infof("Prometheus客户端初始化成功，基础URL: %s", baseURL)
+		}
 	}
 	alarmLogger.Infof("Prometheus配置: IP=%s, 端口=%d, SSH端口=%d, 远程模式=%v",
 		alarmPrometheusIP, alarmPrometheusPort, alarmPrometheusSSHPort, isRemotePrometheus)
@@ -340,20 +378,6 @@ func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType
 	return result.Error
 }
 
-/*
-func (a *AlarmOperator) DeleteVMLink1(ctx context.Context, groupUUID, vmUUID, ruleType string) (int64, error) {
-	ctx, db := GetContextDB(ctx)
-	result := db.Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID).
-		Delete(&model.VMRuleLink{})
-	if result.Error != nil {
-		alarmLogger.Error("delete link failed",
-			"groupUUID", groupUUID,
-			"vmUUID", vmUUID,
-			"error", result.Error)
-	}
-	return result.RowsAffected, result.Error
-}*/
-
 func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, iface string) (int64, error) {
 	ctx, db := GetContextDB(ctx)
 	query := db.Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID)
@@ -442,7 +466,7 @@ func Paginate(page, pageSize int) func(db *gorm.DB) *gorm.DB {
 
 func (a *AlarmOperator) DeleteCPURulesByGroup(ctx context.Context, groupID string) error {
 	ctx, db := GetContextDB(ctx)
-	if err := db.Where("group_id = ?", groupID).
+	if err := db.Where("group_uuid = ?", groupID).
 		Delete(&CPURule{}).Error; err != nil { // 修改为本地结构体
 		alarmLogger.Error("CPU rule delete failed", "groupID", groupID, "error", err)
 		return err
@@ -474,12 +498,12 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	// 执行分页查询
 	if err := query.Scopes(Paginate(params.Page, params.PageSize)).
 		Find(&groups).Error; err != nil {
-		alarmLogger.Error("page qurey failed",
+		alarmLogger.Error("page query failed",
 			"ruleType", params.RuleType,
 			"page", params.Page,
 			"pageSize", params.PageSize,
 			"error", err)
-		return nil, 0, fmt.Errorf("page qurey failed: %w", err)
+		return nil, 0, fmt.Errorf("page query failed: %w", err)
 	}
 
 	return groups, total, nil
@@ -501,7 +525,7 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID string) error {
 	ctx, db := GetContextDB(ctx)
 	return db.Model(&model.RuleGroupV2{}).
-		Where("id = ?", groupID).
+		Where("uuid = ?", groupID).
 		Update("trigger_cnt", gorm.Expr("trigger_cnt + 1")).Error
 }
 
@@ -599,146 +623,234 @@ func isLocalIP(ip string) bool {
 
 	return false
 }
-func ExecuteRemoteCommand(command string) (string, error) {
-	sshCmd := fmt.Sprintf("ssh -p %d -i %s -o StrictHostKeyChecking=no root@%s '%s'",
-		alarmPrometheusSSHPort, sshKeyPath, alarmPrometheusIP, command)
 
-	cmd := exec.Command("bash", "-c", sshCmd)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("远程命令执行失败: %v, 输出: %s", err, string(output))
-	}
+func NewPrometheusClient(baseURL, certFile, keyFile string) (*PrometheusClient, error) {
+	var client *http.Client
 
-	return string(output), nil
-}
-func WriteFile(path string, data []byte, perm os.FileMode) error {
-	if isRemotePrometheus {
-		// 创建目录（如果需要）
-		dirPath := filepath.Dir(path)
-		mkdirCmd := fmt.Sprintf("mkdir -p %s", dirPath)
-		if _, err := ExecuteRemoteCommand(mkdirCmd); err != nil {
-			return fmt.Errorf("创建远程目录失败: %v", err)
-		}
-
-		// 写入临时文件
-		tempFile, err := os.CreateTemp("", "prometheus_rule")
+	// 检查是否使用HTTPS
+	if certFile != "" && keyFile != "" {
+		// 加载客户端证书
+		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
-			return fmt.Errorf("创建临时文件失败: %v", err)
-		}
-		defer os.Remove(tempFile.Name())
-
-		if _, err := tempFile.Write(data); err != nil {
-			return fmt.Errorf("写入临时文件失败: %v", err)
-		}
-		tempFile.Close()
-
-		// 使用scp上传文件
-		scpCmd := fmt.Sprintf("scp -P %d -i %s -o StrictHostKeyChecking=no %s root@%s:%s",
-			alarmPrometheusSSHPort, sshKeyPath, tempFile.Name(), alarmPrometheusIP, path)
-		cmd := exec.Command("bash", "-c", scpCmd)
-		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("上传文件失败: %v, 输出: %s", err, string(output))
+			return nil, fmt.Errorf("加载证书失败: %v", err)
 		}
 
-		// 设置权限
-		chmodCmd := fmt.Sprintf("chmod %o %s", perm, path)
-		if _, err := ExecuteRemoteCommand(chmodCmd); err != nil {
-			return fmt.Errorf("设置文件权限失败: %v", err)
+		// 创建TLS配置
+		tlsConfig := &tls.Config{
+			Certificates:       []tls.Certificate{cert},
+			InsecureSkipVerify: false,
 		}
 
-		return nil
-	} else {
-		// 本地文件操作
-		return os.WriteFile(path, data, perm)
-	}
-}
-
-// 原子写入文件
-func AtomicWrite(path string, content string) error {
-	tempPath := path + ".tmp"
-	if err := WriteFile(tempPath, []byte(content), 0640); err != nil {
-		return err
-	}
-
-	if isRemotePrometheus {
-		mvCmd := fmt.Sprintf("mv %s %s", tempPath, path)
-		_, err := ExecuteRemoteCommand(mvCmd)
-		return err
-	} else {
-		return os.Rename(tempPath, path)
-	}
-}
-
-// 设置文件所有者（本地或远程）
-func SetFileOwner(path string, uid, gid int) error {
-	if isRemotePrometheus {
-		chownCmd := fmt.Sprintf("chown %d:%d %s", uid, gid, path)
-		_, err := ExecuteRemoteCommand(chownCmd)
-		return err
-	} else {
-		return os.Chown(path, uid, gid)
-	}
-}
-
-// 设置符号链接所有者（本地或远程）
-func SetSymlinkOwner(path string, uid, gid int) error {
-	if isRemotePrometheus {
-		chownCmd := fmt.Sprintf("chown -h %d:%d %s", uid, gid, path)
-		_, err := ExecuteRemoteCommand(chownCmd)
-		return err
-	} else {
-		return os.Lchown(path, uid, gid)
-	}
-}
-
-func CreateSymlink(target, link string) error {
-	if isRemotePrometheus {
-		// 先检查链接是否已存在
-		checkCmd := fmt.Sprintf("test -e %s && echo 'exists'", link)
-		output, _ := ExecuteRemoteCommand(checkCmd)
-		if strings.TrimSpace(output) == "exists" {
-			return os.ErrExist
+		// 如果存在CA证书，加载它
+		caCertPath := filepath.Join(filepath.Dir(certFile), "ca.crt")
+		if _, err := os.Stat(caCertPath); err == nil {
+			caCert, err := os.ReadFile(caCertPath)
+			if err != nil {
+				return nil, fmt.Errorf("读取CA证书失败: %v", err)
+			}
+			caCertPool := x509.NewCertPool()
+			caCertPool.AppendCertsFromPEM(caCert)
+			tlsConfig.RootCAs = caCertPool
 		}
 
-		// 创建符号链接
-		linkCmd := fmt.Sprintf("ln -s %s %s", target, link)
-		_, err := ExecuteRemoteCommand(linkCmd)
-		return err
+		transport := &http.Transport{
+			TLSClientConfig: tlsConfig,
+		}
+
+		client = &http.Client{
+			Transport: transport,
+			Timeout:   10 * time.Second,
+		}
 	} else {
-		return os.Symlink(target, link)
+		// 使用普通HTTP客户端
+		client = &http.Client{
+			Timeout: 10 * time.Second,
+		}
 	}
+
+	return &PrometheusClient{
+		BaseURL:    baseURL,
+		HTTPClient: client,
+	}, nil
 }
 
-func RemoveFile(path string) error {
-	if isRemotePrometheus {
-		rmCmd := fmt.Sprintf("rm -f %s", path)
-		_, err := ExecuteRemoteCommand(rmCmd)
-		return err
-	} else {
-		return os.Remove(path)
+func (c *PrometheusClient) sendRequest(endpoint string, req RuleFileRequest) ([]byte, error) {
+	// 将请求转换为JSON
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求序列化失败: %v", err)
 	}
+
+	// 构建请求URL
+	url := c.BaseURL + endpoint
+
+	// 创建HTTP请求
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("创建HTTP请求失败: %v", err)
+	}
+
+	// 设置请求头
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	// 发送请求
+	resp, err := c.HTTPClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("发送请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 读取响应体
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %v", err)
+	}
+
+	// 检查响应状态码
+	if resp.StatusCode != http.StatusOK {
+		return respBody, fmt.Errorf("服务器返回错误状态码: %d, 响应: %s", resp.StatusCode, string(respBody))
+	}
+
+	return respBody, nil
+}
+
+// 为了保持兼容性，添加一个不返回响应的版本
+func (c *PrometheusClient) sendRequestNoResponse(endpoint string, req RuleFileRequest) error {
+	_, err := c.sendRequest(endpoint, req)
+	return err
+}
+
+// WriteRuleFile 向远程服务器写入规则文件
+func (c *PrometheusClient) ClientWriteRuleFile(path string, content []byte, perm os.FileMode) error {
+	req := RuleFileRequest{
+		Operation: "write",
+		FilePath:  path,
+		Content:   string(content),
+		FileUser:  "prometheus", // 默认使用prometheus用户
+	}
+
+	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
+	if err != nil {
+		alarmLogger.Errorf("prometheus server create file failed: %v", err)
+	}
+	return err
+}
+
+// CreateSymlink 在远程服务器上创建符号链接
+func (c *PrometheusClient) ClientCreateSymlink(target, link string) error {
+	req := RuleFileRequest{
+		Operation: "symlink",
+		FilePath:  target,
+		LinkPath:  link,
+		FileUser:  "prometheus", // 默认使用prometheus用户
+	}
+
+	err := c.sendRequestNoResponse("/api/v1/rules/symlink", req)
+	if err != nil {
+		alarmLogger.Errorf("prometheus server create link failed: %v", err)
+	}
+	return err
+}
+
+// SetFileOwner 设置远程服务器上文件的所有者
+func (c *PrometheusClient) ClientSetFileOwner(path string) error {
+	req := RuleFileRequest{
+		Operation: "chown",
+		FilePath:  path,
+		FileUser:  "prometheus",
+	}
+
+	err := c.sendRequestNoResponse("/api/v1/rules/chown", req)
+	if err != nil {
+		alarmLogger.Errorf("prometheus server create link failed: %v", err)
+	}
+	return err
+}
+
+func (c *PrometheusClient) ClientSetSymlinkOwner(path string) error {
+	req := RuleFileRequest{
+		Operation: "chown_symlink",
+		FilePath:  path,
+		FileUser:  "prometheus",
+	}
+
+	err := c.sendRequestNoResponse("/api/v1/rules/chown", req)
+	if err != nil {
+		alarmLogger.Errorf("prometheus server set link owner failed: %v", err)
+	}
+	return err
+}
+
+func (c *PrometheusClient) ClientRemoveRuleFile(path string) error {
+	req := RuleFileRequest{
+		Operation: "delete",
+		FilePath:  path,
+	}
+
+	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
+	if err != nil {
+		alarmLogger.Errorf("prometheus server remove file failed: %v", err)
+	}
+	return err
+}
+
+func (c *PrometheusClient) ClientRemoveSymlink(linkPath string) error {
+	req := RuleFileRequest{
+		Operation: "unlink",
+		LinkPath:  linkPath,
+	}
+
+	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
+	if err != nil {
+		alarmLogger.Errorf("prometheus server remove symlink failed: %v", err)
+	}
+	return err
+}
+
+func (c *PrometheusClient) ClientGetUser(username string) (int, int, error) {
+	req := RuleFileRequest{
+		Operation: "getuser",
+		FileUser:  username,
+	}
+
+	resp, err := c.sendRequest("/api/v1/rules/user", req)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	var response struct {
+		Success bool   `json:"success"`
+		Message string `json:"message"`
+		UID     int    `json:"uid"`
+		GID     int    `json:"gid"`
+	}
+
+	if err := json.Unmarshal(resp, &response); err != nil {
+		return 0, 0, fmt.Errorf("解析响应失败: %v", err)
+	}
+
+	if !response.Success {
+		return 0, 0, fmt.Errorf("获取用户信息失败: %s", response.Message)
+	}
+
+	return response.UID, response.GID, nil
+}
+
+// ReloadPrometheus 重新加载远程Prometheus配置
+func (c *PrometheusClient) ClientReloadPrometheus() error {
+	req := RuleFileRequest{
+		Operation: "reload",
+	}
+
+	return c.sendRequestNoResponse("/api/v1/rules/reload", req)
 }
 
 func GetUser(username string) (uid, gid int, err error) {
 	if isRemotePrometheus {
 		// Get user ID from remote server
-		output, err := ExecuteRemoteCommand(fmt.Sprintf("id -u %s", username))
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to get remote user ID for %s: %v", username, err)
-		}
-		uid, err = strconv.Atoi(strings.TrimSpace(output))
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to parse remote user ID for %s: %v", username, err)
-		}
-
-		// Get group ID from remote server
-		output, err = ExecuteRemoteCommand(fmt.Sprintf("id -g %s", username))
+		uid, gid, err := prometheusClient.ClientGetUser("prometheus")
 		if err != nil {
 			return 0, 0, fmt.Errorf("failed to get remote group ID for %s: %v", username, err)
-		}
-		gid, err = strconv.Atoi(strings.TrimSpace(output))
-		if err != nil {
-			return 0, 0, fmt.Errorf("failed to parse remote group ID for %s: %v", username, err)
 		}
 
 		return uid, gid, nil
@@ -754,10 +866,104 @@ func GetUser(username string) (uid, gid int, err error) {
 	}
 }
 
+// WriteFile 写入文件内容
+func WriteFile(path string, content []byte, perm os.FileMode) error {
+	if isRemotePrometheus {
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+		return prometheusClient.ClientWriteRuleFile(path, content, perm)
+	} else {
+		os.WriteFile(path, content, perm)
+		uid, gid, err := GetUser("prometheus")
+		if err != nil {
+			return err
+		}
+		return SetFileOwner(path, uid, gid)
+	}
+}
+
+// SetFileOwner 设置文件所有者
+func SetFileOwner(path string, uid, gid int) error {
+	if isRemotePrometheus {
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+
+		return prometheusClient.ClientSetFileOwner(path)
+	} else {
+		return os.Chown(path, uid, gid)
+	}
+}
+
+// SetSymlinkOwner 设置符号链接所有者
+func SetSymlinkOwner(path string, uid, gid int) error {
+	if isRemotePrometheus {
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+
+		return prometheusClient.ClientSetSymlinkOwner(path)
+	} else {
+		uid, gid, err := GetUser("prometheus")
+		if err != nil {
+			return os.Lchown(path, uid, gid)
+		} else {
+			alarmLogger.Error("Prometheus server set link owenr failed with %s", err)
+			return err
+		}
+	}
+}
+
+// CreateSymlink 创建符号链接
+func CreateSymlink(target, link string) error {
+	if isRemotePrometheus {
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+
+		return prometheusClient.ClientCreateSymlink(target, link)
+	} else {
+		os.Symlink(target, link)
+		uid, gid, err := GetUser("prometheus")
+		if err != nil {
+			return err
+		}
+		return SetSymlinkOwner(link, uid, gid)
+
+	}
+}
+
+// RemoveSymlink 删除符号链接
+func RemoveSymlink(link string) error {
+	if isRemotePrometheus {
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+
+		return prometheusClient.ClientRemoveSymlink(link)
+	} else {
+		// 检查链接是否存在
+		if _, err := os.Lstat(link); os.IsNotExist(err) {
+			return nil // 链接不存在，视为成功
+		}
+		return os.Remove(link)
+	}
+}
+
 func ReloadPrometheus() error {
 	if isRemotePrometheus {
-		_, err := ExecuteRemoteCommand("systemctl kill -s SIGHUP prometheus.service")
-		return err
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+
+		return prometheusClient.ClientReloadPrometheus()
 	} else {
 		cmd := exec.Command("sudo", "systemctl", "kill", "-s", "SIGHUP", "prometheus.service")
 		if output, err := cmd.CombinedOutput(); err != nil {
@@ -774,4 +980,21 @@ func RulePaths(ruleType, groupID string) (generalPath string, specialPath string
 	)
 	return fmt.Sprintf("%s/%s-general-%s.yml", RulesGeneral, ruleType, groupID),
 		fmt.Sprintf("%s/%s-special-%s.yml", RulesSpecial, ruleType, groupID)
+}
+
+func RemoveFile(path string) error {
+	if isRemotePrometheus {
+		if prometheusClient == nil {
+			alarmLogger.Error("Prometheus客户端未初始化")
+			return fmt.Errorf("Prometheus客户端未初始化")
+		}
+
+		return prometheusClient.ClientRemoveRuleFile(path)
+	} else {
+		// 检查文件是否存在
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return nil // 文件不存在，视为成功
+		}
+		return os.Remove(path)
+	}
 }

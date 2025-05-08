@@ -6,6 +6,7 @@
   set_fact:
     scrape_interval: 15  # 15 seconds
     rest_port: 8255
+    alarm_rules_manager_port: 8256
 
 - name: Set prometheus_server_ip from monitor group
   set_fact:
@@ -181,6 +182,7 @@
             email_configs:
             - to: '{{ alert_recipient }}'
               send_resolved: true
+
           - name: 'webhook-notifier'
             webhook_configs:
             - url: 'https://127.0.0.1:{{ rest_port }}/api/v1/alerts/process'
@@ -398,6 +400,66 @@
     - 'prometheus'
   tags: [monitor]
 
+- name: Compile alarm_rules_manager
+  delegate_to: localhost
+  shell: cd /opt/cloudland/web && go build -o bin/alarm_rules_manager src/apis/alarm_rules_manager.go
+  args:
+    creates: /opt/cloudland/web/bin/alarm_rules_manager
+  tags: [monitor]
+
+- name: Create alarm_rules_manager directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /opt/cloudland/web/bin
+    state: directory
+    owner: cland
+    group: cland
+    mode: 0755
+  tags: [monitor]
+
+- name: Copy alarm_rules_manager binary
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    src: /opt/cloudland/web/bin/alarm_rules_manager
+    dest: /opt/cloudland/web/bin/
+    mode: 0755
+    owner: cland
+    group: cland
+  tags: [monitor]
+
+- name: Create alarm_rules_manager service file
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /lib/systemd/system/alarm_rules_manager.service
+    content: |
+      [Unit]
+      Description=Cloudland Alarm Rules Manager
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=cland
+      ExecStart=/opt/cloudland/web/bin/alarm_rules_manager {{ alarm_rules_manager_port }}
+      Restart=on-failure
+
+      [Install]
+      WantedBy=multi-user.target
+    mode: 0644
+  tags: [monitor]
+
+- name: Start and enable alarm_rules_manager service
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  systemd:
+    name: alarm_rules_manager
+    enabled: yes
+    daemon_reload: yes
+    state: restarted
+  tags: [monitor]
+
 - name: Add Grafana GPG key
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -480,18 +542,6 @@
   ignore_errors: true
   changed_when: false
   tags: [monitor]
-
-#- name: Add monitor section to config.toml
-#  delegate_to: "{{ prometheus_server_ip }}"
-#  become: true
-#  blockinfile:
-#    path: /opt/cloudland/web/conf/config.toml
-#    block: |
-#      [monitor]
-#      host = "{{ prometheus_server_ip }}"
-#      port = 9090
-#    create: yes
-#  tags: [monitor]
 
 - name: Add WDS monitor section to config.toml
   delegate_to: "{{ prometheus_server_ip }}"
