@@ -55,7 +55,6 @@ if [ "$update_meta" = "true" ]; then
     working_dir=/tmp/$vm_ID
     latest_dir=$working_dir/openstack/latest
     mkdir -p $tmp_mnt $working_dir
-    virsh qemu-agent-command "$vm_ID" '{"execute": "guest-exec", "arguments": {"path": "/usr/bin/cloud-init", "arg": ["clean"]}}'
     mount ${cache_dir}/meta/${vm_ID}.iso $tmp_mnt
     cp -r $tmp_mnt/* $working_dir
     net_json=$(cat $latest_dir/network_data.json)
@@ -63,5 +62,6 @@ if [ "$update_meta" = "true" ]; then
     echo "$net_json" | jq --argjson new_networks "$networks" '.networks |= (map(select(.id != "network0")) + $new_networks)' >$latest_dir/network_data.json
     umount $tmp_mnt
     mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null
-    ../action_vm.sh $inst_ID restart
+    rm -rf $working_dir
+    virsh qemu-agent-command "$vm_ID" '{"execute": "guest-exec", "arguments": {"path": "/usr/bin/cloud-init", "arg": ["clean", "--reboot"]}}'
 fi
