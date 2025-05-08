@@ -59,7 +59,7 @@
     dest: /opt
     mode: preserve
   tags: [sci]
-  when: inventory_hostname != ansible_hostname
+  when: ansible_connection != 'local'
 
 - name: copy sci service file
   copy: 
@@ -77,7 +77,7 @@
   with_items:
     - { src: "/opt/cloudland/scripts", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
   tags: [sync, scripts, scripts_only]
-  when: inventory_hostname != ansible_hostname
+  when: ansible_connection != 'local'
 
 - name: link backend to kvm
   file:
@@ -114,7 +114,7 @@
   with_items:
     - { src: "/opt/cloudland/bin", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
   tags: [sync, cloudlet]
-  when: inventory_hostname != ansible_hostname
+  when: ansible_connection != 'local'
 
 - name: create cloudlet environment file
   template:
@@ -434,5 +434,5 @@
   ansible.builtin.reboot:
   when: 
     - need_reboot == 'need_to_reboot'
-    - inventory_hostname != ansible_hostname
+    - ansible_connection != 'local'
   tags: [netplan]
