@@ -112,6 +112,23 @@ if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 
     )
 fi
     
+# change qemu-guest-agent config
+if [ "${os_code}" = "linux" ]; then
+        cloud_config_txt+=$(cat <<EOF
+runcmd:
+  - |
+    if [ -f /etc/sysconfig/qemu-ga ]; then
+      sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/' /etc/sysconfig/qemu-ga
+    elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
+      sed -i \"s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+      sed -i \"s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+      systemctl daemon-reload
+      systemctl restart qemu-guest-agent.service
+    fi
+EOF
+    )
+fi
+
 vendor_data_end='\n--//--"'
 
 # write to vendor_data.json

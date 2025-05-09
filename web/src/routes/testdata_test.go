@@ -13,7 +13,7 @@ History:
 package routes
 
 import (
-	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt"
 	"github.com/spf13/viper"
 )
 

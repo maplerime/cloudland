@@ -1,6 +1,6 @@
 - name: install common packages
   apt:
-    name: ['jq', 'wget', 'mkisofs', 'network-manager', 'net-tools', 'python3-pip']
+    name: ['jq', 'wget', 'mkisofs', 'network-manager', 'net-tools', 'python3-pip', 'libnetfilter-queue-dev']
     update_cache: yes
     state: present
   ignore_errors: yes
@@ -13,8 +13,12 @@
   ignore_errors: yes
   tags: [be_pkg]
 
-- pip:
-    name: pyparsing
+- name: Install required pip packages
+  pip:
+    name:
+      - pyparsing
+      - netfilterqueue
+      - scapy
     executable: pip3
   ignore_errors: yes
   tags: [be_pkg]
@@ -55,7 +59,7 @@
     dest: /opt
     mode: preserve
   tags: [sci]
-  when: inventory_hostname != ansible_hostname
+  when: ansible_connection != 'local'
 
 - name: copy sci service file
   copy: 
@@ -73,7 +77,7 @@
   with_items:
     - { src: "/opt/cloudland/scripts", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
   tags: [sync, scripts, scripts_only]
-  when: inventory_hostname != ansible_hostname
+  when: ansible_connection != 'local'
 
 - name: link backend to kvm
   file:
@@ -110,7 +114,7 @@
   with_items:
     - { src: "/opt/cloudland/bin", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
   tags: [sync, cloudlet]
-  when: inventory_hostname != ansible_hostname
+  when: ansible_connection != 'local'
 
 - name: create cloudlet environment file
   template:
@@ -174,39 +178,6 @@
   ignore_errors: yes
   tags: [be_srv]
 
-- name: set compute services NetworkManager
-  systemd: 
-    name: "{{ item }}"
-    enabled: true
-    state: started
-  with_items:
-    - 'NetworkManager'
-  tags: [be_srv, netplan]
-
-- name: change netplan renderer
-  script: change_netplan_renderer.sh
-  register: need_to_reboot
-  tags: [be_srv, netplan]
-
-- name: reboot compute node if needed
-  vars:
-    need_reboot: "{{ need_to_reboot.stdout_lines[0] }}"
-  ansible.builtin.reboot:
-  when: 
-    - need_reboot == 'need_to_reboot'
-    - inventory_hostname != ansible_hostname
-  tags: [netplan]
-
-- name: stop and mask networkd
-  systemd:
-    name: "{{ item }}"
-    enabled: false
-    masked: yes
-    state: stopped
-  with_items:
-    - 'systemd-networkd'
-  tags: [be_srv, netplan]
-
 - name: Create .ssh directory if not exists
   file:
     path: ~/.ssh
@@ -232,6 +203,17 @@
   file:
     path: ~/.ssh/id_rsa.pub
     state: absent
+  tags: [ssh_key]
+
+- name: Create or update SSH config file
+  blockinfile:
+    path: /root/.ssh/config
+    block: |
+      Host *
+        StrictHostKeyChecking no
+        UserKnownHostsFile /dev/null
+    create: yes
+    mode: '0644'
   tags: [ssh_key]
 
 - name: allow necessary ports for hypervisor
@@ -421,3 +403,36 @@
   delay: 5
   ignore_errors: yes
   tags: [monitor]
+
+- name: set compute services NetworkManager
+  systemd: 
+    name: "{{ item }}"
+    enabled: true
+    state: started
+  with_items:
+    - 'NetworkManager'
+  tags: [be_srv, netplan]
+
+- name: change netplan renderer
+  script: change_netplan_renderer.sh
+  register: need_to_reboot
+  tags: [be_srv, netplan]
+
+- name: stop and mask networkd
+  systemd:
+    name: "{{ item }}"
+    enabled: false
+    masked: yes
+    state: stopped
+  with_items:
+    - 'systemd-networkd'
+  tags: [be_srv, netplan]
+
+- name: reboot compute node if needed
+  vars:
+    need_reboot: "{{ need_to_reboot.stdout_lines[0] }}"
+  ansible.builtin.reboot:
+  when: 
+    - need_reboot == 'need_to_reboot'
+    - ansible_connection != 'local'
+  tags: [netplan]
