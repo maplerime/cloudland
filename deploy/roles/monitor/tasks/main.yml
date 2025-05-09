@@ -91,6 +91,7 @@
 - name: Create prometheus data directory with nobody owner
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   file:
     path: /var/lib/prometheus/data
     state: directory
@@ -101,6 +102,7 @@
 - name: Setup Alertmanager with Docker
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   block:
     - name: Install Docker prerequisites
       apt:
@@ -127,6 +129,11 @@
         state: present
         update_cache: yes
 
+    - name: Install Docker SDK for Python
+      pip:
+        name: docker
+        state: present
+
     - name: Ensure Docker is running
       systemd:
         name: docker
@@ -150,7 +157,6 @@
         tag: v0.26.0
 
     - name: Configure Alertmanager
-      delegate_to: "{{ prometheus_server_ip }}"
       become: true
       copy:
         dest: /etc/alertmanager/alertmanager.yml
@@ -201,19 +207,26 @@
         owner: prometheus
         group: prometheus
         mode: 0644
-      tags: [monitor]
     
     - name: Setup Alertmanager with Docker
       delegate_to: "{{ prometheus_server_ip }}"
       become: true
       block:
+        - name: Get alertmanager container info
+          docker_container_info:
+            name: alertmanager
+          register: alertmanager_info
+          ignore_errors: yes
+
         - name: Stop existing alertmanager container
           docker_container:
             name: alertmanager
+            image: "{{ alertmanager_info.container.Config.Image if alertmanager_info.exists else 'quay.io/prometheus/alertmanager:v0.26.0' }}"
             state: stopped
             stop_timeout: 30
           register: stop_result
           ignore_errors: yes
+          when: alertmanager_info.exists | default(false)
 
         - name: Remove existing alertmanager container
           docker_container:
@@ -238,11 +251,11 @@
               - "--data.retention=720h"
               - "--log.level=debug"
             user: "65534:65534"
-      tags: [monitor]
 
 - name: Verify Alertmanager running status
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   uri:
     url: http://localhost:9093/-/healthy
     method: GET
@@ -252,11 +265,11 @@
   until: alertmanager_health.status == 200
   retries: 6
   delay: 10
-  tags: [monitor]
 
 - name: Configure Prometheus server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   copy:
     content: |
       global:
@@ -273,7 +286,6 @@
     dest: /etc/prometheus/prometheus.yml
     owner: prometheus
     group: prometheus
-  tags: [monitor]
 
 - name: Create alert rules directory structure
   delegate_to: "{{ prometheus_server_ip }}"
@@ -400,13 +412,6 @@
     - 'prometheus'
   tags: [monitor]
 
-- name: Compile alarm_rules_manager
-  delegate_to: localhost
-  shell: cd /opt/cloudland/web && go build -o bin/alarm_rules_manager src/apis/alarm_rules_manager.go
-  args:
-    creates: /opt/cloudland/web/bin/alarm_rules_manager
-  tags: [monitor]
-
 - name: Create alarm_rules_manager directory
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -418,16 +423,53 @@
     mode: 0755
   tags: [monitor]
 
-- name: Copy alarm_rules_manager binary
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  copy:
-    src: /opt/cloudland/web/bin/alarm_rules_manager
-    dest: /opt/cloudland/web/bin/
-    mode: 0755
-    owner: cland
-    group: cland
+- name: Compile and deploy alarm_rules_manager
   tags: [monitor]
+  block:
+    - name: Create build directory
+      delegate_to: localhost
+      file:
+        path: /tmp/alarm_build
+        state: directory
+        mode: 0755
+
+    - name: Copy alarm_rules_manager.go to build directory
+      delegate_to: localhost
+      copy:
+        src: /opt/cloudland/cmd/alarm_rules_manager.go
+        dest: /tmp/alarm_build/main.go
+        mode: 0644
+        remote_src: yes
+
+    - name: Build and verify alarm_rules_manager
+      delegate_to: localhost
+      shell: |
+        cd /tmp/alarm_build
+        go mod init alarm_rules_manager
+        go get github.com/gin-gonic/gin
+        CGO_ENABLED=0 go build -o alarm_rules_manager main.go
+        file alarm_rules_manager | grep -q "executable" || (echo "compile failed." && exit 1)
+
+    - name: Create alarm_rules_manager directory on Prometheus server
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      file:
+        path: /opt/cloudland/web/bin
+        state: directory
+        owner: cland
+        group: cland
+        mode: 0755
+
+    - name: Copy alarm_rules_manager binary directly to Prometheus server
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      copy:
+        src: /tmp/alarm_build/alarm_rules_manager
+        dest: /opt/cloudland/web/bin/
+        mode: 0755
+        owner: cland
+        group: cland
+        remote_src: no
 
 - name: Create alarm_rules_manager service file
   delegate_to: "{{ prometheus_server_ip }}"
@@ -488,6 +530,7 @@
 - name: Configure Grafana
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   copy:
     dest: /etc/grafana/grafana.ini
     content: |

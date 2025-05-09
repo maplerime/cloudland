@@ -1,4 +1,4 @@
-package apis
+package main
 
 import (
 	"fmt"
@@ -8,10 +8,18 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
-	"web/src/common"
 
 	"github.com/gin-gonic/gin"
 )
+
+// RuleFileRequest 定义了规则文件操作请求
+type RuleFileRequest struct {
+	Operation string `json:"operation"` // 操作类型: write, symlink, chown, reload, delete
+	FileUser  string `json:"file_user"` // 文件所有者用户名
+	Content   string `json:"content"`   // 规则文件内容
+	FilePath  string `json:"file_path"` // 文件路径
+	LinkPath  string `json:"link_path"` // 链接路径(用于symlink)
+}
 
 // AlarmRulesManager handles Prometheus related API requests
 type AlarmRulesManager struct {
@@ -39,7 +47,7 @@ func (s *AlarmRulesManager) RegisterRoutes(router *gin.Engine) {
 
 // handleRuleFile handles rule file operation requests
 func (s *AlarmRulesManager) handleRuleFile(c *gin.Context) {
-	var req common.RuleFileRequest
+	var req RuleFileRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
@@ -84,7 +92,7 @@ func (s *AlarmRulesManager) handleRuleFile(c *gin.Context) {
 }
 
 // handleWriteFile handles write file requests
-func (s *AlarmRulesManager) handleWriteFile(req common.RuleFileRequest) error {
+func (s *AlarmRulesManager) handleWriteFile(req RuleFileRequest) error {
 	// Ensure directory exists
 	dir := filepath.Dir(req.FilePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -107,7 +115,7 @@ func (s *AlarmRulesManager) handleWriteFile(req common.RuleFileRequest) error {
 }
 
 // handleCreateSymlink handles symlink creation requests
-func (s *AlarmRulesManager) handleCreateSymlink(req common.RuleFileRequest) error {
+func (s *AlarmRulesManager) handleCreateSymlink(req RuleFileRequest) error {
 	// Ensure target directory exists
 	targetDir := filepath.Dir(req.LinkPath)
 	if err := os.MkdirAll(targetDir, 0755); err != nil {
@@ -137,7 +145,7 @@ func (s *AlarmRulesManager) handleCreateSymlink(req common.RuleFileRequest) erro
 }
 
 // handleChownFile handles file ownership change requests
-func (s *AlarmRulesManager) handleChownFile(req common.RuleFileRequest) error {
+func (s *AlarmRulesManager) handleChownFile(req RuleFileRequest) error {
 	if req.FileUser == "" {
 		return fmt.Errorf("File owner not specified")
 	}
@@ -146,7 +154,7 @@ func (s *AlarmRulesManager) handleChownFile(req common.RuleFileRequest) error {
 }
 
 // handleDeleteFile handles file deletion requests
-func (s *AlarmRulesManager) handleDeleteFile(req common.RuleFileRequest) error {
+func (s *AlarmRulesManager) handleDeleteFile(req RuleFileRequest) error {
 	if _, err := os.Stat(req.FilePath); os.IsNotExist(err) {
 		// File doesn't exist, consider deletion successful
 		return nil
