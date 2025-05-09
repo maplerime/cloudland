@@ -335,11 +335,11 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	}
 
 	if instanceID > 0 {
-		query = fmt.Sprintf("instance_id=%d", instanceID)
-		if where != "" {
-			where = fmt.Sprintf("%s and %s", where, query)
+		instanceQuery := fmt.Sprintf("instance_id=%d", instanceID)
+		if query != "" {
+			query = fmt.Sprintf("%s and %s", query, instanceQuery)
 		} else {
-			where = query
+			query = instanceQuery
 		}
 	}
 

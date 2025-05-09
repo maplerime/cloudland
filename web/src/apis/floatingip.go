@@ -302,7 +302,8 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
-	logger.Debugf("List floating ips with offset %s, limit %s, query %s", offsetStr, limitStr, queryStr)
+	instanceIDStr := c.DefaultQuery("instance_id", "")
+	logger.Debugf("List floating ips with offset %s, limit %s, query %s, instance %s", offsetStr, limitStr, queryStr, instanceIDStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		logger.Errorf("Invalid query offset %+v", err)
@@ -320,7 +321,18 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	instanceID := int64(0)
+	if instanceIDStr != "" {
+		var instance *model.Instance
+		instance, err = instanceAdmin.GetInstanceByUUID(ctx, instanceIDStr)
+		if err != nil {
+			logger.Errorf("Failed to get instance, %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+			return
+		}
+		instanceID = instance.ID
+	}
+	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, instanceID)
 	if err != nil {
 		logger.Errorf("Failed to list floatingIps %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list floatingIps", err)
