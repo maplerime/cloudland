@@ -170,10 +170,10 @@ func init() {
 		alarmPrometheusIP = "localhost"
 	}
 	if isRemotePrometheus {
-		baseURL := fmt.Sprintf("http://%s:%d", alarmPrometheusIP, alarmPrometheusPort)
-		certFile := viper.GetString("monitor.cert")
-		keyFile := viper.GetString("monitor.key")
-		client, err := NewPrometheusClient(baseURL, certFile, keyFile)
+		baseURL := fmt.Sprintf("http://%s:%d", alarmPrometheusIP, 8256)
+		certFile := viper.GetString("rest.cert")
+		keyFile := viper.GetString("rest.key")
+		client, err := AlertRUleClient(baseURL, certFile, keyFile)
 		if err != nil {
 			alarmLogger.Errorf("初始化Prometheus客户端失败: %v", err)
 		} else {
@@ -624,7 +624,7 @@ func isLocalIP(ip string) bool {
 	return false
 }
 
-func NewPrometheusClient(baseURL, certFile, keyFile string) (*PrometheusClient, error) {
+func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, error) {
 	var client *http.Client
 
 	// 检查是否使用HTTPS

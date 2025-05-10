@@ -23,13 +23,17 @@ type RuleFileRequest struct {
 
 // AlarmRulesManager handles Prometheus related API requests
 type AlarmRulesManager struct {
-	Port int // HTTP server port
+	Port    int    // HTTP server port
+	CertFile string // TLS证书文件路径
+	KeyFile  string // TLS密钥文件路径
 }
 
 // NewAlarmRulesManager creates a new Prometheus server handler
-func NewAlarmRulesManager(port int) *AlarmRulesManager {
+func NewAlarmRulesManager(port int, certFile, keyFile string) *AlarmRulesManager {
 	return &AlarmRulesManager{
-		Port: port,
+		Port:     port,
+		CertFile: certFile,
+		KeyFile:  keyFile,
 	}
 }
 
@@ -214,29 +218,45 @@ func (s *AlarmRulesManager) changeOwner(path, username string) error {
 
 // Main function to run the server independently
 func main() {
-	// 设置默认值
-	port := 8256 // 默认端口
+	port := 8256
+	certFile := "/etc/ssl/certs/cland-selfsigned.crt"
+	keyFile := "/etc/ssl/private/cland-selfsigned.key"
 
-	// 解析命令行参数
-	if len(os.Args) > 1 {
-		if p, err := strconv.Atoi(os.Args[1]); err == nil {
+	// 检查环境变量是否覆盖默认配置
+	if portEnv := os.Getenv("ALARM_RULES_PORT"); portEnv != "" {
+		if p, err := strconv.Atoi(portEnv); err == nil {
 			port = p
 		}
 	}
+	if certEnv := os.Getenv("ALARM_RULES_CERT"); certEnv != "" {
+		certFile = certEnv
+	}
+	if keyEnv := os.Getenv("ALARM_RULES_KEY"); keyEnv != "" {
+		keyFile = keyEnv
+	}
 
-	// 创建 manager
-	manager := NewAlarmRulesManager(port)
-
-	// 创建路由
+	server := NewAlarmRulesManager(port, certFile, keyFile)
 	router := gin.Default()
+	server.RegisterRoutes(router)
 
-	// 注册路由
-	manager.RegisterRoutes(router)
+	listenAddr := fmt.Sprintf("127.0.0.1:%d", port)
+	fmt.Printf("Starting alarm rules manager on %s with TLS\n", listenAddr)
 
-	// 启动服务器
-	portStr := fmt.Sprintf(":%d", manager.Port)
-	fmt.Printf("Starting alarm rules manager on port %s\n", portStr)
-	if err := router.Run(portStr); err != nil {
-		fmt.Printf("Failed to start server: %v\n", err)
+	// 检查证书和密钥文件是否存在
+	if _, err := os.Stat(certFile); os.IsNotExist(err) {
+		fmt.Printf("警告: 证书文件 %s 不存在\n", certFile)
+	}
+	if _, err := os.Stat(keyFile); os.IsNotExist(err) {
+		fmt.Printf("警告: 密钥文件 %s 不存在\n", keyFile)
+	}
+
+	// 使用TLS启动服务器
+	if err := router.RunTLS(listenAddr, certFile, keyFile); err != nil {
+		fmt.Printf("启动TLS服务器失败: %v\n", err)
+		fmt.Println("尝试以非TLS模式启动...")
+		if err := router.Run(listenAddr); err != nil {
+			fmt.Printf("启动服务器失败: %v\n", err)
+			os.Exit(1)
+		}
 	}
 }

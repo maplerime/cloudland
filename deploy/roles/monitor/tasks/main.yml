@@ -155,6 +155,10 @@
       docker_image:
         name: quay.io/prometheus/alertmanager
         tag: v0.26.0
+    - name: Determine webhook host address
+      set_fact:
+        webhook_host: "{% if groups['cland'] | length == 1 and hostvars[groups['cland'][0]]['ansible_host'] == prometheus_server_ip %}127.0.0.1{% else %}{{ prometheus_server_ip }}{% endif %}"
+      tags: [monitor]
 
     - name: Configure Alertmanager
       become: true
@@ -191,19 +195,21 @@
 
           - name: 'webhook-notifier'
             webhook_configs:
-            - url: 'https://127.0.0.1:{{ rest_port }}/api/v1/alerts/process'
+            - url: 'https://{{ webhook_host }}:{{ rest_port }}/api/v1/alerts/process'
               send_resolved: true
               http_config:
                 tls_config:
-                  insecure_skip_verify: true
+                  #insecure_skip_verify: true
+                  ca_file: '/etc/ssl/certs/cland-selfsigned.crt'
 
           - name: 'cpu-webhook'
             webhook_configs:
-            - url: 'https://127.0.0.1:{{ rest_port }}/api/v1/alerts/process'
+            - url: 'https://{{ webhook_host }}:{{ rest_port }}/api/v1/alerts/process'
               send_resolved: true
               http_config:
                 tls_config:
-                  insecure_skip_verify: true
+                  #insecure_skip_verify: true
+                  ca_file: '/etc/ssl/certs/cland-selfsigned.crt'
         owner: prometheus
         group: prometheus
         mode: 0644
@@ -234,6 +240,31 @@
             state: absent
           when: stop_result is defined
 
+        - name: Ensure SSL directories exist on Prometheus server
+          delegate_to: "{{ prometheus_server_ip }}"
+          become: true
+          file:
+            path: "{{ item }}"
+            state: directory
+            mode: 0755
+          with_items:
+            - "/etc/ssl/certs"
+            - "/etc/ssl/private"
+          tags: [monitor]
+
+        - name: Copy SSL certificate and key to Prometheus server
+          delegate_to: "{{ prometheus_server_ip }}"
+          become: true
+          copy:
+            src: "{{ item.src }}"
+            dest: "{{ item.dest }}"
+            mode: "{{ item.mode }}"
+            remote_src: no
+          with_items:
+            - { src: "/etc/ssl/certs/cland-selfsigned.crt", dest: "/etc/ssl/certs/cland-selfsigned.crt", mode: "0644" }
+            - { src: "/etc/ssl/private/cland-selfsigned.key", dest: "/etc/ssl/private/cland-selfsigned.key", mode: "0600" }
+          tags: [monitor]
+
         - name: Run Alertmanager container
           docker_container:
             name: alertmanager
@@ -245,6 +276,8 @@
               - /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
               - /var/lib/alertmanager:/data
               - /etc/localtime:/etc/localtime:ro
+              - /etc/ssl/certs:/etc/ssl/certs:ro
+              - /etc/ssl/private:/etc/ssl/private:ro
             command: 
               - "--config.file=/etc/alertmanager/alertmanager.yml"
               - "--storage.path=/data"
@@ -471,26 +504,33 @@
         group: cland
         remote_src: no
 
-- name: Create alarm_rules_manager service file
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  copy:
-    dest: /lib/systemd/system/alarm_rules_manager.service
-    content: |
-      [Unit]
-      Description=Cloudland Alarm Rules Manager
-      After=network.target
+    - name: Create alarm_rules_manager service file
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      copy:
+        dest: /lib/systemd/system/alarm_rules_manager.service
+        content: |
+          [Unit]
+          Description=Cloudland Alarm Rules Manager
+          After=network.target
 
-      [Service]
-      Type=simple
-      User=cland
-      ExecStart=/opt/cloudland/web/bin/alarm_rules_manager {{ alarm_rules_manager_port }}
-      Restart=on-failure
+          [Service]
+          Type=simple
+          User=cland
+          Environment=ALARM_RULES_CERT=/etc/ssl/certs/cland-selfsigned.crt
+          Environment=ALARM_RULES_KEY=/etc/ssl/private/cland-selfsigned.key
+          ExecStart=/opt/cloudland/web/bin/alarm_rules_manager {{ alarm_rules_manager_port }}
+          Restart=on-failure
 
-      [Install]
-      WantedBy=multi-user.target
-    mode: 0644
-  tags: [monitor]
+          [Install]
+          WantedBy=multi-user.target
+        mode: 0644
+      tags: [monitor]
+    - name: Set SSL certificate and key paths
+      set_fact:
+        ssl_cert_path: "/etc/ssl/certs/cland-selfsigned.crt"
+        ssl_key_path: "/etc/ssl/private/cland-selfsigned.key"
+      tags: [monitor]
 
 - name: Start and enable alarm_rules_manager service
   delegate_to: "{{ prometheus_server_ip }}"
