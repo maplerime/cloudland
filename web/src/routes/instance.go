@@ -680,7 +680,8 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 	vlans := []*VlanInfo{}
 	instLinks := []*NetworkLink{}
 	volumes := []*VolumeInfo{}
-	var instNetworks []*InstanceNetwork
+	instNetworks := []*InstanceNetwork{}
+	sitesInfo := []*SiteIpSubnetInfo{}
 	var instKeys []string
 	for _, key := range instance.Keys {
 		instKeys = append(instKeys, key.PublicKey)
@@ -699,13 +700,13 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		if iface.PrimaryIf {
 			dns = subnet.NameServer
 		}
-		instNetworks, _, err = GetInstanceNetworks(ctx, iface, iface.SiteSubnets, i)
+		instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, i)
 		if err != nil {
 			logger.Errorf("Failed to get instance networks, %v", err)
 			return
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
-		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr})
+		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SitesIpInfo: sitesInfo})
 	}
 	osCode := "linux"
 	if instance.Image != nil {
