@@ -550,11 +550,7 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 		{"reserved", reserved},
 	} {
 		if conf.value != nil {
-			val := 0
-			if *conf.value {
-				val = 1
-			}
-			conditions = append(conditions, fmt.Sprintf("%s = %d", conf.name, val))
+			conditions = append(conditions, fmt.Sprintf("%s = %t", conf.name, *conf.value))
 		}
 	}
 	query = strings.Join(conditions, " and ")
