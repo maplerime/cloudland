@@ -521,6 +521,69 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return
 }
 
+func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, order, query, addressType string, subnetID int64, allocated, reserved *bool) (total int64, addresses []*model.Address, err error) {
+	db := DB()
+	if limit == 0 {
+		limit = 16
+	}
+
+	if order == "" {
+		order = "created_at"
+	}
+
+	// deal condition
+	var conditions []string
+	if query != "" {
+		conditions = append(conditions, fmt.Sprintf("address like '%%%s%%'", query))
+	}
+	if addressType != "" {
+		conditions = append(conditions, fmt.Sprintf("type = '%s'", addressType))
+	}
+	if subnetID > 0 {
+		conditions = append(conditions, fmt.Sprintf("subnet_id = %d", subnetID))
+	}
+	for _, conf := range []struct {
+		name  string
+		value *bool
+	}{
+		{"allocated", allocated},
+		{"reserved", reserved},
+	} {
+		if conf.value != nil {
+			val := 0
+			if *conf.value {
+				val = 1
+			}
+			conditions = append(conditions, fmt.Sprintf("%s = %d", conf.name, val))
+		}
+	}
+	query = strings.Join(conditions, " and ")
+
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
+	addresses = []*model.Address{}
+	if err = db.Model(&model.Address{}).Where(where).Where(query).Count(&total).Error; err != nil {
+		return
+	}
+	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	if err = db.Where(where).Where(query).Find(&addresses).Error; err != nil {
+		return
+	}
+	permit := memberShip.CheckPermission(model.Admin)
+	if permit {
+		db = db.Offset(0).Limit(-1)
+		for _, subnet := range addresses {
+			subnet.OwnerInfo = &model.Organization{Model: model.Model{ID: subnet.Owner}}
+			if err = db.Take(subnet.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				return
+			}
+		}
+	}
+
+	return
+}
+
 func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)

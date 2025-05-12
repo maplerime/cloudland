@@ -80,6 +80,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/subnets/:id", subnetAPI.Get)
 		authGroup.DELETE("/api/v1/subnets/:id", subnetAPI.Delete)
 		authGroup.PATCH("/api/v1/subnets/:id", subnetAPI.Patch)
+		authGroup.GET("/api/v1/subnets/:id/addresses", subnetAPI.AddressList)
 
 		authGroup.GET("/api/v1/security_groups", secgroupAPI.List)
 		authGroup.POST("/api/v1/security_groups", secgroupAPI.Create)

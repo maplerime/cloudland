@@ -58,6 +58,23 @@ type SubnetPayload struct {
 type SubnetPatchPayload struct {
 }
 
+type AddressResponse struct {
+	*ResourceReference
+	Address   string     `json:"address"`
+	Netmask   string     `json:"netmask"`
+	Type      SubnetType `json:"type"`
+	Allocated bool       `json:"allocated"`
+	Reserved  bool       `json:"reserved"`
+	SubnetID  int64      `json:"subnet_id"`
+}
+
+type AddressListResponse struct {
+	Offset    int                `json:"offset"`
+	Total     int                `json:"total"`
+	Limit     int                `json:"limit"`
+	Addresses []*AddressResponse `json:"addresses"`
+}
+
 // @Summary get a subnet
 // @Description get a subnet
 // @tags Network
@@ -238,4 +255,107 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, subnetListResp)
+}
+
+// @Summary list subnet addresses
+// @Description list subnet addresses
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Success 200 {object} AddressListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /subnets/{id}/addresses [get]
+func (v *SubnetAPI) AddressList(c *gin.Context) {
+	ctx := c.Request.Context()
+	offsetStr := c.DefaultQuery("offset", "0")
+	limitStr := c.DefaultQuery("limit", "50")
+	orderStr := c.DefaultQuery("order", "-created_at")
+	queryStr := c.DefaultQuery("query", "")
+	typeStr := c.DefaultQuery("type", "")
+	subnetIDStr := c.DefaultQuery("subnet_id", "")
+	allocatedStr := c.DefaultQuery("allocated", "")
+	reservedStr := c.DefaultQuery("reserved", "")
+
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
+		return
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
+		return
+	}
+	if offset < 0 || limit < 0 {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
+		return
+	}
+	subnetID := int64(0)
+	if subnetIDStr != "" {
+		var subnet *model.Subnet
+		subnet, err = subnetAdmin.GetSubnetByUUID(ctx, subnetIDStr)
+		if err != nil {
+			logger.Errorf("Failed to get subnet, %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet", err)
+			return
+		}
+		subnetID = subnet.ID
+	}
+	var allocated *bool
+	var reserved *bool
+	boolVal := false
+	if allocatedStr != "" {
+		boolVal, err = strconv.ParseBool(allocatedStr)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query allocated: "+allocatedStr, err)
+			return
+		}
+		allocated = &boolVal
+	}
+	if reservedStr != "" {
+		boolVal, err = strconv.ParseBool(reservedStr)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query reserved: "+reservedStr, err)
+			return
+		}
+		reserved = &boolVal
+	}
+	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnetID, allocated, reserved)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to list address", err)
+		return
+	}
+	adderessListResp := &AddressListResponse{
+		Total:  int(total),
+		Offset: offset,
+		Limit:  len(addresses),
+	}
+	adderessListResp.Addresses = make([]*AddressResponse, adderessListResp.Limit)
+	for i, address := range addresses {
+		adderessListResp.Addresses[i], err = v.getAddressResponse(ctx, address)
+		if err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+	}
+	c.JSON(http.StatusOK, adderessListResp)
+}
+
+func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Address) (addressResp *AddressResponse, err error) {
+	owner := orgAdmin.GetOrgName(address.Owner)
+	addressResp = &AddressResponse{
+		ResourceReference: &ResourceReference{
+			ID:        address.UUID,
+			Owner:     owner,
+			CreatedAt: address.CreatedAt.Format(TimeStringForMat),
+			UpdatedAt: address.UpdatedAt.Format(TimeStringForMat),
+		},
+		Address:   address.Address,
+		Netmask:   address.Netmask,
+		Type:      SubnetType(address.Type),
+		Allocated: address.Allocated,
+		Reserved:  address.Reserved,
+		SubnetID:  address.SubnetID,
+	}
+	return
 }
