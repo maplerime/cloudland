@@ -346,7 +346,7 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
                         return
                 }
                 for _, addr := range siteAddrs {
-                        address := fmt.Sprintf("%s/32", strings.Split(addr.Address, "/")[0])
+                        address := strings.Split(addr.Address, "/")[0]
                         instNetworks = append(instNetworks, &InstanceNetwork{
                                 Address: address,
                                 Netmask: "255.255.255.255",
