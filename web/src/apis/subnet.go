@@ -267,12 +267,12 @@ func (v *SubnetAPI) List(c *gin.Context) {
 // @Router /subnets/{id}/addresses [get]
 func (v *SubnetAPI) AddressList(c *gin.Context) {
 	ctx := c.Request.Context()
+	subnetID := c.Param("id")
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
 	typeStr := c.DefaultQuery("type", "")
-	subnetIDStr := c.DefaultQuery("subnet_id", "")
 	allocatedStr := c.DefaultQuery("allocated", "")
 	reservedStr := c.DefaultQuery("reserved", "")
 
@@ -290,16 +290,12 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	subnetID := int64(0)
-	if subnetIDStr != "" {
-		var subnet *model.Subnet
-		subnet, err = subnetAdmin.GetSubnetByUUID(ctx, subnetIDStr)
-		if err != nil {
-			logger.Errorf("Failed to get subnet, %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet", err)
-			return
-		}
-		subnetID = subnet.ID
+	var subnet *model.Subnet
+	subnet, err = subnetAdmin.GetSubnetByUUID(ctx, subnetID)
+	if err != nil {
+		logger.Errorf("Failed to get subnet, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet", err)
+		return
 	}
 	var allocated *bool
 	var reserved *bool
@@ -320,7 +316,7 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 		}
 		reserved = &boolVal
 	}
-	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnetID, allocated, reserved)
+	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet.ID, allocated, reserved)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list address", err)
 		return
