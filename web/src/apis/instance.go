@@ -262,7 +262,8 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 	}
 	cpu, memory, disk := instance.Cpu, instance.Memory, instance.Disk
 	if payload.Flavor != "" {
-		flavor, err := flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
+		var flavor *model.Flavor
+		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
 		if err != nil {
 			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)

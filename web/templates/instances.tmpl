@@ -271,9 +271,9 @@
 			                        <td>{{ if .LoginPort }}{{.LoginPort}}{{ end }}</td>
 			                        <td>
 			                        {{ if .Cpu }}
-                                        {{ .Cpu }}H{{ .Memory}}M{{ .Disk }}G
+                                        {{ .Cpu }}C{{ .Memory}}M{{ .Disk }}G
                                     {{ else if .Flavor }}
-                                        {{ .Flavor.Cpu }}H{{ .Flavor.Memory }}M{{ .Flavor.Disk }}G
+                                        {{ .Flavor.Cpu }}C{{ .Flavor.Memory }}M{{ .Flavor.Disk }}G
                                     {{ end }}
                                     </td>
 			                        <td>{{ if .Image }}{{.Image.Name}}{{end}}</td>
