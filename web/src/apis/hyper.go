@@ -29,6 +29,7 @@ type HyperResponse struct {
 	Cpu    int64 `json:"cpu"`
 	Memory int64 `json:"memory"`
 	Disk   int64 `json:"disk"`
+	Hostid int32 `json:"hostid"`
 }
 
 type HyperListResponse struct {
@@ -121,6 +122,7 @@ func (v *HyperAPI) getHyperResponse(ctx context.Context, hyper *model.Hyper) (hy
 			ID:   strconv.FormatInt(hyper.ID, 10),
 			Name: hyper.Hostname,
 		},
+		Hostid: hyper.Hostid,
 		Cpu:    hyper.Resource.Cpu,
 		Memory: hyper.Resource.Memory,
 		Disk:   hyper.Resource.Disk,
