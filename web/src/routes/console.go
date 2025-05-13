@@ -19,7 +19,7 @@ import (
 	. "web/src/common"
 	"web/src/model"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt"
 	"github.com/go-macaron/session"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/sha3"
