@@ -312,7 +312,7 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
                 Netmask: subnet.Netmask,
                 Type:    "ipv4",
                 Link:    iface.Name,
-                ID:      fmt.Sprintf("network%d", netID),
+                ID:      fmt.Sprintf("network%d-0", netID),
         }
         toUpdate := true
 	if iface.PrimaryIf {
@@ -345,14 +345,14 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
                         logger.Errorf("Failed to query site ip(s), %v", err)
                         return
                 }
-                for _, addr := range siteAddrs {
+                for i, addr := range siteAddrs {
                         address := strings.Split(addr.Address, "/")[0]
                         instNetworks = append(instNetworks, &InstanceNetwork{
                                 Address: address,
                                 Netmask: "255.255.255.255",
                                 Type:    "ipv4",
                                 Link:    iface.Name,
-                                ID:      fmt.Sprintf("network%d", netID),
+                                ID:      fmt.Sprintf("network%d-%d", netID, i+1),
                         })
 			siteInfo.Addresses = append(siteInfo.Addresses, addr.Address)
                 }

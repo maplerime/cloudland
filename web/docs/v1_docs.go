@@ -3874,10 +3874,7 @@ const docTemplatev1 = `{
             ],
             "properties": {
                 "is_default": {
-                    "type": "boolean",
-                    "enum": [
-                        true
-                    ]
+                    "type": "boolean"
                 },
                 "name": {
                     "type": "string",

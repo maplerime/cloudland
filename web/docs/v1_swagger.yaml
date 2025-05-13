@@ -738,8 +738,6 @@ definitions:
   apis.SecurityGroupPatchPayload:
     properties:
       is_default:
-        enum:
-        - true
         type: boolean
       name:
         maxLength: 32
