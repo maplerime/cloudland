@@ -28,7 +28,7 @@ var (
 type HyperAdmin struct{}
 type HyperView struct{}
 
-func (a *HyperAdmin) List(offset, limit int64, order, query string) (total int64, hypers []*model.Hyper, err error) {
+func (a *HyperAdmin) List(offset, limit int64, order, query, status string) (total int64, hypers []*model.Hyper, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -40,13 +40,16 @@ func (a *HyperAdmin) List(offset, limit int64, order, query string) (total int64
 	if query != "" {
 		query = fmt.Sprintf("hostname like '%%%s%%'", query)
 	}
+	if status != "" {
+		status = fmt.Sprintf("status = %s", status)
+	}
 
 	hypers = []*model.Hyper{}
-	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Where(query).Where(status).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Zone").Where("hostid >= 0").Where(query).Find(&hypers).Error; err != nil {
+	if err = db.Preload("Zone").Where("hostid >= 0").Where(query).Where(status).Find(&hypers).Error; err != nil {
 		return
 	}
 	db = db.Offset(0).Limit(-1)
@@ -111,7 +114,8 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 		order = "hostid"
 	}
 	query := c.QueryTrim("q")
-	total, hypers, err := hyperAdmin.List(offset, limit, order, query)
+	total, hypers, err := hyperAdmin.List(offset, limit, order, query, "")
+	logger.Debugf("Result is %+v", hypers)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
