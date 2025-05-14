@@ -117,6 +117,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			},
 			Network: iface.Address.Subnet.Network,
 			Netmask: iface.Address.Subnet.Netmask,
+			Gateway: iface.Address.Subnet.Gateway,
 			Vlan:    int(iface.Address.Subnet.Vlan),
 			Type:    SubnetType(iface.Address.Subnet.Type),
 		},
