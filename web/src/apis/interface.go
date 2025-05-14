@@ -35,7 +35,7 @@ type InterfaceListResponse struct {
 
 type InterfaceResponse struct {
 	*BaseReference
-	Subnet         *ResourceReference   `json:"subnet"`
+	Subnet         *SubnetResponse      `json:"subnet"`
 	MacAddress     string               `json:"mac_address"`
 	IPAddress      string               `json:"ip_address"`
 	IsPrimary      bool                 `json:"is_primary"`
@@ -110,9 +110,15 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 		IsPrimary:  iface.PrimaryIf,
 		Inbound:    iface.Inbound,
 		Outbound:   iface.Outbound,
-		Subnet: &ResourceReference{
-			ID:   iface.Address.Subnet.UUID,
-			Name: iface.Address.Subnet.Name,
+		Subnet: &SubnetResponse{
+			ResourceReference: &ResourceReference{
+				ID:   iface.Address.Subnet.UUID,
+				Name: iface.Address.Subnet.Name,
+			},
+			Network: iface.Address.Subnet.Network,
+			Netmask: iface.Address.Subnet.Netmask,
+			Vlan:    int(iface.Address.Subnet.Vlan),
+			Type:    SubnetType(iface.Address.Subnet.Type),
 		},
 	}
 	if iface.PrimaryIf && len(instance.FloatingIps) > 0 {

@@ -32,6 +32,7 @@ type SubnetResponse struct {
 	NameServer string             `json:"dns,omitempty"`
 	VPC        *ResourceReference `json:"vpc,omitempty"`
 	Type       SubnetType         `json:"type"`
+	Vlan       int                `json:"vlan,omitempty"`
 }
 
 type SubnetListResponse struct {
