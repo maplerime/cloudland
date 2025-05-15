@@ -38,6 +38,12 @@ type SubnetResponse struct {
 	IdleCount  int64              `json:"idle_count"`
 }
 
+type SiteSubnetInfo struct {
+	*ResourceReference
+	Network string `json:"network"`
+	Gateway string `json:"gateway"`
+}
+
 type SubnetListResponse struct {
 	Offset  int               `json:"offset"`
 	Total   int               `json:"total"`
@@ -259,6 +265,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
+
 	if queryStr != "" {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
 	}
@@ -276,7 +283,8 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
 		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
+
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return
