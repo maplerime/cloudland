@@ -1,0 +1,46 @@
+{{template "_head" .}}
+<div class="admin user">
+
+    <div class="ui container">
+
+        <div class="ui grid">
+
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Create New Ip Group"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="required inline field">
+									<label for="name">{{.i18n.Tr "Name"}}</label>
+									<input id="name" name="name" placeholder="{{.i18n.Tr "Name"}}">
+								</div>
+								<div class="required inline field">
+									<label for="type">{{.i18n.Tr "Type"}}</label>
+									<div class="ui selection dropdown">
+									  <input id="type" name="type" type="hidden">
+									  <i class="dropdown icon"></i>
+									  <div class="default text">{{.i18n.Tr "Type"}}</div>
+									  <div class="menu">
+									    {{range .IpGroupTypes}}
+                                            <div class="item" data-value="{{.ID}}" data-text="{{.Name}}">{{.Name}}</div>
+                                        {{end}}
+									  </div>
+									</div>
+								</div>
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "Create New Ip Group"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
