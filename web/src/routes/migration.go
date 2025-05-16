@@ -130,16 +130,8 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Error("Failed to update instance status to migrating, %v", err)
 			return
 		}
-		cpu := instance.Cpu
-		memory := instance.Memory
-		disk := instance.Disk
 		flavor := instance.Flavor
-		if flavor != nil {
-			cpu = flavor.Cpu
-			memory = flavor.Memory
-			disk = flavor.Disk
-		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, flavor.Cpu, flavor.Memory, flavor.Disk, sourceHyper.Hostname, migrationType, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Target migration command execution failed", err)

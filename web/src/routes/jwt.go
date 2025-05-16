@@ -21,7 +21,7 @@ import (
 
 	"web/src/model"
 
-	"github.com/golang-jwt/jwt"
+	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/spf13/viper"
 )
 

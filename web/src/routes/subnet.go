@@ -292,7 +292,7 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = CreateInterface(ctx, subnet, router.ID, router.Owner, router.Hyper, 0, 0, subnet.Gateway, "", "subnet-gw", "gateway", nil, false)
+	_, err = CreateInterface(ctx, subnet, router.ID, router.Owner, router.Hyper, 0, 0, subnet.Gateway, "", "subnet-gw", "gateway", nil)
 	if err != nil {
 		logger.Error("Failed to create gateway subnet interface", err)
 		return
@@ -511,7 +511,6 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 		Count(&idleCount).Error
 
 	if err != nil {
-		// 如果是没有找到匹配的记录，不需要报错，只需要记录日志
 		if err.Error() != "record not found" {
 			return 0, fmt.Errorf("failed to count idle addresses for subnet %s: %v", subnet.UUID, err)
 		}
@@ -520,7 +519,7 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	return idleCount, nil
 }
 
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string, intQuery string) (total int64, subnets []*model.Subnet, err error) {
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -536,11 +535,11 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		where = fmt.Sprintf("type = 'public' or %s", where)
 	}
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Preload("Group").Where(where).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Router").Preload("Group").Where(where).Where(query).Find(&subnets).Error; err != nil {
 		return
 	}
 
@@ -578,7 +577,7 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, query, "")
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
