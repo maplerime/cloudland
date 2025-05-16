@@ -125,7 +125,7 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 	memberShip := GetMemberShip(ctx)
 	db := DB()
 	subnet = &model.Subnet{Model: model.Model{ID: id}}
-	err = db.Take(subnet).Error
+	err = db.Preload("Router").Preload("Group").Take(subnet).Error
 	if err != nil {
 		logger.Error("DB failed to query subnet ", err)
 		return
@@ -153,7 +153,7 @@ func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet 
 	db := DB()
 	memberShip := GetMemberShip(ctx)
 	subnet = &model.Subnet{}
-	err = db.Where("uuid = ?", uuID).Take(subnet).Error
+	err = db.Preload("Router").Preload("Group").Where("uuid = ?", uuID).Take(subnet).Error
 	if err != nil {
 		logger.Error("Failed to query subnet, %v", err)
 		return
@@ -181,7 +181,7 @@ func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet 
 	db := DB()
 	memberShip := GetMemberShip(ctx)
 	subnet = &model.Subnet{}
-	err = db.Where("name = ?", name).Take(subnet).Error
+	err = db.Preload("Router").Preload("Group").Where("name = ?", name).Take(subnet).Error
 	if err != nil {
 		logger.Error("Failed to query subnet ", err)
 		return
