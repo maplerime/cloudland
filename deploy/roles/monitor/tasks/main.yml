@@ -11,6 +11,10 @@
   set_fact:
     hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
 
+- name: Gather IP addresses from cland group
+  set_fact:
+    cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
+
 - name: Validate WDS configuration
   fail:
     msg: "wds_address must be configured with a valid value when wds group exists"
@@ -36,6 +40,16 @@
         static_configs:
           {% for ip in hyper_ips -%}
           - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'compute'
+          - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'management'
+          {% endfor %}
+          {% for ip in cland_ips | difference(hyper_ips) -%}
+          - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'management'
           {% endfor %}
 
 - name: Generate libvirt exporters config block
@@ -157,14 +171,15 @@
         dest: /etc/alertmanager/alertmanager.yml
         content: |
           global:
-            smtp_smarthost: '{{ smtp_host }}:587'
+            smtp_smarthost: '{{ smtp_host }}'
             smtp_from: '{{ alert_sender }}'
             smtp_auth_username: '{{ smtp_user }}'
             smtp_auth_password: '{{ smtp_pass }}'
-            smtp_require_tls: true
+            smtp_require_tls: false
+            smtp_hello: '{{ smtp_hello }}'
 
           route:
-            group_by: ['alertname']
+            group_by: ['node_type', 'alertname']
             group_wait: 30s
             group_interval: 5m
             repeat_interval: 3h
@@ -173,33 +188,50 @@
             routes:
             - match:
                 alert_type: cpu
-                severity: info
+                severity: warning
               receiver: 'cpu-webhook'
-              continue: true
+              continue: false
 
             - match:
                 alert_type: bw
-                severity: info
+                severity: warning
               receiver: 'bw-webhook'
-              continue: true
+              continue: false
 
             - match_re:
                 alert_type: node-(unavailable|cpu|disk|network)
-                severity: info
+                severity: warning|info
               receiver: 'node-webhook'
               continue: true
 
             - match_re:
-                alert_type: node-(unavailable|cpu|disk|network)
-                severity: info
+                alert_type: .*
+                severity: .*
               receiver: 'slack-notifications'
               continue: true
+
+            - match_re:
+                alert_type: .*
+                severity: .*
+              receiver: '{{ receiver_name }}'
 
           receivers:
           - name: '{{ receiver_name }}'
             email_configs:
             - to: '{{ alert_recipient }}'
               send_resolved: true
+              html: |
+                <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
+                <b>[Alert Name]</b> {{ .CommonLabels.alertname }}<br>
+                <b>[Severity]</b> {{ .CommonLabels.severity }}<br>
+                <b>[Instance/Domain]</b> {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}<br>
+                <b>[Summary]</b> {{ .CommonAnnotations.summary }}<br>
+                <b>[Description]</b> {{ .CommonAnnotations.description }}<br>
+                <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
+                <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
+              headers:
+                Subject: '[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}'
+
 
           - name: 'cpu-webhook'
             webhook_configs:
@@ -227,17 +259,24 @@
 
           - name: 'slack-notifications'
             slack_configs:
-            - channel: '#alerts'
+            - channel: 'test-alertmanager'
               send_resolved: true
               username: 'alertmanager'
               icon_emoji: ':satellite:'
-              title: "{{ '{{ .CommonAnnotations.summary }}' }}"
-              text: "{{ '{{ .CommonAnnotations.description }}' }}"
+              title: "{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}"
+              text: |-
+                *[Summary]*: {{ .CommonAnnotations.summary }}
+                *[Description]*: {{ .CommonAnnotations.description }}
+                *[Alert Type]*: {{ .CommonLabels.alert_type }}
+                *[Alert Name]*: {{ .CommonLabels.alertname }}
+                *[Severity]*: {{ .CommonLabels.severity }}
+                *[Instance/Domain]*: {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}
+                *[Labels]*: `{{ .CommonLabels }}`
+                *[Annotations]*: `{{ .CommonAnnotations }}`
               api_url: '{{ slack_webhook_url }}'
         owner: prometheus
         group: prometheus
         mode: 0644
-
     
     - name: Setup Alertmanager with Docker
       delegate_to: "{{ prometheus_server_ip }}"
@@ -715,6 +754,24 @@
     state: present
   tags: [monitor]
 
+- name: Ensure Grafana service runs as grafana user
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /lib/systemd/system/grafana-server.service
+    regexp: '^User='
+    line: 'User=grafana'
+  tags: [monitor]
+
+- name: Ensure Grafana service group is grafana
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /lib/systemd/system/grafana-server.service
+    regexp: '^Group='
+    line: 'Group=grafana'
+  tags: [monitor]
+
 - name: Configure Grafana
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -723,18 +780,47 @@
     dest: /etc/grafana/grafana.ini
     content: |
       [server]
+      # Grafana listen address： 0.0.0.0 allow extern access
+      http_addr = 0.0.0.0
       http_port = 3000
+
       [database]
       type = sqlite3
       path = /var/lib/grafana/grafana.db
+
+      [users]
+      default_theme = light
+      auto_assign_org = true
+      auto_assign_org_role = Admin
+
+      [auth.anonymous]
+      enabled = false
+
+      [auth]
+      login_form = true
+      basic_auth_enabled = true
+
+      [security]
+      allow_embedding = true
+
+      [unified_alerting]
+      enabled = true
+      alertmanager_url = http://{{ prometheus_server_ip }}:9093
+
+      [datasources]
+      editable = true
+    owner: grafana
+    group: grafana
+    mode: 0640
 
 - name: Start and enable Grafana service
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   systemd:
     name: grafana-server
-    state: started
+    state: restarted
     enabled: true
+    daemon_reload: yes
   tags: [monitor]
 
 - name: Wait for Grafana to be ready
@@ -749,6 +835,22 @@
   until: grafana_health.status == 200
   retries: 10
   delay: 5
+  tags: [monitor]
+
+- name: Allow Grafana and Prometheus ports in iptables
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  with_items:
+    - 3000
+    - 9090
+  loop_control:
+    label: "Opening port {{ item }}"
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    action: insert
   tags: [monitor]
 
 - name: Add Prometheus as Grafana data source
@@ -790,4 +892,51 @@
   when:
     - "'wds' in groups"
     - "wds_address is defined"
+  tags: [monitor]
+
+- name: Create node_rules directory on Prometheus server
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/prometheus/node_rules
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  tags: [monitor]
+
+- name: Copy rule files to node_rules directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: /etc/prometheus/node_rules/
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+  with_items:
+    - /opt/cloudland/deploy/roles/monitor/files/compute-resources.yml
+    - /opt/cloudland/deploy/roles/monitor/files/management-resources.yml
+    - /opt/cloudland/deploy/roles/monitor/files/node-availability.yml
+  tags: [monitor]
+
+- name: Create symlinks in rules_enabled directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    src: "/etc/prometheus/node_rules/{{ item }}"
+    dest: "/etc/prometheus/rules_enabled/{{ item }}"
+    state: link
+    owner: prometheus
+    group: prometheus
+  with_items:
+    - compute-resources.yml
+    - management-resources.yml
+    - node-availability.yml
+  tags: [monitor]
+
+- name: Reload Prometheus configuration
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: sudo systemctl kill -s SIGHUP prometheus.service
   tags: [monitor]

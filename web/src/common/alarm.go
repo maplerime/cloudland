@@ -29,6 +29,8 @@ import (
 const (
 	RuleTypeCPU  = "cpu"
 	RuleTypeBW   = "bw"
+	RuleTypeCompute = "compute_node"
+	RuleTypeConttrol = "control_node"
 	RulesEnabled = "/etc/prometheus/rules_enabled"
 	RulesGeneral = "/etc/prometheus/general_rules"
 	RulesSpecial = "/etc/prometheus/special_rules"
@@ -948,15 +950,15 @@ func RemoveSymlink(link string) error {
 func ReloadPrometheus() error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			alarmLogger.Error("Prometheus客户端未初始化")
-			return fmt.Errorf("Prometheus客户端未初始化")
+			alarmLogger.Error("The Prometheus client has not been initialized.")
+			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
 		return prometheusClient.ClientReloadPrometheus()
 	} else {
 		cmd := exec.Command("sudo", "systemctl", "kill", "-s", "SIGHUP", "prometheus.service")
 		if output, err := cmd.CombinedOutput(); err != nil {
-			return fmt.Errorf("SIGHUP操作失败: %v, 输出: %s", err, string(output))
+			return fmt.Errorf("SIGHUP operation failed: %v, output: %s", err, string(output))
 		}
 		return nil
 	}
