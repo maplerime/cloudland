@@ -11,6 +11,10 @@
   set_fact:
     hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
 
+- name: Gather IP addresses from cland group
+  set_fact:
+    cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
+
 - name: Validate WDS configuration
   fail:
     msg: "wds_address must be configured with a valid value when wds group exists"
@@ -36,6 +40,16 @@
         static_configs:
           {% for ip in hyper_ips -%}
           - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'compute'
+          - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'management'
+          {% endfor %}
+          {% for ip in cland_ips | difference(hyper_ips) -%}
+          - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'management'
           {% endfor %}
 
 - name: Generate libvirt exporters config block
@@ -164,7 +178,7 @@
             smtp_require_tls: true
 
           route:
-            group_by: ['alertname']
+            group_by: ['node_type', 'alertname']
             group_wait: 30s
             group_interval: 5m
             repeat_interval: 3h
@@ -715,6 +729,24 @@
     state: present
   tags: [monitor]
 
+- name: Ensure Grafana service runs as grafana user
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /lib/systemd/system/grafana-server.service
+    regexp: '^User='
+    line: 'User=grafana'
+  tags: [monitor]
+
+- name: Ensure Grafana service group is grafana
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /lib/systemd/system/grafana-server.service
+    regexp: '^Group='
+    line: 'Group=grafana'
+  tags: [monitor]
+
 - name: Configure Grafana
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -723,18 +755,40 @@
     dest: /etc/grafana/grafana.ini
     content: |
       [server]
+      # Grafana listen address： 0.0.0.0 allow extern access
+      http_addr = 0.0.0.0
       http_port = 3000
+
       [database]
       type = sqlite3
       path = /var/lib/grafana/grafana.db
+
+      [users]
+      default_theme = light
+      auto_assign_org = true
+      auto_assign_org_role = Admin
+
+      [auth.anonymous]
+      enabled = false
+
+      [auth]
+      login_form = true
+      basic_auth_enabled = true
+
+      [security]
+      allow_embedding = true
+    owner: grafana
+    group: grafana
+    mode: 0640
 
 - name: Start and enable Grafana service
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   systemd:
     name: grafana-server
-    state: started
+    state: restarted
     enabled: true
+    daemon_reload: yes
   tags: [monitor]
 
 - name: Wait for Grafana to be ready
@@ -749,6 +803,17 @@
   until: grafana_health.status == 200
   retries: 10
   delay: 5
+  tags: [monitor]
+
+- name: Allow Grafana port 3000 in iptables
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: 3000
+    jump: ACCEPT
+    action: insert
   tags: [monitor]
 
 - name: Add Prometheus as Grafana data source
@@ -790,4 +855,51 @@
   when:
     - "'wds' in groups"
     - "wds_address is defined"
+  tags: [monitor]
+
+- name: Create node_rules directory on Prometheus server
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/prometheus/node_rules
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  tags: [monitor]
+
+- name: Copy rule files to node_rules directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: /etc/prometheus/node_rules/
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+  with_items:
+    - /opt/cloudland/deploy/roles/monitor/files/compute-resources.yml
+    - /opt/cloudland/deploy/roles/monitor/files/management-resources.yml
+    - /opt/cloudland/deploy/roles/monitor/files/node-availability.yml
+  tags: [monitor]
+
+- name: Create symlinks in rules_enabled directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    src: "/etc/prometheus/node_rules/{{ item }}"
+    dest: "/etc/prometheus/rules_enabled/{{ item }}"
+    state: link
+    owner: prometheus
+    group: prometheus
+  with_items:
+    - compute-resources.yml
+    - management-resources.yml
+    - node-availability.yml
+  tags: [monitor]
+
+- name: Reload Prometheus configuration
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: sudo systemctl kill -s SIGHUP prometheus.service
   tags: [monitor]

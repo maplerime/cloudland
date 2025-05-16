@@ -1,0 +1,47 @@
+groups:
+- name: compute-resources
+  rules:
+  - alert: HighCPUUsage
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle", node_type="compute"}[5m])) * 100) > 90
+    for: 10m
+    labels:
+      severity: warning
+      node_type: compute
+    annotations:
+      summary: "Compute node {{ $labels.instance }} high CPU usage"
+      description: "Compute node {{ $labels.instance }} CPU usage exceeds 90% for 10 minutes"
+      alert_type: "node-cpu"
+
+  - alert: HighMemoryUsage
+    expr: (node_memory_MemTotal_bytes{node_type="compute"} - node_memory_MemAvailable_bytes{node_type="compute"}) / node_memory_MemTotal_bytes{node_type="compute"} * 100 > 85
+    for: 10m
+    labels:
+      severity: warning
+      node_type: compute
+    annotations:
+      summary: "Compute node {{ $labels.instance }} high memory usage"
+      description: "Compute node {{ $labels.instance }} memory usage exceeds 85% for 10 minutes"
+      alert_type: "node-memory"
+
+  - alert: LowDiskSpace
+    expr: (node_filesystem_avail_bytes{fstype=~"ext4|xfs", node_type="compute"} / node_filesystem_size_bytes{fstype=~"ext4|xfs", node_type="compute"} * 100) < 10
+    for: 10m
+    labels:
+      severity: warning
+      node_type: compute
+    annotations:
+      summary: "Compute node {{ $labels.instance }} low disk space"
+      description: "Compute node {{ $labels.instance }} disk space remaining less than 10% for 10 minutes"
+      alert_type: "node-disk"
+
+  - alert: ComputeHighNetworkTraffic
+    expr: rate(node_network_receive_bytes_total{device!~"lo|bond.*|vnet.*|virbr.*|docker.*", node_type="compute"}[1m]) * 8 / 1024 / 1024 > 100 or 
+          rate(node_network_transmit_bytes_total{device!~"lo|bond.*|vnet.*|virbr.*|docker.*", node_type="compute"}[1m]) * 8 / 1024 / 1024 > 100
+    for: 5m
+    labels:
+      severity: warning
+      node_type: compute
+    annotations:
+      summary: "Compute node {{ $labels.instance }} high network traffic"
+      description: "Compute node {{ $labels.instance }} network receive/transmit rate exceeds 100Mbps for 5 minutes"
+      alert_type: "node-network"

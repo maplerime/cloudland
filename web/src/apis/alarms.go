@@ -277,7 +277,6 @@ func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 		return
 	}
-
 	deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
 	if err != nil {
 		log.Printf("VM unlinking failed: %v", err)
@@ -616,6 +615,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		}
 		return
 	}
+
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	var excludeVMs []string
 	if err == nil {
@@ -1640,6 +1640,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		}
 		return
 	}
+
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	var excludeVMs []string
 	if err == nil {
