@@ -144,6 +144,12 @@ func (a *DictionaryAdmin) Delete(ctx context.Context, dictionaries *model.Dictio
 		err = fmt.Errorf("Not authorized")
 		return
 	}
+	dictionaries.Value = fmt.Sprintf("%s-%d", dictionaries.Value, dictionaries.CreatedAt.Unix())
+	err = db.Model(dictionaries).Update("value", dictionaries.Value).Error
+	if err != nil {
+		logger.Error("DB failed to update dictionary value", err)
+		return
+	}
 	if err = db.Delete(dictionaries).Error; err != nil {
 		logger.Errorf("DictionaryAdmin.Delete: db delete error, err=%v", err)
 		return
