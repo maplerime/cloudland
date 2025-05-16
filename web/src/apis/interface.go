@@ -41,7 +41,6 @@ type InterfaceResponse struct {
 	IsPrimary      bool                 `json:"is_primary"`
 	Inbound        int32                `json:"inbound"`
 	Outbound       int32                `json:"outbound"`
-	SiteSubnets    []*SiteSubnetInfo    `json:"site_subnets,omitempty"`
 	FloatingIps    []*FloatingIpInfo    `json:"floating_ips,omitempty"`
 	SecurityGroups []*ResourceReference `json:"security_groups,omitempty"`
 }
@@ -50,7 +49,6 @@ type InterfacePayload struct {
 	Subnet         *BaseReference   `json:"subnet" binding:"required"`
 	IpAddress      string           `json:"ip_address", binding:"omitempty,ipv4"`
 	MacAddress     string           `json:"mac_address" binding:"omitempty,mac"`
-	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound        int32            `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       int32            `json:"outbound" binding:"omitempty,min=0,max=20000"`
@@ -63,7 +61,6 @@ type InterfacePatchPayload struct {
 	Inbound        *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
 	AllowSpoofing  *bool            `json:"allow_spoofing" binding:"omitempty"`
-	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	SecurityGroups []*BaseReference `json:"security_groups" binding:"omitempty"`
 }
 
@@ -118,32 +115,18 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			Name: iface.Address.Subnet.Name,
 		},
 	}
-	if iface.PrimaryIf {
-		if len(instance.FloatingIps) > 0 {
-			floatingIps := make([]*FloatingIpInfo, len(instance.FloatingIps))
-			for i, floatingip := range instance.FloatingIps {
-				floatingIps[i] = &FloatingIpInfo{
-					ResourceReference: &ResourceReference{
-						ID:   floatingip.UUID,
-						Name: floatingip.Name,
-					},
-					IpAddress: floatingip.FipAddress,
-				}
-			}
-			interfaceResp.FloatingIps = floatingIps
-		}
-		if len(iface.SiteSubnets) > 0 {
-			for _, site := range iface.SiteSubnets {
-				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, &SiteSubnetInfo{
-					ResourceReference: &ResourceReference{
-						ID:   site.UUID,
-						Name: site.Name,
-					},
-					Network: site.Network,
-					Gateway: site.Gateway,
-				})
+	if iface.PrimaryIf && len(instance.FloatingIps) > 0 {
+		floatingIps := make([]*FloatingIpInfo, len(instance.FloatingIps))
+		for i, floatingip := range instance.FloatingIps {
+			floatingIps[i] = &FloatingIpInfo{
+				ResourceReference: &ResourceReference{
+					ID:   floatingip.UUID,
+					Name: floatingip.Name,
+				},
+				IpAddress: floatingip.FipAddress,
 			}
 		}
+		interfaceResp.FloatingIps = floatingIps
 	}
 	for _, sg := range iface.SecurityGroups {
 		interfaceResp.SecurityGroups = append(interfaceResp.SecurityGroups, &ResourceReference{
@@ -232,23 +215,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		secgroups = append(secgroups, secgroup)
 	}
-	var siteSubnets []*model.Subnet
-	if iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
-		logger.Errorf("Only primary interface can have site subnets")
-		ErrorResponse(c, http.StatusBadRequest, "Only primary interface can have site subnets", err)
-		return
-	}
-	for _, site := range payload.SiteSubnets {
-		var siteSubnet *model.Subnet
-		siteSubnet, err = subnetAdmin.GetSubnet(ctx, site)
-		if err != nil {
-			logger.Errorf("Failed to get site subnet")
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
-			return
-		}
-		siteSubnets = append(siteSubnets, siteSubnet)
-	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, siteSubnets)
+	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)

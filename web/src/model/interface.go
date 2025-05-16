@@ -25,7 +25,6 @@ type Interface struct {
 	Subnet         int64
 	RouterID       int64
 	Address        *Address `gorm:"foreignkey:Interface"`
-	SiteSubnets    []*Subnet `gorm:"foreignkey:Interface"`
 	Hyper          int32    `gorm:"default:-1"`
 	PrimaryIf      bool     `gorm:"default:false"`
 	Type           string   `gorm:"type:varchar(20)"`

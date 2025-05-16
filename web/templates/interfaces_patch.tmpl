@@ -28,37 +28,21 @@
                     	<input id="outbound" name="outbound" value="{{ .Interface.Outbound }}">
                     </div>
                     <div class="inline field">
-                        <label for="allow_spoofing">{{.i18n.Tr "Allow Spoofing"}}</label>
-                        <select name="allow_spoofing" id="allow_spoofing" class="ui selection dropdown">
-                              {{ if .Interface.AllowSpoofing }}
-                              <option value="yes" selected>{{.i18n.Tr "yes"}}</option>
-                              <option value="no">{{.i18n.Tr "no"}}</option>
-                              {{ else }}
-                              <option value="yes">{{.i18n.Tr "yes"}}</option>
-                              <option value="no" selected>{{.i18n.Tr "no"}}</option>
-                              {{ end }}
-                        </select>
-		    </div>
-                    <div class="inline field">
-                        <label for="sites">{{.i18n.Tr "Site Subnets"}}</label>
-                        <select name="sites" id="sites" multiple="" class="ui multiple selection dropdown">
-                            {{ $IfaceSites := .IfaceSites }}
-            		    {{ range .SiteSubnets }}
-                              {{ $siteID := .ID }}
-                              {{ $selected := false }}
-            		      {{ range $IfaceSites }}
-                                {{ if eq .ID $siteID }}
-                                  {{ $selected = true }}
-                                {{ end }}
-                              {{ end }}
-                              {{ if $selected }}
-                                  <option value="{{ .ID }}" selected>{{.Name}}--{{.Network}}/{{.Netmask}}</option>
-                              {{ else }}
-                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
-                              {{ end }}
-                            {{ end }}
-                        </select>
-		    </div>
+                    	<label for="allow_spoofing">{{.i18n.Tr "Allow Spoofing"}}</label>
+                    	<div class="ui selection dropdown">
+                    	  <input id="allow_spoofing" name="allow_spoofing" type="hidden">
+                    	  <i class="dropdown icon"></i>
+			  {{if .Interface.AllowSpoofing }}
+                    	      <div class="default text">{{.i18n.Tr "yes"}}</div>
+			  {{else}}
+                    	      <div class="default text">{{.i18n.Tr "no"}}</div>
+			  {{end}}
+                    	  <div class="menu">
+                    		<div class="item" data-value="yes" data-text="yes">{{.i18n.Tr "yes"}}</div>
+                    		<div class="item" data-value="no" data-text="no">{{.i18n.Tr "no"}}</div>
+                    	  </div>
+                    	</div>
+                    </div>
                     <div class="inline field">
                         <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>
                         <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">

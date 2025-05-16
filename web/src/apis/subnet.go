@@ -34,12 +34,6 @@ type SubnetResponse struct {
 	Type       SubnetType         `json:"type"`
 }
 
-type SiteSubnetInfo struct {
-	*ResourceReference
-	Network    string             `json:"network"`
-	Gateway    string             `json:"gateway"`
-}
-
 type SubnetListResponse struct {
 	Offset  int               `json:"offset"`
 	Total   int               `json:"total"`
@@ -224,7 +218,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "", "")
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "")
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return

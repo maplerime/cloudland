@@ -275,7 +275,7 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = CreateInterface(ctx, subnet, router.ID, router.Owner, router.Hyper, 0, 0, subnet.Gateway, "", "subnet-gw", "gateway", nil, false)
+	_, err = CreateInterface(ctx, subnet, router.ID, router.Owner, router.Hyper, 0, 0, subnet.Gateway, "", "subnet-gw", "gateway", nil)
 	if err != nil {
 		logger.Error("Failed to create gateway subnet interface", err)
 		return
@@ -471,7 +471,7 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 	return
 }
 
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -490,11 +490,11 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		where = fmt.Sprintf("type = 'public' or %s", where)
 	}
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Where(where).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Router").Where(where).Where(query).Find(&subnets).Error; err != nil {
 		return
 	}
 	permit := memberShip.CheckPermission(model.Admin)
@@ -531,7 +531,7 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, query, "")
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
