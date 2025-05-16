@@ -155,7 +155,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		}
 		taskStatus = "completed"
 	} else if status == "source_prepared" {
-		err = db.Preload("SiteSubnets").Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+		err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 		if err != nil {
 			logger.Error("Failed to get interfaces", err)
 			return
@@ -178,30 +178,9 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", fip.RouterID, fip.FipAddress, fip.IntAddress, primaryIface.Address.Subnet.Vlan, fip.ID)
 				err = HyperExecute(ctx, control, command)
 				if err != nil {
-					logger.Error("Execute clear floating ip failed", err)
+					logger.Error("Execute floating ip failed", err)
 					return
 				}
-			}
-		}
-		if len(primaryIface.SiteSubnets) > 0 {
-			sitesInfo := []*SiteIpSubnetInfo{}
-			_, sitesInfo, err = GetInstanceNetworks(ctx, primaryIface, nil, 0)
-			if err != nil {
-				logger.Errorf("Failed to get instance networks, %v", err)
-				return
-			}
-			var siteJson []byte
-			siteJson, err = json.Marshal(sitesInfo)
-			if err != nil {
-				logger.Errorf("Failed to marshal instance json data, %v", err)
-				return
-			}
-			control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_sites_ip.sh '%d'<<EOF\n%s\nEOF", instance.RouterID, siteJson)
-			err = HyperExecute(ctx, control, command)
-			if err != nil {
-				logger.Error("Execute floating ip failed", err)
-				return
 			}
 		}
 		taskStatus = "completed"

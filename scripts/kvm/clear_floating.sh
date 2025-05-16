@@ -26,8 +26,6 @@ ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -j SNAT --to-sou
 ip netns exec $router ip addr show $ext_dev | grep 'inet '
 if [ $? -ne 0 ]; then
     ip netns exec $router ip link del $ext_dev
-    ip link del ${ext_dev/te-/ext-}
-    udevadm settle
 fi
 ip netns exec $router iptables -t mangle -D PREROUTING -d $ext_ip -j MARK --set-mark $mark_id
 ip netns exec $router iptables -S | grep "mark $(printf "0x%x" $mark_id)" | while read line; do

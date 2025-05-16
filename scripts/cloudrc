@@ -180,11 +180,6 @@ function log_debug()
 
 function inet_access()
 {
-    ping -c 1 $dns_server
-    if [ $? -eq 0 ]; then
-        $*
-        return
-    fi
     mkdir -p /etc/netns/router-0
     echo "nameserver $dns_server" >/etc/netns/router-0/resolv.conf
     ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
