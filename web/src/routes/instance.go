@@ -548,7 +548,7 @@ func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interf
 func (a *InstanceAdmin) createInterface(ctx context.Context, subnet *model.Subnet, address, mac string, instance *model.Instance, ifname string, inbound, outbound int32, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	memberShip := GetMemberShip(ctx)
 	if subnet.Type == "public" {
-		permit := memberShip.CheckPermission(model.Admin)
+		permit := memberShip.CheckPermission(model.Owner)
 		if !permit {
 			logger.Error("Not authorized to create interface in public subnet")
 			err = fmt.Errorf("Not authorized")
@@ -597,7 +597,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		return
 	}
 	interfaces = append(interfaces, iface)
-	instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, 0)
+	instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, primaryIface.SiteSubnets, 0)
 	if err != nil {
 		logger.Errorf("Failed to get instance networks, %v", err)
 		return
@@ -625,7 +625,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			return
 		}
 		interfaces = append(interfaces, iface)
-		instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, iface, primaryIface.SiteSubnets, i+1)
+		instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, primaryIface.SiteSubnets, i+1)
 		if err != nil {
 			logger.Errorf("Failed to get instance networks, %v", err)
 			return
@@ -647,12 +647,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	for _, key := range keys {
 		instKeys = append(instKeys, key.PublicKey)
 	}
-	image := &model.Image{Model: model.Model{ID: instance.ImageID}}
-	err = DB().Take(image).Error
-	if err != nil {
-		logger.Error("Invalid image ", instance.ImageID)
-		return
-	}
 	dns := primary.NameServer
 	if dns == primaryIP {
 		dns = ""
@@ -666,7 +660,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		Keys:       instKeys,
 		RootPasswd: rootPasswd,
 		LoginPort:  loginPort,
-		OSCode:     image.OSCode,
+		OSCode:     GetImageOSCode(ctx, instance),
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -674,6 +668,21 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		return
 	}
 	return interfaces, string(jsonData), nil
+}
+
+func GetImageOSCode(ctx context.Context, instance *model.Instance) string {
+	osCode := "linux"
+	if instance.Image == nil {
+		_, db := GetContextDB(ctx)
+		instance.Image = &model.Image{Model: model.Model{ID: instance.ImageID}}
+		err := db.Take(instance.Image).Error
+		if err != nil {
+			logger.Error("Invalid image ", instance.ImageID)
+			return osCode
+		}
+		osCode = instance.Image.OSCode
+	}
+	return osCode
 }
 
 func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instance, rootPasswd string) (metadata string, err error) {
@@ -700,17 +709,13 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		if iface.PrimaryIf {
 			dns = subnet.NameServer
 		}
-		instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, i)
+		instNetworks, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, nil, i)
 		if err != nil {
 			logger.Errorf("Failed to get instance networks, %v", err)
 			return
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SitesIpInfo: sitesInfo})
-	}
-	osCode := "linux"
-	if instance.Image != nil {
-		osCode = instance.Image.OSCode
 	}
 	instData := &InstanceData{
 		Userdata:   instance.Userdata,
@@ -722,7 +727,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		Keys:       instKeys,
 		RootPasswd: rootPasswd,
 		LoginPort:  int(instance.LoginPort),
-		OSCode:     osCode,
+		OSCode:     GetImageOSCode(ctx, instance),
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -757,7 +762,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}
 		if iface.PrimaryIf {
-			_, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, 0)
+			_, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, nil, 0)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return

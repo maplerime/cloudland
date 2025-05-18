@@ -179,7 +179,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		if !same {
 			needUpdate = true
 			sitesInfo := []*SiteIpSubnetInfo{}
-			_, sitesInfo, err = GetInstanceNetworks(ctx, iface, nil, 0)
+			_, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, nil, 0)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
@@ -203,7 +203,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				logger.Error("Update vm nic command execution failed", err)
 				return
 			}
-			_, sitesInfo, err = GetInstanceNetworks(ctx, iface, siteSubnets, 0)
+			_, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, siteSubnets, 0)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
@@ -215,7 +215,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				return
 			}
 			control = fmt.Sprintf("inter=%d", instance.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_sites_ip.sh '%d' '%s' 'true' '%d'<<EOF\n%s\nEOF", instance.RouterID, iface.Address.Address, instance.ID, newSiteJson)
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_sites_ip.sh '%d' '%s' 'true'<<EOF\n%s\nEOF", instance.ID, GetImageOSCode(ctx, instance), newSiteJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Update vm nic command execution failed", err)

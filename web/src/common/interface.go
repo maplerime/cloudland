@@ -303,7 +303,7 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 	return
 }
 
-func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnets []*model.Subnet, netID int) (instNetworks []*InstanceNetwork, sitesInfo []*SiteIpSubnetInfo, err error) {
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, siteSubnets []*model.Subnet, netID int) (instNetworks []*InstanceNetwork, sitesInfo []*SiteIpSubnetInfo, err error) {
         ctx, db := GetContextDB(ctx)
         subnet := iface.Address.Subnet
         address := strings.Split(iface.Address.Address, "/")[0]
@@ -329,42 +329,73 @@ func GetInstanceNetworks(ctx context.Context, iface *model.Interface, siteSubnet
 			siteSubnets = iface.SiteSubnets
 			toUpdate = false
 		} else {
+			if subnet.Type != "public" {
+				err = fmt.Errorf("Site subnets can only be with public subnets")
+				logger.Errorf("Site subnets can only be with public subnets")
+				return
+			}
 			iface.SiteSubnets = siteSubnets
 		}
-	}
-        for _, site := range siteSubnets {
-		siteInfo := &SiteIpSubnetInfo{
-			SiteID: site.ID,
-			SiteVlan: site.Vlan,
-			InternalIp: iface.Address.Address,
-			Gateway: site.Gateway,
+	} else {
+		if len(siteSubnets) > 0 {
+			err = fmt.Errorf("Site subnets can only be with primary interface")
+			logger.Errorf("Site subnets can only be with primary interface")
+			return
 		}
-                siteAddrs := []*model.Address{}
-                err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
-                if err != nil {
-                        logger.Errorf("Failed to query site ip(s), %v", err)
-                        return
-                }
-                for i, addr := range siteAddrs {
-                        address := strings.Split(addr.Address, "/")[0]
-                        instNetworks = append(instNetworks, &InstanceNetwork{
-                                Address: address,
-                                Netmask: "255.255.255.255",
-                                Type:    "ipv4",
-                                Link:    iface.Name,
-                                ID:      fmt.Sprintf("network%d-%d", netID, i+1),
-                        })
-			siteInfo.Addresses = append(siteInfo.Addresses, addr.Address)
-                }
-		sitesInfo = append(sitesInfo, siteInfo)
-                if toUpdate {
-                        site.Interface = iface.ID
-                        err = db.Model(site).Updates(site).Error
-                        if err != nil {
-                                logger.Errorf("Failed to set site interface", err)
-                                return
-                        }
-                }
-        }
+	}
+	if len(siteSubnets) > 0 {
+		if instance.Image == nil {
+			instance.Image = &model.Image{Model: model.Model{ID: instance.ImageID}}
+			err = db.Take(instance.Image).Error
+			if err != nil {
+				logger.Error("Invalid image ", instance.ImageID)
+				return
+			}
+		}
+		osCode := instance.Image.OSCode
+		for _, site := range siteSubnets {
+			/*
+			if site.Vlan != subnet.Vlan {
+				err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
+				logger.Errorf("Site subnets and primary subnet must be with same vlan")
+				return
+			}
+			*/
+			siteInfo := &SiteIpSubnetInfo{
+				SiteID: site.ID,
+				SiteVlan: site.Vlan,
+				InternalIp: iface.Address.Address,
+				Gateway: site.Gateway,
+			}
+			siteAddrs := []*model.Address{}
+			err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
+			if err != nil {
+				logger.Errorf("Failed to query site ip(s), %v", err)
+				return
+			}
+			for i, addr := range siteAddrs {
+				if osCode == "linux" {
+					address := strings.Split(addr.Address, "/")[0]
+					instNetworks = append(instNetworks, &InstanceNetwork{
+						Address: address,
+						Netmask: site.Netmask,
+						Type:    "ipv4",
+						Link:    iface.Name,
+						ID:      fmt.Sprintf("network%d-%d", netID, i+1),
+					})
+				}
+				siteInfo.Addresses = append(siteInfo.Addresses, addr.Address)
+			}
+			sitesInfo = append(sitesInfo, siteInfo)
+			if toUpdate {
+				site.Interface = iface.ID
+				err = db.Model(site).Updates(site).Error
+				if err != nil {
+					logger.Errorf("Failed to set site interface", err)
+					return
+				}
+			}
+		}
+	}
         return
 }
