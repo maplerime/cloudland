@@ -583,7 +583,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	hyper, hyperErr := hyperAdmin.GetHyperByHostid(ctx, instance.Hyper)
 	if hyperErr == nil {
 		instanceResp.Hypervisor = &BaseReference{
-			ID:   string(instance.Hyper),
+			ID:   strconv.Itoa(int(instance.Hyper)),
 			Name: hyper.Hostname,
 		}
 	}
