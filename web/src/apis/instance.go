@@ -80,7 +80,7 @@ type InstanceResponse struct {
 	PasswdLogin bool                  `json:"passwd_login"`
 	Zone        string                `json:"zone"`
 	VPC         *ResourceReference    `json:"vpc,omitempty"`
-	Hypervisor  string                `json:"hypervisor,omitempty"`
+	Hypervisor  *BaseReference        `json:"hypervisor,omitempty"`
 	Reason      string                `json:"reason"`
 }
 
@@ -582,7 +582,10 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	instanceResp.Volumes = volumes
 	hyper, hyperErr := hyperAdmin.GetHyperByHostid(ctx, instance.Hyper)
 	if hyperErr == nil {
-		instanceResp.Hypervisor = hyper.Hostname
+		instanceResp.Hypervisor = &BaseReference{
+			ID:   string(instance.Hyper),
+			Name: hyper.Hostname,
+		}
 	}
 	interfaces := make([]*InterfaceResponse, len(instance.Interfaces))
 	for i, iface := range instance.Interfaces {
