@@ -680,8 +680,8 @@ func GetImageOSCode(ctx context.Context, instance *model.Instance) string {
 			logger.Error("Invalid image ", instance.ImageID)
 			return osCode
 		}
-		osCode = instance.Image.OSCode
 	}
+	osCode = instance.Image.OSCode
 	return osCode
 }
 

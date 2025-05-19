@@ -22,6 +22,7 @@ vol_state=error
 
 md=$(cat)
 metadata=$(echo $md | base64 -d)
+echo "$metadata" >/tmp/metadata
 
 let fsize=$disk_size*1024*1024*1024
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1

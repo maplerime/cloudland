@@ -11,14 +11,16 @@ os_code=$2
 update_meta=$3
 
 sites=$(cat)
-echo "$sites" >/tmp/sites
 nsite=$(jq length <<< $sites)
 if [ "$os_code" = "windows" ]; then
-    for i in {1..120}; do
+    count=0
+    for i in {1..240}; do
         virsh qemu-agent-command "$vm_ID" '{"execute":"guest-ping"}'
         if [ $? -eq 0 ]; then
-	    break
+            let count=$count+1
         fi
+	[ $count -gt 10 ] && break
+	sleep 5
     done
     i=0
     while [ $i -lt $nsite ]; do
