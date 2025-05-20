@@ -11,6 +11,14 @@
                         <label for="name">{{.i18n.Tr "Name"}}</label>
                         <input id="name" name="name" value="{{ .Subnet.Name }}" required>
                     </div>
+                     <div class="inline field">
+                       <label for="group">{{.i18n.Tr "Group"}}</label>
+                       <select name="group" id="group" class="ui selection dropdown">
+                               {{range  .Groups}}
+                                   <option value="{{.ID}}" {{if eq .ID $.Subnet.GroupID}}selected{{end}}>{{.Name}}</option>
+                               {{end}}
+                       </select>
+                    </div>
                     <div class="inline field">
                         <label for="createdat">{{.i18n.Tr "Created_At"}}</label>
                         <input id="createdat" name="createdat" value="{{ .Subnet.CreatedAt }}" disabled>
