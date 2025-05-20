@@ -516,14 +516,14 @@ func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.In
 		if err != nil {
 			logger.Error("Failed to delete interface", err)
 			err = nil
-			continue
+			return
 		}
 		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
 			"interface": 0}).Error
 		if err != nil {
-			logger.Error("Failed to update instance", err)
+			logger.Error("Failed to update subnet", err)
+			return
 		}
-		return
 	}
 	return
 }

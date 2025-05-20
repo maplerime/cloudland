@@ -138,7 +138,7 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 			return
 		}
 	}
-	if subnet.Type != "public" {
+	if subnet.Type == "internal" {
 		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
@@ -166,7 +166,7 @@ func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet 
 			return
 		}
 	}
-	if subnet.Type != "public" {
+	if subnet.Type == "internal" {
 		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
@@ -194,7 +194,7 @@ func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet 
 			return
 		}
 	}
-	if subnet.Type != "public" {
+	if subnet.Type == "internal" {
 		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
@@ -535,7 +535,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	if where != "" {
-		where = fmt.Sprintf("type = 'public' or %s", where)
+		where = fmt.Sprintf("type = 'public' or type = 'site' or %s", where)
 	}
 	subnets = []*model.Subnet{}
 	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
@@ -545,7 +545,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if err = db.Preload("Router").Where(where).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckPermission(model.Writer)
 	if permit {
 		db = db.Offset(0).Limit(-1)
 		for _, subnet := range subnets {
