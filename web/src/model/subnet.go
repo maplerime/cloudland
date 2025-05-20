@@ -23,10 +23,13 @@ type Subnet struct {
 	DomainSearch string `gorm:"type:varchar(256)"`
 	Dhcp         bool   `gorm:"default:false"`
 	Vlan         int64
-	Type         string  `gorm:"type:varchar(20);default:'internal'"`
-	RouterID     int64   `gorm:"unique_index:idx_router_subnet"`
-	Router       *Router `gorm:"foreignkey:RouterID"`
-	Routes       string  `gorm:"type:varchar(256)"`
+	Type         string   `gorm:"type:varchar(20);default:'internal'"`
+	RouterID     int64    `gorm:"unique_index:idx_router_subnet"`
+	Router       *Router  `gorm:"foreignkey:RouterID"`
+	Routes       string   `gorm:"type:varchar(256)"`
+	GroupID      int64    `gorm:"index"`
+	Group        *IpGroup `gorm:"foreignkey:GroupID" json:"-" gorm:"-"`
+	IdleCount    int64    `gorm:"-"`
 }
 
 type Address struct {

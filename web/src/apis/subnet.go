@@ -9,8 +9,10 @@ package apis
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	. "web/src/common"
 	"web/src/model"
@@ -31,8 +33,16 @@ type SubnetResponse struct {
 	Gateway    string             `json:"gateway"`
 	NameServer string             `json:"dns,omitempty"`
 	VPC        *ResourceReference `json:"vpc,omitempty"`
+	Group      *ResourceReference `json:"group,omitempty"`
 	Type       SubnetType         `json:"type"`
 	Vlan       int                `json:"vlan,omitempty"`
+	IdleCount  int64              `json:"idle_count"`
+}
+
+type SiteSubnetInfo struct {
+	*ResourceReference
+	Network string `json:"network"`
+	Gateway string `json:"gateway"`
 }
 
 type SubnetListResponse struct {
@@ -52,6 +62,7 @@ type SubnetPayload struct {
 	BaseDomain  string         `json:"base_domain" binding:"omitempty"`
 	Dhcp        bool           `json:"dhcp" binding:"omitempty"`
 	VPC         *BaseReference `json:"vpc" binding:"omitempty"`
+	Group       *BaseReference `json:"group" binding:"omitempty"`
 	Vlan        int            `json:"vlan" binding:"omitempty,gte=1,lte=16777215"`
 	Type        SubnetType     `json:"type" binding:"omitempty,oneof=public internal"`
 }
@@ -171,16 +182,42 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	subnet, err := subnetAdmin.Create(ctx, payload.Vlan, payload.Name, payload.NetworkCIDR, payload.Gateway, payload.StartIP, payload.EndIP, string(payload.Type), payload.NameServer, payload.BaseDomain, payload.Dhcp, router)
+	var ipGroup *model.IpGroup
+	if payload.Group != nil {
+		if payload.Group.ID == "" && payload.Group.Name == "" {
+			logger.Errorf("Group ID or Name is required")
+			ErrorResponse(c, http.StatusBadRequest, "Group ID or Name is required", err)
+			return
+		}
+		if payload.Group.ID != "" {
+			ipGroup, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
+			if err != nil {
+				logger.Errorf("Failed to get ipGroup, uuid=%s, err=%v", payload.Group.ID, err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get ipGroup", err)
+				return
+			}
+		} else {
+			ipGroup, err = ipGroupAdmin.GetIpGroupByName(ctx, payload.Group.Name)
+			if err != nil {
+				logger.Errorf("Failed to get ipGroup, name=%s, err=%v", payload.Group.Name, err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get ipGroup", err)
+				return
+			}
+		}
+	}
+	subnet, err := subnetAdmin.Create(ctx, payload.Vlan, payload.Name, payload.NetworkCIDR, payload.Gateway, payload.StartIP, payload.EndIP, string(payload.Type), payload.NameServer, payload.BaseDomain, payload.Dhcp, router, ipGroup)
 	if err != nil {
+		logger.Errorf("Failed to create subnet, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create subnet", err)
 		return
 	}
 	subnetResp, err := v.getSubnetResponse(ctx, subnet)
 	if err != nil {
+		logger.Errorf("Failed to get subnet response, err=%v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
+	logger.Debugf("Subnet created successfully, subnet=%+v", subnetResp)
 	c.JSON(http.StatusOK, subnetResp)
 }
 
@@ -207,6 +244,20 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 			Name: router.Name,
 		}
 	}
+	if subnet.Group != nil {
+		group := subnet.Group
+		subnetResp.Group = &ResourceReference{
+			ID:   group.UUID,
+			Name: group.Name,
+		}
+	}
+	var idleCount int64
+	idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
+	if err != nil {
+		logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+		return
+	}
+	subnetResp.IdleCount = idleCount
 	return
 }
 
@@ -223,6 +274,8 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	typeStr := c.DefaultQuery("type", "")
+	queryStr := c.DefaultQuery("query", "")
+	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -237,7 +290,26 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "", typeStr)
+
+	if queryStr != "" {
+		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
+	}
+	if groupID != "" {
+		logger.Debugf("Filtering subnets by group_id: %s", groupID)
+		var ipGroup *model.IpGroup
+		ipGroup, err := ipGroupAdmin.GetIpGroupByUUID(ctx, groupID)
+		if err != nil {
+			logger.Errorf("Invalid query group_id: %s, %+v", groupID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query subnets by group_id UUID: "+groupID, err)
+			return
+		}
+
+		logger.Debugf("The ipGroup with group_id: %+v\n", ipGroup)
+		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
+		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+	}
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, typeStr)
+
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return
