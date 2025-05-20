@@ -344,15 +344,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		}
 	}
 	if len(siteSubnets) > 0 {
-		if instance.Image == nil {
-			instance.Image = &model.Image{Model: model.Model{ID: instance.ImageID}}
-			err = db.Take(instance.Image).Error
-			if err != nil {
-				logger.Error("Invalid image ", instance.ImageID)
-				return
-			}
-		}
-		osCode := instance.Image.OSCode
+		osCode := GetImageOSCode(ctx, instance)
 		for _, site := range siteSubnets {
 			if site.Vlan != subnet.Vlan {
 				err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
