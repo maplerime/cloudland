@@ -57,11 +57,6 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 			logger.Error("Failed to Update addresses, %v", err)
 			return
 		}
-		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to Update site subnets, %v", err)
-			return
-		}
 		err = db.Delete(iface).Error
 		if err != nil {
 			logger.Error("Failed to delete interface", err)

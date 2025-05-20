@@ -354,13 +354,11 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		}
 		osCode := instance.Image.OSCode
 		for _, site := range siteSubnets {
-			/*
 			if site.Vlan != subnet.Vlan {
 				err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
 				logger.Errorf("Site subnets and primary subnet must be with same vlan")
 				return
 			}
-			*/
 			siteInfo := &SiteIpSubnetInfo{
 				SiteID: site.ID,
 				SiteVlan: site.Vlan,

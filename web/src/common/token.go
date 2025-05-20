@@ -9,7 +9,7 @@ package common
 import (
 	"web/src/model"
 
-	"github.com/golang-jwt/jwt"
+	"github.com/dgrijalva/jwt-go"
 )
 
 type TokenClaim struct {
