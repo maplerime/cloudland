@@ -529,9 +529,6 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		order = "created_at"
 	}
 
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
-	}
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	if where != "" {
