@@ -6,6 +6,7 @@ source ../../cloudrc
 [ $# -lt 2 ] && echo "$0 <vm_ID> <os_code>" && exit -1
 
 ID=$1
+os_code=$2
 sites=$(cat)
 nsite=$(jq length <<< $sites)
 if [ "$os_code" = "windows" ]; then
