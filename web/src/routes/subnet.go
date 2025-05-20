@@ -579,7 +579,11 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, query, "")
+	queryStr := ""
+	if query != "" {
+		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
+	}
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
