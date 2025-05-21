@@ -620,6 +620,7 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	statusStr := c.DefaultQuery("status", "")
 	securityGroupID := c.DefaultQuery("security_group_id", "")
 	vpcID := strings.TrimSpace(c.DefaultQuery("vpc_id", "")) // Retrieve vpc_id from query params
+	vpcIDs := strings.TrimSpace(c.DefaultQuery("vpc_ids", ""))
 	logger.Debugf("List instances with offset %s, limit %s, query %s, order %s, vpc_id %s, status %s", offsetStr, limitStr, queryStr, orderStr, vpcID, statusStr)
 
 	var conditions []string
@@ -643,6 +644,27 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		logger.Debugf("The router_id in vpc is: %d", router.ID)
 		queryStr = fmt.Sprintf("router_id = %d", router.ID)
 		conditions = append(conditions, queryStr)
+	}
+	if vpcIDs != "" {
+		logger.Debugf("Filtering instances by VPC IDs: %s", vpcIDs)
+		vpcUUIDList := strings.Split(vpcIDs, ",")
+		var routerIDs []string
+
+		for _, vpcUUID := range vpcUUIDList {
+			vpcUUID = strings.TrimSpace(vpcUUID)
+			router, err := routerAdmin.GetRouterByUUID(ctx, vpcUUID)
+			if err != nil {
+				logger.Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
+				ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_ids UUID: "+vpcID, err)
+				return
+			}
+			logger.Debugf("The router_id in vpc is: %d", router.ID)
+			routerIDs = append(routerIDs, fmt.Sprintf("%d", router.ID))
+		}
+		if len(routerIDs) > 0 {
+			queryStr = fmt.Sprintf("router_id IN (%s)", strings.Join(routerIDs, ","))
+			conditions = append(conditions, queryStr)
+		}
 	}
 	if statusStr != "" {
 		logger.Debugf("Filtering instances by status: %s", statusStr)
