@@ -507,6 +507,7 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	err := db.Model(&model.Address{}).
 		Where("subnet_id = ?", subnet.ID).
 		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
 		Where("address != ?", subnet.Gateway).
 		Count(&idleCount).Error
 
@@ -517,6 +518,24 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	}
 
 	return idleCount, nil
+}
+
+func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
+	db := DB()
+	err = db.Model(&model.Address{}).
+		Select("subnet_id").
+		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
+		Group("subnet_id").
+		Having("COUNT(*) >= ?", minCount).
+		Pluck("subnet_id", &subnetIDs).Error
+
+	if err != nil {
+		logger.Error("Failed to get subnet IDs with minimum idle IP count", err)
+		return nil, fmt.Errorf("failed to get subnet IDs with minimum idle IP count: %v", err)
+	}
+
+	return subnetIDs, nil
 }
 
 func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, subnetType string) (total int64, subnets []*model.Subnet, err error) {
@@ -611,18 +630,6 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 	if err = db.Where(where).Where(query).Find(&addresses).Error; err != nil {
 		return
 	}
-	permit := memberShip.CheckPermission(model.Admin)
-	if permit {
-		db = db.Offset(0).Limit(-1)
-		for _, subnet := range addresses {
-			subnet.OwnerInfo = &model.Organization{Model: model.Model{ID: subnet.Owner}}
-			if err = db.Take(subnet.OwnerInfo).Error; err != nil {
-				logger.Error("Failed to query owner info", err)
-				return
-			}
-		}
-	}
-
 	return
 }
 

@@ -275,6 +275,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	typeStr := c.DefaultQuery("type", "")
 	queryStr := c.DefaultQuery("query", "")
+	minIdleIpCountStr := c.DefaultQuery("min_idle_ip_count", "")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -291,13 +292,15 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		return
 	}
 
+	var conditions []string
 	if queryStr != "" {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
+		conditions = append(conditions, queryStr)
 	}
 	if groupID != "" {
 		logger.Debugf("Filtering subnets by group_id: %s", groupID)
 		var ipGroup *model.IpGroup
-		ipGroup, err := ipGroupAdmin.GetIpGroupByUUID(ctx, groupID)
+		ipGroup, err = ipGroupAdmin.GetIpGroupByUUID(ctx, groupID)
 		if err != nil {
 			logger.Errorf("Invalid query group_id: %s, %+v", groupID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query subnets by group_id UUID: "+groupID, err)
@@ -307,6 +310,32 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		logger.Debugf("The ipGroup with group_id: %+v\n", ipGroup)
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
 		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+		conditions = append(conditions, queryStr)
+	}
+	if minIdleIpCountStr != "" {
+		minIdleIpCount := 0
+		minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query min_idle_ip_count: "+minIdleIpCountStr, err)
+			return
+		}
+		subnetIDs := make([]int64, 0)
+		subnetIDs, err = subnetAdmin.GetSubnetIDsByMinIdleIPCount(ctx, int64(minIdleIpCount))
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet IDs by min idle IP count", err)
+			return
+		}
+		if len(subnetIDs) > 0 {
+			ids := make([]string, len(subnetIDs))
+			for i, id := range subnetIDs {
+				ids[i] = strconv.FormatInt(id, 10)
+			}
+			queryStr = fmt.Sprintf("id IN (%s)", strings.Join(ids, ","))
+			conditions = append(conditions, queryStr)
+		}
+	}
+	if len(conditions) > 0 {
+		queryStr = strings.Join(conditions, " AND ")
 	}
 	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, typeStr)
 
