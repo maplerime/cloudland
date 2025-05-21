@@ -332,6 +332,8 @@ func (v *SubnetAPI) List(c *gin.Context) {
 			}
 			queryStr = fmt.Sprintf("id IN (%s)", strings.Join(ids, ","))
 			conditions = append(conditions, queryStr)
+		} else {
+			conditions = append(conditions, "id = -1") // No subnets found
 		}
 	}
 	if len(conditions) > 0 {
