@@ -303,6 +303,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	instanceIDStr := c.DefaultQuery("instance_id", "")
+	orderStr := c.DefaultQuery("order", "-created_at")
 	logger.Debugf("List floating ips with offset %s, limit %s, query %s, instance %s", offsetStr, limitStr, queryStr, instanceIDStr)
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -332,7 +333,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 		}
 		instanceID = instance.ID
 	}
-	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, instanceID)
+	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, instanceID)
 	if err != nil {
 		logger.Errorf("Failed to list floatingIps %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list floatingIps", err)
