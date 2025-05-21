@@ -307,7 +307,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return
 	}
-	db = dbs.ResetSortBy(db, "-created_at")
+	db = dbs.ResetSortBy(db.Offset(0).Limit(-1), "-created_at")
 	for _, fip := range floatingIps {
 		if fip.InstanceID <= 0 {
 			continue
