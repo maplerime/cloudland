@@ -103,11 +103,13 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 			return
 		}
 	}
-	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
-	if !permit {
-		logger.Error("Not authorized to get security group")
-		err = fmt.Errorf("Not authorized")
-		return
+	if secgroup.Name != "system-default" {
+		permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
+		if !permit {
+			logger.Error("Not authorized to get security group")
+			err = fmt.Errorf("Not authorized")
+			return
+		}
 	}
 	return
 }
@@ -130,11 +132,13 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 			return
 		}
 	}
-	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
-	if !permit {
-		logger.Error("Not authorized to get security group")
-		err = fmt.Errorf("Not authorized")
-		return
+	if secgroup.Name != "system-default" {
+		permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
+		if !permit {
+			logger.Error("Not authorized to get security group")
+			err = fmt.Errorf("Not authorized")
+			return
+		}
 	}
 	return
 }
@@ -142,9 +146,8 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (secgroup *model.SecurityGroup, err error) {
 	db := DB()
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
 	secgroup = &model.SecurityGroup{}
-	err = db.Where(where).Where("name = ?", name).Take(secgroup).Error
+	err = db.Where("name = ?", name).Take(secgroup).Error
 	if err != nil {
 		logger.Error("Failed to query secgroup ", err)
 		return
@@ -157,11 +160,13 @@ func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (sec
 			return
 		}
 	}
-	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
-	if !permit {
-		logger.Error("Not authorized to get security group")
-		err = fmt.Errorf("Not authorized")
-		return
+	if secgroup.Name != "system-default" {
+		permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
+		if !permit {
+			logger.Error("Not authorized to get security group")
+			err = fmt.Errorf("Not authorized")
+			return
+		}
 	}
 	return
 }
