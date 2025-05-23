@@ -31,7 +31,7 @@ var (
 type SubnetRest struct{}
 type subnetRestAdmin struct{ *model.Subnet }
 
-//ListSubnets : list subnets
+// ListSubnets : list subnets
 func (v *SubnetRest) ListSubnets(c *macaron.Context) {
 	// TODO: list oid, need to update subnetadmin function
 	_, _, err := ChecKPermissionWithErrorResp(model.Reader, c)
@@ -46,7 +46,7 @@ func (v *SubnetRest) ListSubnets(c *macaron.Context) {
 	if reverse {
 		order = "-created_at"
 	}
-	_, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, "", "")
+	_, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, "", "", 0)
 	if err != nil {
 		code := http.StatusInternalServerError
 		c.JSON(code, NewResponseError("List subnets fail", err.Error(), code))
@@ -84,7 +84,7 @@ func (v *SubnetRest) ListSubnets(c *macaron.Context) {
 	c.JSON(200, subnetsResponse)
 }
 
-//CreateSubnet : create subnet in db with network id
+// CreateSubnet : create subnet in db with network id
 func (v *SubnetRest) CreateSubnet(c *macaron.Context) {
 	uid, oid, err := ChecKPermissionWithErrorResp(model.Writer, c)
 	if err != nil {
@@ -195,7 +195,7 @@ func (v *SubnetRest) CreateSubnet(c *macaron.Context) {
 	return
 }
 
-//DeleteSubnet : delete subNet
+// DeleteSubnet : delete subNet
 func (v *SubnetRest) DeleteSubnet(c *macaron.Context) {
 	var err error
 	var oid int64

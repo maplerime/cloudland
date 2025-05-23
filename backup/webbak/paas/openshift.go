@@ -17,8 +17,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/IBM/cloudland/web/src/model"
 	"github.com/IBM/cloudland/web/src/dbs"
+	"github.com/IBM/cloudland/web/src/model"
 	"github.com/go-macaron/session"
 	"github.com/spf13/viper"
 	macaron "gopkg.in/macaron.v1"
@@ -276,7 +276,7 @@ func (a *OpenshiftAdmin) Update(ctx context.Context, id, flavorID int64, nworker
 		for i := 0; i < int(nworkers-openshift.WorkerNum); i++ {
 			maxIndex++
 			hostname := fmt.Sprintf("worker-%d.%s.%s", maxIndex, openshift.ClusterName, openshift.BaseDomain)
-			lb :=strings.Split(openshift.LoadBalancer, `/`)
+			lb := strings.Split(openshift.LoadBalancer, `/`)
 			_, err = openshiftAdmin.Launch(ctx, id, hostname, lb[0])
 			if err != nil {
 				log.Println("Failed to launch a worker", err)
@@ -648,7 +648,7 @@ func (v *OpenshiftView) New(c *macaron.Context, store session.Store) {
 	}
 	log.Println("go to openshiftView in New Func ~~~~")
 	sql := fmt.Sprintf("type = 'public' or owner = %d", memberShip.OrgID)
-	_, subnets, err := subnetAdmin.List(ctx, 0, -1, "", "", sql)
+	_, subnets, err := subnetAdmin.List(ctx, 0, -1, "", "", sql, 0)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
