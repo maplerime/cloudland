@@ -592,6 +592,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		Joins("left join addresses ON addresses.subnet_id = subnets.id").
 		Where(where).
 		Where(query).
+		Group("subnets.id").
 		Find(&subnets).Error; err != nil {
 		return
 	}
