@@ -534,25 +534,25 @@ func (a *SubnetAdmin) CountsAddressesForSubnet(ctx context.Context, subnet *mode
 	return
 }
 
-func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
-	db := DB()
-	err = db.Model(&model.Address{}).
-		Select("subnet_id").
-		Where("allocated = ?", "f").
-		Where("reserved = ?", "f").
-		Group("subnet_id").
-		Having("COUNT(*) >= ?", minCount).
-		Pluck("subnet_id", &subnetIDs).Error
+//func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
+//	db := DB()
+//	err = db.Model(&model.Address{}).
+//		Select("subnet_id").
+//		Where("allocated = ?", "f").
+//		Where("reserved = ?", "f").
+//		Group("subnet_id").
+//		Having("COUNT(*) >= ?", minCount).
+//		Pluck("subnet_id", &subnetIDs).Error
+//
+//	if err != nil {
+//		logger.Error("Failed to get subnet IDs with minimum idle IP count", err)
+//		return nil, fmt.Errorf("failed to get subnet IDs with minimum idle IP count: %v", err)
+//	}
+//
+//	return subnetIDs, nil
+//}
 
-	if err != nil {
-		logger.Error("Failed to get subnet IDs with minimum idle IP count", err)
-		return nil, fmt.Errorf("failed to get subnet IDs with minimum idle IP count: %v", err)
-	}
-
-	return subnetIDs, nil
-}
-
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, subnetType string) (total int64, subnets []*model.Subnet, err error) {
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, subnetType string, minIdleIpCount int64) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -565,7 +565,6 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	if where != "" {
-		// personal subnet
 		if subnetType == "internal" {
 			where = fmt.Sprintf("subnets.type = 'internal' and %s", where)
 		} else if subnetType != "" {
@@ -576,24 +575,31 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	} else if subnetType != "" {
 		where = fmt.Sprintf("subnets.type = '%s'", subnetType)
 	}
+
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).
+	totalQuery := db.Model(&model.Subnet{}).
 		Joins("left join addresses ON addresses.subnet_id = subnets.id").
 		Where(where).
 		Where(query).
-		Group("subnets.id").
-		Count(&total).Error; err != nil {
-		return
-	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Model(&model.Subnet{}).
+		Group("subnets.id")
+	listQuery := db.Model(&model.Subnet{}).
 		Preload("Router").
 		Preload("Group").
 		Joins("left join addresses ON addresses.subnet_id = subnets.id").
 		Where(where).
 		Where(query).
-		Group("subnets.id").
-		Find(&subnets).Error; err != nil {
+		Group("subnets.id")
+	if minIdleIpCount > 0 {
+		having := fmt.Sprintf("COUNT(addresses.id) >= %d and addresses.address != subnets.gateway", minIdleIpCount)
+		totalQuery.Having(having)
+		listQuery.Having(having)
+	}
+	if err = totalQuery.Count(&total).Error; err != nil {
+		return
+	}
+	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+
+	if err = listQuery.Find(&subnets).Error; err != nil {
 		return
 	}
 
@@ -682,7 +688,7 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 	if query != "" {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "")
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "", 0)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

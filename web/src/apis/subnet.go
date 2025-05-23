@@ -282,8 +282,9 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	typeStr := c.DefaultQuery("type", "")
 	queryStr := c.DefaultQuery("query", "")
-	minIdleIpCountStr := c.DefaultQuery("min_idle_ip_count", "")
+	minIdleIpCountStr := c.DefaultQuery("min_idle_ip_count", "0")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
+	orderStr := c.DefaultQuery("order", "-created_at")
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -319,34 +320,42 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		queryStr = fmt.Sprintf("subnets.group_id = %d", ipGroup.ID)
 		conditions = append(conditions, queryStr)
 	}
+	//if minIdleIpCountStr != "" {
+	//	minIdleIpCount := 0
+	//	minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)
+	//	if err != nil {
+	//		ErrorResponse(c, http.StatusBadRequest, "Invalid query min_idle_ip_count: "+minIdleIpCountStr, err)
+	//		return
+	//	}
+	//	subnetIDs := make([]int64, 0)
+	//	subnetIDs, err = subnetAdmin.GetSubnetIDsByMinIdleIPCount(ctx, int64(minIdleIpCount))
+	//	if err != nil {
+	//		ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet IDs by min idle IP count", err)
+	//		return
+	//	}
+	//	if len(subnetIDs) > 0 {
+	//		ids := make([]string, len(subnetIDs))
+	//		for i, id := range subnetIDs {
+	//			ids[i] = strconv.FormatInt(id, 10)
+	//		}
+	//		queryStr = fmt.Sprintf("subnets.id IN (%s)", strings.Join(ids, ","))
+	//		conditions = append(conditions, queryStr)
+	//	} else {
+	//		conditions = append(conditions, "subnets.id = -1") // No subnets found
+	//	}
+	//}
+	minIdleIpCount := 0
 	if minIdleIpCountStr != "" {
-		minIdleIpCount := 0
 		minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)
 		if err != nil {
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query min_idle_ip_count: "+minIdleIpCountStr, err)
 			return
 		}
-		subnetIDs := make([]int64, 0)
-		subnetIDs, err = subnetAdmin.GetSubnetIDsByMinIdleIPCount(ctx, int64(minIdleIpCount))
-		if err != nil {
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet IDs by min idle IP count", err)
-			return
-		}
-		if len(subnetIDs) > 0 {
-			ids := make([]string, len(subnetIDs))
-			for i, id := range subnetIDs {
-				ids[i] = strconv.FormatInt(id, 10)
-			}
-			queryStr = fmt.Sprintf("subnets.id IN (%s)", strings.Join(ids, ","))
-			conditions = append(conditions, queryStr)
-		} else {
-			conditions = append(conditions, "subnets.id = -1") // No subnets found
-		}
 	}
 	if len(conditions) > 0 {
 		queryStr = strings.Join(conditions, " AND ")
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, typeStr)
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, int64(minIdleIpCount))
 
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
