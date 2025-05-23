@@ -301,7 +301,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 
 	var conditions []string
 	if queryStr != "" {
-		queryStr = fmt.Sprintf("name like '%%%s%%'", queryStr)
+		queryStr = fmt.Sprintf("(subnets.name like '%%%s%%' OR addresses.address like '%%%s%%')", queryStr, queryStr)
 		conditions = append(conditions, queryStr)
 	}
 	if groupID != "" {
@@ -316,7 +316,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 
 		logger.Debugf("The ipGroup with group_id: %+v\n", ipGroup)
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
-		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+		queryStr = fmt.Sprintf("subnets.group_id = %d", ipGroup.ID)
 		conditions = append(conditions, queryStr)
 	}
 	if minIdleIpCountStr != "" {
@@ -337,10 +337,10 @@ func (v *SubnetAPI) List(c *gin.Context) {
 			for i, id := range subnetIDs {
 				ids[i] = strconv.FormatInt(id, 10)
 			}
-			queryStr = fmt.Sprintf("id IN (%s)", strings.Join(ids, ","))
+			queryStr = fmt.Sprintf("subnets.id IN (%s)", strings.Join(ids, ","))
 			conditions = append(conditions, queryStr)
 		} else {
-			conditions = append(conditions, "id = -1") // No subnets found
+			conditions = append(conditions, "subnets.id = -1") // No subnets found
 		}
 	}
 	if len(conditions) > 0 {

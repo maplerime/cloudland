@@ -559,7 +559,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	}
 
 	if order == "" {
-		order = "created_at"
+		order = "subnets.created_at"
 	}
 
 	memberShip := GetMemberShip(ctx)
@@ -567,21 +567,32 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if where != "" {
 		// personal subnet
 		if subnetType == "internal" {
-			where = fmt.Sprintf("type = 'internal' and %s", where)
+			where = fmt.Sprintf("subnets.type = 'internal' and %s", where)
 		} else if subnetType != "" {
-			where = fmt.Sprintf("type = '%s'", subnetType)
+			where = fmt.Sprintf("subnets.type = '%s'", subnetType)
 		} else {
-			where = fmt.Sprintf("type = 'public' or %s", where)
+			where = fmt.Sprintf("subnets.type = 'public' or %s", where)
 		}
 	} else if subnetType != "" {
-		where = fmt.Sprintf("type = '%s'", subnetType)
+		where = fmt.Sprintf("subnets.type = '%s'", subnetType)
 	}
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).
+		Joins("left join addresses ON addresses.subnet_id = subnets.id").
+		Where(where).
+		Where(query).
+		Group("subnets.id").
+		Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Preload("Group").Where(where).Where(query).Find(&subnets).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).
+		Preload("Router").
+		Preload("Group").
+		Joins("left join addresses ON addresses.subnet_id = subnets.id").
+		Where(where).
+		Where(query).
+		Find(&subnets).Error; err != nil {
 		return
 	}
 
