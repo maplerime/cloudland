@@ -28,15 +28,18 @@ type SubnetAPI struct{}
 
 type SubnetResponse struct {
 	*ResourceReference
-	Network    string             `json:"network"`
-	Netmask    string             `json:"netmask"`
-	Gateway    string             `json:"gateway"`
-	NameServer string             `json:"dns,omitempty"`
-	VPC        *ResourceReference `json:"vpc,omitempty"`
-	Group      *ResourceReference `json:"group,omitempty"`
-	Type       SubnetType         `json:"type"`
-	Vlan       int                `json:"vlan,omitempty"`
-	IdleCount  int64              `json:"idle_count"`
+	Network        string             `json:"network"`
+	Netmask        string             `json:"netmask"`
+	Gateway        string             `json:"gateway"`
+	NameServer     string             `json:"dns,omitempty"`
+	VPC            *ResourceReference `json:"vpc,omitempty"`
+	Group          *ResourceReference `json:"group,omitempty"`
+	Type           SubnetType         `json:"type"`
+	Vlan           int                `json:"vlan,omitempty"`
+	IPCount        int64              `json:"ip_count"`        // total
+	IdleCount      int64              `json:"idle_count"`      // idle
+	ReservedCount  int64              `json:"reserved_count"`  // reserved
+	AllocatedCount int64              `json:"allocated_count"` // allocated
 }
 
 type SiteSubnetInfo struct {
@@ -251,13 +254,17 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 			Name: group.Name,
 		}
 	}
-	var idleCount int64
-	idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
+	var total, allocated, reserved, idle int64
+	total, allocated, reserved, idle, err = subnetAdmin.CountsAddressesForSubnet(ctx, subnet)
 	if err != nil {
-		logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+		logger.Errorf("Failed to count addresses for subnet, err=%v", err)
 		return
 	}
-	subnetResp.IdleCount = idleCount
+	subnetResp.IPCount = total
+	subnetResp.AllocatedCount = allocated
+	subnetResp.ReservedCount = reserved
+	subnetResp.IdleCount = idle
+
 	return
 }
 

@@ -500,24 +500,38 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 	return
 }
 
-func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *model.Subnet) (int64, error) {
+func (a *SubnetAdmin) CountsAddressesForSubnet(ctx context.Context, subnet *model.Subnet) (total, allocated, reserved, idle int64, err error) {
 	db := DB()
-	var idleCount int64
-
-	err := db.Model(&model.Address{}).
-		Where("subnet_id = ?", subnet.ID).
-		Where("allocated = ?", "f").
-		Where("reserved = ?", "f").
-		Where("address != ?", subnet.Gateway).
-		Count(&idleCount).Error
-
+	where := fmt.Sprintf("subnet_id = %d and address != '%s'", subnet.ID, subnet.Gateway)
+	// total
+	err = db.Model(&model.Address{}).Where(where).Count(&total).Error
 	if err != nil {
-		if err.Error() != "record not found" {
-			return 0, fmt.Errorf("failed to count idle addresses for subnet %s: %v", subnet.UUID, err)
-		}
+		logger.Error("Failed to count addresses for subnet", err)
+		return
 	}
 
-	return idleCount, nil
+	// allocated
+	err = db.Model(&model.Address{}).Where("allocated = ?", "t").Where(where).Count(&allocated).Error
+	if err != nil {
+		logger.Error("Failed to count allocated addresses for subnet", err)
+		return
+	}
+
+	// reserved
+	err = db.Model(&model.Address{}).Where("reserved = ?", "t").Where(where).Count(&reserved).Error
+	if err != nil {
+		logger.Error("Failed to count reserved addresses for subnet", err)
+		return
+	}
+
+	// idle
+	err = db.Model(&model.Address{}).Where("allocated = ?", "f").Where("reserved = ?", "f").Where(where).Count(&idle).Error
+	if err != nil {
+		logger.Error("Failed to count free addresses for subnet", err)
+		return
+	}
+
+	return
 }
 
 func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
