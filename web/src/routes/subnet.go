@@ -590,7 +590,9 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		Where(query).
 		Group("subnets.id")
 	if minIdleIpCount > 0 {
-		having := fmt.Sprintf("COUNT(addresses.id) >= %d and addresses.address != subnets.gateway", minIdleIpCount)
+		totalQuery.Where("addresses.allocated = ?", "f")
+		totalQuery.Where("addresses.reserved = ?", "f")
+		having := fmt.Sprintf("COUNT(addresses.id) >= %d", minIdleIpCount)
 		totalQuery.Having(having)
 		listQuery.Having(having)
 	}
