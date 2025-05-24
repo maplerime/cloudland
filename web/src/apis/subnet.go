@@ -284,6 +284,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	queryStr := c.DefaultQuery("query", "")
 	minIdleIpCountStr := c.DefaultQuery("min_idle_ip_count", "0")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
+	vpcID := c.DefaultQuery("vpc_id", "")
 	orderStr := c.DefaultQuery("order", "-created_at")
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
@@ -303,6 +304,20 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	var conditions []string
 	if queryStr != "" {
 		queryStr = fmt.Sprintf("(subnets.name like '%%%s%%' OR addresses.address like '%%%s%%')", queryStr, queryStr)
+		conditions = append(conditions, queryStr)
+	}
+	if vpcID != "" {
+		logger.Debugf("Filtering subnets by VPC ID: %s", vpcID)
+		var router *model.Router
+		router, err = routerAdmin.GetRouterByUUID(ctx, vpcID)
+		if err != nil {
+			logger.Errorf("Invalid query vpc_id: %s, %+v", vpcID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query router by vpc_id UUID: "+vpcID, err)
+			return
+		}
+
+		logger.Debugf("The router_id in vpc is: %d", router.ID)
+		queryStr = fmt.Sprintf("subnets.router_id = %d", router.ID)
 		conditions = append(conditions, queryStr)
 	}
 	if groupID != "" {
