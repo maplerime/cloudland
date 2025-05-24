@@ -320,30 +320,30 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		queryStr = fmt.Sprintf("subnets.group_id = %d", ipGroup.ID)
 		conditions = append(conditions, queryStr)
 	}
-	//if minIdleIpCountStr != "" {
-	//	minIdleIpCount := 0
-	//	minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)
-	//	if err != nil {
-	//		ErrorResponse(c, http.StatusBadRequest, "Invalid query min_idle_ip_count: "+minIdleIpCountStr, err)
-	//		return
-	//	}
-	//	subnetIDs := make([]int64, 0)
-	//	subnetIDs, err = subnetAdmin.GetSubnetIDsByMinIdleIPCount(ctx, int64(minIdleIpCount))
-	//	if err != nil {
-	//		ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet IDs by min idle IP count", err)
-	//		return
-	//	}
-	//	if len(subnetIDs) > 0 {
-	//		ids := make([]string, len(subnetIDs))
-	//		for i, id := range subnetIDs {
-	//			ids[i] = strconv.FormatInt(id, 10)
-	//		}
-	//		queryStr = fmt.Sprintf("subnets.id IN (%s)", strings.Join(ids, ","))
-	//		conditions = append(conditions, queryStr)
-	//	} else {
-	//		conditions = append(conditions, "subnets.id = -1") // No subnets found
-	//	}
-	//}
+	if minIdleIpCountStr != "" {
+		minIdleIpCount := 0
+		minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid query min_idle_ip_count: "+minIdleIpCountStr, err)
+			return
+		}
+		subnetIDs := make([]int64, 0)
+		subnetIDs, err = subnetAdmin.GetSubnetIDsByMinIdleIPCount(ctx, int64(minIdleIpCount))
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get subnet IDs by min idle IP count", err)
+			return
+		}
+		if len(subnetIDs) > 0 {
+			ids := make([]string, len(subnetIDs))
+			for i, id := range subnetIDs {
+				ids[i] = strconv.FormatInt(id, 10)
+			}
+			queryStr = fmt.Sprintf("subnets.id IN (%s)", strings.Join(ids, ","))
+			conditions = append(conditions, queryStr)
+		} else {
+			conditions = append(conditions, "subnets.id = -1") // No subnets found
+		}
+	}
 	minIdleIpCount := 0
 	if minIdleIpCountStr != "" {
 		minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)

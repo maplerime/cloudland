@@ -5,7 +5,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="57469e5d-0024-41e7-bf0c-f3534db7eef9" name="Changes" comment="user console">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web/src/apis/subnet.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/src/apis/subnet.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/web/src/routes/subnet.go" beforeDir="false" afterPath="$PROJECT_DIR$/web/src/routes/subnet.go" afterDir="false" />
     </list>

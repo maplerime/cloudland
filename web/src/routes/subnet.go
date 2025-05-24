@@ -534,23 +534,23 @@ func (a *SubnetAdmin) CountsAddressesForSubnet(ctx context.Context, subnet *mode
 	return
 }
 
-//func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
-//	db := DB()
-//	err = db.Model(&model.Address{}).
-//		Select("subnet_id").
-//		Where("allocated = ?", "f").
-//		Where("reserved = ?", "f").
-//		Group("subnet_id").
-//		Having("COUNT(*) >= ?", minCount).
-//		Pluck("subnet_id", &subnetIDs).Error
-//
-//	if err != nil {
-//		logger.Error("Failed to get subnet IDs with minimum idle IP count", err)
-//		return nil, fmt.Errorf("failed to get subnet IDs with minimum idle IP count: %v", err)
-//	}
-//
-//	return subnetIDs, nil
-//}
+func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
+	db := DB()
+	err = db.Model(&model.Address{}).
+		Select("subnet_id").
+		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
+		Group("subnet_id").
+		Having("COUNT(*) >= ?", minCount).
+		Pluck("subnet_id", &subnetIDs).Error
+
+	if err != nil {
+		logger.Error("Failed to get subnet IDs with minimum idle IP count", err)
+		return nil, fmt.Errorf("failed to get subnet IDs with minimum idle IP count: %v", err)
+	}
+
+	return subnetIDs, nil
+}
 
 func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, subnetType string, minIdleIpCount int64) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
@@ -577,31 +577,23 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	}
 
 	subnets = []*model.Subnet{}
-	totalQuery := db.Model(&model.Subnet{}).
+	if err = db.Model(&model.Subnet{}).
 		Joins("left join addresses ON addresses.subnet_id = subnets.id").
 		Where(where).
 		Where(query).
-		Group("subnets.id")
-	listQuery := db.Model(&model.Subnet{}).
+		Group("subnets.id").
+		Count(&total).Error; err != nil {
+		return
+	}
+	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
+	if err = db.Model(&model.Subnet{}).
 		Preload("Router").
 		Preload("Group").
 		Joins("left join addresses ON addresses.subnet_id = subnets.id").
 		Where(where).
 		Where(query).
-		Group("subnets.id")
-	if minIdleIpCount > 0 {
-		totalQuery.Where("addresses.allocated = ?", "f")
-		totalQuery.Where("addresses.reserved = ?", "f")
-		having := fmt.Sprintf("COUNT(addresses.id) >= %d", minIdleIpCount)
-		totalQuery.Having(having)
-		listQuery.Having(having)
-	}
-	if err = totalQuery.Count(&total).Error; err != nil {
-		return
-	}
-	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-
-	if err = listQuery.Find(&subnets).Error; err != nil {
+		Group("subnets.id").
+		Find(&subnets).Error; err != nil {
 		return
 	}
 
