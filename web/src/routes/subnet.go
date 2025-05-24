@@ -552,7 +552,7 @@ func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount
 	return subnetIDs, nil
 }
 
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, subnetType string, minIdleIpCount int64) (total int64, subnets []*model.Subnet, err error) {
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string, subnetTypes []string, minIdleIpCount int64) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -564,16 +564,35 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
-	if where != "" {
-		if subnetType == "internal" {
-			where = fmt.Sprintf("subnets.type = 'internal' and %s", where)
-		} else if subnetType != "" {
-			where = fmt.Sprintf("subnets.type = '%s'", subnetType)
-		} else {
-			where = fmt.Sprintf("subnets.type = 'public' or %s", where)
+	if len(subnetTypes) > 0 {
+		var conds []string
+		var quoted []string
+		hasInternal := false
+		for _, t := range subnetTypes {
+			switch t {
+			case "internal":
+				hasInternal = true
+			case "public", "site":
+				quoted = append(quoted, fmt.Sprintf("'%s'", t))
+			}
 		}
-	} else if subnetType != "" {
-		where = fmt.Sprintf("subnets.type = '%s'", subnetType)
+		if where != "" {
+			if hasInternal {
+				conds = append(conds, fmt.Sprintf("(subnets.type = 'internal' AND %s)", where))
+			}
+			if len(quoted) > 0 {
+				conds = append(conds, fmt.Sprintf("subnets.type IN (%s)", strings.Join(quoted, ",")))
+			}
+			where = strings.Join(conds, " OR ")
+		} else {
+			allQuoted := make([]string, len(subnetTypes))
+			for i, t := range subnetTypes {
+				allQuoted[i] = fmt.Sprintf("'%s'", t)
+			}
+			where = fmt.Sprintf("subnets.type IN (%s)", strings.Join(allQuoted, ","))
+		}
+	} else if where != "" {
+		where = fmt.Sprintf("subnets.type IN ('public', 'site') OR %s", where)
 	}
 
 	subnets = []*model.Subnet{}
@@ -680,7 +699,7 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 	if query != "" {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "", 0)
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, nil, 0)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

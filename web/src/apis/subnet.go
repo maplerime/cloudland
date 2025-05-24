@@ -280,12 +280,12 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
-	typeStr := c.DefaultQuery("type", "")
 	queryStr := c.DefaultQuery("query", "")
 	minIdleIpCountStr := c.DefaultQuery("min_idle_ip_count", "0")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
 	vpcID := c.DefaultQuery("vpc_id", "")
 	orderStr := c.DefaultQuery("order", "-created_at")
+	types := c.QueryArray("types")
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -370,7 +370,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	if len(conditions) > 0 {
 		queryStr = strings.Join(conditions, " AND ")
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, int64(minIdleIpCount))
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, types, int64(minIdleIpCount))
 
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
