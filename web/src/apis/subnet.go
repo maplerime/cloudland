@@ -436,7 +436,7 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 		}
 		reserved = &boolVal
 	}
-	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet.ID, allocated, reserved)
+	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet, allocated, reserved)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list address", err)
 		return

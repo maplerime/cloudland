@@ -612,7 +612,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return
 }
 
-func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, order, query, addressType string, subnetID int64, allocated, reserved *bool) (total int64, addresses []*model.Address, err error) {
+func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, order, query, addressType string, subnet *model.Subnet, allocated, reserved *bool) (total int64, addresses []*model.Address, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -624,14 +624,12 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 
 	// deal condition
 	var conditions []string
+	conditions = append(conditions, fmt.Sprintf("subnet_id = %d", subnet.ID))
 	if query != "" {
 		conditions = append(conditions, fmt.Sprintf("address like '%%%s%%'", query))
 	}
 	if addressType != "" {
 		conditions = append(conditions, fmt.Sprintf("type = '%s'", addressType))
-	}
-	if subnetID > 0 {
-		conditions = append(conditions, fmt.Sprintf("subnet_id = %d", subnetID))
 	}
 	for _, conf := range []struct {
 		name  string
