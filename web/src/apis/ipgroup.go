@@ -32,9 +32,13 @@ type IpGroupType struct {
 
 type IpGroupResponse struct {
 	*ResourceReference
-	Dictionary  *BaseReference   `json:"dictionaries,omitempty"`
-	SubnetNames string           `json:"subnet_names"`
-	Subnets     []*BaseReference `json:"subnets,omitempty"`
+	Dictionary     *BaseReference   `json:"dictionaries,omitempty"`
+	SubnetNames    string           `json:"subnet_names"`
+	Subnets        []*BaseReference `json:"subnets"`
+	IPCount        int64            `json:"ip_count"`
+	IdleCount      int64            `json:"idle_count"`
+	ReservedCount  int64            `json:"reserved_count"`
+	AllocatedCount int64            `json:"allocated_count"`
 }
 
 type IpGroupListResponse struct {
@@ -240,12 +244,24 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 
 	var names []string
 	subnets := make([]*BaseReference, len(ipGroup.Subnets))
+	var total, allocated, reserved, idle int64
 	for i, subnet := range ipGroup.Subnets {
 		names = append(names, subnet.Name)
 		subnets[i] = &BaseReference{
 			ID:   subnet.UUID,
 			Name: subnet.Name,
 		}
+		// get ip statistics from this subnet
+		var itemTotal, itemAllocated, itemReserved, itemIdle int64
+		itemTotal, itemAllocated, itemReserved, itemIdle, err = subnetAdmin.AddressStatistics(ctx, subnet)
+		if err != nil {
+			logger.Errorf("address statistics error, subnet=%s, err=%v", subnet.UUID, err)
+			return nil, fmt.Errorf("failed to get address statistics for subnet %s: %w", subnet.UUID, err)
+		}
+		total += itemTotal
+		allocated += itemAllocated
+		reserved += itemReserved
+		idle += itemIdle
 	}
 	ipGroup.SubnetNames = strings.Join(names, ",")
 
@@ -266,9 +282,13 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			CreatedAt: ipGroup.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: ipGroup.UpdatedAt.Format(TimeStringForMat),
 		},
-		Dictionary:  dictInfo,
-		SubnetNames: ipGroup.SubnetNames,
-		Subnets:     subnets,
+		Dictionary:     dictInfo,
+		SubnetNames:    ipGroup.SubnetNames,
+		Subnets:        subnets,
+		IPCount:        total,
+		IdleCount:      idle,
+		ReservedCount:  reserved,
+		AllocatedCount: allocated,
 	}
 	return
 }

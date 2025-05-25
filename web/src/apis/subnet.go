@@ -255,7 +255,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		}
 	}
 	var total, allocated, reserved, idle int64
-	total, allocated, reserved, idle, err = subnetAdmin.CountsAddressesForSubnet(ctx, subnet)
+	total, allocated, reserved, idle, err = subnetAdmin.AddressStatistics(ctx, subnet)
 	if err != nil {
 		logger.Errorf("Failed to count addresses for subnet, err=%v", err)
 		return

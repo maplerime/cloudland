@@ -500,7 +500,7 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 	return
 }
 
-func (a *SubnetAdmin) CountsAddressesForSubnet(ctx context.Context, subnet *model.Subnet) (total, allocated, reserved, idle int64, err error) {
+func (a *SubnetAdmin) AddressStatistics(ctx context.Context, subnet *model.Subnet) (total, allocated, reserved, idle int64, err error) {
 	db := DB()
 	where := fmt.Sprintf("subnet_id = %d and address != '%s'", subnet.ID, subnet.Gateway)
 	// total
