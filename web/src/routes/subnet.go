@@ -644,6 +644,7 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 	// deal condition
 	var conditions []string
 	conditions = append(conditions, fmt.Sprintf("subnet_id = %d", subnet.ID))
+	conditions = append(conditions, fmt.Sprintf("address != '%s'", subnet.Gateway))
 	if query != "" {
 		conditions = append(conditions, fmt.Sprintf("address like '%%%s%%'", query))
 	}
@@ -663,14 +664,12 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 	}
 	query = strings.Join(conditions, " and ")
 
-	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
 	addresses = []*model.Address{}
-	if err = db.Model(&model.Address{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Address{}).Where(query).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(where).Where(query).Find(&addresses).Error; err != nil {
+	if err = db.Where(query).Find(&addresses).Error; err != nil {
 		return
 	}
 	return
