@@ -32,8 +32,9 @@ type IpGroupType struct {
 
 type IpGroupResponse struct {
 	*ResourceReference
-	Dictionary  *BaseReference `json:"dictionaries,omitempty"`
-	SubnetNames string         `json:"subnet_names"`
+	Dictionary  *BaseReference   `json:"dictionaries,omitempty"`
+	SubnetNames string           `json:"subnet_names"`
+	Subnets     []*BaseReference `json:"subnets,omitempty"`
 }
 
 type IpGroupListResponse struct {
@@ -209,7 +210,8 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 			ErrorResponse(c, http.StatusBadRequest, "Dictionaries ID is required", err)
 			return
 		}
-		dictionary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, payload.IpGroupType.ID)
+		dictionary := &model.Dictionary{}
+		dictionary, err = dictionaryAdmin.GetDictionaryByUUID(ctx, payload.IpGroupType.ID)
 		if err != nil {
 			logger.Errorf("IpGroupAPI.Create: invalid dictionaries id, id=%s, err=%v", payload.IpGroupType.ID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid dictionaries ID", err)
@@ -304,7 +306,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 	if dicID != "" {
 		logger.Debugf("IpGroupAPI.List: filter by dic_id=%s", dicID)
 		var dictionary *model.Dictionary
-		dictionary, err := dictionaryAdmin.GetDictionaryByUUID(ctx, dicID)
+		dictionary, err = dictionaryAdmin.GetDictionaryByUUID(ctx, dicID)
 		if err != nil {
 			logger.Errorf("IpGroupAPI.List: invalid dic_id, dicID=%s, err=%v", dicID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid query ipGroups by dic_id UUID: "+dicID, err)
