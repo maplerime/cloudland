@@ -239,8 +239,13 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 	owner := orgAdmin.GetOrgName(ipGroup.Owner)
 
 	var names []string
-	for _, subnet := range ipGroup.Subnets {
+	subnets := make([]*BaseReference, len(ipGroup.Subnets))
+	for i, subnet := range ipGroup.Subnets {
 		names = append(names, subnet.Name)
+		subnets[i] = &BaseReference{
+			ID:   subnet.UUID,
+			Name: subnet.Name,
+		}
 	}
 	ipGroup.SubnetNames = strings.Join(names, ",")
 
@@ -263,6 +268,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		},
 		Dictionary:  dictInfo,
 		SubnetNames: ipGroup.SubnetNames,
+		Subnets:     subnets,
 	}
 	return
 }
