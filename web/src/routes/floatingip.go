@@ -216,6 +216,41 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 	return
 }
 
+func (a *FloatingIpAdmin) GetFloatingIpByAddress(ctx context.Context, ipAddress string) (floatingIp *model.FloatingIp, err error) {
+	db := DB()
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
+	floatingIp = &model.FloatingIp{}
+	err = db.Where(where).Where("fip_address = ? OR int_address = ?", ipAddress, ipAddress).Take(floatingIp).Error
+	if err != nil {
+		logger.Error("Failed to query floatingIp, %v", err)
+		return
+	}
+	if floatingIp.InstanceID > 0 {
+		floatingIp.Instance = &model.Instance{Model: model.Model{ID: floatingIp.InstanceID}}
+		err = db.Take(floatingIp.Instance).Error
+		if err != nil {
+			logger.Error("DB failed to query instance ", err)
+			return
+		}
+		instance := floatingIp.Instance
+		err = db.Preload("Address").Preload("Address.Subnet").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
+		if err != nil {
+			logger.Error("Failed to query interfaces %v", err)
+			return
+		}
+	}
+	if floatingIp.RouterID > 0 {
+		floatingIp.Router = &model.Router{Model: model.Model{ID: floatingIp.RouterID}}
+		err = db.Take(floatingIp.Router).Error
+		if err != nil {
+			logger.Error("DB failed to query instance ", err)
+			return
+		}
+	}
+	return
+}
+
 func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {

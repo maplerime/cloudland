@@ -409,7 +409,6 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
 	typeStr := c.DefaultQuery("type", "")
-	ipGroupStr := c.DefaultQuery("ip_group", "")
 	allocatedStr := c.DefaultQuery("allocated", "")
 	reservedStr := c.DefaultQuery("reserved", "")
 
@@ -453,16 +452,7 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 		}
 		reserved = &boolVal
 	}
-	var ipGroup *model.IpGroup
-	if ipGroupStr != "" {
-		ipGroup, err = ipGroupAdmin.GetIpGroupByUUID(ctx, ipGroupStr)
-		if err != nil {
-			logger.Errorf("Failed to get ipGroup, %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get ipGroup", err)
-			return
-		}
-	}
-	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet, ipGroup, allocated, reserved)
+	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet, allocated, reserved)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list address", err)
 		return
@@ -499,18 +489,28 @@ func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Addre
 		Reserved:  address.Reserved,
 		SubnetID:  address.SubnetID,
 	}
-	if address.InterfaceData != nil {
+	if address.Interface != 0 {
+		iface := &model.Interface{}
+		iface, err = interfaceAdmin.Get(ctx, address.Interface)
+		if err != nil {
+			logger.Errorf("Failed to get interface for address %s, err: %v", address.Address, err)
+			return
+		}
 		addressResp.TargetInterface = &TargetInterface{
 			ResourceReference: &ResourceReference{
-				ID:   address.InterfaceData.UUID,
-				Name: address.InterfaceData.Name,
+				ID:   iface.UUID,
+				Name: iface.Name,
 			},
-			MacAddr: address.InterfaceData.MacAddr,
+			MacAddr: iface.MacAddr,
 		}
-		if address.InterfaceData.Instance != 0 {
-			instance := &model.Instance{}
-			instance, err = instanceAdmin.Get(ctx, address.InterfaceData.Instance)
-			if err == nil {
+		if address.Subnet.Type == "internal" {
+			if iface.Instance > 0 {
+				instance := &model.Instance{}
+				instance, err = instanceAdmin.Get(ctx, iface.Instance)
+				if err != nil {
+					logger.Errorf("Failed to get instance for interface %d, err: %v", iface.Instance, err)
+					return
+				}
 				addressResp.TargetInterface.FromInstance = &InstanceInfo{
 					ResourceReference: &ResourceReference{
 						ID: instance.UUID,
@@ -518,7 +518,23 @@ func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Addre
 					Hostname: instance.Hostname,
 				}
 			}
+		} else {
+			floatingIp := &model.FloatingIp{}
+			floatingIp, err = floatingIpAdmin.GetFloatingIpByAddress(ctx, address.Address)
+			if err != nil {
+				logger.Errorf("Failed to get floating IP for interface %d, err: %v", iface.ID, err)
+				return
+			}
+			if floatingIp.Instance != nil {
+				addressResp.TargetInterface.FromInstance = &InstanceInfo{
+					ResourceReference: &ResourceReference{
+						ID: floatingIp.Instance.UUID,
+					},
+					Hostname: floatingIp.Instance.Hostname,
+				}
+			}
 		}
 	}
+
 	return
 }
