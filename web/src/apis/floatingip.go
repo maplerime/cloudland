@@ -34,6 +34,7 @@ type TargetInterface struct {
 	*ResourceReference
 	IpAddress    string        `json:"ip_address"`
 	FromInstance *InstanceInfo `json:"from_instance"`
+	MacAddr      string        `json:"mac_address,omitempty"`
 }
 
 type InstanceInfo struct {

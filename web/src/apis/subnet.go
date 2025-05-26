@@ -75,13 +75,13 @@ type SubnetPatchPayload struct {
 
 type AddressResponse struct {
 	*ResourceReference
-	Address   string             `json:"address"`
-	Netmask   string             `json:"netmask"`
-	Type      SubnetType         `json:"type"`
-	Allocated bool               `json:"allocated"`
-	Reserved  bool               `json:"reserved"`
-	SubnetID  int64              `json:"subnet_id"`
-	Interface *InterfaceResponse `json:"interface"`
+	Address         string           `json:"address"`
+	Netmask         string           `json:"netmask"`
+	Type            SubnetType       `json:"type"`
+	Allocated       bool             `json:"allocated"`
+	Reserved        bool             `json:"reserved"`
+	SubnetID        int64            `json:"subnet_id"`
+	TargetInterface *TargetInterface `json:"interface"`
 }
 
 type AddressListResponse struct {
@@ -490,12 +490,24 @@ func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Addre
 		SubnetID:  address.SubnetID,
 	}
 	if address.InterfaceData != nil {
-		addressResp.Interface = &InterfaceResponse{
-			BaseReference: &BaseReference{
+		addressResp.TargetInterface = &TargetInterface{
+			ResourceReference: &ResourceReference{
 				ID:   address.InterfaceData.UUID,
 				Name: address.InterfaceData.Name,
 			},
-			MacAddress: address.InterfaceData.MacAddr,
+			MacAddr: address.InterfaceData.MacAddr,
+		}
+		if address.InterfaceData.Instance != 0 {
+			instance := &model.Instance{}
+			instance, err = instanceAdmin.Get(ctx, address.InterfaceData.Instance)
+			if err == nil {
+				addressResp.TargetInterface.FromInstance = &InstanceInfo{
+					ResourceReference: &ResourceReference{
+						ID: instance.UUID,
+					},
+					Hostname: instance.Hostname,
+				}
+			}
 		}
 	}
 	return
