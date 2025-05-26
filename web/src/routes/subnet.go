@@ -537,12 +537,14 @@ func (a *SubnetAdmin) AddressStatistics(ctx context.Context, subnet *model.Subne
 func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount int64) (subnetIDs []int64, err error) {
 	db := DB()
 	err = db.Model(&model.Address{}).
-		Select("subnet_id").
-		Where("allocated = ?", "f").
-		Where("reserved = ?", "f").
-		Group("subnet_id").
+		Joins("JOIN subnets ON addresses.subnet_id = subnets.id").
+		Select("addresses.subnet_id").
+		Where("addresses.allocated = ?", false).
+		Where("addresses.reserved = ?", false).
+		Where("addresses.address != subnets.gateway").
+		Group("addresses.subnet_id").
 		Having("COUNT(*) >= ?", minCount).
-		Pluck("subnet_id", &subnetIDs).Error
+		Pluck("addresses.subnet_id", &subnetIDs).Error
 
 	if err != nil {
 		logger.Error("Failed to get subnet IDs with minimum idle IP count", err)
@@ -552,7 +554,7 @@ func (a *SubnetAdmin) GetSubnetIDsByMinIdleIPCount(ctx context.Context, minCount
 	return subnetIDs, nil
 }
 
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string, subnetTypes []string, minIdleIpCount int64) (total int64, subnets []*model.Subnet, err error) {
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string, subnetTypes []string) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -698,7 +700,7 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 	if query != "" {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, nil, 0)
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, nil)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

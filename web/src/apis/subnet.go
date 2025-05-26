@@ -360,18 +360,10 @@ func (v *SubnetAPI) List(c *gin.Context) {
 			conditions = append(conditions, "subnets.id = -1") // No subnets found
 		}
 	}
-	minIdleIpCount := 0
-	if minIdleIpCountStr != "" {
-		minIdleIpCount, err = strconv.Atoi(minIdleIpCountStr)
-		if err != nil {
-			ErrorResponse(c, http.StatusBadRequest, "Invalid query min_idle_ip_count: "+minIdleIpCountStr, err)
-			return
-		}
-	}
 	if len(conditions) > 0 {
 		queryStr = strings.Join(conditions, " AND ")
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, types, int64(minIdleIpCount))
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, types)
 
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
