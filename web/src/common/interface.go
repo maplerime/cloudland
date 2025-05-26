@@ -34,18 +34,42 @@ type SecurityData struct {
 	PortMax     int32  `json:"port_max"`
 }
 
+type NetworkRoute struct {
+        Network string `json:"network"`
+        Netmask string `json:"netmask"`
+        Gateway string `json:"gateway"`
+}
+
+type InstanceNetwork struct {
+        Type    string          `json:"type,omitempty"`
+        Address string          `json:"ip_address"`
+        Netmask string          `json:"netmask"`
+        Link    string          `json:"link"`
+        ID      string          `json:"id"`
+        Routes  []*NetworkRoute `json:"routes,omitempty"`
+}
+
+type SiteIpSubnetInfo struct {
+	SiteID    int64         `json:"site_id"`
+	SiteVlan  int64         `json:"site_vlan"`
+	InternalIp string        `json:"internal_ip"`
+	Gateway   string        `json:"gateway"`
+	Addresses []string     `json:"addresses"`
+}
+
 type VlanInfo struct {
-	Device        string          `json:"device"`
-	Vlan          int64           `json:"vlan"`
-	Gateway       string          `json:"gateway"`
-	Router        int64           `json:"router"`
-	PublicLink    int64           `json:"public_link"`
-	Inbound       int32           `json:"inbound"`
-	Outbound      int32           `json:"outbound"`
-	AllowSpoofing bool            `json:"allow_spoofing"`
-	IpAddr        string          `json:"ip_address"`
-	MacAddr       string          `json:"mac_address"`
-	SecRules      []*SecurityData `json:"security"`
+	Device        string              `json:"device"`
+	Vlan          int64               `json:"vlan"`
+	Gateway       string              `json:"gateway"`
+	Router        int64               `json:"router"`
+	PublicLink    int64               `json:"public_link"`
+	Inbound       int32               `json:"inbound"`
+	Outbound      int32               `json:"outbound"`
+	AllowSpoofing bool                `json:"allow_spoofing"`
+	IpAddr        string              `json:"ip_address"`
+	MacAddr       string              `json:"mac_address"`
+	SecRules      []*SecurityData     `json:"security"`
+	SitesIpInfo    []*SiteIpSubnetInfo `json:"sites_ip_info"`
 }
 
 func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
@@ -128,7 +152,7 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup) (iface *model.Interface, err error) {
+func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	primary := false
 	if ifaceName == "eth0" {
@@ -154,6 +178,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		Mtu:            1450,
 		RouterID:       subnet.RouterID,
 		SecurityGroups: secgroups,
+		AllowSpoofing:  allowSpoofing,
 	}
 	logger.Debugf("Interface: %v", iface)
 	if ifType == "instance" {
@@ -276,4 +301,91 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 		securityData = append(securityData, sgr)
 	}
 	return
+}
+
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, siteSubnets []*model.Subnet, netID int) (instNetworks []*InstanceNetwork, sitesInfo []*SiteIpSubnetInfo, err error) {
+        ctx, db := GetContextDB(ctx)
+        subnet := iface.Address.Subnet
+        address := strings.Split(iface.Address.Address, "/")[0]
+        instNetwork := &InstanceNetwork{
+                Address: address,
+                Netmask: subnet.Netmask,
+                Type:    "ipv4",
+                Link:    iface.Name,
+                ID:      fmt.Sprintf("network%d-0", netID),
+        }
+        toUpdate := true
+	if iface.PrimaryIf {
+		gateway := strings.Split(subnet.Gateway, "/")[0]
+		instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
+		instNetwork.Routes = append(instNetwork.Routes, instRoute)
+		instNetworks = append(instNetworks, instNetwork)
+		if len(siteSubnets) == 0 {
+			err = db.Where("interface = ?", iface.ID).Find(&iface.SiteSubnets).Error
+			if err != nil {
+				logger.Errorf("Failed to query site subnet(s), %v", err)
+				return
+			}
+			siteSubnets = iface.SiteSubnets
+			toUpdate = false
+		} else {
+			if subnet.Type != "public" {
+				err = fmt.Errorf("Site subnets can only be with public subnets")
+				logger.Errorf("Site subnets can only be with public subnets")
+				return
+			}
+			iface.SiteSubnets = siteSubnets
+		}
+	} else {
+		if len(siteSubnets) > 0 {
+			err = fmt.Errorf("Site subnets can only be with primary interface")
+			logger.Errorf("Site subnets can only be with primary interface")
+			return
+		}
+	}
+	if len(siteSubnets) > 0 {
+		osCode := GetImageOSCode(ctx, instance)
+		for _, site := range siteSubnets {
+			if site.Vlan != subnet.Vlan {
+				err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
+				logger.Errorf("Site subnets and primary subnet must be with same vlan")
+				return
+			}
+			siteInfo := &SiteIpSubnetInfo{
+				SiteID: site.ID,
+				SiteVlan: site.Vlan,
+				InternalIp: iface.Address.Address,
+				Gateway: site.Gateway,
+			}
+			siteAddrs := []*model.Address{}
+			err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
+			if err != nil {
+				logger.Errorf("Failed to query site ip(s), %v", err)
+				return
+			}
+			for i, addr := range siteAddrs {
+				if osCode == "linux" {
+					address := strings.Split(addr.Address, "/")[0]
+					instNetworks = append(instNetworks, &InstanceNetwork{
+						Address: address,
+						Netmask: site.Netmask,
+						Type:    "ipv4",
+						Link:    iface.Name,
+						ID:      fmt.Sprintf("network%d-%d", netID, i+1),
+					})
+				}
+				siteInfo.Addresses = append(siteInfo.Addresses, addr.Address)
+			}
+			sitesInfo = append(sitesInfo, siteInfo)
+			if toUpdate {
+				site.Interface = iface.ID
+				err = db.Model(site).Updates(site).Error
+				if err != nil {
+					logger.Errorf("Failed to set site interface", err)
+					return
+				}
+			}
+		}
+	}
+        return
 }

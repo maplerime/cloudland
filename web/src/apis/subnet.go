@@ -289,8 +289,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
 		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
-
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return

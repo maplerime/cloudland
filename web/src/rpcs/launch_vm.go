@@ -247,7 +247,7 @@ func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' <<EOF\n%s\nEOF", instance.ID, instance.Hostname, jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Execute floating ip failed", err)
