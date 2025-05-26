@@ -409,6 +409,7 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 	orderStr := c.DefaultQuery("order", "-created_at")
 	queryStr := c.DefaultQuery("query", "")
 	typeStr := c.DefaultQuery("type", "")
+	ipGroupStr := c.DefaultQuery("ip_group", "")
 	allocatedStr := c.DefaultQuery("allocated", "")
 	reservedStr := c.DefaultQuery("reserved", "")
 
@@ -452,7 +453,16 @@ func (v *SubnetAPI) AddressList(c *gin.Context) {
 		}
 		reserved = &boolVal
 	}
-	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet, allocated, reserved)
+	var ipGroup *model.IpGroup
+	if ipGroupStr != "" {
+		ipGroup, err = ipGroupAdmin.GetIpGroupByUUID(ctx, ipGroupStr)
+		if err != nil {
+			logger.Errorf("Failed to get ipGroup, %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get ipGroup", err)
+			return
+		}
+	}
+	total, addresses, err := subnetAdmin.AddressList(ctx, int64(offset), int64(limit), orderStr, queryStr, typeStr, subnet, ipGroup, allocated, reserved)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list address", err)
 		return

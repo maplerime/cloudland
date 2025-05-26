@@ -205,6 +205,36 @@ func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet 
 	return
 }
 
+func (a *SubnetAdmin) GetSubnetsByGroupID(ctx context.Context, ipGroup *model.IpGroup) (subnets []*model.Subnet, err error) {
+	db := DB()
+	memberShip := GetMemberShip(ctx)
+	subnets = []*model.Subnet{}
+	err = db.Where("group_id = ?", ipGroup.ID).Find(&subnets).Error
+	if err != nil {
+		logger.Error("Failed to query subnet ", err)
+		return
+	}
+	for _, subnet := range subnets {
+		if subnet.RouterID > 0 {
+			subnet.Router = &model.Router{Model: model.Model{ID: subnet.RouterID}}
+			err = db.Take(subnet.Router).Error
+			if err != nil {
+				logger.Error("Failed to query router ", err)
+				return
+			}
+		}
+		if subnet.Type != "public" {
+			permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
+			if !permit {
+				logger.Error("Not authorized to read the subnet")
+				err = fmt.Errorf("Not authorized")
+				return
+			}
+		}
+	}
+	return
+}
+
 func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (subnet *model.Subnet, err error) {
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
 		err = fmt.Errorf("Subnet base reference must be provided with either uuid or name")
@@ -618,7 +648,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 
 	permit := memberShip.CheckPermission(model.Admin)
 	if permit {
-		db = db.Offset(0).Limit(-1)
+		db = dbs.ResetSortBy(db.Offset(0).Limit(-1), "-created_at")
 		for _, subnet := range subnets {
 			subnet.OwnerInfo = &model.Organization{Model: model.Model{ID: subnet.Owner}}
 			if err = db.Take(subnet.OwnerInfo).Error; err != nil {
@@ -631,7 +661,7 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return
 }
 
-func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, order, query, addressType string, subnet *model.Subnet, allocated, reserved *bool) (total int64, addresses []*model.Address, err error) {
+func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, order, query, addressType string, subnet *model.Subnet, ipGroup *model.IpGroup, allocated, reserved *bool) (total int64, addresses []*model.Address, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -660,6 +690,21 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 	} {
 		if conf.value != nil {
 			conditions = append(conditions, fmt.Sprintf("%s = %t", conf.name, *conf.value))
+		}
+	}
+	if ipGroup != nil {
+		var subnets []*model.Subnet
+		subnets, err = a.GetSubnetsByGroupID(ctx, ipGroup)
+		if err != nil {
+			logger.Error("Failed to get subnets by group ID", err)
+			return
+		}
+		if len(subnets) != 0 {
+			var subnetIDs []string
+			for _, s := range subnets {
+				subnetIDs = append(subnetIDs, strconv.FormatInt(s.ID, 10))
+			}
+			conditions = append(conditions, fmt.Sprintf("subnet_id IN (%s)", strings.Join(subnetIDs, ",")))
 		}
 	}
 	query = strings.Join(conditions, " and ")
