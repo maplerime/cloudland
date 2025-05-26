@@ -669,7 +669,7 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(query).Find(&addresses).Error; err != nil {
+	if err = db.Preload("InterfaceData").Where(query).Find(&addresses).Error; err != nil {
 		return
 	}
 	return

@@ -75,12 +75,13 @@ type SubnetPatchPayload struct {
 
 type AddressResponse struct {
 	*ResourceReference
-	Address   string     `json:"address"`
-	Netmask   string     `json:"netmask"`
-	Type      SubnetType `json:"type"`
-	Allocated bool       `json:"allocated"`
-	Reserved  bool       `json:"reserved"`
-	SubnetID  int64      `json:"subnet_id"`
+	Address   string             `json:"address"`
+	Netmask   string             `json:"netmask"`
+	Type      SubnetType         `json:"type"`
+	Allocated bool               `json:"allocated"`
+	Reserved  bool               `json:"reserved"`
+	SubnetID  int64              `json:"subnet_id"`
+	Interface *InterfaceResponse `json:"interface"`
 }
 
 type AddressListResponse struct {
@@ -487,6 +488,15 @@ func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Addre
 		Allocated: address.Allocated,
 		Reserved:  address.Reserved,
 		SubnetID:  address.SubnetID,
+	}
+	if address.InterfaceData != nil {
+		addressResp.Interface = &InterfaceResponse{
+			BaseReference: &BaseReference{
+				ID:   address.InterfaceData.UUID,
+				Name: address.InterfaceData.Name,
+			},
+			MacAddress: address.InterfaceData.MacAddr,
+		}
 	}
 	return
 }
