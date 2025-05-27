@@ -337,9 +337,9 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 	cpu, memory := instance.Cpu, instance.Memory
 	if flavorName != "" {
 		var flavor *model.Flavor
-		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
+		flavor, err = flavorAdmin.GetFlavorByName(ctx, flavorName)
 		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
+			logger.Errorf("Failed to get flavor %+v, %+v", flavorName, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
 			return
 		}

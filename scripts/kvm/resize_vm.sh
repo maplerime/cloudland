@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 6 ] && die "$0 <vm_ID> <cpu> <memory>"
+[ $# -lt 3 ] && die "$0 <vm_ID> <cpu> <memory>"
 
 ID=$1
 vm_ID=inst-$1
