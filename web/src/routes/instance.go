@@ -1552,7 +1552,7 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 		c.Data["Instance"] = instance
 		c.Data["Flavors"] = flavors
 		c.Data["Link"] = fmt.Sprintf("/instances/%d/resize", instanceID)
-		c.HTML(200, "instances_size")
+		c.HTML(200, "instances_resize")
 		return
 	} else if c.Req.Method == "POST" {
 		flavorID := c.QueryInt64("flavor")
