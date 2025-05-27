@@ -93,7 +93,7 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 		return
 	}
 	ctx, db := GetContextDB(ctx)
-	if instance == nil || instance.Status != "running" {
+	if instance == nil || instance.Status != InstanceStatusRunning {
 		logger.Error("Instance is not running")
 		err = fmt.Errorf("Instance must be running")
 		return
