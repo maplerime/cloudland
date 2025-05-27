@@ -20,3 +20,7 @@ const (
 	InstanceStatusDeleting     InstanceStatus = "deleting"
 	InstanceStatusDeleted      InstanceStatus = "deleted"
 )
+
+func (s InstanceStatus) String() string {
+	return string(s)
+}
