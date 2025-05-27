@@ -1312,7 +1312,7 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 	} else if flag == "MigrateInstance" {
 		c.HTML(200, "instances_migrate")
 	} else if flag == "ResizeInstance" {
-		c.HTML(200, "instances_size")
+		c.HTML(200, "instances_resize")
 	} else {
 		c.HTML(200, "instances_patch")
 	}
@@ -1510,6 +1510,71 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		err = instanceAdmin.Reinstall(ctx, instance, image, rootPasswd, instKeys, cpu, memory, disk, loginPort)
 		if err != nil {
 			logger.Error("Reinstall failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
+}
+
+func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	redirectTo := "/instances"
+	db := DB()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		flavors := []*model.Flavor{}
+		if err = db.Find(&flavors).Error; err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(500, "500")
+			return
+		}
+		c.Data["Instance"] = instance
+		c.Data["Flavors"] = flavors
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/resize", instanceID)
+		c.HTML(200, "instances_size")
+		return
+	} else if c.Req.Method == "POST" {
+		flavorID := c.QueryInt64("flavor")
+		if flavorID <= 0 && instance.Cpu == 0 {
+			flavorID = instance.FlavorID
+		}
+		cpu, memory := instance.Cpu, instance.Memory
+		if flavorID > 0 {
+			var flavor *model.Flavor
+			flavor, err = flavorAdmin.Get(ctx, flavorID)
+			if err != nil {
+				logger.Errorf("No valid flavor", err)
+				c.Data["ErrorMsg"] = "No valid flavor"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			cpu, memory = flavor.Cpu, flavor.Memory
+		}
+
+		err = instanceAdmin.Resize(ctx, instance, cpu, memory)
+		if err != nil {
+			logger.Error("Resize failed", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
