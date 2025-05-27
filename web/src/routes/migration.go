@@ -17,7 +17,6 @@ import (
 
 	. "web/src/common"
 	"web/src/dbs"
-	. "web/src/enums"
 	"web/src/model"
 
 	"github.com/go-macaron/session"

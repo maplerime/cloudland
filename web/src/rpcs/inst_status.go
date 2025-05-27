@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"web/src/enums"
 
 	. "web/src/common"
 	"web/src/model"
@@ -66,7 +65,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == enums.InstanceStatusMigrating.String() {
+		if instance.Status == InstanceStatusMigrating.String() {
 			continue
 		}
 		if instance.Status != status {
