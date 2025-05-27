@@ -1509,7 +1509,6 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "/instances"
-	db := DB()
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
@@ -1531,26 +1530,14 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 		return
 	}
 	if c.Req.Method == "GET" {
-		flavors := []*model.Flavor{}
-		if err = db.Find(&flavors).Error; err != nil {
-			c.Data["ErrorMsg"] = err.Error()
-			c.HTML(500, "500")
-			return
-		}
-		c.Data["Instance"] = instance
-		c.Data["Flavors"] = flavors
 		c.Data["Link"] = fmt.Sprintf("/instances/%d/resize", instanceID)
 		c.HTML(200, "instances_resize")
 		return
 	} else if c.Req.Method == "POST" {
-		flavorID := c.QueryInt64("flavor")
-		if flavorID <= 0 && instance.Cpu == 0 {
-			flavorID = instance.FlavorID
-		}
 		cpu, memory := instance.Cpu, instance.Memory
-		if flavorID > 0 {
+		if instance.Cpu == 0 {
 			var flavor *model.Flavor
-			flavor, err = flavorAdmin.Get(ctx, flavorID)
+			flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
 			if err != nil {
 				logger.Errorf("No valid flavor", err)
 				c.Data["ErrorMsg"] = "No valid flavor"
@@ -1558,6 +1545,14 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 				return
 			}
 			cpu, memory = flavor.Cpu, flavor.Memory
+		}
+		newCpu := c.QueryInt64("cpu")
+		newMemory := c.QueryInt64("memory")
+		if newCpu > 0 {
+			cpu = int32(newCpu)
+		}
+		if newMemory > 0 {
+			memory = int32(newMemory)
 		}
 
 		err = instanceAdmin.Resize(ctx, instance, cpu, memory)
