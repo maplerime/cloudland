@@ -14,7 +14,6 @@ import (
 	"strconv"
 	"strings"
 	. "web/src/common"
-	. "web/src/enums"
 	"web/src/model"
 	"web/src/routes"
 
@@ -73,7 +72,7 @@ type InstancePayload struct {
 type InstanceResponse struct {
 	*ResourceReference
 	Hostname    string                `json:"hostname"`
-	Status      InstanceStatus        `json:"status"`
+	Status      string                `json:"status"`
 	LoginPort   int                   `json:"login_port"`
 	Interfaces  []*InterfaceResponse  `json:"interfaces"`
 	Volumes     []*VolumeInfoResponse `json:"volumes"`
@@ -602,7 +601,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 		},
 		Hostname:  instance.Hostname,
 		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status,
+		Status:    string(instance.Status),
 		Reason:    instance.Reason,
 		Cpu:       instance.Cpu,
 		Memory:    instance.Memory,
