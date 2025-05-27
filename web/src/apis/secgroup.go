@@ -247,7 +247,7 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 					CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 				},
 				Hostname: instance.Hostname,
-				Status:   instance.Status,
+				Status:   string(instance.Status),
 			}
 		}
 		secgroupResp.TargetInterfaces = append(secgroupResp.TargetInterfaces, targetIface)
