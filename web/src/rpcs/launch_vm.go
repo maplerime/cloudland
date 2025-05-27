@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"web/src/enums"
 
 	. "web/src/common"
 	"web/src/model"
@@ -53,7 +54,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 		logger.Error("Failed to query all interfaces", err)
 		return
 	}
-	if instance.Status != InstanceStatusDeleted {
+	if instance.Status != enums.InstanceStatusDeleted {
 		for _, iface := range allIfaces {
 			if iface.Address.Subnet.Type == "public" {
 				continue
@@ -159,7 +160,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	instance.ZoneID = hyper.ZoneID
-	if instance.Status != InstanceStatusMigrating {
+	if instance.Status != enums.InstanceStatusMigrating {
 		err = db.Model(&instance).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),

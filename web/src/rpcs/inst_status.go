@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"web/src/enums"
 
 	. "web/src/common"
 	"web/src/model"
@@ -49,7 +50,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			logger.Error("Invalid instance ID", err)
 			continue
 		}
-		status := InstanceStatuses(statusList[i+1])
+		status := enums.InstanceStatus(statusList[i+1])
 		instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
 		err = db.Unscoped().Take(instance).Error
 		if err != nil {
@@ -65,7 +66,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == InstanceStatusMigrating {
+		if instance.Status == enums.InstanceStatusMigrating {
 			continue
 		}
 		if instance.Status != status {

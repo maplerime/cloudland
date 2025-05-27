@@ -7,24 +7,24 @@ SPDX-License-Identifier: Apache-2.0
 package model
 
 import (
-	. "web/src/common"
 	"web/src/dbs"
+	"web/src/enums"
 )
 
 type Instance struct {
 	Model
-	Owner       int64            `gorm:"default:1"` /* The organization ID of the resource */
-	Hostname    string           `gorm:"unique_index:idx_router_instance;type:varchar(128)"`
-	Domain      string           `gorm:"type:varchar(128)"`
-	Status      InstanceStatuses `gorm:"type:varchar(32)"`
-	Reason      string           `gorm:"type:text"`
-	FloatingIps []*FloatingIp    `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false`
-	Volumes     []*Volume        `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false"`
-	Interfaces  []*Interface     `gorm:"foreignkey:Instance"`
-	Portmaps    []*Portmap       `gorm:"foreignkey:instanceID"`
-	Cpu         int32            `gorm:"default:0"`
-	Memory      int32            `gorm:"default:0"`
-	Disk        int32            `gorm:"default:0"`
+	Owner       int64                `gorm:"default:1"` /* The organization ID of the resource */
+	Hostname    string               `gorm:"unique_index:idx_router_instance;type:varchar(128)"`
+	Domain      string               `gorm:"type:varchar(128)"`
+	Status      enums.InstanceStatus `gorm:"type:varchar(32)"`
+	Reason      string               `gorm:"type:text"`
+	FloatingIps []*FloatingIp        `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false`
+	Volumes     []*Volume            `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false"`
+	Interfaces  []*Interface         `gorm:"foreignkey:Instance"`
+	Portmaps    []*Portmap           `gorm:"foreignkey:instanceID"`
+	Cpu         int32                `gorm:"default:0"`
+	Memory      int32                `gorm:"default:0"`
+	Disk        int32                `gorm:"default:0"`
 	FlavorID    int64
 	Flavor      *Flavor `gorm:"foreignkey:FlavorID"`
 	ImageID     int64
