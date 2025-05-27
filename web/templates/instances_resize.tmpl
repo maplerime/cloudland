@@ -14,21 +14,14 @@
 								{{ .i18n.Tr "ResizeInstance"}}
 							</h3>
 							<div class="ui attached segment">
-                                                                <div class="inline field">
-                                                                    <label for="flavor">{{.i18n.Tr "Flavor"}}</label>
-                                                                    <div class="ui selection dropdown">
-                                                                      <input id="flavor" name="flavor" type="hidden">
-                                                                      <i class="dropdown icon"></i>
-                                                                      <div class="default text">{{.i18n.Tr "Flavor"}}</div>
-                                                                      <div class="menu">
-                                                                        {{ range .Flavors }}
-                                                                        <div class="item" data-value={{.ID}} data-text={{.Name}}>
-                                                                          {{.Name}}
-                                                                        </div>
-                                                                        {{ end }}
-                                                                      </div>
-                                                                    </div>
-                                                                </div>
+                                <div class="inline field">
+                                    <label for="cpu">{{.i18n.Tr "Cpu"}}</label>
+                                    <input type="number" id="cpu"  name="cpu" autocomplete="off" required>
+                                </div>
+                                <div class="inline field">
+                                    <label for="memory">{{.i18n.Tr "Memory"}}(M)</label>
+                                    <input type="number" id="memory"  name="memory" autocomplete="off" required>
+                                </div>
 								<div class="inline field">
 									<label></label>
 									<button class="ui green button">{{.i18n.Tr "ResizeInstance"}}</button>

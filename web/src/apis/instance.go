@@ -44,9 +44,8 @@ type InstanceReinstallPayload struct {
 }
 
 type InstanceResizePayload struct {
-	Flavor string `json:"flavor" binding:"omitempty"`
-	Cpu    int32  `json:"cpu" binding:"omitempty,gte=1"`
-	Memory int32  `json:"memory" binding:"omitempty,gte=1"`
+	Cpu    int32 `json:"cpu" binding:"omitempty,gte=1"`
+	Memory int32 `json:"memory" binding:"omitempty,gte=1"`
 }
 
 type InstancePayload struct {
@@ -330,16 +329,12 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 	logger.Debugf("Resize instance %s with payload %+v", uuID, payload)
 
 	// old data compatibility
-	flavorName := payload.Flavor
-	if flavorName == "" && instance.Cpu == 0 {
-		flavorName = instance.Flavor.Name
-	}
 	cpu, memory := instance.Cpu, instance.Memory
-	if flavorName != "" {
+	if instance.Cpu == 0 {
 		var flavor *model.Flavor
-		flavor, err = flavorAdmin.GetFlavorByName(ctx, flavorName)
+		flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
 		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", flavorName, err)
+			logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
 			return
 		}
