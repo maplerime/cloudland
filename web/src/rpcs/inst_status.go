@@ -50,7 +50,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			logger.Error("Invalid instance ID", err)
 			continue
 		}
-		status := enums.InstanceStatus(statusList[i+1])
+		status := statusList[i+1]
 		instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
 		err = db.Unscoped().Take(instance).Error
 		if err != nil {
@@ -66,7 +66,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == enums.InstanceStatusMigrating {
+		if instance.Status == enums.InstanceStatusMigrating.String() {
 			continue
 		}
 		if instance.Status != status {
