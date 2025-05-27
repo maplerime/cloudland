@@ -72,7 +72,7 @@ type InstancePayload struct {
 type InstanceResponse struct {
 	*ResourceReference
 	Hostname    string                `json:"hostname"`
-	Status      string                `json:"status"`
+	Status      InstanceStatuses      `json:"status"`
 	LoginPort   int                   `json:"login_port"`
 	Interfaces  []*InterfaceResponse  `json:"interfaces"`
 	Volumes     []*VolumeInfoResponse `json:"volumes"`
