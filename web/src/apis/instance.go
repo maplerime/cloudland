@@ -318,11 +318,6 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
 		return
 	}
-	if instance.Status != "shut_off" {
-		logger.Errorf("Instance %s is not stopped", uuID)
-		ErrorResponse(c, http.StatusBadRequest, "Instance is not stopped", nil)
-		return
-	}
 
 	// bind json
 	payload := &InstanceResizePayload{}
