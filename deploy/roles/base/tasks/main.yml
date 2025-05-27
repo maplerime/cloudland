@@ -13,7 +13,10 @@
   tags: [sysfd]
 
 - name: install ntp service
-  apt: name=ntp state=latest
+  apt:
+    name: ntp
+    state: latest
+    update_cache: yes
   tags: [ntp]
 
 - name: start ntp service
