@@ -53,7 +53,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 		logger.Error("Failed to query all interfaces", err)
 		return
 	}
-	if instance.Status != InstanceStatusDeleted.String() {
+	if instance.Status != string(InstanceStatusDeleted) {
 		for _, iface := range allIfaces {
 			if iface.Address.Subnet.Type == "public" {
 				continue
@@ -159,7 +159,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	instance.ZoneID = hyper.ZoneID
-	if instance.Status != InstanceStatusMigrating.String() {
+	if instance.Status != string(InstanceStatusMigrating) {
 		err = db.Model(&instance).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),

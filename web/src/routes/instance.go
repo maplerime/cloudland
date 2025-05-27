@@ -190,7 +190,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			PasswdLogin: passwdLogin,
 			LoginPort:   int32(loginPort),
 			Userdata:    userdata,
-			Status:      InstanceStatusPending.String(),
+			Status:      string(InstanceStatusPending),
 			ZoneID:      zoneID,
 			RouterID:    routerID,
 			Cpu:         cpu,
@@ -270,7 +270,7 @@ func (a *InstanceAdmin) ChangeInstanceStatus(ctx context.Context, instance *mode
 }
 
 func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, hostname string, action PowerAction, hyperID int) (err error) {
-	if instance.Status == InstanceStatusMigrating.String() {
+	if instance.Status == string(InstanceStatusMigrating) {
 		err = fmt.Errorf("Instance is not in a valid state")
 		return
 	}
@@ -349,7 +349,7 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		err = fmt.Errorf("Corrupted instance")
 		return
 	}
-	instance.Status = InstanceStatusResizing.String()
+	instance.Status = string(InstanceStatusResizing)
 	instance.Cpu = cpu
 	instance.Memory = memory
 	if instance.Disk == 0 {
@@ -455,7 +455,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		passwdLogin = true
 		logger.Debug("Root password login enabled")
 	}
-	instance.Status = InstanceStatusReinstalling.String()
+	instance.Status = string(InstanceStatusReinstalling)
 	instance.LoginPort = int32(loginPort)
 	instance.PasswdLogin = passwdLogin
 	instance.ImageID = image.ID
@@ -538,7 +538,7 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		logger.Error(err)
 		return
 	}
-	if instance.Status != InstanceStatusRunning.String() {
+	if instance.Status != string(InstanceStatusRunning) {
 		err = fmt.Errorf("Instance must be running")
 		logger.Error(err)
 		return
@@ -770,7 +770,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 }
 
 func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (err error) {
-	if instance.Status == InstanceStatusMigrating.String() {
+	if instance.Status == string(InstanceStatusMigrating) {
 		err = fmt.Errorf("Instance is not in a valid state")
 		return
 	}
@@ -843,7 +843,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Delete vm command execution failed ", err)
 		return
 	}
-	instance.Status = InstanceStatusDeleting.String()
+	instance.Status = string(InstanceStatusDeleting)
 	err = db.Model(instance).Updates(instance).Error
 	if err != nil {
 		logger.Errorf("Failed to mark vm as deleting ", err)

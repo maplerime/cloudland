@@ -54,7 +54,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			logger.Error("DB failed to query instance", err)
 			return
 		}
-		if instance.Status != InstanceStatusShutoff.String() {
+		if instance.Status != string(InstanceStatusShutoff) {
 			err = fmt.Errorf("instance [%s] is running, shut it down first before capturing", instance.Hostname)
 			logger.Error(err)
 			return

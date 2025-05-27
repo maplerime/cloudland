@@ -19,10 +19,10 @@ import (
 )
 
 func init() {
-	Add("inst_status", InstanceStatus)
+	Add("inst_status", UpdateInstanceStatus)
 }
 
-func InstanceStatus(ctx context.Context, args []string) (status string, err error) {
+func UpdateInstanceStatus(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| launch_vm.sh '3' '5 running 7 running 9 shut_off'
 	db := DB()
 	argn := len(args)
@@ -65,7 +65,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == InstanceStatusMigrating.String() {
+		if instance.Status == string(InstanceStatusMigrating) {
 			continue
 		}
 		if instance.Status != status {
