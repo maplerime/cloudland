@@ -41,6 +41,36 @@
 									<input id="publicip" name="publicip" placeholder="192.168.1.25">
 								</div>
 								<div class="inline field">
+									<label for="count">{{.i18n.Tr "Count"}}</label>
+									<input id="count" name="count" type="number" min="0" max="64" value="1" placeholder="1">
+								</div>
+								<div class="inline field">
+									<label for="publicsubnet">{{.i18n.Tr "Public Subnet"}}</label>
+									<div class="ui fluid multiple search selection dropdown">
+										<input id="publicsubnet" name="publicsubnet" type="hidden">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "Public Subnet"}}</div>
+										<div class="menu">
+											{{range .Subnets}}
+											<div class="item" data-value="{{.ID}}">{{.Name}}</div>
+											{{end}}
+										</div>
+									</div>
+								</div>
+								<div class="inline field">
+									<label for="sitesubnet">{{.i18n.Tr "Site Subnet"}}</label>
+									<div class="ui fluid multiple search selection dropdown">
+										<input id="sitesubnet" name="sitesubnet" type="hidden">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "Site Subnet"}}</div>
+										<div class="menu">
+											{{range .SiteSubnets}}
+											<div class="item" data-value="{{.ID}}">{{.Name}}</div>
+											{{end}}
+										</div>
+									</div>
+								</div>
+								<div class="inline field">
 									<label for="inbound">{{.i18n.Tr "Inbound Bandwidth"}}</label>
 									<input id="inbound" name="inbound" placeholder="1000">
 								</div>

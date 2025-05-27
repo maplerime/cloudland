@@ -58,12 +58,14 @@ type FloatingIpListResponse struct {
 }
 
 type FloatingIpPayload struct {
-	PublicSubnet *BaseReference `json:"public_subnet" binding:"omitempty"`
-	PublicIp     string         `json:"public_ip" binding:"omitempty,ipv4"`
-	Name         string         `json:"name" binding:"required,min=2,max=32"`
-	Instance     *BaseID        `json:"instance" binding:"omitempty"`
-	Inbound      int32          `json:"inbound" binding:"omitempty,min=1,max=20000"`
-	Outbound     int32          `json:"outbound" binding:"omitempty,min=1,max=20000"`
+	PublicSubnets   []*BaseReference `json:"public_subnets" binding:"omitempty"`
+	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty"`
+	PublicIp        string           `json:"public_ip" binding:"omitempty,ipv4"`
+	Name            string           `json:"name" binding:"required,min=2,max=32"`
+	Instance        *BaseID          `json:"instance" binding:"omitempty"`
+	Inbound         int32            `json:"inbound" binding:"omitempty,min=1,max=20000"`
+	Outbound        int32            `json:"outbound" binding:"omitempty,min=1,max=20000"`
+	ActivationCount int32            `json:"activation_count" binding:"omitempty,min=0,max=64"`
 }
 
 type FloatingIpPatchPayload struct {
@@ -214,15 +216,64 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating floating ip with %+v", payload)
-	var publicSubnet *model.Subnet
-	if payload.PublicSubnet != nil {
-		publicSubnet, err = subnetAdmin.GetSubnet(ctx, payload.PublicSubnet)
-		if err != nil {
-			logger.Errorf("Failed to get public subnet %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get public subnet", err)
+	var siteSubnets []*model.Subnet
+	if payload.SiteSubnets != nil {
+		for _, subnetRef := range payload.SiteSubnets {
+			subnet, err := subnetAdmin.GetSubnet(ctx, subnetRef)
+			if err != nil {
+				logger.Errorf("Failed to get site subnet %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
+				return
+			}
+			var idleCount int64
+			idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
+			if err != nil {
+				logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+				return
+			}
+			if idleCount == 0 {
+				logger.Errorf("No idle addresses for site subnet %s", subnet.Name)
+				ErrorResponse(c, http.StatusBadRequest, "No idle addresses for site subnet", err)
+				return
+			}
+			subnet.IdleCount = idleCount
+			siteSubnets = append(siteSubnets, subnet)
+		}
+	}
+	var activationCount = payload.ActivationCount
+	if len(siteSubnets) < 1 {
+		if activationCount == 0 {
+			activationCount = 1
+		}
+	}
+
+	var publicSubnets []*model.Subnet
+	if payload.PublicSubnets != nil {
+		idleCountTotal := int64(0)
+		for _, subnetRef := range payload.PublicSubnets {
+			subnet, err := subnetAdmin.GetSubnet(ctx, subnetRef)
+			if err != nil {
+				logger.Errorf("Failed to get public subnet %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get public subnet", err)
+				return
+			}
+			var idleCount int64
+			idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
+			if err != nil {
+				logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+				return
+			}
+			idleCountTotal += idleCount
+			subnet.IdleCount = idleCount
+			publicSubnets = append(publicSubnets, subnet)
+		}
+		if idleCountTotal < int64(activationCount) {
+			logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d", idleCountTotal, payload.ActivationCount)
+			ErrorResponse(c, http.StatusBadRequest, "Not enough idle addresses for public subnets", err)
 			return
 		}
 	}
+
 	var instance *model.Instance
 	if payload.Instance != nil {
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
@@ -232,19 +283,25 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	floatingIp, err := floatingIpAdmin.Create(ctx, instance, publicSubnet, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound)
+
+	logger.Debugf("publicSubnets: %v, instance: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, siteSubnets: %v", publicSubnets, instance, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets)
+	floatingIps, err := floatingIpAdmin.Create(ctx, instance, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets)
 	if err != nil {
 		logger.Errorf("Failed to create floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create floating ip", err)
 		return
 	}
-	floatingIpResp, err := v.getFloatingIpResponse(ctx, floatingIp)
-	if err != nil {
-		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
-		return
+	floatingIpResps := make([]*FloatingIpResponse, 0, len(floatingIps))
+	for _, fip := range floatingIps {
+		resp, err := v.getFloatingIpResponse(ctx, fip)
+		if err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+		floatingIpResps = append(floatingIpResps, resp)
 	}
-	logger.Debugf("Created floating ip %+v", floatingIpResp)
-	c.JSON(http.StatusOK, floatingIpResp)
+	logger.Debugf("Created floating ips %+v", floatingIpResps)
+	c.JSON(http.StatusOK, floatingIpResps)
 }
 
 func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *model.FloatingIp) (floatingIpResp *FloatingIpResponse, err error) {
