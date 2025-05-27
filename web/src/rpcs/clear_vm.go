@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"web/src/enums"
 
 	. "web/src/common"
 	"web/src/model"
@@ -115,7 +114,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	instance.Hostname = fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix())
-	instance.Status = enums.InstanceStatusDeleted.String()
+	instance.Status = InstanceStatusDeleted.String()
 	instance.Reason = reason
 	instance.Interfaces = nil
 	err = db.Save(instance).Error

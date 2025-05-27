@@ -10,8 +10,6 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"web/src/enums"
-
 	. "web/src/common"
 	"web/src/model"
 )
@@ -30,7 +28,7 @@ func updateInstance(volume *model.Volume, status string, reason string) (err err
 			return err
 		}
 
-		instance.Status = enums.InstanceStatus(status)
+		instance.Status = status
 		instance.Reason = reason
 		if err = db.Save(&instance).Error; err != nil {
 			logger.Error("Update instance status failed", err)
