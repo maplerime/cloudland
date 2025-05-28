@@ -1,4 +1,4 @@
-package common
+package routes
 
 import (
 	"bytes"
@@ -20,12 +20,16 @@ import (
 	"strings"
 	"time"
 	"unsafe"
+	"web/src/common"
 	"web/src/model"
 
 	"github.com/google/uuid"
 	"github.com/spf13/viper"
+	"github.com/unknwon/i18n"
 
+	"github.com/go-macaron/session"
 	"github.com/jinzhu/gorm"
+	"gopkg.in/macaron.v1"
 )
 
 const (
@@ -48,6 +52,8 @@ var (
 	isRemotePrometheus     bool
 	sshKeyPath             string
 	prometheusClient       *PrometheusClient
+	alarmAdminInstance     = &AlarmAdmin{}
+	alarmView              = &AlarmView{}
 )
 
 type PrometheusClient struct {
@@ -208,6 +214,9 @@ type AlarmOperator struct {
 	DB *gorm.DB
 }
 
+type AlarmAdmin struct{}
+type AlarmView struct{}
+
 func init() {
 	viper.SetConfigFile("conf/config.toml")
 	if err := viper.ReadInConfig(); err == nil {
@@ -261,11 +270,12 @@ func IsRemotePrometheus() bool {
 }
 
 func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupUUID string, rules *[]model.CPURuleDetail) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Where("group_uuid = ?", groupUUID).Find(rules).Error
 }
 
 func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID string) (*model.RuleGroupV2, error) {
+	ctx, _ = common.GetContextDB(ctx)
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
 		GroupUUID: groupUUID,
 		PageSize:  1,
@@ -368,7 +378,7 @@ func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID str
 }
 
 func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID string, enabled bool) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&model.RuleGroupV2{}).
 			Where("uuid = ?", groupID).
@@ -385,7 +395,7 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 }
 
 func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUUIDs []string, iface string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for _, vmUUID := range vmUUIDs {
 			var count int64
@@ -414,7 +424,7 @@ func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUU
 }
 
 func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	result := db.Where("uuid = ? AND type = ?", groupUUID, ruleType).
 		Delete(&model.RuleGroupV2{})
 	if result.Error != nil {
@@ -425,7 +435,7 @@ func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType
 }
 
 func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, iface string) (int64, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	query := db.Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID)
 
 	if iface != "" {
@@ -440,7 +450,7 @@ func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, ifa
 }
 
 func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]model.VMRuleLink, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	var links []model.VMRuleLink
 	query := db.Model(&model.VMRuleLink{})
 
@@ -458,7 +468,7 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 }
 
 func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		// delete detail db
 		switch ruleType {
@@ -502,7 +512,7 @@ func Paginate(page, pageSize int) func(db *gorm.DB) *gorm.DB {
 }
 
 func (a *AlarmOperator) DeleteCPURulesByGroup(ctx context.Context, groupID string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	if err := db.Where("group_uuid = ?", groupID).
 		Delete(&CPURule{}).Error; err != nil {
 		log.Printf("CPU rule delete failed: groupID=%s, error=%v", groupID, err)
@@ -512,7 +522,7 @@ func (a *AlarmOperator) DeleteCPURulesByGroup(ctx context.Context, groupID strin
 }
 
 func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroupsParams) ([]model.RuleGroupV2, int64, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	var groups []model.RuleGroupV2
 	var total int64
 
@@ -539,7 +549,7 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 }
 
 func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string) ([]model.CPURuleDetail, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	var details []model.CPURuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		log.Printf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
@@ -548,14 +558,14 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 }
 
 func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Model(&model.RuleGroupV2{}).
 		Where("uuid = ?", groupID).
 		Update("trigger_cnt", gorm.Expr("trigger_cnt + 1")).Error
 }
 
 func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, rules []CPURule) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range rules {
 			rule := &CPURule{
@@ -576,7 +586,7 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 }
 
 func (a *AlarmOperator) CreateBWRuleDetail(ctx context.Context, detail *model.BWRuleDetail) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	if err := db.Create(detail).Error; err != nil {
 		log.Printf("create bw rule detail failed: groupUUID=%s, name=%s, error=%v",
 			detail.GroupUUID, detail.Name, err)
@@ -586,7 +596,7 @@ func (a *AlarmOperator) CreateBWRuleDetail(ctx context.Context, detail *model.BW
 }
 
 func (a *AlarmOperator) GetBWRuleDetails(ctx context.Context, groupUUID string) ([]model.BWRuleDetail, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	var details []model.BWRuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		log.Printf("query db BW rules detailed: groupUUID=%s, error=%v", groupUUID, err)
@@ -596,7 +606,7 @@ func (a *AlarmOperator) GetBWRuleDetails(ctx context.Context, groupUUID string) 
 }
 
 func (a *AlarmOperator) CreateRuleGroup(ctx context.Context, group *model.RuleGroupV2) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	if err := db.Create(group).Error; err != nil {
 		log.Printf("failed to create rule: UUID=%s, GroupUUID=%s, error=%v", uuid.New().String(), group.UUID, err)
 		return fmt.Errorf("failed to create rule: %w", err)
@@ -605,7 +615,7 @@ func (a *AlarmOperator) CreateRuleGroup(ctx context.Context, group *model.RuleGr
 }
 
 func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.CPURuleDetail) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	detail.UUID = uuid.NewString()
 	if err := db.Create(detail).Error; err != nil {
 		log.Printf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
@@ -1074,14 +1084,12 @@ func CheckFileExists(path string) (bool, error) {
 }
 
 func (a *AlarmOperator) GetNodeAlarmRules(ctx context.Context, uuid string) ([]model.NodeAlarmRule, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	var rules []model.NodeAlarmRule
-	fmt.Printf("Common GetNodeAlarmRules step1 uuid  is%s\n", uuid)
 	if err := db.Where("uuid = ?", uuid).Find(&rules).Error; err != nil {
 		log.Printf("query db node alarm rules: uuid=%s, error=%v", uuid, err)
 		return nil, fmt.Errorf("query db node alarm rules: %w", err)
 	}
-	fmt.Printf("Common GetNodeAlarmRules step2\n")
 	if uuid == "" {
 		var allRules []model.NodeAlarmRule
 		if err := db.Find(&allRules).Error; err != nil {
@@ -1090,13 +1098,12 @@ func (a *AlarmOperator) GetNodeAlarmRules(ctx context.Context, uuid string) ([]m
 		}
 		return allRules, nil
 	}
-	fmt.Printf("Common GetNodeAlarmRules step3\n")
 	return rules, nil
 }
 
 // CreateNodeAlarmRules creates a new node alarm rule
 func (a *AlarmOperator) CreateNodeAlarmRules(ctx context.Context, rule *model.NodeAlarmRule) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	rule.UUID = uuid.NewString()
 	if err := db.Create(rule).Error; err != nil {
 		log.Printf("Failed to create node alarm rule: ruleType=%s, name=%s, error=%v",
@@ -1108,9 +1115,8 @@ func (a *AlarmOperator) CreateNodeAlarmRules(ctx context.Context, rule *model.No
 	return nil
 }
 
-// DeleteNodeAlarmRules deletes a node alarm rule by uuid
 func (a *AlarmOperator) DeleteNodeAlarmRules(ctx context.Context, uuid string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	result := db.Where("uuid = ?", uuid).Delete(&model.NodeAlarmRule{})
 	if result.Error != nil {
 		log.Printf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, result.Error)
@@ -1122,9 +1128,8 @@ func (a *AlarmOperator) DeleteNodeAlarmRules(ctx context.Context, uuid string) e
 	return nil
 }
 
-// UpdateNodeAlarmRule updates an existing node alarm rule
 func (a *AlarmOperator) UpdateNodeAlarmRule(ctx context.Context, uuid string, updates map[string]interface{}) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	result := db.Model(&model.NodeAlarmRule{}).Where("uuid = ?", uuid).Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("failed to update node alarm rule: %w", result.Error)
@@ -1136,18 +1141,18 @@ func (a *AlarmOperator) UpdateNodeAlarmRule(ctx context.Context, uuid string, up
 }
 
 func (a *AlarmOperator) DeleteNodeAlarmRuleByUUID(ctx context.Context, uuid string) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Where("uuid = ?", uuid).Delete(&model.NodeAlarmRule{}).Error
 }
 
 func (a *AlarmOperator) UpdateNodeAlarmRuleByUUID(ctx context.Context, uuid string, updates map[string]interface{}) error {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	return db.Model(&model.NodeAlarmRule{}).Where("uuid = ?", uuid).Updates(updates).Error
 }
 
 // GetNodeAlarmRulesByType retrieves node alarm rules by rule type
 func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType string) ([]model.NodeAlarmRule, error) {
-	ctx, db := GetContextDB(ctx)
+	ctx, db := common.GetContextDB(ctx)
 	var rules []model.NodeAlarmRule
 
 	if err := db.Where("rule_type = ?", ruleType).Find(&rules).Error; err != nil {
@@ -1349,4 +1354,342 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 	}
 
 	return result, nil
+}
+
+func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
+	if rule.RuleType == "" {
+		return fmt.Errorf("rule_type is required")
+	}
+	if rule.Name == "" {
+		return fmt.Errorf("name is required")
+	}
+	if rule.Owner == "" {
+		return fmt.Errorf("owner is required")
+	}
+	if len(rule.Config.RawMessage) == 0 {
+		return fmt.Errorf("config is required")
+	}
+
+	// 验证 config 是否为有效的 JSON
+	var temp interface{}
+	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
+		return fmt.Errorf("config must be valid JSON")
+	}
+	return nil
+}
+
+func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule) (*model.NodeAlarmRule, error) {
+	if err := validateNodeAlarmRule(rule); err != nil {
+		return nil, err
+	}
+
+	operator := &AlarmOperator{}
+	existingRules, err := operator.GetNodeAlarmRulesByType(ctx, rule.RuleType)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing rules: %v", err)
+	}
+	if len(existingRules) > 0 {
+		return nil, fmt.Errorf("rule type %s already exists, only one rule per type is allowed", rule.RuleType)
+	}
+
+	newRule := &model.NodeAlarmRule{
+		RuleType:    rule.RuleType,
+		Name:        rule.Name,
+		Config:      rule.Config,
+		Description: rule.Description,
+		Owner:       rule.Owner,
+		Enabled:     true,
+	}
+	err = operator.CreateNodeAlarmRules(ctx, newRule)
+	if err != nil {
+		return nil, fmt.Errorf("failed to save rule to database: %v", err)
+	}
+
+	var templateFiles []string
+	switch rule.RuleType {
+	case RuleTypeAvailable:
+		templateFiles = []string{"node-availability.yml.j2"}
+	case RuleTypeControl:
+		templateFiles = []string{"management-resources.yml.j2"}
+	case RuleTypeCompute:
+		templateFiles = []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
+	default:
+		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
+	}
+
+	for _, templateFile := range templateFiles {
+		var configData map[string]interface{}
+		if err = json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
+			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+			return nil, fmt.Errorf("failed to parse config JSON: %v", err)
+		}
+		if rule.RuleType == RuleTypeAvailable {
+			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
+				duration, err := time.ParseDuration(nodeDownDuration)
+				if err != nil {
+					operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+					return nil, fmt.Errorf("invalid node_down_duration format: %v", err)
+				}
+				configData["node_down_duration_minutes"] = int(duration.Minutes())
+			} else {
+				configData["node_down_duration_minutes"] = 5
+			}
+		}
+		outputFile := strings.TrimSuffix(templateFile, ".j2")
+
+		err = ProcessTemplate(templateFile, outputFile, configData)
+		if err != nil {
+			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+			return nil, fmt.Errorf("failed to process template %s: %v", templateFile, err)
+		}
+	}
+
+	if err := ReloadPrometheus(); err != nil {
+		log.Printf("Failed to reload Prometheus: %v", err)
+	}
+
+	return newRule, nil
+}
+
+func (a *AlarmAdmin) CreateNodeAlarmRule(ctx context.Context, rule *model.NodeAlarmRule) (*model.NodeAlarmRule, error) {
+	return createNodeAlarmRuleInternal(ctx, rule)
+}
+
+func (v *AlarmView) CreateNodeAlarmRule(c *macaron.Context) {
+	var rule model.NodeAlarmRule
+
+	// Get parameters from query or form data, similar to FlavorView.Create
+	ruleType := c.Query("rule_type")
+	name := c.Query("name")
+	description := c.Query("description")
+	owner := c.Query("owner")
+	enabledStr := c.Query("enabled")
+	configStr := c.Query("config") // Get config as a string
+
+	// Convert enabled string to boolean
+	enabled := true // Default to true if not specified or invalid
+	if enabledStr != "" {
+		var parseErr error
+		enabled, parseErr = strconv.ParseBool(enabledStr)
+		if parseErr != nil {
+			// Handle parse error if necessary, or just use default true
+			log.Printf("Failed to parse enabled status: %v, using default true", parseErr)
+			enabled = true // Ensure it's true on parse error
+		}
+	}
+
+	// Unmarshal config string into json.RawMessage
+	var configRaw json.RawMessage
+	if configStr != "" {
+		configRaw = json.RawMessage(configStr)
+	}
+
+	// Populate the rule struct
+	rule = model.NodeAlarmRule{
+		RuleType:    ruleType,
+		Name:        name,
+		Description: description,
+		Owner:       owner,
+		Enabled:     enabled,
+		Config:      model.ConfigWrapper{RawMessage: configRaw},
+	}
+
+	// Perform validation (can reuse validateNodeAlarmRule if applicable)
+	if err := validateNodeAlarmRule(&rule); err != nil {
+		c.JSON(http.StatusBadRequest, map[string]interface{}{"error": err.Error()})
+		return
+	}
+
+	// ... existing code to call createNodeAlarmRuleInternal and handle response ...
+	rulePtr, err := createNodeAlarmRuleInternal(c.Req.Context(), &rule)
+	if err != nil {
+		// ... existing error handling ...
+	}
+
+	c.JSON(http.StatusCreated, map[string]interface{}{
+		"message": "Node alarm rule created successfully",
+		"rule": map[string]interface{}{
+			"uuid":        rulePtr.UUID,
+			"rule_type":   rulePtr.RuleType,
+			"name":        rulePtr.Name,
+			"description": rulePtr.Description,
+			"created_at":  rulePtr.CreatedAt,
+			"owner":       rulePtr.Owner,
+			"enabled":     rulePtr.Enabled, // Include enabled status
+		},
+	})
+}
+
+func getNodeAlarmRulesInternal(ctx context.Context, uuid, ruleType string) ([]model.NodeAlarmRule, error) {
+	operator := &AlarmOperator{}
+	if uuid != "" {
+		return operator.GetNodeAlarmRules(ctx, uuid)
+	} else if ruleType != "" {
+		return operator.GetNodeAlarmRulesByType(ctx, ruleType)
+	} else {
+		return operator.GetNodeAlarmRules(ctx, "")
+	}
+}
+
+func (a *AlarmAdmin) GetNodeAlarmRules(ctx context.Context, uuid, ruleType string) ([]model.NodeAlarmRule, error) {
+	return getNodeAlarmRulesInternal(ctx, uuid, ruleType)
+}
+
+func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
+	uuid := c.Query("uuid")
+	ruleType := c.Query("rule_type")
+
+	rules, err := getNodeAlarmRulesInternal(c.Req.Context(), uuid, ruleType)
+	if err != nil {
+		log.Printf("Failed to get node alarm rules: error=%v", err)
+		c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "failed to get node alarm rules"})
+		return
+	}
+
+	// Prepare data for template with formatted config
+	var rulesForTemplate []map[string]interface{}
+	for _, rule := range rules {
+		ruleMap := make(map[string]interface{})
+
+		// Copy fields from original rule (excluding Config which needs special handling)
+		ruleMap["ID"] = rule.ID
+		ruleMap["UUID"] = rule.UUID
+		ruleMap["RuleType"] = rule.RuleType
+		ruleMap["Name"] = rule.Name
+		ruleMap["Description"] = rule.Description
+		ruleMap["Owner"] = rule.Owner
+		ruleMap["Enabled"] = rule.Enabled
+		ruleMap["CreatedAt"] = rule.CreatedAt
+
+		// Format Config JSON for display
+		if len(rule.Config.RawMessage) > 0 {
+			var js bytes.Buffer
+			// Use json.Indent for pretty printing
+			err := json.Indent(&js, rule.Config.RawMessage, "", "  ")
+			if err != nil {
+				log.Printf("Failed to format config JSON for rule %s: %v", rule.UUID, err)
+				ruleMap["ConfigFormatted"] = string(rule.Config.RawMessage) // Fallback to raw
+			} else {
+				ruleMap["ConfigFormatted"] = js.String()
+			}
+		} else {
+			ruleMap["ConfigFormatted"] = "{}"
+		}
+
+		rulesForTemplate = append(rulesForTemplate, ruleMap)
+	}
+
+	// 添加模板所需的数据
+	c.Data["Rules"] = rulesForTemplate
+	c.Data["Total"] = len(rules)
+	c.Data["Query"] = c.Query("q")
+	c.Data["Link"] = "/alarms/node"
+
+	// 确保 i18n 对象被正确设置
+	if c.Locale != nil {
+		c.Data["i18n"] = c.Locale
+	} else {
+		log.Printf("Warning: i18n object is nil")
+		c.Data["i18n"] = &i18n.Locale{} // 提供一个空的 i18n 对象作为后备
+	}
+
+	// 复制其他必要的上下文数据
+	if isAdmin, ok := c.Data["IsAdmin"].(bool); ok {
+		c.Data["IsAdmin"] = isAdmin
+	}
+	if isSignedIn, ok := c.Data["IsSignedIn"].(bool); ok {
+		c.Data["IsSignedIn"] = isSignedIn
+	}
+	if org, ok := c.Data["Organization"].(string); ok {
+		c.Data["Organization"] = org
+	}
+	if members, ok := c.Data["Members"].([]*model.Member); ok {
+		c.Data["Members"] = members
+	}
+
+	c.HTML(http.StatusOK, "alarms")
+}
+
+func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, error) {
+	operator := &AlarmOperator{}
+
+	rules, err := operator.GetNodeAlarmRules(ctx, uuid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get rule information: %v", err)
+	}
+
+	if len(rules) == 0 {
+		return nil, fmt.Errorf("node alarm rule not found")
+	}
+
+	rule := rules[0]
+
+	if err := operator.DeleteNodeAlarmRules(ctx, uuid); err != nil {
+		return nil, fmt.Errorf("failed to delete rule from database: %v", err)
+	}
+
+	var templateFiles []string
+	switch rule.RuleType {
+	case RuleTypeAvailable:
+		templateFiles = []string{"node-availability.yml"}
+	case RuleTypeControl:
+		templateFiles = []string{"management-resources.yml"}
+	case RuleTypeCompute:
+		templateFiles = []string{
+			"compute-core-resources.yml",
+			"compute-network-resources.yml",
+		}
+	case "service_monitoring":
+		templateFiles = []string{"service_monitoring.yml"}
+	}
+
+	deletedFiles := []string{}
+	for _, templateFile := range templateFiles {
+		outputPath := filepath.Join(RulesNode, templateFile)
+		enabledPath := filepath.Join(RulesEnabled, templateFile)
+
+		if err := RemoveFile(enabledPath); err != nil {
+			log.Printf("Failed to remove symlink: path=%s, error=%v", enabledPath, err)
+		} else {
+			deletedFiles = append(deletedFiles, enabledPath)
+		}
+
+		if err := RemoveFile(outputPath); err != nil {
+			log.Printf("Failed to remove rule file: path=%s, error=%v", outputPath, err)
+		} else {
+			deletedFiles = append(deletedFiles, outputPath)
+		}
+	}
+
+	if err := ReloadPrometheus(); err != nil {
+		log.Printf("Failed to reload Prometheus configuration: error=%v", err)
+	}
+
+	return deletedFiles, nil
+}
+
+func (a *AlarmAdmin) DeleteNodeAlarmRule(ctx context.Context, uuid string) ([]string, error) {
+	return deleteNodeAlarmRuleInternal(ctx, uuid)
+}
+
+func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
+	uuid := c.Params(":uuid")
+	if uuid == "" {
+		c.JSON(http.StatusBadRequest, map[string]interface{}{"error": "uuid is required"})
+		return
+	}
+
+	deletedFiles, err := deleteNodeAlarmRuleInternal(c.Req.Context(), uuid)
+	if err != nil {
+		log.Printf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, err)
+		c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": fmt.Sprintf("failed to delete node alarm rule: %v", err)})
+		return
+	}
+
+	c.JSON(http.StatusOK, map[string]interface{}{"status": "success", "message": "Node alarm rule deleted successfully", "deleted_files": deletedFiles})
+}
+
+func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
+	c.HTML(200, "alarms_new")
 }

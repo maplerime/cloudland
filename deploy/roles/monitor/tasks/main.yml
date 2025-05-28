@@ -643,45 +643,11 @@
 - name: Compile and deploy alarm_rules_manager
   tags: [monitor]
   block:
-    - name: Create build directory
-      delegate_to: localhost
-      file:
-        path: /tmp/alarm_build
-        state: directory
-        mode: 0755
-
-    - name: Copy alarm_rules_manager.go to build directory
-      delegate_to: localhost
-      copy:
-        src: /opt/cloudland/cmd/alarm_rules_manager.go
-        dest: /tmp/alarm_build/main.go
-        mode: 0644
-        remote_src: yes
-
-    - name: Build and verify alarm_rules_manager
-      delegate_to: localhost
-      shell: |
-        cd /tmp/alarm_build
-        go mod init alarm_rules_manager
-        go get github.com/gin-gonic/gin
-        CGO_ENABLED=0 go build -o alarm_rules_manager main.go
-        file alarm_rules_manager | grep -q "executable" || (echo "compile failed." && exit 1)
-
-    - name: Create alarm_rules_manager directory on Prometheus server
-      delegate_to: "{{ prometheus_server_ip }}"
-      become: true
-      file:
-        path: /opt/cloudland/web/bin
-        state: directory
-        owner: cland
-        group: cland
-        mode: 0755
-
     - name: Copy alarm_rules_manager binary directly to Prometheus server
       delegate_to: "{{ prometheus_server_ip }}"
       become: true
       copy:
-        src: /tmp/alarm_build/alarm_rules_manager
+        src: /opt/cloudland/web/bin
         dest: /opt/cloudland/web/bin/
         mode: 0755
         owner: cland

@@ -78,6 +78,7 @@ type NodeAlarmRule struct {
 	Config      ConfigWrapper `gorm:"type:text;not null" json:"config" gorm:"column:config"`
 	Description string        `gorm:"type:varchar(255)" json:"description"`
 	Enabled     bool          `gorm:"default:true" json:"enabled"`
+	Owner       string        `gorm:"column:owner;type:varchar(64);index;not null" json:"owner"`
 }
 
 type ConfigWrapper struct {

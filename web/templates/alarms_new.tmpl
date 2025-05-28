@@ -1,0 +1,109 @@
+{{template "_head" .}}
+<div class="admin user">
+
+    <div class="ui container">
+
+        <div class="ui grid">
+
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="/alarms/node" method="post">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Create_Node_Alarm_Rule"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="required inline field">
+									<label for="name">{{.i18n.Tr "Name"}}</label>
+									<input id="name" name="name" autofocus required>
+								</div>
+								<div class="required inline field">
+									<label for="rule_type">{{.i18n.Tr "Rule_Type"}}</label>
+									<select name="rule_type" id="rule_type" class="ui selection dropdown" required>
+										<option value="">{{.i18n.Tr "Select_Rule_Type"}}</option>
+                                        <option value="node_available">{{.i18n.Tr "Node_Available"}}</option>
+                                        <option value="control_node">{{.i18n.Tr "Control_Node"}}</option>
+                                        <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
+									</select>
+								</div>
+								<div class="inline field">
+									<label for="description">{{.i18n.Tr "Description"}}</label>
+									<textarea id="description" name="description"></textarea>
+								</div>
+								<div class="required inline field">
+									<label for="config">{{.i18n.Tr "Config"}}</label>
+									<textarea id="config" name="config" required></textarea>
+								</div>
+								<div class="inline field">
+									<label for="enabled">{{.i18n.Tr "Enabled"}}</label>
+                                    <div class="ui checkbox">
+                                        <input type="checkbox" id="enabled" name="enabled" checked>
+                                        <label></label>
+                                    </div>
+								</div>
+                                <div class="required inline field">
+                                    <label for="owner">{{.i18n.Tr "Owner"}}</label>
+                                    <input id="owner" name="owner" value="admin" required>
+                                </div>
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "Create"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ruleTypeSelect = document.getElementById('rule_type');
+    const configTextarea = document.getElementById('config');
+    
+    const defaultConfigs = {
+        'node_available': {
+            "node_down_duration": "5m",
+            "alert_duration_minutes": 10
+        },
+        'control_node': {
+            "cpu_usage_threshold": 75,
+            "cpu_alert_duration": "10m",
+            "memory_usage_threshold": 85,
+            "memory_alert_duration": "10m",
+            "disk_space_threshold": 20,
+            "disk_alert_duration": "10m",
+            "network_traffic_threshold_gb": 15,
+            "network_alert_duration": "10m"
+        },
+        'compute_node': {
+            "cpu_usage_threshold": 75,
+            "cpu_alert_duration": "10m",
+            "memory_usage_threshold": 85,
+            "memory_alert_duration": "10m",
+            "disk_space_threshold": 20,
+            "disk_alert_duration": "10m",
+            "network_types": {
+                "management": { "threshold": 5, "pattern": "=~\"ens.*\"", "duration": "5m" },
+                "vpc":       { "threshold": 5, "pattern": "=~\"bond.*\"", "duration": "5m" },
+                "storage":   { "threshold": 5, "pattern": "=\"eth2\"", "duration": "5m" },
+                "internet":  { "threshold": 5, "pattern": "=\"eth1\"", "duration": "5m" }
+            }
+        }
+    };
+
+    ruleTypeSelect.addEventListener('change', function() {
+        const selectedType = this.value;
+        if (selectedType && defaultConfigs[selectedType]) {
+            configTextarea.value = JSON.stringify(defaultConfigs[selectedType], null, 2);
+        } else {
+            configTextarea.value = '';
+        }
+    });
+});
+</script>
+
+{{template "_footer" .}} 
