@@ -60,6 +60,9 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 		return
 	}
 	path := args[2]
+	if path == "" {
+		path = volume.Path
+	}
 	status = args[3]
 	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
 	if err != nil {
@@ -96,6 +99,9 @@ func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	}
 	status = args[2]
 	path := args[3]
+	if path == "" {
+		path = volume.Path
+	}
 	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
