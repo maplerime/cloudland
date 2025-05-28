@@ -324,9 +324,13 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 
 	if size <= volume.Size {
 		logger.Error("The size must be greater than the original size")
+		err = fmt.Errorf("the size must be greater than the original size")
 		return
 	}
-	if err = db.Model(volume).Update("size", size).Error; err != nil {
+	if err = db.Model(volume).Updates(map[string]interface{}{
+		"size":   size,
+		"status": "resizing",
+	}).Error; err != nil {
 		logger.Error("update volume failed", err)
 		return
 	}
@@ -336,7 +340,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volum_%s.sh '%d' '%s' '%s' '%d'", volDriver, volume.ID, uuid, volume.GetVolumePath(), size)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%s'", volDriver, volume.ID, uuid, size, volume.Status)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Resize remote exec failed", err)

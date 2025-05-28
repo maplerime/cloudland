@@ -349,7 +349,13 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		err = fmt.Errorf("Corrupted instance")
 		return
 	}
-	instance.Status = string(InstanceStatusResizing)
+	status := string(InstanceStatusResizing)
+	if instance.Status == status {
+		logger.Error("Instance is already resizing")
+		err = fmt.Errorf("Instance is already resizing")
+		return
+	}
+	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory
 	if instance.Disk == 0 {

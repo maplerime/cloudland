@@ -56,7 +56,7 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Invalid instance ID", err)
+		logger.Error("Invalid volume ID", err)
 		return
 	}
 	path := args[2]
