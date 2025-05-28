@@ -650,19 +650,12 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 		return
 	} else if c.Req.Method == "POST" {
 		size := c.QueryInt64("size")
-		if size < 0 {
-			logger.Error("Size must be greater than 0")
-			c.Data["ErrorMsg"] = "Size must be greater than 0"
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
 		if size <= int64(volume.Size) {
 			logger.Error("The size must be greater than the original size")
 			c.Data["ErrorMsg"] = "The size must be greater than the original size"
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
-
 		err = volumeAdmin.Resize(ctx, volume, int32(size))
 		if err != nil {
 			logger.Error("Resize failed", err)
