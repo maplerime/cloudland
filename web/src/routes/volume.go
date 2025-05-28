@@ -349,7 +349,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	if volume.Booting == true {
 		instanceID = volume.InstanceID
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%d' '%s' '%d' '%s'", instanceID, volDriver, volume.ID, uuid, size, originStatus)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%d' '%s' '%d' '%s'", volDriver, instanceID, volume.ID, uuid, size, originStatus)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Resize remote exec failed", err)
