@@ -321,7 +321,11 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-
+	if volume.Status == "resizing" || volume.Status == "error" {
+		logger.Error("Volume is already resizing or in error status")
+		err = fmt.Errorf("Volume is already resizing or in error status")
+		return
+	}
 	if size <= volume.Size {
 		logger.Error("The size must be greater than the original size")
 		err = fmt.Errorf("the size must be greater than the original size")
@@ -633,4 +637,57 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
+}
+
+func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	redirectTo := "/volumes"
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	volumeID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Volume ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	volume, err := volumeAdmin.Get(ctx, int64(volumeID))
+	if err != nil {
+		logger.Error("Volume query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Volume query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		c.Data["Link"] = fmt.Sprintf("/volumes/%d/resize", volumeID)
+		c.HTML(200, "volumes_resize")
+		return
+	} else if c.Req.Method == "POST" {
+		size := c.QueryInt64("memory")
+		if size < 0 {
+			logger.Error("Size must be greater than 0")
+			c.Data["ErrorMsg"] = "Size must be greater than 0"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if size <= int64(volume.Size) {
+			logger.Error("The size must be greater than the original size")
+			c.Data["ErrorMsg"] = "The size must be greater than the original size"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+
+		err = volumeAdmin.Resize(ctx, volume, int32(size))
+		if err != nil {
+			logger.Error("Resize failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
 }
