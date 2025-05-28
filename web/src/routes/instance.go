@@ -371,7 +371,7 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_vm.sh '%d' '%d' '%d'", instance.ID, cpu, memory)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Reinstall remote exec failed", err)
+		logger.Error("Resize remote exec failed", err)
 		return
 	}
 	return
@@ -1560,6 +1560,18 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 		}
 		newCpu := c.QueryInt64("cpu")
 		newMemory := c.QueryInt64("memory")
+		if newCpu < 0 {
+			logger.Error("CPU must be greater than 0")
+			c.Data["ErrorMsg"] = "CPU must be greater than 0"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if newMemory < 0 {
+			logger.Error("Memory must be greater than 0")
+			c.Data["ErrorMsg"] = "Memory must be greater than 0"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
 		if newCpu > 0 {
 			cpu = int32(newCpu)
 		}

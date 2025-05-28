@@ -302,6 +302,49 @@ func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err 
 	return a.Delete(ctx, volume)
 }
 
+func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int32) (err error) {
+	logger.Debugf("Resize volume %d with size %d", volume.ID, size)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, nil)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckOwner(model.Writer, "volumes", volume.ID)
+	if !permit {
+		logger.Error("Failed to check owner")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized to delete the instance")
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+
+	if size <= volume.Size {
+		logger.Error("The size must be greater than the original size")
+		return
+	}
+	if err = db.Model(volume).Update("size", size).Error; err != nil {
+		logger.Error("update volume failed", err)
+		return
+	}
+	control := fmt.Sprintf("inter=")
+	volDriver := GetVolumeDriver()
+	uuid := volume.UUID
+	if volDriver != "local" {
+		uuid = volume.GetOriginVolumeID()
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volum_%s.sh '%d' '%s' '%s' '%d'", volDriver, volume.ID, uuid, volume.GetVolumePath(), size)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Resize remote exec failed", err)
+		return
+	}
+	return
+}
+
 // list data volumes
 func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, volumes []*model.Volume, err error) {
 	return a.ListVolume(ctx, offset, limit, order, query, "all", "", 0)

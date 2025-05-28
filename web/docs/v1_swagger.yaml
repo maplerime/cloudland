@@ -316,10 +316,6 @@ definitions:
     type: object
   apis.InstancePatchPayload:
     properties:
-      flavor:
-        maxLength: 32
-        minLength: 1
-        type: string
       hostname:
         type: string
       power_action:
@@ -415,6 +411,15 @@ definitions:
         type: integer
       password:
         type: string
+    type: object
+  apis.InstanceResizePayload:
+    properties:
+      cpu:
+        minimum: 1
+        type: integer
+      memory:
+        minimum: 1
+        type: integer
     type: object
   apis.InstanceResponse:
     properties:
@@ -2079,6 +2084,39 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: reinstall a instance
+      tags:
+      - Compute
+  /instances/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a instance
       tags:
       - Compute
   /instances/{id}/set_user_password:
