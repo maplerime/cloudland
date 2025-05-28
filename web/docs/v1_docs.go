@@ -1272,6 +1272,56 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/instances/{id}/resize": {
+            "post": {
+                "description": "resize a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceResizePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/set_user_password": {
             "post": {
                 "description": "set user password for a instance",
@@ -3643,11 +3693,6 @@ const docTemplatev1 = `{
         "apis.InstancePatchPayload": {
             "type": "object",
             "properties": {
-                "flavor": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 1
-                },
                 "hostname": {
                     "type": "string"
                 },
@@ -3778,6 +3823,19 @@ const docTemplatev1 = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.InstanceResizePayload": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "memory": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
