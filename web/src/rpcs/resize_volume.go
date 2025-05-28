@@ -23,7 +23,7 @@ func ResizeVolume(ctx context.Context, args []string) (status string, err error)
 	logger.Debug("ResizeVolumeLocal", args)
 	db := DB()
 	argn := len(args)
-	if argn < 4 {
+	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
