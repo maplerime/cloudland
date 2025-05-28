@@ -37,7 +37,7 @@ fi
 qemu-img resize -q $vol_path "${vol_size}G"
 if [ $? -eq 0 ]; then
     if [ "$vm_ID" != "0" ]; then
-        virsh start $vm_ID
+        virsh start inst-$vm_ID
     fi
     echo "|:-COMMAND-:| resize_volume '$vol_ID' 'success'"
 else

@@ -344,6 +344,9 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
 	}
+	if volume.InstanceID != 0 {
+		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
