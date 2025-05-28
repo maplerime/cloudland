@@ -12,14 +12,14 @@ vol_state=$4
 vol_path="$volume_dir/volume-${vol_ID}.disk"
 if [ ! -f "$vol_path" ]; then
     echo "Volume file not found: $vol_path"
-    exit 1
+    exit -1
 fi
 
 old_size=$(qemu-img info $vol_path | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
 let new_size=$vol_size*1024*1024*1024
 
 # new size must be larger than current size
-if [ "$old_size" -gt "$new_size" ]; then
+if [ "$old_size" -ge "$new_size" ]; then
     echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' 'error' 'new size must be larger than current size'"
     exit -1
 fi
@@ -30,5 +30,5 @@ if [ $? -eq 0 ]; then
     echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' '$vol_state' 'success'"
 else
     echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' 'error' 'resize failed'"
-    exit 1
+    exit -1
 fi
