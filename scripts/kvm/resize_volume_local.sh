@@ -27,7 +27,7 @@ fi
 # resize the volume
 qemu-img resize -q $vol_path "${vol_size}G"
 if [ $? -eq 0 ]; then
-    echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' $vol_state '${new_size}G' 'success'"
+    echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' '$vol_state' 'success'"
 else
     echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'volume-${vol_ID}.disk' 'error' 'resize failed'"
     exit 1
