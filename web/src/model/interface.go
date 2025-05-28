@@ -24,7 +24,9 @@ type Interface struct {
 	FloatingIp     int64
 	Subnet         int64
 	RouterID       int64
-	Address        *Address `gorm:"foreignkey:Interface"`
+	AddressID      int64
+	Address        *Address `gorm:"foreignkey:AddressID"`
+	Addresses      []*Address `gorm:"foreignkey:Interface"`
 	SiteSubnets    []*Subnet `gorm:"foreignkey:Interface"`
 	Hyper          int32    `gorm:"default:-1"`
 	PrimaryIf      bool     `gorm:"default:false"`

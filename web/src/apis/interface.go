@@ -33,24 +33,31 @@ type InterfaceListResponse struct {
 	Interfaces []*InterfaceResponse `json:"interfaces"`
 }
 
+type AddressInfo struct {
+	MacAddress string `json:"mac_address"`
+	IPAddress  string `json:"ip_address"`
+}
+
 type InterfaceResponse struct {
 	*BaseReference
-	Subnet         *ResourceReference   `json:"subnet"`
-	MacAddress     string               `json:"mac_address"`
-	IPAddress      string               `json:"ip_address"`
-	IsPrimary      bool                 `json:"is_primary"`
-	Inbound        int32                `json:"inbound"`
-	Outbound       int32                `json:"outbound"`
-	SiteSubnets    []*SiteSubnetInfo    `json:"site_subnets,omitempty"`
-	FloatingIps    []*FloatingIpInfo    `json:"floating_ips,omitempty"`
-	SecurityGroups []*ResourceReference `json:"security_groups,omitempty"`
+	Subnet             *ResourceReference   `json:"subnet"`
+	MacAddress         string               `json:"mac_address"`
+	IPAddress          string               `json:"ip_address"`
+	SecondaryAddresses []*AddressInfo       `json:"secondary_addresses"`
+	IsPrimary          bool                 `json:"is_primary"`
+	Inbound            int32                `json:"inbound"`
+	Outbound           int32                `json:"outbound"`
+	SiteSubnets        []*SiteSubnetInfo    `json:"site_subnets,omitempty"`
+	FloatingIps        []*FloatingIpInfo    `json:"floating_ips,omitempty"`
+	SecurityGroups     []*ResourceReference `json:"security_groups,omitempty"`
 }
 
 type InterfacePayload struct {
-	Subnet         *BaseReference   `json:"subnet" binding:"required"`
+	Subnets        []*BaseReference `json:"subnets" binding:"required,gte=1,lte=16"`
 	IpAddress      string           `json:"ip_address", binding:"omitempty,ipv4"`
 	MacAddress     string           `json:"mac_address" binding:"omitempty,mac"`
-	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
+	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
+	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty,gte=1,lte=32"`
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound        int32            `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       int32            `json:"outbound" binding:"omitempty,min=0,max=20000"`

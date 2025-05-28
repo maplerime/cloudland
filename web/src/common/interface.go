@@ -204,6 +204,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		}
 		return
 	}
+	iface.AddressID = iface.Address.ID
 	return
 }
 

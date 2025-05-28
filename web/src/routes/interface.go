@@ -29,9 +29,10 @@ var (
 )
 
 type InterfaceInfo struct {
-	Subnet         *model.Subnet
+	Subnets        []*model.Subnet
 	MacAddress     string
 	IpAddress      string
+	Count          int
 	SiteSubnets    []*model.Subnet
 	Inbound        int32
 	Outbound       int32
