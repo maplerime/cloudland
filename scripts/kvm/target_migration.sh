@@ -78,7 +78,8 @@ if [ "$migration_type" = "cold" ]; then
         virsh attach-device $vm_ID $vol_xml --config --persistent
     done
 fi
-jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name"
+os_code=$(jq -r '.os_code' <<< $metadata)
+jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 [ "$migration_type" = "cold" ] && virsh start $vm_ID
 state="target_prepared"
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"

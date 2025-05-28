@@ -58,6 +58,7 @@ type FloatingIpListResponse struct {
 }
 
 type FloatingIpPayload struct {
+	PublicSubnet    *BaseReference   `json:"public_subnet" binding:"omitempty"`
 	PublicSubnets   []*BaseReference `json:"public_subnets" binding:"omitempty"`
 	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	PublicIp        string           `json:"public_ip" binding:"omitempty,ipv4"`
@@ -271,6 +272,29 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 			logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d", idleCountTotal, payload.ActivationCount)
 			ErrorResponse(c, http.StatusBadRequest, "Not enough idle addresses for public subnets", err)
 			return
+		}
+	} else {
+		if payload.PublicSubnet != nil {
+			subnet, err := subnetAdmin.GetSubnet(ctx, payload.PublicSubnet)
+			if err != nil {
+				logger.Errorf("Failed to get public subnet %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get public subnet", err)
+				return
+			}
+			var idleCount int64
+			idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
+			if err != nil {
+				logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+				return
+			}
+			if idleCount < int64(activationCount) {
+				logger.Errorf("Not enough idle addresses for public subnet, idleCount: %d, activationCount: %d", idleCount, payload.ActivationCount)
+				ErrorResponse(c, http.StatusBadRequest, "Not enough idle addresses for public subnet", err)
+				return
+			}
+			publicSubnets = append(publicSubnets, subnet)
+		} else {
+			publicSubnets = make([]*model.Subnet, 0)
 		}
 	}
 

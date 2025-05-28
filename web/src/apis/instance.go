@@ -480,6 +480,18 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 		Subnet:        subnet,
 		AllowSpoofing: ifacePayload.AllowSpoofing,
 	}
+	for _, ipSite := range ifacePayload.SiteSubnets {
+		var site *model.Subnet
+		site, err = subnetAdmin.GetSubnet(ctx, ipSite)
+		if err != nil {
+			return
+		}
+		if site.Interface > 0 {
+			err = fmt.Errorf("Site subnet is not available")
+			return
+		}
+		ifaceInfo.SiteSubnets = append(ifaceInfo.SiteSubnets, site)
+	}
 	if ifacePayload.IpAddress != "" {
 		ifaceInfo.IpAddress = ifacePayload.IpAddress
 	}

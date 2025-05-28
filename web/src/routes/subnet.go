@@ -138,7 +138,7 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 			return
 		}
 	}
-	if subnet.Type != "public" {
+	if subnet.Type == "internal" {
 		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
@@ -166,7 +166,7 @@ func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet 
 			return
 		}
 	}
-	if subnet.Type != "public" {
+	if subnet.Type == "internal" {
 		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
@@ -194,7 +194,7 @@ func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet 
 			return
 		}
 	}
-	if subnet.Type != "public" {
+	if subnet.Type == "internal" {
 		permit := memberShip.ValidateOwner(model.Reader, subnet.Owner)
 		if !permit {
 			logger.Error("Not authorized to read the subnet")
@@ -292,7 +292,7 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = CreateInterface(ctx, subnet, router.ID, router.Owner, router.Hyper, 0, 0, subnet.Gateway, "", "subnet-gw", "gateway", nil)
+	_, err = CreateInterface(ctx, subnet, router.ID, router.Owner, router.Hyper, 0, 0, subnet.Gateway, "", "subnet-gw", "gateway", nil, false)
 	if err != nil {
 		logger.Error("Failed to create gateway subnet interface", err)
 		return
@@ -519,7 +519,7 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	return idleCount, nil
 }
 
-func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, subnets []*model.Subnet, err error) {
+func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -532,18 +532,17 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	if where != "" {
-		where = fmt.Sprintf("type = 'public' or %s", where)
+		where = fmt.Sprintf("type = 'public' or type = 'site' or %s", where)
 	}
 	subnets = []*model.Subnet{}
-	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Subnet{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Preload("Group").Where(where).Where(query).Find(&subnets).Error; err != nil {
+	if err = db.Preload("Group").Preload("Router").Where(where).Where(query).Where(intQuery).Find(&subnets).Error; err != nil {
 		return
 	}
-
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckPermission(model.Writer)
 	if permit {
 		db = db.Offset(0).Limit(-1)
 		for _, subnet := range subnets {
@@ -581,7 +580,7 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 	if query != "" {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr)
+	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
