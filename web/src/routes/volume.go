@@ -667,7 +667,7 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 		c.HTML(200, "volumes_resize")
 		return
 	} else if c.Req.Method == "POST" {
-		size := c.QueryInt64("memory")
+		size := c.QueryInt64("size")
 		if size < 0 {
 			logger.Error("Size must be greater than 0")
 			c.Data["ErrorMsg"] = "Size must be greater than 0"
