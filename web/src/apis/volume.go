@@ -291,6 +291,16 @@ func (v *VolumeAPI) List(c *gin.Context) {
 	c.JSON(http.StatusOK, volumeListResp)
 }
 
+// @Summary resize a volume
+// @Description resize a volume
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   message	body   VolumeResizePayload  true   "Volume resize payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /volumes/{id}/resize [post]
 func (v *VolumeAPI) Resize(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")

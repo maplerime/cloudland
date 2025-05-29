@@ -2979,6 +2979,49 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/volumes/{id}/resize": {
+            "post": {
+                "description": "resize a volume",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a volume",
+                "parameters": [
+                    {
+                        "description": "Volume resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeResizePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/vpcs": {
             "get": {
                 "description": "list vpcs",
@@ -4953,6 +4996,18 @@ const docTemplatev1 = `{
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.VolumeResizePayload": {
+            "type": "object",
+            "required": [
+                "size"
+            ],
+            "properties": {
+                "size": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },

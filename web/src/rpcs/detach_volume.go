@@ -48,7 +48,7 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 	}
 	volume.InstanceID = 0
 	volume.Target = ""
-	volume.Status = "available"
+	volume.Status = string(VolumeStatusAvailable)
 	err = db.Save(volume).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
