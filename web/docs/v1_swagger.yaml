@@ -1173,6 +1173,14 @@ definitions:
     - name
     - size
     type: object
+  apis.VolumeResizePayload:
+    properties:
+      size:
+        minimum: 1
+        type: integer
+    required:
+    - size
+    type: object
   apis.VolumeResponse:
     properties:
       booting:
@@ -3261,6 +3269,34 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a volume
+      parameters:
+      - description: Volume resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a volume
       tags:
       - Compute
   /vpcs:
