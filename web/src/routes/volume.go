@@ -204,7 +204,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		uuid = volume.GetOriginVolumeID()
 	}
 	// RN-156: append the volume UUID to the command
-	if volume.InstanceID > 0 && instID == 0 && volume.Status == "attached" {
+	if volume.InstanceID > 0 && instID == 0 && volume.Status == string(VolumeStatusAttached) {
 		if volume.Booting {
 			logger.Error("Boot volume can not be detached")
 			err = fmt.Errorf("Boot volume can not be detached")
@@ -221,7 +221,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		// the instance ID should be set to 0 after the volume is detached successfully (after script executed successfully)
 		//volume.Instance = nil
 		//volume.InstanceID = 0
-	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == "available" {
+	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == string(VolumeStatusAvailable) {
 		instance := &model.Instance{Model: model.Model{ID: instID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
@@ -263,7 +263,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 
-	if volume.Status == "attached" {
+	if volume.Status == string(VolumeStatusAttached) {
 		logger.Error("Please detach volume before delete it")
 		err = fmt.Errorf("Please detach volume[%s] before delete it", volume.Name)
 		return
@@ -333,7 +333,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	}
 	if err = db.Model(volume).Updates(map[string]interface{}{
 		"size":   size,
-		"status": "resizing",
+		"status": VolumeStatusResizing,
 	}).Error; err != nil {
 		logger.Error("update volume failed", err)
 		return

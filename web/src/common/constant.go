@@ -10,6 +10,7 @@ package common
 type PowerAction string
 type SubnetType string
 type InstanceStatus string
+type VolumeStatus string
 
 const (
 	Stop        PowerAction = "stop"
@@ -35,6 +36,10 @@ const (
 	InstanceStatusResizing     InstanceStatus = "resizing"
 	InstanceStatusDeleting     InstanceStatus = "deleting"
 	InstanceStatusDeleted      InstanceStatus = "deleted"
+
+	VolumeStatusResizing  VolumeStatus = "resizing"
+	VolumeStatusAvailable VolumeStatus = "available"
+	VolumeStatusAttached  VolumeStatus = "attached"
 )
 
 var SignedSeret = []byte("Red B")
