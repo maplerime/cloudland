@@ -170,10 +170,12 @@ func New() (m *macaron.Macaron) {
 	m.Get("/floatingips/new", floatingIpView.New)
 	m.Post("/floatingips/new", floatingIpView.Create)
 	m.Delete("/floatingips/:id", floatingIpView.Delete)
+	/*
 	m.Get("/portmaps", portmapView.List)
 	m.Get("/portmaps/new", portmapView.New)
 	m.Post("/portmaps/new", portmapView.Create)
 	m.Delete("/portmaps/:id", portmapView.Delete)
+	*/
 	m.Get("/routers", routerView.List)
 	m.Get("/routers/new", routerView.New)
 	m.Post("/routers/new", routerView.Create)

@@ -34,16 +34,15 @@ type InterfaceListResponse struct {
 }
 
 type AddressInfo struct {
-	MacAddress string `json:"mac_address"`
-	IPAddress  string `json:"ip_address"`
+	IPAddress string `json:"ip_address"`
+	Subnet    *ResourceReference   `json:"subnet"`
 }
 
 type InterfaceResponse struct {
 	*BaseReference
-	Subnet             *ResourceReference   `json:"subnet"`
-	MacAddress         string               `json:"mac_address"`
-	IPAddress          string               `json:"ip_address"`
+	Address            *AddressInfo         `json:"-"`
 	SecondaryAddresses []*AddressInfo       `json:"secondary_addresses"`
+	MacAddress         string               `json:"mac_address"`
 	IsPrimary          bool                 `json:"is_primary"`
 	Inbound            int32                `json:"inbound"`
 	Outbound           int32                `json:"outbound"`
@@ -53,7 +52,8 @@ type InterfaceResponse struct {
 }
 
 type InterfacePayload struct {
-	Subnets        []*BaseReference `json:"subnets" binding:"required,gte=1,lte=16"`
+	Subnet         *BaseReference   `json:"subnet" binding:"omitempty"`
+	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=16"`
 	IpAddress      string           `json:"ip_address", binding:"omitempty,ipv4"`
 	MacAddress     string           `json:"mac_address" binding:"omitempty,mac"`
 	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
@@ -115,15 +115,17 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			ID:   iface.UUID,
 			Name: iface.Name,
 		},
+		Address: &AddressInfo{
+			IPAddress:  iface.Address.Address,
+			Subnet: &ResourceReference{
+				ID:   iface.Address.Subnet.UUID,
+				Name: iface.Address.Subnet.Name,
+			},
+		},
 		MacAddress: iface.MacAddr,
-		IPAddress:  iface.Address.Address,
 		IsPrimary:  iface.PrimaryIf,
 		Inbound:    iface.Inbound,
 		Outbound:   iface.Outbound,
-		Subnet: &ResourceReference{
-			ID:   iface.Address.Subnet.UUID,
-			Name: iface.Address.Subnet.Name,
-		},
 	}
 	if iface.PrimaryIf {
 		if len(instance.FloatingIps) > 0 {

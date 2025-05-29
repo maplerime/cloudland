@@ -10,8 +10,8 @@ vm_ID=inst-$ID
 os_code=$2
 update_meta=$3
 
-sites=$(cat)
-nsite=$(jq length <<< $sites)
+more_addresses=$(cat)
+naddrs=$(jq length <<< $more_addresses)
 if [ "$os_code" = "windows" ]; then
     count=0
     for i in {1..240}; do
@@ -23,17 +23,11 @@ if [ "$os_code" = "windows" ]; then
 	sleep 5
     done
     i=0
-    while [ $i -lt $nsite ]; do
-        site_addrs=$(jq -r ".[$i].addresses" <<<$sites)
-        naddr=$(jq length <<<$site_addrs)
-        j=0
-        while [ $j -lt $naddr ]; do
-            read -d'\n' -r address < <(jq -r ".[$j]" <<<$site_addrs)
-	    read -d'\n' -r site_ip netmask  < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
-            virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","add","address","name=eth0","addr='"$site_ip"'","mask='"$netmask"'"],"capture-output":true}}'
-	    let j=$j+1
-        done
-	let i=$i+1
+    while [ $i -lt $naddrs ]; do
+        read -d'\n' -r address < <(jq -r ".[$j]" <<<$more_addresses)
+        read -d'\n' -r ip netmask  < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
+        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","add","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
+        let i=$i+1
     done
 elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
     tmp_mnt=/tmp/mnt-$vm_ID

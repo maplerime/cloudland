@@ -154,7 +154,7 @@
 
                                     <div class="ui multiple selection dropdown">
 
-                                      <input name="subnets" id="subnets" type="hidden">
+                                      <input name="primary" id="primary" type="hidden">
 
                                       <i class="dropdown icon"></i>
 
@@ -177,6 +177,14 @@
                                       </div>
 
                                     </div>
+
+                                </div>
+
+                                <div class="required inline field">
+
+                                    <label for="ip_count">{{.i18n.Tr "IP Count"}}</label>
+
+                                    <input id="ip_count" name="ip_count" value="1" required>
 
                                 </div>
 

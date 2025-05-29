@@ -35,41 +35,41 @@ type SecurityData struct {
 }
 
 type NetworkRoute struct {
-        Network string `json:"network"`
-        Netmask string `json:"netmask"`
-        Gateway string `json:"gateway"`
+	Network string `json:"network"`
+	Netmask string `json:"netmask"`
+	Gateway string `json:"gateway"`
 }
 
 type InstanceNetwork struct {
-        Type    string          `json:"type,omitempty"`
-        Address string          `json:"ip_address"`
-        Netmask string          `json:"netmask"`
-        Link    string          `json:"link"`
-        ID      string          `json:"id"`
-        Routes  []*NetworkRoute `json:"routes,omitempty"`
+	Type    string          `json:"type,omitempty"`
+	Address string          `json:"ip_address"`
+	Netmask string          `json:"netmask"`
+	Link    string          `json:"link"`
+	ID      string          `json:"id"`
+	Routes  []*NetworkRoute `json:"routes,omitempty"`
 }
 
 type SiteIpSubnetInfo struct {
-	SiteID    int64         `json:"site_id"`
-	SiteVlan  int64         `json:"site_vlan"`
-	InternalIp string        `json:"internal_ip"`
-	Gateway   string        `json:"gateway"`
-	Addresses []string     `json:"addresses"`
+	SiteID     int64    `json:"site_id"`
+	SiteVlan   int64    `json:"site_vlan"`
+	InternalIp string   `json:"internal_ip"`
+	Gateway    string   `json:"gateway"`
+	Addresses  []string `json:"addresses"`
 }
 
 type VlanInfo struct {
-	Device        string              `json:"device"`
-	Vlan          int64               `json:"vlan"`
-	Gateway       string              `json:"gateway"`
-	Router        int64               `json:"router"`
-	PublicLink    int64               `json:"public_link"`
-	Inbound       int32               `json:"inbound"`
-	Outbound      int32               `json:"outbound"`
-	AllowSpoofing bool                `json:"allow_spoofing"`
-	IpAddr        string              `json:"ip_address"`
-	MacAddr       string              `json:"mac_address"`
-	SecRules      []*SecurityData     `json:"security"`
-	SitesIpInfo    []*SiteIpSubnetInfo `json:"sites_ip_info"`
+	Device        string          `json:"device"`
+	Vlan          int64           `json:"vlan"`
+	Gateway       string          `json:"gateway"`
+	Router        int64           `json:"router"`
+	PublicLink    int64           `json:"public_link"`
+	Inbound       int32           `json:"inbound"`
+	Outbound      int32           `json:"outbound"`
+	AllowSpoofing bool            `json:"allow_spoofing"`
+	IpAddr        string          `json:"ip_address"`
+	MacAddr       string          `json:"mac_address"`
+	SecRules      []*SecurityData `json:"security"`
+	MoreAddresses []string        `json:"more_addresses"`
 }
 
 func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
@@ -115,7 +115,11 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	}
 	address.Allocated = true
 	address.Type = addrType
-	address.Interface = ifaceID
+	if addrType == "second" {
+		address.SecondInterface = ifaceID
+	} else {
+		address.Interface = ifaceID
+	}
 	if err = db.Model(address).Update(address).Error; err != nil {
 		logger.Error("Failed to Update address, %v", err)
 		return nil, err
@@ -204,7 +208,6 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		}
 		return
 	}
-	iface.AddressID = iface.Address.ID
 	return
 }
 
@@ -304,18 +307,18 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 	return
 }
 
-func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, siteSubnets []*model.Subnet, netID int) (instNetworks []*InstanceNetwork, sitesInfo []*SiteIpSubnetInfo, err error) {
-        ctx, db := GetContextDB(ctx)
-        subnet := iface.Address.Subnet
-        address := strings.Split(iface.Address.Address, "/")[0]
-        instNetwork := &InstanceNetwork{
-                Address: address,
-                Netmask: subnet.Netmask,
-                Type:    "ipv4",
-                Link:    iface.Name,
-                ID:      fmt.Sprintf("network%d-0", netID),
-        }
-        toUpdate := true
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, siteSubnets []*model.Subnet, netID int) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
+	ctx, db := GetContextDB(ctx)
+	subnet := iface.Address.Subnet
+	address := strings.Split(iface.Address.Address, "/")[0]
+	instNetwork := &InstanceNetwork{
+		Address: address,
+		Netmask: subnet.Netmask,
+		Type:    "ipv4",
+		Link:    iface.Name,
+		ID:      fmt.Sprintf("network%d-0", netID),
+	}
+	toUpdate := true
 	if iface.PrimaryIf {
 		gateway := strings.Split(subnet.Gateway, "/")[0]
 		instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
@@ -344,19 +347,29 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 			return
 		}
 	}
+	osCode := GetImageOSCode(ctx, instance)
+	if len(iface.SecondAddresses) > 0 {
+		for i, addr := range iface.SecondAddresses {
+			if osCode == "linux" {
+				subnet := addr.Subnet
+				address := strings.Split(addr.Address, "/")[0]
+				instNetworks = append(instNetworks, &InstanceNetwork{
+					Address: address,
+					Netmask: subnet.Netmask,
+					Type:    "ipv4",
+					Link:    iface.Name,
+					ID:      fmt.Sprintf("network%d-%d", netID, i+1),
+				})
+			}
+			moreAddresses = append(moreAddresses, addr.Address)
+		}
+	}
 	if len(siteSubnets) > 0 {
-		osCode := GetImageOSCode(ctx, instance)
 		for _, site := range siteSubnets {
 			if site.Vlan != subnet.Vlan {
 				err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
 				logger.Errorf("Site subnets and primary subnet must be with same vlan")
 				return
-			}
-			siteInfo := &SiteIpSubnetInfo{
-				SiteID: site.ID,
-				SiteVlan: site.Vlan,
-				InternalIp: iface.Address.Address,
-				Gateway: site.Gateway,
 			}
 			siteAddrs := []*model.Address{}
 			err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
@@ -375,9 +388,8 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 						ID:      fmt.Sprintf("network%d-%d", netID, i+1),
 					})
 				}
-				siteInfo.Addresses = append(siteInfo.Addresses, addr.Address)
+				moreAddresses = append(moreAddresses, addr.Address)
 			}
-			sitesInfo = append(sitesInfo, siteInfo)
 			if toUpdate {
 				site.Interface = iface.ID
 				err = db.Model(site).Updates(site).Error
@@ -388,5 +400,5 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 			}
 		}
 	}
-        return
+	return
 }
