@@ -354,10 +354,11 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			}
 			cpu, memory = flavor.Cpu, flavor.Memory
 		}
-		instance.Cpu = cpu
-		instance.Memory = memory
-		instance.Disk = size
-		if err = db.Model(instance).Updates(instance).Error; err != nil {
+		if err = db.Model(instance).Updates(map[string]interface{}{
+			"cpu":    cpu,
+			"memory": memory,
+			"disk":   size,
+		}).Error; err != nil {
 			logger.Error("DB: update instance failed", err)
 			return
 		}
