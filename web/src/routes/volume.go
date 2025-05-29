@@ -338,6 +338,30 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		logger.Error("update volume failed", err)
 		return
 	}
+	if volume.Booting {
+		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
+		if err = db.Model(instance).Take(instance).Error; err != nil {
+			logger.Error("DB: query instance failed", err)
+			return
+		}
+		cpu, memory := instance.Cpu, instance.Memory
+		if instance.Cpu == 0 {
+			var flavor *model.Flavor
+			flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
+			if err != nil {
+				logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+				return
+			}
+			cpu, memory = flavor.Cpu, flavor.Memory
+		}
+		instance.Cpu = cpu
+		instance.Memory = memory
+		instance.Disk = size
+		if err = db.Model(instance).Updates(instance).Error; err != nil {
+			logger.Error("DB: update instance failed", err)
+			return
+		}
+	}
 	control := fmt.Sprintf("inter=")
 	volDriver := GetVolumeDriver()
 	uuid := volume.UUID
