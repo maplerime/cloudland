@@ -1,6 +1,6 @@
 export GO111MODULE=on
 
-all: base api
+all: base api alarm_rules_manager
 
 version:
 	git describe --always --tags > .version
@@ -17,6 +17,9 @@ base: version
 
 api: version
 	cd cmds/api && go build -o ../../clapi -ldflags "-X \"main.Version=`cat ../../.version`\""
+
+alarm_rules_manager: version
+	cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o ../../alarm_rules_manager -ldflags "-X \"main.Version=`cat ../../.version`\"" alarm_rules_manager.go
 
 test:
 	go test ./...
