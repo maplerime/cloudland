@@ -9,6 +9,7 @@ package apis
 
 import (
 	"fmt"
+	"github.com/spf13/viper"
 	"net/http"
 
 	. "web/src/common"
@@ -22,9 +23,10 @@ var consoleAPI = &ConsoleAPI{}
 type ConsoleAPI struct{}
 
 type ConsoleResponse struct {
-	Instance   *ResourceReference `json:"instance"`
-	Token      string             `json:"token"`
-	ConsoleURL string             `json:"console_url"`
+	Instance      *ResourceReference `json:"instance"`
+	Token         string             `json:"token"`
+	ConsoleURL    string             `json:"console_url"`
+	ConsoleWebURL string             `json:"console_web_url"`
 }
 
 // @Summary create a console
@@ -54,14 +56,18 @@ func (v *ConsoleAPI) Create(c *gin.Context) {
 		return
 	}
 	consoleURL := fmt.Sprintf("wss://%s/websockify?token=%s", c.Request.Host, token)
+	accessAddr := viper.GetString("console.host")
+	accessPort := viper.GetInt("console.port")
+	consoleWebURL := fmt.Sprintf("https://novnc.com/noVNC/vnc.html?host=%s&port=%d&autoconnect=true&encrypt=true&path=websockify?token=%s", accessAddr, accessPort, token)
 	owner := orgAdmin.GetOrgName(instance.Owner)
 	consoleResp := &ConsoleResponse{
 		Instance: &ResourceReference{
 			ID:    instance.UUID,
 			Owner: owner,
 		},
-		Token:      token,
-		ConsoleURL: consoleURL,
+		Token:         token,
+		ConsoleURL:    consoleURL,
+		ConsoleWebURL: consoleWebURL,
 	}
 	logger.Debugf("Console URL for instance %s : %s", uuID, consoleURL)
 	c.JSON(http.StatusOK, consoleResp)
