@@ -643,22 +643,16 @@
 - name: Compile and deploy alarm_rules_manager
   tags: [monitor]
   block:
-    - name: Copy alarm_rules_manager binary directly to Prometheus server
+    - name: Copy alarm_rules_manager binary to Prometheus server
       delegate_to: "{{ prometheus_server_ip }}"
       become: true
       copy:
-        src: /opt/cloudland/web/bin
-        dest: /opt/cloudland/web/bin/
+        src: /opt/cloudland/web/alarm_rules_manager
+        dest: /opt/cloudland/web/alarm_rules_manager
         mode: 0755
-        owner: cland
-        group: cland
-        remote_src: no
-
-    - name: Clean up build directory
-      delegate_to: localhost
-      file:
-        path: /tmp/alarm_build
-        state: absent
+        owner: prometheus
+        group: prometheus
+        remote_src: yes
 
     - name: Create alarm_rules_manager service file
       delegate_to: "{{ prometheus_server_ip }}"

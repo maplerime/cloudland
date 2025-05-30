@@ -18,8 +18,8 @@ base: version
 api: version
 	cd cmds/api && go build -o ../../clapi -ldflags "-X \"main.Version=`cat ../../.version`\""
 
-alarm_rules_manager:
-	cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o ../../alarm_rules_manager  alarm_rules_manager.go
+alarm_rules_manager: version
+	cd cmds/alarm_rules_manager && CGO_ENABLED=0 go build -o ../../alarm_rules_manager -ldflags "-X \"main.Version=`cat ../../.version`\"" alarm_rules_manager.go
 
 test:
 	go test ./...
