@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 cd `dirname $0`
 source ../../cloudrc
@@ -24,7 +24,7 @@ if [ "$os_code" = "windows" ]; then
     done
     i=0
     while [ $i -lt $naddrs ]; do
-        read -d'\n' -r address < <(jq -r ".[$j]" <<<$more_addresses)
+        read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
         read -d'\n' -r ip netmask  < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
         virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","add","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
         let i=$i+1
