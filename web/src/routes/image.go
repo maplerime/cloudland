@@ -229,6 +229,32 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	return
 }
 
+func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string) (err error) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		logger.Error("Not authorized to update image")
+		err = fmt.Errorf("Not Authorized")
+		return
+	}
+	image.OSCode = osCode
+	image.Name = name
+	image.OsVersion = osVersion
+	image.UserName = userName
+	err = db.Model(image).Updates(image).Error
+	if err != nil {
+		logger.Error("Failed to save image", err)
+		return
+	}
+	return
+}
+
 func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
 	db := DB()
 	if limit == 0 {

@@ -55,6 +55,10 @@ type ImagePayload struct {
 }
 
 type ImagePatchPayload struct {
+	Name      string `json:"name" binding:"required,min=2,max=32"`
+	OSCode    string `json:"os_code" binding:"required,oneof=linux windows other"`
+	OSVersion string `json:"os_version" binding:"required,min=2,max=32"`
+	User      string `json:"user" binding:"required,min=2,max=32"`
 }
 
 // @Summary get a image
@@ -97,7 +101,35 @@ func (v *ImageAPI) Get(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /images/{id} [patch]
 func (v *ImageAPI) Patch(c *gin.Context) {
-	imageResp := &ImageResponse{}
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Patch image %s", uuID)
+	image, err := imageAdmin.GetImageByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get image %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid image query", err)
+		return
+	}
+	payload := &ImagePatchPayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User)
+	if err != nil {
+		logger.Errorf("Patch image failed, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch image failed", err)
+		return
+	}
+	imageResp, err := v.getImageResponse(ctx, image)
+	if err != nil {
+		logger.Errorf("Failed to create image response, %+v", err)
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	logger.Debugf("Patch image %s success, response: %+v", uuID, imageResp)
 	c.JSON(http.StatusOK, imageResp)
 }
 
