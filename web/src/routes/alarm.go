@@ -1083,6 +1083,39 @@ func CheckFileExists(path string) (bool, error) {
 	}
 }
 
+func handleAlarmRuleError(c *macaron.Context, err error) {
+	// Define error type mapping
+	errorResponses := map[string]struct {
+		status  int
+		message string
+	}{
+		"already exists":    {http.StatusConflict, "Rule already exists"},
+		"not found":         {http.StatusNotFound, "Rule not found"},
+		"invalid rule":      {http.StatusBadRequest, "Invalid rule configuration"},
+		"permission denied": {http.StatusForbidden, "Permission denied"},
+		"database error":    {http.StatusInternalServerError, "Database operation failed"},
+		"invalid uuid":      {http.StatusBadRequest, "Invalid rule ID"},
+		"in use":            {http.StatusConflict, "Rule is currently in use"},
+	}
+
+	// Iterate through error type mapping
+	for errType, response := range errorResponses {
+		if strings.Contains(strings.ToLower(err.Error()), errType) {
+			c.JSON(response.status, map[string]interface{}{
+				"error":   response.message,
+				"details": err.Error(),
+			})
+			return
+		}
+	}
+
+	// Default error handling
+	c.JSON(http.StatusInternalServerError, map[string]interface{}{
+		"error":   "Operation failed",
+		"details": err.Error(),
+	})
+}
+
 func (a *AlarmOperator) GetNodeAlarmRules(ctx context.Context, uuid string) ([]model.NodeAlarmRule, error) {
 	ctx, db := common.GetContextDB(ctx)
 	var rules []model.NodeAlarmRule
@@ -1504,7 +1537,8 @@ func (v *AlarmView) CreateNodeAlarmRule(c *macaron.Context) {
 	// ... existing code to call createNodeAlarmRuleInternal and handle response ...
 	rulePtr, err := createNodeAlarmRuleInternal(c.Req.Context(), &rule)
 	if err != nil {
-		// ... existing error handling ...
+		handleAlarmRuleError(c, err)
+		return
 	}
 
 	c.JSON(http.StatusCreated, map[string]interface{}{
