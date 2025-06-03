@@ -1,3 +1,9 @@
+// Package main provides the alarm rules manager service
+// @title Alarm Rules Manager API
+// @version 1.0
+// @description API for managing Prometheus alarm rules
+// @host localhost:8256
+// @BasePath /api/v1/rules
 package main
 
 import (
@@ -10,15 +16,34 @@ import (
 	"strconv"
 	"strings"
 
+	_ "web/docs/alarm_rules_manager"
+
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
+// RuleFileRequest represents a request for rule file operations
+// @Description Request for rule file operations
 type RuleFileRequest struct {
+	// Operation type: write, symlink, chown, reload, delete, read, check
+	// @Description Operation type to perform
+	// @Required
+	// @Enum(write,symlink,chown,reload,delete,read,check)
 	Operation string `json:"operation"`
-	FileUser  string `json:"file_user"`
-	Content   string `json:"content"`
-	FilePath  string `json:"file_path"`
-	LinkPath  string `json:"link_path"`
+	// File owner username
+	// @Description Username to set as file owner (required for chown operation)
+	FileUser string `json:"file_user"`
+	// File content for write operation
+	// @Description Content to write to file (required for write operation)
+	Content string `json:"content"`
+	// Source file path
+	// @Description Path of the source file (required for all operations except reload)
+	// @Required
+	FilePath string `json:"file_path"`
+	// Target path for symlink
+	// @Description Path for symlink target (required for symlink operation)
+	LinkPath string `json:"link_path"`
 }
 
 type AlarmRulesManager struct {
@@ -37,18 +62,85 @@ func NewAlarmRulesManager(port int, certFile, keyFile string) *AlarmRulesManager
 }
 
 // RegisterRoutes registers Prometheus related API routes
+// @Summary Register rule management API routes
+// @Description Register API routes for managing Prometheus rule files
+// @Tags rules
+// @Accept json
+// @Produce json
+// @Router /api/v1/rules [post]
 func (s *AlarmRulesManager) RegisterRoutes(router *gin.Engine) {
 	api := router.Group("/api/v1/rules")
 	{
+		// @Summary Write rule file
+		// @Description Write content to a rule file
+		// @Tags rules
+		// @Accept json
+		// @Produce json
+		// @Param request body RuleFileRequest true "Rule file write request"
+		// @Success 200 {object} map[string]interface{} "Write successful"
+		// @Failure 400 {object} map[string]interface{} "Invalid request"
+		// @Failure 500 {object} map[string]interface{} "Internal server error"
+		// @Router /api/v1/rules/file [post]
 		api.POST("/file", s.handleRuleFile)
+		// @Summary Create symlink for rule file
+		// @Description Create a symbolic link for a rule file
+		// @Tags rules
+		// @Accept json
+		// @Produce json
+		// @Param request body RuleFileRequest true "Symlink creation request"
+		// @Success 200 {object} map[string]interface{} "Symlink created successfully"
+		// @Failure 400 {object} map[string]interface{} "Invalid request"
+		// @Failure 500 {object} map[string]interface{} "Internal server error"
+		// @Router /api/v1/rules/symlink [post]
 		api.POST("/symlink", s.handleRuleFile)
+		// @Summary Change file ownership
+		// @Description Change ownership of a file or symlink
+		// @Tags rules
+		// @Accept json
+		// @Produce json
+		// @Param request body RuleFileRequest true "Chown request"
+		// @Success 200 {object} map[string]interface{} "Ownership changed successfully"
+		// @Failure 400 {object} map[string]interface{} "Invalid request"
+		// @Failure 500 {object} map[string]interface{} "Internal server error"
+		// @Router /api/v1/rules/chown [post]
 		api.POST("/chown", s.handleRuleFile)
+		// @Summary Reload Prometheus configuration
+		// @Description Trigger a reload of Prometheus configuration
+		// @Tags rules
+		// @Accept json
+		// @Produce json
+		// @Param request body RuleFileRequest true "Reload request"
+		// @Success 200 {object} map[string]interface{} "Reload successful"
+		// @Failure 400 {object} map[string]interface{} "Invalid request"
+		// @Failure 500 {object} map[string]interface{} "Internal server error"
+		// @Router /api/v1/rules/reload [post]
 		api.POST("/reload", s.handleRuleFile)
+		// @Summary Delete rule file
+		// @Description Delete a rule file or files matching a pattern
+		// @Tags rules
+		// @Accept json
+		// @Produce json
+		// @Param request body RuleFileRequest true "Delete request"
+		// @Success 200 {object} map[string]interface{} "Delete successful"
+		// @Failure 400 {object} map[string]interface{} "Invalid request"
+		// @Failure 500 {object} map[string]interface{} "Internal server error"
+		// @Router /api/v1/rules/delete [post]
 		api.POST("/delete", s.handleRuleFile)
 	}
+	router.GET("/swagger/api/v1/*any", ginSwagger.WrapHandler(swaggerFiles.NewHandler(), ginSwagger.InstanceName("v1")))
 }
 
 // handleRuleFile handles rule file operation requests
+// @Summary Handle rule file operations
+// @Description Handle various operations on rule files (write, symlink, chown, reload, delete, read, check)
+// @Tags rules
+// @Accept json
+// @Produce json
+// @Param request body RuleFileRequest true "Rule file operation request"
+// @Success 200 {object} map[string]interface{} "Operation successful"
+// @Failure 400 {object} map[string]interface{} "Invalid request"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/rules/{operation} [post]
 func (s *AlarmRulesManager) handleRuleFile(c *gin.Context) {
 	var req RuleFileRequest
 	fmt.Printf("request received: %s %s\n", c.Request.Method, c.Request.URL.Path)

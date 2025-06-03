@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
-	_ "web/docs"
+	_ "web/docs/routes"
 	"web/src/utils/log"
 
 	"github.com/gin-gonic/gin"

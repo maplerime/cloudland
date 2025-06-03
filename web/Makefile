@@ -9,8 +9,14 @@ setup:
 	go install github.com/swaggo/swag/cmd/swag@latest
 	go install golang.org/x/tools/cmd/goimports@latest
 
-docs:
-	swag i -g routes.go -dir src/apis,src/common --instanceName v1
+routes_docs:
+	swag i -g routes.go -dir src/apis,src/common --instanceName v1 -o docs/routes
+
+alarm_rules_manager_docs:
+	cd cmds/alarm_rules_manager && swag i -g alarm_rules_manager.go -dir .,../../src/common,../../src/apis --instanceName alarm_v1 -o ../../docs/alarm_rules_manager
+
+docs: routes_docs alarm_rules_manager_docs
+
 
 base: version
 	cd cmds/base && go build -o ../../clbase -ldflags "-X \"main.Version=`cat ../../.version`\""
