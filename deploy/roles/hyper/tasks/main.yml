@@ -297,7 +297,6 @@
   pip:
     name: docker
     executable: pip3
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Check if Docker is running
@@ -314,7 +313,6 @@
     name: docker.io
     state: present
   when: docker_status.rc != 0
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Start Docker service if not running
@@ -324,7 +322,6 @@
     state: started
     enabled: yes
   when: docker_status.rc != 0
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Run libvirt-exporter in Docker
@@ -338,7 +335,6 @@
       - "/var/run/libvirt:/var/run/libvirt"
     privileged: yes
     restart_policy: always
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Create directory for monitor scripts
@@ -372,7 +368,6 @@
   ignore_errors: yes
   changed_when: false
   when: pkg_install is succeeded
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Ensure systemd override directory exists
@@ -382,7 +377,6 @@
     owner: root
     group: root
     mode: '0755'
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Configure Node Exporter with textfile directory
@@ -396,7 +390,6 @@
     mode: '0644'
     owner: root
     group: root
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Apply systemd configuration changes
@@ -405,7 +398,6 @@
     daemon_reload: yes
     name: prometheus-node-exporter
   changed_when: false
-  ignore_errors: yes
   tags: [monitor]
 
 - name: Ensure service started with new config is enabled and started
@@ -419,5 +411,4 @@
   until: service_status.status.ActiveState == "active"
   retries: 3
   delay: 5
-  ignore_errors: yes
   tags: [monitor]

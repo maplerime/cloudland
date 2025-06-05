@@ -1,0 +1,47 @@
+groups:
+- name: management-resources
+  rules:
+  - alert: ManagementHighCPUUsage
+    expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle", node_type="management"}[5m])) * 100) > {{ cpu_usage_threshold | default(80) }}
+    for: {{ cpu_alert_duration | default("10m") }}
+    labels:
+      severity: warning
+      node_type: management
+    annotations:
+      summary: "Management node {{ $labels.instance }} high CPU usage"
+      description: "Management node {{ $labels.instance }} CPU usage exceeds {{ cpu_usage_threshold | default(80) }}% for {{ cpu_alert_duration | default("10m") }} minutes"
+      alert_type: "node-cpu"
+
+  - alert: ManagementHighMemoryUsage
+    expr: (node_memory_MemTotal_bytes{node_type="management"} - node_memory_MemAvailable_bytes{node_type="management"}) / node_memory_MemTotal_bytes{node_type="management"} * 100 > {{ memory_usage_threshold | default(80) }}
+    for: {{ memory_alert_duration | default("10m") }}
+    labels:
+      severity: warning
+      node_type: management
+    annotations:
+      summary: "Management node {{ $labels.instance }} high memory usage"
+      description: "Management node {{ $labels.instance }} memory usage exceeds {{ memory_usage_threshold | default(80) }}% for {{ memory_alert_duration | default("10m") }} minutes"
+      alert_type: "node-memory"
+
+  - alert: LowDiskSpace
+    expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay", node_type="management"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay", node_type="management"} * 100) < {{ disk_space_threshold | default(20) }}
+    for: {{ disk_alert_duration | default("10m") }}
+    labels:
+      severity: warning
+      node_type: management
+    annotations:
+      summary: "Management node {{ $labels.instance }} device {{ $labels.device }} low disk space"
+      description: "Management node {{ $labels.instance }} device {{ $labels.device }} disk space remaining less than {{ disk_space_threshold | default(20) }}% for {{ disk_alert_duration | default("10m") }} minutes"
+      alert_type: "node-disk"
+
+  - alert: ManagementHighNetworkTraffic
+    expr: rate(node_network_receive_bytes_total{device!~"lo|bond.*|vnet.*|virbr.*|docker.*", node_type="management"}[1m]) * 8 / 1024 / 1024 / 1024 > {{ network_traffic_threshold_gb | default(5) }} or
+          rate(node_network_transmit_bytes_total{device!~"lo|bond.*|vnet.*|virbr.*|docker.*", node_type="management"}[1m]) * 8 / 1024 / 1024 / 1024 > {{ network_traffic_threshold_gb | default(5) }}
+    for: {{ network_alert_duration | default("5m") }}
+    labels:
+      severity: warning
+      node_type: management
+    annotations:
+      summary: "Management node {{ $labels.instance }} high network traffic on device {{ $labels.device }}"
+      description: "Management node {{ $labels.instance }} network device {{ $labels.device }} receive/transmit rate exceeds {{ network_traffic_threshold_gb | default(5) }}Gbps for {{ network_alert_duration | default("10m") }} minutes"
+      alert_type: "node-network"
