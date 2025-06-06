@@ -280,6 +280,30 @@
         mode: '0644'
       tags: [monitor]
 
+    - name: Copy alarm_rules_manager.crt to all cland nodes
+      become: true
+      copy:
+        src: /etc/ssl/certs/alarm_rules_manager.crt
+        dest: /etc/ssl/certs/alarm_rules_manager.crt
+        mode: '0644'
+        remote_src: yes
+      delegate_to: "{{ prometheus_server_ip }}"
+      with_items: "{{ groups['cland'] }}"
+      loop_control:
+        loop_var: item
+      tags: [monitor]
+
+    - name: Set permissions on cland nodes
+      become: true
+      file:
+        path: /etc/ssl/certs/alarm_rules_manager.crt
+        owner: root
+        group: root
+        mode: '0644'
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
     - name: Remove temporary certtool template
       when: false
       delegate_to: "{{ prometheus_server_ip }}"
@@ -871,3 +895,27 @@
   become: true
   command: sudo systemctl kill -s SIGHUP prometheus.service
   tags: [monitor]
+
+- name: Create prometheus-grafana nginx configuration
+  template:
+    src: prometheus-grafana.conf.j2
+    dest: /etc/nginx/conf.d/prometheus-grafana.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: reload nginx
+
+- name: Ensure nginx configuration is valid
+  command: nginx -t
+  register: nginx_config_test
+  changed_when: 
+    - nginx_config_test.rc == 0
+  failed_when: 
+    - nginx_config_test.rc != 0
+  notify: reload nginx
+  
+- name: reload nginx
+  systemd:
+    name: nginx
+    state: reloaded
+  when: not ansible_check_mode
