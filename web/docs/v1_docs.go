@@ -3177,6 +3177,17 @@ const docTemplatev1 = `{
         }
     },
     "definitions": {
+        "apis.AddressInfo": {
+            "type": "object",
+            "properties": {
+                "ip_address": {
+                    "type": "string"
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
@@ -3883,6 +3894,11 @@ const docTemplatev1 = `{
                 "allow_spoofing": {
                     "type": "boolean"
                 },
+                "count": {
+                    "type": "integer",
+                    "maximum": 512,
+                    "minimum": 1
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -3914,12 +3930,14 @@ const docTemplatev1 = `{
         },
         "apis.InterfacePayload": {
             "type": "object",
-            "required": [
-                "subnet"
-            ],
             "properties": {
                 "allow_spoofing": {
                     "type": "boolean"
+                },
+                "count": {
+                    "type": "integer",
+                    "maximum": 512,
+                    "minimum": 1
                 },
                 "inbound": {
                     "type": "integer",
@@ -3950,12 +3968,22 @@ const docTemplatev1 = `{
                 },
                 "site_subnets": {
                     "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/common.BaseReference"
                     }
                 },
                 "subnet": {
                     "$ref": "#/definitions/common.BaseReference"
+                },
+                "subnets": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
@@ -3974,9 +4002,6 @@ const docTemplatev1 = `{
                 "inbound": {
                     "type": "integer"
                 },
-                "ip_address": {
-                    "type": "string"
-                },
                 "is_primary": {
                     "type": "boolean"
                 },
@@ -3991,6 +4016,12 @@ const docTemplatev1 = `{
                 "outbound": {
                     "type": "integer"
                 },
+                "secondary_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AddressInfo"
+                    }
+                },
                 "security_groups": {
                     "type": "array",
                     "items": {
@@ -4002,9 +4033,6 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.SiteSubnetInfo"
                     }
-                },
-                "subnet": {
-                    "$ref": "#/definitions/common.ResourceReference"
                 }
             }
         },

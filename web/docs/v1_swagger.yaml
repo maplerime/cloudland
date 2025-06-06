@@ -1,5 +1,12 @@
 basePath: /api/v1
 definitions:
+  apis.AddressInfo:
+    properties:
+      ip_address:
+        type: string
+      subnet:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
   apis.ConsoleResponse:
     properties:
       console_url:
@@ -485,6 +492,10 @@ definitions:
     properties:
       allow_spoofing:
         type: boolean
+      count:
+        maximum: 512
+        minimum: 1
+        type: integer
       inbound:
         maximum: 20000
         minimum: 0
@@ -510,6 +521,10 @@ definitions:
     properties:
       allow_spoofing:
         type: boolean
+      count:
+        maximum: 512
+        minimum: 1
+        type: integer
       inbound:
         maximum: 20000
         minimum: 0
@@ -533,11 +548,17 @@ definitions:
       site_subnets:
         items:
           $ref: '#/definitions/common.BaseReference'
+        maxItems: 32
+        minItems: 1
         type: array
       subnet:
         $ref: '#/definitions/common.BaseReference'
-    required:
-    - subnet
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 1
+        type: array
     type: object
   apis.InterfaceResponse:
     properties:
@@ -549,8 +570,6 @@ definitions:
         type: string
       inbound:
         type: integer
-      ip_address:
-        type: string
       is_primary:
         type: boolean
       mac_address:
@@ -561,6 +580,10 @@ definitions:
         type: string
       outbound:
         type: integer
+      secondary_addresses:
+        items:
+          $ref: '#/definitions/apis.AddressInfo'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.ResourceReference'
@@ -569,8 +592,6 @@ definitions:
         items:
           $ref: '#/definitions/apis.SiteSubnetInfo'
         type: array
-      subnet:
-        $ref: '#/definitions/common.ResourceReference'
     type: object
   apis.IpGroupListResponse:
     properties:

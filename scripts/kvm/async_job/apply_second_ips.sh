@@ -3,15 +3,26 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 3 ] && echo "$0 <vm_ID> <os_code> <update_meta>" && exit -1
+[ $# -lt 4 ] && echo "$0 <vm_ID> <mac> <os_code> <update_meta>" && exit -1
 
 ID=$1
 vm_ID=inst-$ID
-os_code=$2
-update_meta=$3
-
+mac=$2
+os_code=$3
+update_meta=$4
+vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
+chain_as=secgroup-as-$vnic
 more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
+
+i=0
+while [ $i -lt $naddrs ]; do
+    read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
+    read -d'\n' -r ip < <(ipcalc -nb $address | awk '/Address/ {print $2}')
+    apply_fw -I $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
+    let i=$i+1
+done
+
 if [ "$os_code" = "windows" ]; then
     count=0
     for i in {1..240}; do
