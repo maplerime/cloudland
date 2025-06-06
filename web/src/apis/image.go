@@ -33,6 +33,7 @@ type ImageResponse struct {
 	Architecture string `json:"architecture"`
 	User         string `json:"user"`
 	Status       string `json:"status"`
+	OSVersion    string `json:"os_version"`
 	// QAEnabled    bool   `json:"qa_enabled"`
 }
 
@@ -227,6 +228,7 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 		Architecture: image.Architecture,
 		User:         image.UserName,
 		Status:       image.Status,
+		OSVersion:    image.OsVersion,
 		// QAEnabled:    image.QAEnabled,
 	}
 	return
