@@ -3,7 +3,7 @@
   <memory unit='KiB'>VM_MEM</memory>
   <currentMemory unit='KiB'>VM_MEM</currentMemory>
   <vcpu placement='static'>VM_CPU</vcpu>
-  <os>
+  <os firmware='efi'>
     <type arch='x86_64'>hvm</type>
     <boot dev='hd'/>
   </os>

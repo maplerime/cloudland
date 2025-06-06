@@ -10,7 +10,7 @@
     <access mode='shared'/>
   </memoryBacking>
   <vcpu placement='static'>VM_CPU</vcpu>
-  <os>
+  <os firmware='efi'>
     <type arch='x86_64'>hvm</type>
     <boot dev='hd'/>
   </os>
