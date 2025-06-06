@@ -8,7 +8,7 @@ mem_ratio: 1
 disk_ratio: 1
 domain_name: example.com
 monitor_vip: localhost
-monitor_monitor_access_port: 9090
+monitor_access_port: 9090
 smtp_host: "smtp.example.com:123"
 smtp_hello: "smtp.example.com"
 alert_sender: "cloudg@example.com"
@@ -16,5 +16,6 @@ smtp_user: "cloud@example.com"
 smtp_pass: "1234545666"
 receiver_name: "alert"
 alert_recipient: "example@example.com"
+slack_channel: "test-123"
 slack_webhook_url: "https://hooks.slack.com/services/example/"
 alert_webhook_url: "localhost:8255"

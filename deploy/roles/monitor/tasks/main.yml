@@ -118,6 +118,7 @@
           - ca-certificates
           - curl
           - software-properties-common
+          - python3-pip
         state: present
 
     - name: Add Docker GPG key
@@ -176,7 +177,7 @@
       docker_container_info:
         name: alertmanager
       register: alertmanager_info
-      ignore_errors: yes
+      ignore_errors: true
 
     - name: Stop existing alertmanager container
       docker_container:
@@ -185,7 +186,7 @@
         state: stopped
         stop_timeout: 30
       register: stop_result
-      ignore_errors: yes
+      ignore_errors: true
       when: alertmanager_info.exists | default(false)
 
     - name: Remove existing alertmanager container
@@ -237,6 +238,7 @@
           tls_www_server
           encryption_key
           signing_key
+          expiration_days = 7300
         mode: '0644'
       tags: [monitor]
 
@@ -244,9 +246,9 @@
       delegate_to: "{{ prometheus_server_ip }}"
       become: true
       shell: |
-        certtool --generate-privkey --outfile /etc/ssl/cloudland/alarm_rules_manager.key
+        certtool --generate-privkey --outfile /etc/ssl/certs/alarm_rules_manager.key
       args:
-        creates: /etc/ssl/cloudland/alarm_rules_manager.key
+        creates: /etc/ssl/certs/alarm_rules_manager.key
       tags: [monitor]
 
     - name: Generate self-signed certificate for alarm_rules_manager
@@ -254,20 +256,11 @@
       become: true
       shell: |
         certtool --generate-self-signed \
-          --load-privkey /etc/ssl/cloudland/alarm_rules_manager.key \
+          --load-privkey /etc/ssl/certs/alarm_rules_manager.key \
           --template /tmp/alarm_rules_manager.info \
-          --outfile /etc/ssl/cloudland/alarm_rules_manager.crt
-      tags: [monitor]
-
-
-    - name: Copy alarm_rules_manager.crt to cland server for client trust
-      become: true
-      copy:
-        src: /etc/ssl/cloudland/alarm_rules_manager.crt
-        dest: /etc/ssl/certs/alarm_rules_manager.crt
-        mode: '0644'
-        remote_src: yes
-      delegate_to: "{{ prometheus_server_ip }}"
+          --outfile /etc/ssl/certs/alarm_rules_manager.crt
+      args:
+        creates: /etc/ssl/certs/alarm_rules_manager.crt
       tags: [monitor]
 
     - name: Ensure cland server has access to alarm_rules_manager.crt
@@ -280,8 +273,50 @@
         mode: '0644'
       tags: [monitor]
 
+    - name: Fetch cert from prometheus server
+      fetch:
+        src: /etc/ssl/certs/alarm_rules_manager.crt
+        dest: /tmp/alarm_rules_manager.crt
+        flat: yes
+      delegate_to: "{{ prometheus_server_ip }}"
+      tags: [monitor]
+
+    - name: Ensure cloudland cert directory on cland nodes
+      become: true
+      file:
+        path: /etc/ssl/cloudland
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
+    - name: Distribute cert to cland nodes
+      copy:
+        src: /tmp/alarm_rules_manager.crt
+        dest: /etc/ssl/certs/alarm_rules_manager.crt
+        mode: '0644'
+        force: yes
+        remote_src: no
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
+    - name: Set permissions on cland nodes
+      become: true
+      file:
+        path: /etc/ssl/certs/alarm_rules_manager.crt
+        owner: root
+        group: root
+        mode: '0644'
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
     - name: Remove temporary certtool template
-      when: false
+      when: true
       delegate_to: "{{ prometheus_server_ip }}"
       become: true
       file:
@@ -298,8 +333,8 @@
         group: prometheus
         mode: "{{ item.mode }}"
       with_items:
-        - { path: "/etc/ssl/cloudland/alarm_rules_manager.crt", mode: "0644" }
-        - { path: "/etc/ssl/cloudland/alarm_rules_manager.key", mode: "0600" }
+        - { path: "/etc/ssl/certs/alarm_rules_manager.crt", mode: "0644" }
+        - { path: "/etc/ssl/certs/alarm_rules_manager.key", mode: "0600" }
       tags: [monitor]
 
     - name: Configure Alertmanager
@@ -398,7 +433,7 @@
 
           - name: 'slack-notifications'
             slack_configs:
-            - channel: 'test-alertmanager'
+            - channel: '{{ slack_channel }}'
               send_resolved: true
               username: 'alertmanager'
               icon_emoji: ':satellite:'
@@ -667,8 +702,8 @@
           Type=simple
           User=prometheus
           Group=prometheus
-          Environment=ALARM_RULES_CERT=/etc/ssl/cloudland/alarm_rules_manager.crt
-          Environment=ALARM_RULES_KEY=/etc/ssl/cloudland/alarm_rules_manager.key
+          Environment=ALARM_RULES_CERT=/etc/ssl/certs/alarm_rules_manager.crt
+          Environment=ALARM_RULES_KEY=/etc/ssl/certs/alarm_rules_manager.key
           Environment=ALARM_RULES_LISTEN=0.0.0.0:{{ alarm_rules_manager_port }}
           ExecStart=/opt/cloudland/web/bin/alarm_rules_manager
           Restart=on-failure
@@ -803,6 +838,7 @@
   with_items:
     - 3000
     - 9090
+    - 8256
   loop_control:
     label: "Opening port {{ item }}"
   iptables:
@@ -870,4 +906,46 @@
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   command: sudo systemctl kill -s SIGHUP prometheus.service
+  tags: [monitor]
+
+- name: Create prometheus-grafana nginx configuration
+  delegate_to: "{{ item }}"
+  become: true
+  template:
+    src: ../../nginx/templates/prometheus-grafana.conf.j2
+    dest: /etc/nginx/conf.d/prometheus-grafana.conf
+    owner: root
+    group: root
+    mode: '0644'
+  with_items: "{{ groups['nginx'] }}"
+  notify: reload nginx
+  tags: [monitor]
+  when:
+    - not ansible_check_mode
+    - groups['nginx'] is defined
+
+- name: Ensure nginx configuration is valid
+  delegate_to: "{{ item }}"
+  become: true
+  command: nginx -t
+  register: nginx_config_test
+  changed_when: nginx_config_test.rc == 0
+  failed_when: nginx_config_test.rc != 0
+  notify: reload nginx
+  with_items: "{{ groups['nginx'] }}"
+  tags: [monitor]
+  when:
+    - not ansible_check_mode
+    - groups['nginx'] is defined
+
+- name: reload nginx
+  delegate_to: "{{ item }}"
+  become: true
+  systemd:
+    name: nginx
+    state: reloaded
+  with_items: "{{ groups['nginx'] }}"
+  when:
+    - not ansible_check_mode
+    - groups['nginx'] is defined
   tags: [monitor]
