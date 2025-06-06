@@ -69,6 +69,7 @@ type InterfacePatchPayload struct {
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound        *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
 	AllowSpoofing  *bool            `json:"allow_spoofing" binding:"omitempty"`
 	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	SecurityGroups []*BaseReference `json:"security_groups" binding:"omitempty"`
@@ -210,6 +211,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if payload.Outbound != nil {
 		outbound = *payload.Outbound
 	}
+	count := payload.Count - 1
 	allowSpoofing := iface.AllowSpoofing
 	if payload.AllowSpoofing != nil {
 		allowSpoofing = *payload.AllowSpoofing
@@ -257,7 +259,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, siteSubnets)
+	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, siteSubnets, count)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)

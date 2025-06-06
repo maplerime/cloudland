@@ -545,8 +545,18 @@ func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interf
 	return
 }
 
-func (a *InstanceAdmin) createInterface(ctx context.Context, subnets []*model.Subnet, address, mac string, count int, instance *model.Instance, ifname string, inbound, outbound int32, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, ifaceSubnet *model.Subnet, err error) {
+func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *InterfaceInfo, instance *model.Instance, ifname string) (iface *model.Interface, ifaceSubnet *model.Subnet, err error) {
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
+	subnets := ifaceInfo.Subnets
+	siteSubnets := ifaceInfo.SiteSubnets
+	address := ifaceInfo.IpAddress
+	count := ifaceInfo.Count
+	mac := ifaceInfo.MacAddress
+	inbound := ifaceInfo.Inbound
+	outbound := ifaceInfo.Outbound
+	secgroups := ifaceInfo.SecurityGroups
+	allowSpoofing := ifaceInfo.AllowSpoofing
 	num := 0
 	for i, subnet := range subnets {
 		if subnet.Type == "public" {
@@ -592,6 +602,14 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, subnets []*model.Su
 		err = fmt.Errorf("Only %d addresses can be allocated", num)
 		return
 	}
+	for _, site := range siteSubnets {
+		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
+		if err != nil {
+			logger.Error("Failed to update interface", err)
+			return
+		}
+		iface.SiteSubnets = append(iface.SiteSubnets, site)
+	}
 	return
 }
 
@@ -609,21 +627,16 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	instNetworks := []*InstanceNetwork{}
 	instLinks := []*NetworkLink{}
 	primaryIP := primaryIface.IpAddress
-	primaryMac := primaryIface.MacAddress
 	inbound := primaryIface.Inbound
 	outbound := primaryIface.Outbound
-	allowSpoofing := false
-	if len(primaryIface.SiteSubnets) > 0 {
-		allowSpoofing = true
-	}
 
-	iface, primary, err := a.createInterface(ctx, primaryIface.Subnets, primaryIP, primaryMac, primaryIface.Count, instance, "eth0", inbound, outbound, primaryIface.SecurityGroups, allowSpoofing)
+	iface, primary, err := a.createInterface(ctx, primaryIface, instance, "eth0")
 	if err != nil {
 		return
 	}
 	interfaces = append(interfaces, iface)
 	var moreAddresses []string
-	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, primaryIface.SiteSubnets, 0)
+	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface)
 	if err != nil {
 		logger.Errorf("Failed to get instance networks, %v", err)
 		return
@@ -657,13 +670,13 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		ifname := fmt.Sprintf("eth%d", i+1)
 		inbound = ifaceInfo.Inbound
 		outbound = ifaceInfo.Outbound
-		iface, subnet, err = a.createInterface(ctx, ifaceInfo.Subnets, ifaceInfo.IpAddress, ifaceInfo.MacAddress, ifaceInfo.Count, instance, ifname, inbound, outbound, ifaceInfo.SecurityGroups, false)
+		iface, subnet, err = a.createInterface(ctx, ifaceInfo, instance, ifname)
 		if err != nil {
 			logger.Errorf("Allocate address for secondary subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
 			return
 		}
 		interfaces = append(interfaces, iface)
-		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, nil, i+1)
+		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface)
 		if err != nil {
 			logger.Errorf("Failed to get instance networks, %v", err)
 			return
@@ -739,12 +752,12 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	dns := ""
-	for i, iface := range instance.Interfaces {
+	for _, iface := range instance.Interfaces {
 		subnet := iface.Address.Subnet
 		if iface.PrimaryIf {
 			dns = subnet.NameServer
 		}
-		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, nil, i)
+		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface)
 		if err != nil {
 			logger.Errorf("Failed to get instance networks, %v", err)
 			return
@@ -808,7 +821,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}
 		if iface.PrimaryIf {
-			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, nil, 0)
+			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return

@@ -307,7 +307,7 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 	return
 }
 
-func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, siteSubnets []*model.Subnet, netID int) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
 	ctx, db := GetContextDB(ctx)
 	subnet := iface.Address.Subnet
 	address := strings.Split(iface.Address.Address, "/")[0]
@@ -316,88 +316,53 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		Netmask: subnet.Netmask,
 		Type:    "ipv4",
 		Link:    iface.Name,
-		ID:      fmt.Sprintf("network%d-0", netID),
+		ID:      fmt.Sprintf("network-0"),
 	}
-	toUpdate := true
 	if iface.PrimaryIf {
 		gateway := strings.Split(subnet.Gateway, "/")[0]
 		instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
 		instNetwork.Routes = append(instNetwork.Routes, instRoute)
 		instNetworks = append(instNetworks, instNetwork)
-		if len(siteSubnets) == 0 {
-			err = db.Where("interface = ?", iface.ID).Find(&iface.SiteSubnets).Error
-			if err != nil {
-				logger.Errorf("Failed to query site subnet(s), %v", err)
-				return
-			}
-			siteSubnets = iface.SiteSubnets
-			toUpdate = false
-		} else {
-			if subnet.Type != "public" {
-				err = fmt.Errorf("Site subnets can only be with public subnets")
-				logger.Errorf("Site subnets can only be with public subnets")
-				return
-			}
-			iface.SiteSubnets = siteSubnets
-		}
-	} else {
-		if len(siteSubnets) > 0 {
-			err = fmt.Errorf("Site subnets can only be with primary interface")
-			logger.Errorf("Site subnets can only be with primary interface")
-			return
-		}
 	}
 	osCode := GetImageOSCode(ctx, instance)
-	if len(iface.SecondAddresses) > 0 {
-		for i, addr := range iface.SecondAddresses {
+	for i, addr := range iface.SecondAddresses {
+		if osCode == "linux" {
+			subnet := addr.Subnet
+			address := strings.Split(addr.Address, "/")[0]
+			instNetworks = append(instNetworks, &InstanceNetwork{
+				Address: address,
+				Netmask: subnet.Netmask,
+				Type:    "ipv4",
+				Link:    iface.Name,
+				ID:      fmt.Sprintf("network-%d", i+1),
+			})
+		}
+		moreAddresses = append(moreAddresses, addr.Address)
+	}
+	for _, site := range iface.SiteSubnets {
+		if site.Vlan != subnet.Vlan {
+			err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
+			logger.Errorf("Site subnets and primary subnet must be with same vlan")
+			return
+		}
+		siteAddrs := []*model.Address{}
+		err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
+		if err != nil {
+			logger.Errorf("Failed to query site ip(s), %v", err)
+			return
+		}
+		for i, addr := range siteAddrs {
 			if osCode == "linux" {
-				subnet := addr.Subnet
 				address := strings.Split(addr.Address, "/")[0]
 				instNetworks = append(instNetworks, &InstanceNetwork{
 					Address: address,
-					Netmask: subnet.Netmask,
+					Netmask: site.Netmask,
 					Type:    "ipv4",
 					Link:    iface.Name,
-					ID:      fmt.Sprintf("network%d-%d", netID, i+1),
+					ID:      fmt.Sprintf("network-%d", i+1),
 				})
 			}
 			moreAddresses = append(moreAddresses, addr.Address)
-		}
-	}
-	if len(siteSubnets) > 0 {
-		for _, site := range siteSubnets {
-			if site.Vlan != subnet.Vlan {
-				err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
-				logger.Errorf("Site subnets and primary subnet must be with same vlan")
-				return
-			}
-			siteAddrs := []*model.Address{}
-			err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
-			if err != nil {
-				logger.Errorf("Failed to query site ip(s), %v", err)
-				return
-			}
-			for i, addr := range siteAddrs {
-				if osCode == "linux" {
-					address := strings.Split(addr.Address, "/")[0]
-					instNetworks = append(instNetworks, &InstanceNetwork{
-						Address: address,
-						Netmask: site.Netmask,
-						Type:    "ipv4",
-						Link:    iface.Name,
-						ID:      fmt.Sprintf("network%d-%d", netID, i+1),
-					})
-				}
-				moreAddresses = append(moreAddresses, addr.Address)
-			}
-			if toUpdate {
-				site.Interface = iface.ID
-				err = db.Model(site).Updates(site).Error
-				if err != nil {
-					logger.Errorf("Failed to set site interface", err)
-					return
-				}
-			}
 		}
 	}
 	return

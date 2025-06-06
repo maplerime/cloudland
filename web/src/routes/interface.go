@@ -9,6 +9,7 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -121,7 +122,97 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	return
 }
 
-func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, siteSubnets []*model.Subnet) (err error) {
+func (a *InterfaceAdmin) checkAddressesChange(ctx context.Context, iface *model.Interface, siteSubnets []*model.Subnet, secondAddrsCount int) (changed bool) {
+	if siteSubnets == nil && secondAddrsCount == len(iface.SecondAddresses) {
+		return false
+	}
+
+	if (len(iface.SiteSubnets) != len(siteSubnets)) || (len(iface.SecondAddresses) != secondAddrsCount) {
+		return true
+	}
+
+	for _, ifaceSite := range iface.SiteSubnets {
+		found := false
+		for _, site := range siteSubnets {
+			if ifaceSite.ID == site.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Interface, secondSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+	ctx, db := GetContextDB(ctx)
+	for _, site := range iface.SiteSubnets {
+		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
+		if err != nil {
+			logger.Error("Failed to update interface", err)
+			return
+		}
+	}
+	iface.SiteSubnets = nil
+	for _, site := range siteSubnets {
+		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
+		if err != nil {
+			logger.Error("Failed to update interface", err)
+			return
+		}
+		iface.SiteSubnets = append(iface.SiteSubnets, site)
+	}
+
+	cnt := secondAddrsCount - len(iface.SecondAddresses)
+	if cnt > 0 {
+		var subnets []*model.Subnet
+		err = db.Where("second_interface = ?", iface.ID).Find(&subnets).Error
+		if err != nil {
+			logger.Error("Second addresses query failed", err)
+			return
+		}
+		for _, addr := range iface.SecondAddresses {
+			secondSubnets = append(secondSubnets, addr.Subnet)
+		}
+		num := 0
+		for _, subnet := range secondSubnets {
+			var addr *model.Address
+			addr, err = AllocateAddress(ctx, subnet, iface.ID, "", "second")
+			if err == nil {
+				iface.SecondAddresses = append(iface.SecondAddresses, addr)
+				num++
+				if num >= cnt {
+					break
+				}
+			} else {
+				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
+			}
+			if num < cnt {
+				err = fmt.Errorf("Only %d addresses can be allocated", num)
+				return
+			}
+		}
+	} else if cnt < 0 {
+		iface.SecondAddresses = nil
+		err = db.Model(&model.Address{}).Order("created_at desc").Limit(-cnt).Where("second_interface = ?", iface.ID).Updates(map[string]interface{}{"second_interface": 0}).Error
+		if err != nil {
+			logger.Error("Update interface ", err)
+			return
+		}
+		err = db.Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
+		if err != nil {
+			logger.Error("Second addresses query failed", err)
+			return
+		}
+	}
+
+	return
+}
+
+func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -159,73 +250,54 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
-	/*
-		if iface.PrimaryIf {
-			same := false
-			if len(iface.SiteSubnets) == len(siteSubnets) {
-				same = true
-				for _, ifaceSite := range iface.SiteSubnets {
-					found := false
-					for _, site := range siteSubnets {
-						if ifaceSite.ID == site.ID {
-							found = true
-							break
-						}
-					}
-					if !found {
-						same = false
-					}
-				}
+	if iface.PrimaryIf {
+		changed := a.checkAddressesChange(ctx, iface, siteSubnets, secondAddrsCount)
+		if changed {
+			var oldAddresses []string
+			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
 			}
-			if !same {
-				needUpdate = true
-				sitesInfo := []*SiteIpSubnetInfo{}
-				_, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, nil, 0)
-				if err != nil {
-					logger.Errorf("Failed to get instance networks, %v", err)
-					return
-				}
-				var oldSiteJson []byte
-				oldSiteJson, err = json.Marshal(sitesInfo)
-				if err != nil {
-					logger.Errorf("Failed to marshal instance json data, %v", err)
-					return
-				}
-				for _, site := range iface.SiteSubnets {
-					err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
-					if err != nil {
-						logger.Error("Failed to update interface", err)
-					}
-				}
-				control := fmt.Sprintf("inter=%d", instance.Hyper)
-				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_sites_ip.sh '%d'<<EOF\n%s\nEOF", instance.RouterID, oldSiteJson)
-				err = HyperExecute(ctx, control, command)
-				if err != nil {
-					logger.Error("Update vm nic command execution failed", err)
-					return
-				}
-				_, sitesInfo, err = GetInstanceNetworks(ctx, instance, iface, siteSubnets, 0)
-				if err != nil {
-					logger.Errorf("Failed to get instance networks, %v", err)
-					return
-				}
-				var newSiteJson []byte
-				newSiteJson, err = json.Marshal(sitesInfo)
-				if err != nil {
-					logger.Errorf("Failed to marshal instance json data, %v", err)
-					return
-				}
-				control = fmt.Sprintf("inter=%d", instance.Hyper)
-				command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_sites_ip.sh '%d' '%s' 'true'<<EOF\n%s\nEOF", instance.ID, GetImageOSCode(ctx, instance), newSiteJson)
-				err = HyperExecute(ctx, control, command)
-				if err != nil {
-					logger.Error("Update vm nic command execution failed", err)
-					return
-				}
-				iface.SiteSubnets = siteSubnets
+			var oldAddrsJson []byte
+			oldAddrsJson, err = json.Marshal(oldAddresses)
+			if err != nil {
+				logger.Errorf("Failed to marshal instance json data, %v", err)
+				return
+			}
+			control := fmt.Sprintf("inter=%d", instance.Hyper)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d'<<EOF\n%s\nEOF", instance.RouterID, oldAddrsJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Update vm nic command execution failed", err)
+				return
+			}
+			err = a.changeAddresses(ctx, iface, siteSubnets, nil, secondAddrsCount)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			var moreAddresses []string
+			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			var moreAddrsJson []byte
+			moreAddrsJson, err = json.Marshal(moreAddresses)
+			if err != nil {
+				logger.Errorf("Failed to marshal instance json data, %v", err)
+				return
+			}
+			control = fmt.Sprintf("inter=%d", instance.Hyper)
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_second_ips.sh '%d' '%s' 'true'<<EOF\n%s\nEOF", instance.ID, GetImageOSCode(ctx, instance), moreAddrsJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Update vm nic command execution failed", err)
+				return
 			}
 		}
-	*/
+	}
 	if needUpdate || needRemoteUpdate {
 		if err = db.Model(iface).Save(iface).Error; err != nil {
 			logger.Debug("Failed to save interface", err)
@@ -474,7 +546,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			siteSubnets = append(siteSubnets, siteSubnet)
 		}
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, siteSubnets)
+	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, siteSubnets, 0)
 	if err != nil {
 		logger.Debug("Failed to update interface", err)
 		c.Data["ErrorMsg"] = err.Error()
