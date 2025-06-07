@@ -11,6 +11,18 @@ import (
 	"web/src/dbs"
 )
 
+type VolumeStatus string
+
+const (
+	VolumeStatusResizing  VolumeStatus = "resizing"
+	VolumeStatusAvailable VolumeStatus = "available"
+	VolumeStatusAttached  VolumeStatus = "attached"
+)
+
+func (s VolumeStatus) String() string {
+	return string(s)
+}
+
 type Volume struct {
 	Model
 	Owner int64  `gorm:"default:1","index"` /* The organization ID of the resource */
@@ -27,10 +39,10 @@ type Volume struct {
 	Path       string `gorm:"type:varchar(256)"`
 	Size       int32
 	Booting    bool
-	Format     string `gorm:"type:varchar(32)"`
-	Status     string `gorm:"type:varchar(32)"`
-	Target     string `gorm:"type:varchar(32)"`
-	Href       string `gorm:"type:varchar(256)"`
+	Format     string       `gorm:"type:varchar(32)"`
+	Status     VolumeStatus `gorm:"type:varchar(32)"`
+	Target     string       `gorm:"type:varchar(32)"`
+	Href       string       `gorm:"type:varchar(256)"`
 	InstanceID int64
 	Instance   *Instance `gorm:"foreignkey:InstanceID"`
 	IopsLimit  int32

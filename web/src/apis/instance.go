@@ -596,7 +596,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 		},
 		Hostname:  instance.Hostname,
 		LoginPort: int(instance.LoginPort),
-		Status:    string(instance.Status),
+		Status:    instance.Status.String(),
 		Reason:    instance.Reason,
 		Cpu:       instance.Cpu,
 		Memory:    instance.Memory,

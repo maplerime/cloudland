@@ -19,10 +19,10 @@ import (
 )
 
 func init() {
-	Add("inst_status", UpdateInstanceStatus)
+	Add("inst_status", InstanceStatus)
 }
 
-func UpdateInstanceStatus(ctx context.Context, args []string) (status string, err error) {
+func InstanceStatus(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| launch_vm.sh '3' '5 running 7 running 9 shut_off'
 	db := DB()
 	argn := len(args)
@@ -56,7 +56,7 @@ func UpdateInstanceStatus(ctx context.Context, args []string) (status string, er
 			logger.Error("Invalid instance ID", err)
 			if gorm.IsRecordNotFoundError(err) {
 				instance.Hostname = "unknown"
-				instance.Status = status
+				instance.Status = model.InstanceStatus(status)
 				instance.Hyper = int32(hyperID)
 				err = db.Create(instance).Error
 				if err != nil {
@@ -65,10 +65,10 @@ func UpdateInstanceStatus(ctx context.Context, args []string) (status string, er
 			}
 			continue
 		}
-		if instance.Status == string(InstanceStatusMigrating) {
+		if instance.Status == model.InstanceStatusMigrating {
 			continue
 		}
-		if instance.Status != status {
+		if instance.Status.String() != status {
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
 				"status": status,
 			}).Error
