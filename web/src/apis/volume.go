@@ -339,7 +339,7 @@ func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume)
 		},
 		Path:      volume.Path,
 		Size:      volume.Size,
-		Status:    volume.Status,
+		Status:    volume.Status.String(),
 		Target:    volume.Target,
 		Href:      volume.Href,
 		IopsLimit: volume.IopsLimit,

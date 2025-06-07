@@ -42,9 +42,9 @@ func ResizeVolume(ctx context.Context, args []string) (status string, err error)
 	status = args[2]
 	if status != "error" {
 		if volume.InstanceID != 0 {
-			status = string(VolumeStatusAttached)
+			status = model.VolumeStatusAttached.String()
 		} else {
-			status = string(VolumeStatusAvailable)
+			status = model.VolumeStatusAvailable.String()
 		}
 	}
 	err = db.Model(&volume).Updates(map[string]interface{}{"status": status}).Error
