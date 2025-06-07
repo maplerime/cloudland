@@ -51,6 +51,13 @@
                                     </select>
 								</div>
 								<div class="required inline field">
+									<label for="bootLoader">{{.i18n.Tr "Boot Loader"}}</label>
+									<select name="bootLoader" id="bootLoader" class="ui selection dropdown">
+                                         <option value="bios" selected>bios</option>
+                                         <option value="uefi">uefi</option>
+                                    </select>
+								</div>
+								<div class="required inline field">
                                     <label for="osVersion">{{.i18n.Tr "OS Version"}}</label>
                                     <input id="osVersion" name="osVersion" autocomplete="off">
                                 </div>

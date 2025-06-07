@@ -20,6 +20,9 @@ for (( i=1; i <= $count; i++ )); do
 done
 ./clear_local_router.sh $router
 
+if [ -f ${image_dir}/${vm_ID}_VARS.fd ]; then
+    rm -f ${image_dir}/${vm_ID}_VARS.fd
+fi
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 if [ -z "$wds_address" ]; then	

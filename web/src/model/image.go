@@ -26,6 +26,7 @@ type Image struct {
 	OSCode                string    `gorm:"type:varchar(128);default:'linux'"`
 	Format                string    `gorm:"type:varchar(128)"`
 	Architecture          string    `gorm:"type:varchar(256)"`
+	BootLoader            string    `gorm:"type:varchar(32);default:'bios'"`
 	Status                string    `gorm:"type:varchar(128)"`
 	Href                  string    `gorm:"type:varchar(256)"`
 	Checksum              string    `gorm:"type:varchar(36)"`
@@ -56,6 +57,7 @@ func (i *Image) Clone() *Image {
 		OSCode:                i.OSCode,
 		Format:                i.Format,
 		Architecture:          i.Architecture,
+		BootLoader:            i.BootLoader,
 		Status:                i.Status,
 		Href:                  i.Href,
 		Checksum:              i.Checksum,
