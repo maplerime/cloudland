@@ -291,7 +291,7 @@
 							{{ end }}
 					        {{ end }}
 						</td>
-			                        <td>{{$.i18n.Tr .Status}}{{ if eq .Status "error" }}: {{ .Reason }}{{ end }}</td>
+			                        <td>{{$.i18n.Tr .Status.String}}{{ if eq .Status.String "error" }}: {{ .Reason }}{{ end }}</td>
                         <td>
 							<form name="submitForm{{.ID}}" method="post" target="_blank" action="{{$Link}}/{{.ID}}/console">
 							<a href="javascript:document.submitForm{{.ID}}.submit()">VNC</a>
