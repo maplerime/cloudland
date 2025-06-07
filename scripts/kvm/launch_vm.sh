@@ -121,8 +121,33 @@ fi
 vm_nvram="$image_dir/${vm_ID}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
     cp $nvram_template $vm_nvram
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s#VM_BOOT_LOADER#$uefi_boot_loader#g" \
+    -e "s#VM_NVRAM#$vm_nvram#g" \
+    $vm_xml
+else
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    $vm_xml
 fi
-sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/$vm_nested/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g; s/VM_BOOT_LOADER/$uefi_boot_loader/g; s/VM_NVRAM/$vm_nvram/g" $vm_xml
+
 virsh define $vm_xml
 virsh autostart $vm_ID
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name"
