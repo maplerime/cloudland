@@ -8,11 +8,13 @@ source ../../cloudrc
 ID=$1
 mac=$2
 os_code=$3
-vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
-chain_as=secgroup-as-$vnic
+
 more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
+[ $naddr -eq 0 ] && return
 
+vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
+chain_as=secgroup-as-$vnic
 i=0
 while [ $i -lt $naddrs ]; do
     read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
@@ -36,3 +38,4 @@ if [ "$os_code" = "windows" ]; then
         let i=$i+1
     done
 fi
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$os_code'"

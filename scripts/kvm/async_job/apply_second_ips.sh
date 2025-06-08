@@ -18,8 +18,15 @@ naddrs=$(jq length <<< $more_addresses)
 i=0
 while [ $i -lt $naddrs ]; do
     read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
-    read -d'\n' -r ip < <(ipcalc -nb $address | awk '/Address/ {print $2}')
+    read -d'\n' -r ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
     apply_fw -I $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
+    second_addrs_json="$second_addrs_json,{
+        \"type\": \"ipv4\",
+        \"ip_address\": \"$ext_ip\",
+        \"netmask\": \"$netmask\",
+        \"link\": \"eth0\",
+        \"id\": \"network0\"
+    }"
     let i=$i+1
 done
 
@@ -48,7 +55,7 @@ elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
     mount ${cache_dir}/meta/${vm_ID}.iso $tmp_mnt
     cp -r $tmp_mnt/* $working_dir
     net_json=$(cat $latest_dir/network_data.json)
-    networks="[$(jq -r .networks[0] <<<$net_json)$sites_json]" 
+    networks="[$(jq -r .networks[0] <<<$net_json)$second_addrs_json]" 
     echo "$net_json" | jq --argjson new_networks "$networks" '.networks |= (map(select(.id != "network0")) + $new_networks)' >$latest_dir/network_data.json
     umount $tmp_mnt
     mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null

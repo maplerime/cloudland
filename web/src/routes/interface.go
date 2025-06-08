@@ -277,25 +277,6 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
 			}
-			var moreAddresses []string
-			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface)
-			if err != nil {
-				logger.Errorf("Failed to get instance networks, %v", err)
-				return
-			}
-			var moreAddrsJson []byte
-			moreAddrsJson, err = json.Marshal(moreAddresses)
-			if err != nil {
-				logger.Errorf("Failed to marshal instance json data, %v", err)
-				return
-			}
-			control = fmt.Sprintf("inter=%d", instance.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/apply_second_ips.sh '%d' '%s' 'true'<<EOF\n%s\nEOF", instance.ID, GetImageOSCode(ctx, instance), moreAddrsJson)
-			err = HyperExecute(ctx, control, command)
-			if err != nil {
-				logger.Error("Update vm nic command execution failed", err)
-				return
-			}
 		}
 	}
 	if needUpdate || needRemoteUpdate {
@@ -337,9 +318,13 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		return
 	}
 	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
-	if err = db.Preload("Address").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error; err != nil {
-		logger.Error("Security group query failed", err)
+	if err = db.Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error; err != nil {
+		logger.Error("Interface query failed", err)
 		return
+	}
+	ifaceSubnets := []*model.Subnet{iface.Address.Subnet}
+	for _, secondAddr := range iface.SecondAddresses {
+		ifaceSubnets = append(ifaceSubnets, secondAddr.Subnet)
 	}
 	_, siteSubnets, err := subnetAdmin.List(c.Req.Context(), 0, -1, "", "", fmt.Sprintf("type = 'site' and (interface = 0 or interface = %d)", iface.ID))
 	if err != nil {
@@ -355,6 +340,8 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 	}
 	c.Data["Interface"] = iface
 	c.Data["Secgroups"] = secgroups
+	c.Data["IfaceSubnets"] = ifaceSubnets
+	c.Data["IpCount"] = len(iface.SecondAddresses) + 1
 	c.Data["SiteSubnets"] = siteSubnets
 	c.Data["IfaceSecgroups"] = iface.SecurityGroups
 	c.Data["IfaceSites"] = iface.SiteSubnets

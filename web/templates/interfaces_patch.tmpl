@@ -15,6 +15,14 @@
                         <label for="address">{{.i18n.Tr "IP Address"}}</label>
                         <input id="address" name="address" value="{{ .Interface.Address.Address }}" disabled>
                     </div>
+                    <div class="inline field">
+                        <label for="second_addresses">{{.i18n.Tr "Secondary IP Addresses"}}</label>
+                        <input id="second_addresses" name="second_addresses" value="{{ range .Interface.SecondAddresses }} {{ .Address }} {{ end }}" disabled>
+                    </div>
+                    <div class="required inline field">
+                        <label for="ip_count">{{.i18n.Tr "IP Count"}}</label>
+                        <input id="ip_count" name="ip_count" value="{{ .IpCount }}" required>
+                    </div>
                     <div class="required inline field">
                         <label for="macaddr">{{.i18n.Tr "Mac Address"}}</label>
                         <input id="macaddr" name="macaddr" value="{{ .Interface.MacAddr }}" disabled>
