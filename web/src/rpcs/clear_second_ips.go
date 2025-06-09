@@ -41,7 +41,7 @@ func ClearSecondIps(ctx context.Context, args []string) (status string, err erro
 		return
 	}
 	primaryIface := &model.Interface{}
-	err = db.Preload("SiteSubnets").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Addresses").Preload("Addresses.Subnet").Where("instance = ? and PrimaryIf = true", instID).Take(primaryIface).Error
+	err = db.Preload("SiteSubnets").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address").Preload("Address.Subnet").Where("instance = ? and primary_if = true", instID).Take(primaryIface).Error
 	if err != nil {
 		logger.Error("Failed to get interface", err)
 		return
