@@ -7,10 +7,10 @@ groups:
     labels:
       severity: warning
       node_type: compute
+      alert_type: "node-cpu"
     annotations:
       summary: "Compute node {{ $labels.instance }} high CPU usage"
       description: "Compute node {{ $labels.instance }} CPU usage exceeds {{ cpu_usage_threshold | default(80) }}% for {{ cpu_alert_duration | default(10) }} minutes"
-      alert_type: "node-cpu"
 
   - alert: Compute_HighMemoryUsage
     expr: (node_memory_MemTotal_bytes{node_type="compute"} - node_memory_MemAvailable_bytes{node_type="compute"}) / node_memory_MemTotal_bytes{node_type="compute"} * 100 > {{ memory_usage_threshold | default(80) }}
@@ -18,10 +18,10 @@ groups:
     labels:
       severity: warning
       node_type: compute
+      alert_type: "node-memory"
     annotations:
       summary: "Compute node {{ $labels.instance }} high memory usage"
       description: "Compute node {{ $labels.instance }} memory usage exceeds {{ memory_usage_threshold | default(80) }}% for {{ memory_alert_duration | default(10) }} minutes"
-      alert_type: "node-memory"
 
   - alert: Compute_LowDiskSpace
     expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay", node_type="compute"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay", node_type="compute"} * 100) < {{ disk_space_threshold | default(10) }}
@@ -29,10 +29,10 @@ groups:
     labels:
       severity: warning
       node_type: compute
+      alert_type: "node-disk"
     annotations:
       summary: "Compute node {{ $labels.instance }} low disk space"
       description: "Compute node {{ $labels.instance }} device {{ $labels.device }} space remaining less than {{ disk_space_threshold | default(10) }}% for {{ disk_alert_duration | default(20) }} minutes"
-      alert_type: "node-disk"
 
   - alert: ComputeHighNetworkTraffic
     expr: rate(node_network_receive_bytes_total{device!~"lo|bond.*|vnet.*|virbr.*|docker.*", node_type="compute"}[1m]) * 8 / 1024 / 1024 / 1024 > {{ network_traffic_threshold_gb | default(25) }} or
@@ -41,7 +41,7 @@ groups:
     labels:
       severity: warning
       node_type: compute
+      alert_type: "node-network"
     annotations:
       summary: "Compute node {{ $labels.instance }} high network traffic"
       description: "Compute node {{ $labels.instance }} network receive/transmit rate exceeds {{ network_traffic_threshold_gb | default(25) }}Gbps for {{ network_alert_duration | default(5) }} minutes"
-      alert_type: "node-network"
