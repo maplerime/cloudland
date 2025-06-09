@@ -3518,6 +3518,7 @@ const docTemplatev1 = `{
         "apis.ImagePayload": {
             "type": "object",
             "required": [
+                "boot_loader",
                 "download_url",
                 "name",
                 "os_code",
@@ -3525,6 +3526,13 @@ const docTemplatev1 = `{
                 "user"
             ],
             "properties": {
+                "boot_loader": {
+                    "type": "string",
+                    "enum": [
+                        "bios",
+                        "uefi"
+                    ]
+                },
                 "download_url": {
                     "type": "string"
                 },
@@ -3563,6 +3571,9 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "architecture": {
+                    "type": "string"
+                },
+                "boot_loader": {
                     "type": "string"
                 },
                 "created_at": {
