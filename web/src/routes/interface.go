@@ -183,7 +183,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Inter
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
 		if err != nil {
-			logger.Error("Failed to update interface", err)
+			logger.Error("Failed to update site subnets", err)
 			return
 		}
 	}
@@ -205,7 +205,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Inter
 		}
 	} else if cnt < 0 {
 		for i := 0; i < -cnt; i++ {
-			err = db.Model(&iface.SecondAddresses[i]).Updates(map[string]interface{}{"second_interface": 0}).Error
+			err = db.Model(&iface.SecondAddresses[i]).Updates(map[string]interface{}{"second_interface": 0, "allocated": false}).Error
 			if err != nil {
 				logger.Error("Update interface ", err)
 				return

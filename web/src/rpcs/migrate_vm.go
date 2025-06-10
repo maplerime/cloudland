@@ -155,7 +155,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		}
 		taskStatus = "completed"
 	} else if status == "source_prepared" {
-		err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+		err = db.Preload("SiteSubnets").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 		if err != nil {
 			logger.Error("Failed to get interfaces", err)
 			return
@@ -178,9 +178,30 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", fip.RouterID, fip.FipAddress, fip.IntAddress, primaryIface.Address.Subnet.Vlan, fip.ID)
 				err = HyperExecute(ctx, control, command)
 				if err != nil {
-					logger.Error("Execute floating ip failed", err)
+					logger.Error("Execute clear floating ip failed", err)
 					return
 				}
+			}
+		}
+		if len(primaryIface.SiteSubnets) > 0 || len(primaryIface.SecondAddresses) > 0 {
+			var moreAddresses []string
+			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, primaryIface, 0)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			var oldAddrsJson []byte
+			oldAddrsJson, err = json.Marshal(moreAddresses)
+			if err != nil {
+				logger.Errorf("Failed to marshal second addresses json data, %v", err)
+				return
+			}
+			control := fmt.Sprintf("inter=%d", migration.SourceHyper)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, primaryIface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Execute floating ip failed", err)
+				return
 			}
 		}
 		taskStatus = "completed"
