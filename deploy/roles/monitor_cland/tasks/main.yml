@@ -3,6 +3,14 @@
      is_current_in_hyper: "{{ inventory_hostname in groups['hyper'] }}"
   tags: [monitor]
 
+- name: Ensure prometheus user exists
+  become: true
+  user:
+    name: prometheus
+    state: present
+    create_home: true
+  tags: [monitor]
+
 - name: Create node_exporter data directory
   file:
     path: /var/lib/node_exporter
