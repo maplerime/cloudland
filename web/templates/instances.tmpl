@@ -288,11 +288,15 @@
 								{{ if .Address}}
 								    native: <br><a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
 								{{ end }}
-                                                                secondary:<br>
+                                                                {{ if .SecondAddresses }}
+                                                                    secondary:<br>
+								{{ end }}
                                                                 {{ range .SecondAddresses }}
                                                                     {{ .Address }}<br>
                                                                 {{ end }}
-                                                                site:<br>
+							        {{ if .SiteSubnets }}
+                                                                    site:<br>
+                                                                {{ end }}
 							        {{ range .SiteSubnets }}
 								    <a href="{{$Link}}/../subnets/{{.ID}}">{{ .ID }}-{{ .Network }}</a><br>
 							        {{ end }}
