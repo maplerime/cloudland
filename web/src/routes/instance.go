@@ -235,7 +235,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -915,6 +915,33 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 	}
 
 	return int(instance.ID), nil
+}
+
+func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error) {
+	// Parse domain format, example: inst-12345 -> ID=12345
+	if !strings.HasPrefix(domain, "inst-") {
+		return "", fmt.Errorf("invalid domain format, must start with 'inst-'")
+	}
+
+	idStr := strings.TrimPrefix(domain, "inst-")
+	instanceID, err := strconv.Atoi(idStr)
+	if err != nil {
+		logger.Error("Domain conversion failed domain=%s error=%v", domain, err)
+		return "", fmt.Errorf("invalid instance ID in domain format")
+	}
+
+	var instance model.Instance
+	db := DB()
+	if err := db.Where("id = ?", instanceID).First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Error("Instance not found domain=%s id=%d", domain, instanceID)
+			return "", fmt.Errorf("instance not found")
+		}
+		logger.Error("Database query failed domain=%s error=%v", domain, err)
+		return "", fmt.Errorf("database error")
+	}
+
+	return instance.UUID, nil
 }
 
 func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, instances []*model.Instance, err error) {
