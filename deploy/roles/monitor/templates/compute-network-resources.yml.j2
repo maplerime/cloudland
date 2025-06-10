@@ -9,9 +9,9 @@ groups:
       labels:
         severity: warning
         node_type: compute
+        alert_type: "node-network"
         network_type: {{ net_type }}
       annotations:
         summary: "Compute node ({{ net_type }}) {{ $labels.instance }} device {{ $labels.device }} high network traffic"
         description: "Compute node ({{ net_type }}) {{ $labels.instance }} device {{ $labels.device }} in/out traffic > {{ params.threshold }} Gbps for {{ params.duration | default('5m') }}"
-        alert_type: "node-network"
 {% endfor %}

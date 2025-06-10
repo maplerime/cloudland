@@ -247,8 +247,6 @@
       become: true
       shell: |
         certtool --generate-privkey --outfile /etc/ssl/certs/alarm_rules_manager.key
-      args:
-        creates: /etc/ssl/certs/alarm_rules_manager.key
       tags: [monitor]
 
     - name: Generate self-signed certificate for alarm_rules_manager
@@ -259,8 +257,6 @@
           --load-privkey /etc/ssl/certs/alarm_rules_manager.key \
           --template /tmp/alarm_rules_manager.info \
           --outfile /etc/ssl/certs/alarm_rules_manager.crt
-      args:
-        creates: /etc/ssl/certs/alarm_rules_manager.crt
       tags: [monitor]
 
     - name: Ensure cland server has access to alarm_rules_manager.crt
@@ -908,44 +904,22 @@
   command: sudo systemctl kill -s SIGHUP prometheus.service
   tags: [monitor]
 
-- name: Create prometheus-grafana nginx configuration
-  delegate_to: "{{ item }}"
-  become: true
-  template:
-    src: ../../nginx/templates/prometheus-grafana.conf.j2
-    dest: /etc/nginx/conf.d/prometheus-grafana.conf
-    owner: root
-    group: root
-    mode: '0644'
-  with_items: "{{ groups['nginx'] }}"
-  notify: reload nginx
-  tags: [monitor]
-  when:
-    - not ansible_check_mode
-    - groups['nginx'] is defined
-
-- name: Ensure nginx configuration is valid
-  delegate_to: "{{ item }}"
-  become: true
-  command: nginx -t
-  register: nginx_config_test
-  changed_when: nginx_config_test.rc == 0
-  failed_when: nginx_config_test.rc != 0
-  notify: reload nginx
-  with_items: "{{ groups['nginx'] }}"
-  tags: [monitor]
-  when:
-    - not ansible_check_mode
-    - groups['nginx'] is defined
-
-- name: reload nginx
-  delegate_to: "{{ item }}"
+- name: Restart clbase service on control nodes
   become: true
   systemd:
-    name: nginx
-    state: reloaded
-  with_items: "{{ groups['nginx'] }}"
-  when:
-    - not ansible_check_mode
-    - groups['nginx'] is defined
+    name: clbase
+    enabled: yes
+    state: restarted
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cland'] }}"
+  tags: [monitor]
+
+- name: Restart clapi service on control nodes
+  become: true
+  systemd:
+    name: clapi
+    enabled: yes
+    state: restarted
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cland'] }}"
   tags: [monitor]
