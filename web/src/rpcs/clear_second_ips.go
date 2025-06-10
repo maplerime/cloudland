@@ -49,7 +49,7 @@ func ClearSecondIps(ctx context.Context, args []string) (status string, err erro
 	mac := args[2]
 	osCode := args[3]
 	var moreAddresses []string
-	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, primaryIface)
+	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, primaryIface, 0)
 	if err != nil {
 		logger.Errorf("Failed to get instance networks, %v", err)
 		return

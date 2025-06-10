@@ -307,7 +307,7 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 	return
 }
 
-func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, netID int) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
 	ctx, db := GetContextDB(ctx)
 	subnet := iface.Address.Subnet
 	address := strings.Split(iface.Address.Address, "/")[0]
@@ -316,7 +316,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		Netmask: subnet.Netmask,
 		Type:    "ipv4",
 		Link:    iface.Name,
-		ID:      fmt.Sprintf("network-0"),
+		ID:      fmt.Sprintf("network%d", netID),
 	}
 	if iface.PrimaryIf {
 		gateway := strings.Split(subnet.Gateway, "/")[0]
@@ -325,7 +325,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		instNetworks = append(instNetworks, instNetwork)
 	}
 	osCode := GetImageOSCode(ctx, instance)
-	for i, addr := range iface.SecondAddresses {
+	for _, addr := range iface.SecondAddresses {
 		if osCode == "linux" {
 			subnet := addr.Subnet
 			address := strings.Split(addr.Address, "/")[0]
@@ -334,7 +334,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 				Netmask: subnet.Netmask,
 				Type:    "ipv4",
 				Link:    iface.Name,
-				ID:      fmt.Sprintf("network-second-%d", i+1),
+				ID:      fmt.Sprintf("network%d", netID),
 			})
 		}
 		moreAddresses = append(moreAddresses, addr.Address)
@@ -351,7 +351,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 			logger.Errorf("Failed to query site ip(s), %v", err)
 			return
 		}
-		for i, addr := range siteAddrs {
+		for _, addr := range siteAddrs {
 			if osCode == "linux" {
 				address := strings.Split(addr.Address, "/")[0]
 				instNetworks = append(instNetworks, &InstanceNetwork{
@@ -359,7 +359,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 					Netmask: site.Netmask,
 					Type:    "ipv4",
 					Link:    iface.Name,
-					ID:      fmt.Sprintf("network-site-%d", i+1),
+					ID:      fmt.Sprintf("network%d", netID),
 				})
 			}
 			moreAddresses = append(moreAddresses, addr.Address)

@@ -1,4 +1,4 @@
-#!/bin/bash -xv
+#!/bin/bash
 
 cd `dirname $0`
 source ../../cloudrc
@@ -10,11 +10,13 @@ vm_ID=inst-$ID
 mac=$2
 os_code=$3
 update_meta=$4
-vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
-chain_as=secgroup-as-$vnic
 more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
+[ $naddrs -eq 0 ] && exit 0 
 
+vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
+bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
+chain_as=secgroup-as-$vnic
 i=0
 while [ $i -lt $naddrs ]; do
     read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
@@ -22,11 +24,12 @@ while [ $i -lt $naddrs ]; do
     apply_fw -I $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
     second_addrs_json="$second_addrs_json,{
         \"type\": \"ipv4\",
-        \"ip_address\": \"$ext_ip\",
+        \"ip_address\": \"$ip\",
         \"netmask\": \"$netmask\",
         \"link\": \"eth0\",
         \"id\": \"network0\"
     }"
+    python3 ./send_spoof_arp.py $bridge $ip $mac
     let i=$i+1
 done
 

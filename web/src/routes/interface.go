@@ -154,7 +154,31 @@ func (a *InterfaceAdmin) checkAddressesChange(ctx context.Context, iface *model.
 	return false
 }
 
-func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+	cnt := 0
+	for _, subnet := range ifaceSubnets {
+		for i := 0; i < secondAddrsCount; i++ {
+			var addr *model.Address
+			addr, err = AllocateAddress(ctx, subnet, iface.ID, "", "second")
+			if err == nil {
+				iface.SecondAddresses = append(iface.SecondAddresses, addr)
+				cnt++
+				if cnt >= secondAddrsCount {
+					return
+				}
+			} else {
+				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
+			}
+		}
+	}
+	if cnt < secondAddrsCount {
+		err = fmt.Errorf("Only %d addresses can be allocated", cnt)
+		return
+	}
+	return
+}
+
+func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
@@ -175,28 +199,8 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Inter
 
 	cnt := secondAddrsCount - len(iface.SecondAddresses)
 	if cnt > 0 {
-		if len(ifaceSubnets) == 0 {
-			ifaceSubnets = append(ifaceSubnets, iface.Address.Subnet)
-			for _, addr := range iface.SecondAddresses {
-				ifaceSubnets = append(ifaceSubnets, addr.Subnet)
-			}
-		}
-		num := 0
-		for _, subnet := range ifaceSubnets {
-			var addr *model.Address
-			addr, err = AllocateAddress(ctx, subnet, iface.ID, "", "second")
-			if err == nil {
-				iface.SecondAddresses = append(iface.SecondAddresses, addr)
-				num++
-				if num >= cnt {
-					break
-				}
-			} else {
-				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
-			}
-		}
-		if num < cnt {
-			err = fmt.Errorf("Only %d addresses can be allocated", num)
+		err = a.allocateSecondAddresses(ctx, iface, ifaceSubnets, cnt)
+		if err != nil {
 			return
 		}
 	} else if cnt < 0 {
@@ -207,12 +211,12 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Inter
 				return
 			}
 		}
-		iface.SecondAddresses = nil
-		err = db.Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
-		if err != nil {
-			logger.Error("Second addresses query failed", err)
-			return
-		}
+	}
+	iface.SecondAddresses = nil
+	err = db.Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
+	if err != nil {
+		logger.Error("Second addresses query failed", err)
+		return
 	}
 
 	return
@@ -260,7 +264,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		changed := a.checkAddressesChange(ctx, iface, siteSubnets, secondAddrsCount)
 		if changed {
 			var oldAddresses []string
-			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface)
+			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
