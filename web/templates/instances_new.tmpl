@@ -150,15 +150,15 @@
 
                                 <div class="required inline field">
 
-                                    <label for="primary">{{.i18n.Tr "Primary Interface"}}</label>
+                                    <label for="primary">{{.i18n.Tr "Primary Interfaces"}}</label>
 
-                                    <div class="ui selection dropdown">
+                                    <div class="ui multiple selection dropdown">
 
-                                      <input id="primary" name="primary" type="hidden">
+                                      <input name="primary" id="primary" type="hidden">
 
                                       <i class="dropdown icon"></i>
 
-                                      <div class="default text">{{.i18n.Tr "Subnet"}}</div>
+                                      <div class="default text">{{.i18n.Tr "Subnets"}}</div>
 
                                       <div class="menu">
 
@@ -177,6 +177,14 @@
                                       </div>
 
                                     </div>
+
+                                </div>
+
+                                <div class="required inline field">
+
+                                    <label for="ip_count">{{.i18n.Tr "IP Count"}}</label>
+
+                                    <input id="ip_count" name="ip_count" value="1" required>
 
                                 </div>
 

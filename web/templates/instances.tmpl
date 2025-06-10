@@ -286,10 +286,15 @@
 						{{ if .Interfaces }}
 							{{ range .Interfaces }}
 								{{ if .Address}}
-								    native: <a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
+								    native: <br><a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
 								{{ end }}
+                                                                secondary:<br>
+                                                                {{ range .SecondAddresses }}
+                                                                    {{ .Address }}<br>
+                                                                {{ end }}
+                                                                site:<br>
 							        {{ range .SiteSubnets }}
-								    site: <a href="{{$Link}}/../subnets/{{.ID}}">{{ .Network }}</a><br>
+								    <a href="{{$Link}}/../subnets/{{.ID}}">{{ .ID }}-{{ .Network }}</a><br>
 							        {{ end }}
 							{{ end }}
 					        {{ end }}

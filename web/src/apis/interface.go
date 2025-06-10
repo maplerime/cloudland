@@ -33,24 +33,31 @@ type InterfaceListResponse struct {
 	Interfaces []*InterfaceResponse `json:"interfaces"`
 }
 
+type AddressInfo struct {
+	IPAddress string `json:"ip_address"`
+	Subnet    *ResourceReference   `json:"subnet"`
+}
+
 type InterfaceResponse struct {
 	*BaseReference
-	Subnet         *ResourceReference   `json:"subnet"`
-	MacAddress     string               `json:"mac_address"`
-	IPAddress      string               `json:"ip_address"`
-	IsPrimary      bool                 `json:"is_primary"`
-	Inbound        int32                `json:"inbound"`
-	Outbound       int32                `json:"outbound"`
-	SiteSubnets    []*SiteSubnetInfo    `json:"site_subnets,omitempty"`
-	FloatingIps    []*FloatingIpInfo    `json:"floating_ips,omitempty"`
-	SecurityGroups []*ResourceReference `json:"security_groups,omitempty"`
+	Address            *AddressInfo         `json:"-"`
+	SecondaryAddresses []*AddressInfo       `json:"secondary_addresses"`
+	MacAddress         string               `json:"mac_address"`
+	IsPrimary          bool                 `json:"is_primary"`
+	Inbound            int32                `json:"inbound"`
+	Outbound           int32                `json:"outbound"`
+	SiteSubnets        []*SiteSubnetInfo    `json:"site_subnets,omitempty"`
+	FloatingIps        []*FloatingIpInfo    `json:"floating_ips,omitempty"`
+	SecurityGroups     []*ResourceReference `json:"security_groups,omitempty"`
 }
 
 type InterfacePayload struct {
-	Subnet         *BaseReference   `json:"subnet" binding:"required"`
+	Subnet         *BaseReference   `json:"subnet" binding:"omitempty"`
+	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=16"`
 	IpAddress      string           `json:"ip_address", binding:"omitempty,ipv4"`
 	MacAddress     string           `json:"mac_address" binding:"omitempty,mac"`
-	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
+	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
+	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty,gte=1,lte=32"`
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound        int32            `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       int32            `json:"outbound" binding:"omitempty,min=0,max=20000"`
@@ -62,6 +69,8 @@ type InterfacePatchPayload struct {
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound        *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
+	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
 	AllowSpoofing  *bool            `json:"allow_spoofing" binding:"omitempty"`
 	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	SecurityGroups []*BaseReference `json:"security_groups" binding:"omitempty"`
@@ -108,15 +117,17 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			ID:   iface.UUID,
 			Name: iface.Name,
 		},
+		Address: &AddressInfo{
+			IPAddress:  iface.Address.Address,
+			Subnet: &ResourceReference{
+				ID:   iface.Address.Subnet.UUID,
+				Name: iface.Address.Subnet.Name,
+			},
+		},
 		MacAddress: iface.MacAddr,
-		IPAddress:  iface.Address.Address,
 		IsPrimary:  iface.PrimaryIf,
 		Inbound:    iface.Inbound,
 		Outbound:   iface.Outbound,
-		Subnet: &ResourceReference{
-			ID:   iface.Address.Subnet.UUID,
-			Name: iface.Address.Subnet.Name,
-		},
 	}
 	if iface.PrimaryIf {
 		if len(instance.FloatingIps) > 0 {
@@ -201,6 +212,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if payload.Outbound != nil {
 		outbound = *payload.Outbound
 	}
+	count := payload.Count - 1
 	allowSpoofing := iface.AllowSpoofing
 	if payload.AllowSpoofing != nil {
 		allowSpoofing = *payload.AllowSpoofing
@@ -232,6 +244,22 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		secgroups = append(secgroups, secgroup)
 	}
+	var ifaceSubnets []*model.Subnet
+	for _, subnet := range payload.Subnets {
+		var ifaceSubnet *model.Subnet
+		ifaceSubnet, err = subnetAdmin.GetSubnet(ctx, subnet)
+		if err != nil {
+			logger.Errorf("Failed to get interface subnet")
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get interface subnet", err)
+			return
+		}
+		if ifaceSubnet.Vlan != iface.Address.Subnet.Vlan {
+			logger.Errorf("Invalid subnet vlan for interface")
+			ErrorResponse(c, http.StatusBadRequest, "Invalid subnet vlan for interface", err)
+			return
+		}
+		ifaceSubnets = append(ifaceSubnets, ifaceSubnet)
+	}
 	var siteSubnets []*model.Subnet
 	if iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
 		logger.Errorf("Only primary interface can have site subnets")
@@ -248,7 +276,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, siteSubnets)
+	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
