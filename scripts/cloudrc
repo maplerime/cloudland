@@ -22,8 +22,8 @@ vxlan_db=/opt/cloudland/db/cloudland.db
 cland_private_key=$deploy_dir/.ssh/cland.key
 debug_log_file=/opt/cloudland/log/script.log
 debug_flag_file=/opt/cloudland/run/debug
-uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd
-nvram_template=/usr/share/OVMF/OVMF_VARS_4M.ms.fd
+uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
+nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
 #export JAEGER_SERVICE_NAME="SCI-Backend"
 function die()
 {
