@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 10 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable>"
+[ $# -lt 11 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -16,6 +16,7 @@ vm_mem=$7
 disk_size=$8
 vol_ID=$9
 nested_enable=${10}
+boot_loader=${11}
 state=error
 vm_vnc=""
 vol_state=error
@@ -27,6 +28,9 @@ let fsize=$disk_size*1024*1024*1024
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
 vm_meta=$cache_dir/meta/$vm_ID.iso
 template=$template_dir/template_with_qa.xml
+if [ "$boot_loader" = "uefi" ]; then
+    template=$template_dir/template_uefi_with_qa.xml
+fi
 if [ -z "$wds_address" ]; then
     vm_img=$volume_dir/$vm_ID.disk
     if [ ! -f "$vm_img" ]; then
@@ -91,6 +95,9 @@ else
     echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'success'"
     ux_sock=/var/run/wds/$vhost_name
     template=$template_dir/wds_template_with_qa.xml
+    if [ "$boot_loader" = "uefi" ]; then
+        template=$template_dir/wds_template_uefi_with_qa.xml
+    fi
 fi
 
 [ -z "$vm_mem" ] && vm_mem='1024m'
@@ -111,8 +118,41 @@ if [ "$cpu_vendor" = "GenuineIntel" ]; then
 else
     vm_virt_feature="svm"
 fi
+<<<<<<< HEAD
 os_code=$(jq -r '.os_code' <<< $metadata)
 sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/$vm_nested/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
+=======
+vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+if [ "$boot_loader" = "uefi" ]; then
+    cp $nvram_template $vm_nvram
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s#VM_BOOT_LOADER#$uefi_boot_loader#g" \
+    -e "s#VM_NVRAM#$vm_nvram#g" \
+    $vm_xml
+else
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    $vm_xml
+fi
+
+>>>>>>> 31b4c0a29fa2be1cc3b018fdb299235048d91aad
 virsh define $vm_xml
 virsh autostart $vm_ID
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"

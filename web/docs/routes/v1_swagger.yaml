@@ -242,6 +242,11 @@ definitions:
     type: object
   apis.ImagePayload:
     properties:
+      boot_loader:
+        enum:
+        - bios
+        - uefi
+        type: string
       download_url:
         type: string
       instance_uuid:
@@ -267,6 +272,7 @@ definitions:
       uuid:
         type: string
     required:
+    - boot_loader
     - download_url
     - name
     - os_code
@@ -276,6 +282,8 @@ definitions:
   apis.ImageResponse:
     properties:
       architecture:
+        type: string
+      boot_loader:
         type: string
       created_at:
         type: string

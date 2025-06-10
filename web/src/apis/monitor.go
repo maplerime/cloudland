@@ -1155,10 +1155,6 @@ func queryPrometheus(baseURL, query string, start, end, step string) (*Prometheu
 		return nil, err
 	}
 
-	// record query result
-	resultBytes, _ := json.MarshalIndent(prometheusResp, "", "  ")
-	logger.Debug("Prometheus response: %s", string(resultBytes))
-
 	return &prometheusResp, nil
 }
 
