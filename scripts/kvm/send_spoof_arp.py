@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from scapy.all import *
 
 def send_spoofed_arp(iface, src_ip, src_mac):
