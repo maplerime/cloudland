@@ -492,13 +492,6 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 			}
 			ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
 		}
-	} else if ifacePayload.Subnet != nil {
-		var subnet *model.Subnet
-		subnet, err = subnetAdmin.GetSubnet(ctx, ifacePayload.Subnet)
-		if err != nil {
-			return
-		}
-		ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
 	}
 	if len(ifaceInfo.Subnets) == 0 {
 		err = fmt.Errorf("No valid subnets specified")
