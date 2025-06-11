@@ -1,0 +1,3472 @@
+basePath: /api/v1
+definitions:
+  apis.ConsoleResponse:
+    properties:
+      console_url:
+        type: string
+      instance:
+        $ref: '#/definitions/common.ResourceReference'
+      token:
+        type: string
+    type: object
+  apis.DictionaryListResponse:
+    properties:
+      dictionaries:
+        items:
+          $ref: '#/definitions/apis.DictionaryResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.DictionaryPayload:
+    properties:
+      category:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      value:
+        type: string
+    required:
+    - name
+    - value
+    type: object
+  apis.DictionaryResponse:
+    properties:
+      category:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+      value:
+        type: string
+    type: object
+  apis.FlavorListResponse:
+    properties:
+      flavors:
+        items:
+          $ref: '#/definitions/apis.FlavorResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.FlavorPayload:
+    properties:
+      cpu:
+        minimum: 1
+        type: integer
+      disk:
+        minimum: 1
+        type: integer
+      memory:
+        minimum: 16
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - cpu
+    - disk
+    - memory
+    - name
+    type: object
+  apis.FlavorResponse:
+    properties:
+      cpu:
+        type: integer
+      disk:
+        type: integer
+      memory:
+        type: integer
+      name:
+        type: string
+    type: object
+  apis.FloatingIpInfo:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.FloatingIpListResponse:
+    properties:
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.FloatingIpPatchPayload:
+    properties:
+      inbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      outbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+    type: object
+  apis.FloatingIpPayload:
+    properties:
+      inbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      outbound:
+        maximum: 20000
+        minimum: 1
+        type: integer
+      public_ip:
+        type: string
+      public_subnet:
+        $ref: '#/definitions/common.BaseReference'
+    required:
+    - name
+    type: object
+  apis.FloatingIpResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      inbound:
+        type: integer
+      name:
+        type: string
+      outbound:
+        type: integer
+      owner:
+        type: string
+      public_ip:
+        type: string
+      target_interface:
+        $ref: '#/definitions/apis.TargetInterface'
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
+  apis.HyperListResponse:
+    properties:
+      hypers:
+        items:
+          $ref: '#/definitions/apis.HyperResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.HyperResponse:
+    properties:
+      cpu:
+        type: integer
+      disk:
+        type: integer
+      id:
+        type: string
+      memory:
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.ImageListResponse:
+    properties:
+      images:
+        items:
+          $ref: '#/definitions/apis.ImageResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.ImagePatchPayload:
+    type: object
+  apis.ImagePayload:
+    properties:
+      boot_loader:
+        enum:
+        - bios
+        - uefi
+        type: string
+      download_url:
+        type: string
+      instance_uuid:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      os_code:
+        enum:
+        - linux
+        - windows
+        - other
+        type: string
+      os_version:
+        maxLength: 32
+        minLength: 2
+        type: string
+      user:
+        maxLength: 32
+        minLength: 2
+        type: string
+      uuid:
+        type: string
+    required:
+    - boot_loader
+    - download_url
+    - name
+    - os_code
+    - os_version
+    - user
+    type: object
+  apis.ImageResponse:
+    properties:
+      architecture:
+        type: string
+      boot_loader:
+        type: string
+      created_at:
+        type: string
+      format:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      os_code:
+        type: string
+      owner:
+        type: string
+      size:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      user:
+        type: string
+    type: object
+  apis.InstanceInfo:
+    properties:
+      created_at:
+        type: string
+      hostname:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.InstanceListResponse:
+    properties:
+      instances:
+        items:
+          $ref: '#/definitions/apis.InstanceResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.InstancePatchPayload:
+    properties:
+      hostname:
+        type: string
+      power_action:
+        allOf:
+        - $ref: '#/definitions/common.PowerAction'
+        enum:
+        - stop
+        - hard_stop
+        - start
+        - restart
+        - hard_restart
+        - pause
+        - resume
+    type: object
+  apis.InstancePayload:
+    properties:
+      count:
+        maximum: 16
+        minimum: 1
+        type: integer
+      cpu:
+        minimum: 1
+        type: integer
+      disk:
+        minimum: 1
+        type: integer
+      flavor:
+        maxLength: 32
+        minLength: 1
+        type: string
+      hostname:
+        type: string
+      hypervisor:
+        maximum: 65535
+        minimum: 0
+        type: integer
+      image:
+        $ref: '#/definitions/common.BaseReference'
+      keys:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 0
+        type: array
+      login_port:
+        maximum: 65535
+        minimum: 0
+        type: integer
+      memory:
+        minimum: 1
+        type: integer
+      nested_enable:
+        type: boolean
+      primary_interface:
+        $ref: '#/definitions/apis.InterfacePayload'
+      root_passwd:
+        maxLength: 32
+        minLength: 8
+        type: string
+      secondary_interfaces:
+        items:
+          $ref: '#/definitions/apis.InterfacePayload'
+        type: array
+      userdata:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+      zone:
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - hostname
+    - image
+    - primary_interface
+    - zone
+    type: object
+  apis.InstanceReinstallPayload:
+    properties:
+      flavor:
+        type: string
+      image:
+        $ref: '#/definitions/common.BaseReference'
+      keys:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 0
+        type: array
+      login_port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      password:
+        type: string
+    type: object
+  apis.InstanceResizePayload:
+    properties:
+      cpu:
+        minimum: 1
+        type: integer
+      memory:
+        minimum: 1
+        type: integer
+    type: object
+  apis.InstanceResponse:
+    properties:
+      cpu:
+        type: integer
+      created_at:
+        type: string
+      disk:
+        type: integer
+      flavor:
+        type: string
+      hostname:
+        type: string
+      hypervisor:
+        type: string
+      id:
+        type: string
+      image:
+        $ref: '#/definitions/common.ResourceReference'
+      interfaces:
+        items:
+          $ref: '#/definitions/apis.InterfaceResponse'
+        type: array
+      keys:
+        items:
+          $ref: '#/definitions/common.ResourceReference'
+        type: array
+      login_port:
+        type: integer
+      memory:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      passwd_login:
+        type: boolean
+      reason:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      volumes:
+        items:
+          $ref: '#/definitions/apis.VolumeInfoResponse'
+        type: array
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
+      zone:
+        type: string
+    type: object
+  apis.InstanceSetUserPasswordPayload:
+    properties:
+      password:
+        maxLength: 64
+        minLength: 8
+        type: string
+      user_name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - password
+    - user_name
+    type: object
+  apis.InterfacePatchPayload:
+    properties:
+      allow_spoofing:
+        type: boolean
+      inbound:
+        maximum: 20000
+        minimum: 0
+        type: integer
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      outbound:
+        maximum: 20000
+        minimum: 0
+        type: integer
+      security_groups:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    type: object
+  apis.InterfacePayload:
+    properties:
+      allow_spoofing:
+        type: boolean
+      inbound:
+        maximum: 20000
+        minimum: 0
+        type: integer
+      ip_address:
+        type: string
+      mac_address:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      outbound:
+        maximum: 20000
+        minimum: 0
+        type: integer
+      security_groups:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
+    required:
+    - subnet
+    type: object
+  apis.InterfaceResponse:
+    properties:
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpInfo'
+        type: array
+      id:
+        type: string
+      inbound:
+        type: integer
+      ip_address:
+        type: string
+      is_primary:
+        type: boolean
+      mac_address:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      outbound:
+        type: integer
+      security_groups:
+        items:
+          $ref: '#/definitions/common.ResourceReference'
+        type: array
+      subnet:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.IpGroupListResponse:
+    properties:
+      ipgroups:
+        items:
+          $ref: '#/definitions/apis.IpGroupResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.IpGroupPatchPayload:
+    properties:
+      dictionaries:
+        $ref: '#/definitions/common.ResourceReference'
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  apis.IpGroupPayload:
+    properties:
+      dictionaries:
+        $ref: '#/definitions/common.ResourceReference'
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - dictionaries
+    - name
+    type: object
+  apis.IpGroupResponse:
+    properties:
+      created_at:
+        type: string
+      dictionaries:
+        $ref: '#/definitions/common.BaseReference'
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      subnet_names:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.KeyListResponse:
+    properties:
+      keys:
+        items:
+          $ref: '#/definitions/apis.KeyResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.KeyPatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.KeyPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      public_key:
+        maxLength: 4096
+        minLength: 4
+        type: string
+      uuid:
+        type: string
+    required:
+    - name
+    - public_key
+    type: object
+  apis.KeyResponse:
+    properties:
+      created_at:
+        type: string
+      finger_print:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      public_key:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.MigrationListResponse:
+    properties:
+      limit:
+        type: integer
+      migrations:
+        items:
+          $ref: '#/definitions/apis.MigrationResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.MigrationPayload:
+    properties:
+      force:
+        type: boolean
+      instances:
+        items:
+          $ref: '#/definitions/common.BaseID'
+        minItems: 1
+        type: array
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      target_hyper:
+        maximum: 65535
+        minimum: 0
+        type: integer
+    required:
+    - instances
+    - name
+    type: object
+  apis.MigrationResponse:
+    properties:
+      created_at:
+        type: string
+      force:
+        type: boolean
+      id:
+        type: string
+      instance:
+        $ref: '#/definitions/apis.InstanceInfo'
+      name:
+        type: string
+      owner:
+        type: string
+      phases:
+        items:
+          $ref: '#/definitions/apis.TaskResponse'
+        type: array
+      source_hyper:
+        type: integer
+      status:
+        type: string
+      target_hyper:
+        type: integer
+      type:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.OrgListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      orgs:
+        items:
+          $ref: '#/definitions/apis.OrgResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.OrgPatchPayload:
+    type: object
+  apis.OrgPayload:
+    type: object
+  apis.OrgResponse:
+    properties:
+      cpu:
+        type: integer
+      created_at:
+        type: string
+      disk:
+        type: integer
+      id:
+        type: string
+      memory:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.SecruleListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      security_rules:
+        items:
+          $ref: '#/definitions/apis.SecruleResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.SecruleResponse:
+    properties:
+      created_at:
+        type: string
+      direction:
+        type: string
+      id:
+        type: string
+      ip_version:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      port_max:
+        type: integer
+      port_min:
+        type: integer
+      protocol:
+        type: string
+      remote_cidr:
+        type: string
+      remote_group:
+        $ref: '#/definitions/common.BaseReference'
+      updated_at:
+        type: string
+    type: object
+  apis.SecurityGroupListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      security_groups:
+        items:
+          $ref: '#/definitions/apis.SecurityGroupResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.SecurityGroupPatchPayload:
+    properties:
+      is_default:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.SecurityGroupPayload:
+    properties:
+      is_default:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+    required:
+    - name
+    type: object
+  apis.SecurityGroupResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      is_default:
+        type: boolean
+      name:
+        type: string
+      owner:
+        type: string
+      target_interfaces:
+        items:
+          $ref: '#/definitions/apis.TargetInterface'
+        type: array
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.SecurityRulePayload:
+    properties:
+      direction:
+        enum:
+        - ingress
+        - egress
+        type: string
+      port_max:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      port_min:
+        maximum: 65535
+        minimum: 1
+        type: integer
+      protocol:
+        enum:
+        - tcp
+        - udp
+        - icmp
+        type: string
+      remote_cidr:
+        type: string
+    required:
+    - direction
+    - protocol
+    type: object
+  apis.SubnetListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      subnets:
+        items:
+          $ref: '#/definitions/apis.SubnetResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.SubnetPatchPayload:
+    type: object
+  apis.SubnetPayload:
+    properties:
+      base_domain:
+        type: string
+      dhcp:
+        type: boolean
+      dns:
+        type: string
+      end_ip:
+        type: string
+      gateway:
+        type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      network_cidr:
+        type: string
+      start_ip:
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/common.SubnetType'
+        enum:
+        - public
+        - internal
+      vlan:
+        maximum: 16777215
+        minimum: 1
+        type: integer
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+    required:
+    - name
+    - network_cidr
+    type: object
+  apis.SubnetResponse:
+    properties:
+      created_at:
+        type: string
+      dns:
+        type: string
+      gateway:
+        type: string
+      group:
+        $ref: '#/definitions/common.ResourceReference'
+      id:
+        type: string
+      idle_count:
+        type: integer
+      name:
+        type: string
+      netmask:
+        type: string
+      network:
+        type: string
+      owner:
+        type: string
+      type:
+        $ref: '#/definitions/common.SubnetType'
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.TargetInterface:
+    properties:
+      created_at:
+        type: string
+      from_instance:
+        $ref: '#/definitions/apis.InstanceInfo'
+      id:
+        type: string
+      ip_address:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.TaskResponse:
+    properties:
+      name:
+        type: string
+      status:
+        type: string
+      summary:
+        type: string
+    type: object
+  apis.UserListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+      users:
+        items:
+          $ref: '#/definitions/apis.UserResponse'
+        type: array
+    type: object
+  apis.UserPatchPayload:
+    properties:
+      password:
+        minLength: 6
+        type: string
+    required:
+    - password
+    type: object
+  apis.UserPayload:
+    properties:
+      id:
+        type: string
+      org:
+        $ref: '#/definitions/common.BaseReference'
+      password:
+        maxLength: 32
+        minLength: 8
+        type: string
+      username:
+        minLength: 2
+        type: string
+    required:
+    - password
+    - username
+    type: object
+  apis.UserResponse:
+    properties:
+      org:
+        $ref: '#/definitions/common.ResourceReference'
+      role:
+        type: string
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.VPCListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+      vpcs:
+        items:
+          $ref: '#/definitions/apis.VPCResponse'
+        type: array
+    type: object
+  apis.VPCPatchPayload:
+    type: object
+  apis.VPCPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.VPCResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      subnets:
+        items:
+          $ref: '#/definitions/apis.SubnetResponse'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  apis.VersionResponse:
+    properties:
+      version:
+        type: string
+    type: object
+  apis.VolumeInfoResponse:
+    properties:
+      booting:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      target:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.VolumeListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+      volumes:
+        items:
+          $ref: '#/definitions/apis.VolumeResponse'
+        type: array
+    type: object
+  apis.VolumePatchPayload:
+    properties:
+      bps_burst:
+        type: integer
+      bps_limit:
+        type: integer
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      iops_burst:
+        type: integer
+      iops_limit:
+        type: integer
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  apis.VolumePayload:
+    properties:
+      bps_burst:
+        minimum: 0
+        type: integer
+      bps_limit:
+        minimum: 0
+        type: integer
+      count:
+        maximum: 16
+        minimum: 1
+        type: integer
+      iops_burst:
+        minimum: 0
+        type: integer
+      iops_limit:
+        minimum: 0
+        type: integer
+      name:
+        type: string
+      pool_id:
+        type: string
+      size:
+        type: integer
+    required:
+    - name
+    - size
+    type: object
+  apis.VolumeResizePayload:
+    properties:
+      size:
+        minimum: 1
+        type: integer
+    required:
+    - size
+    type: object
+  apis.VolumeResponse:
+    properties:
+      booting:
+        type: boolean
+      bps_burst:
+        type: integer
+      bps_limit:
+        type: integer
+      created_at:
+        type: string
+      format:
+        type: string
+      href:
+        type: string
+      id:
+        type: string
+      instance:
+        $ref: '#/definitions/common.BaseReference'
+      iops_burst:
+        type: integer
+      iops_limit:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      status:
+        type: string
+      target:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.ZoneListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+      zones:
+        items:
+          $ref: '#/definitions/apis.ZoneResponse'
+        type: array
+    type: object
+  apis.ZoneResponse:
+    properties:
+      cpu:
+        type: integer
+      created_at:
+        type: string
+      disk:
+        type: integer
+      id:
+        type: string
+      memory:
+        type: integer
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  common.APIError:
+    properties:
+      error_message:
+        description: "InternalErr error\n\tErrorCode int `json:\"error_code\"`"
+        type: string
+    type: object
+  common.BaseID:
+    properties:
+      id:
+        type: string
+    required:
+    - id
+    type: object
+  common.BaseReference:
+    properties:
+      id:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    type: object
+  common.PowerAction:
+    enum:
+    - stop
+    - hard_stop
+    - start
+    - restart
+    - hard_restart
+    - pause
+    - resume
+    type: string
+    x-enum-varnames:
+    - Stop
+    - HardStop
+    - Start
+    - Restart
+    - HardRestart
+    - Pause
+    - Resume
+  common.ResourceReference:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  common.SubnetType:
+    enum:
+    - public
+    - internal
+    type: string
+    x-enum-varnames:
+    - Public
+    - Internal
+info:
+  contact: {}
+  description: APIs for CloudLand Functions
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: CloudLand API
+  version: "1.0"
+paths:
+  /dictionaries:
+    get:
+      consumes:
+      - application/json
+      description: list dictionaries
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.DictionaryListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list dictionaries
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a dictionary
+      parameters:
+      - description: Dictionary create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.DictionaryPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.DictionaryResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a dictionary
+      tags:
+      - Compute
+  /dictionaries/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a dictionary
+      parameters:
+      - description: Dictionary ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a dictionary
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a dictionary
+      parameters:
+      - description: Dictionary UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.DictionaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a dictionary
+      tags:
+      - Compute
+    patch:
+      consumes:
+      - application/json
+      description: patch a dictionary
+      parameters:
+      - description: Dictionary create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.DictionaryPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.DictionaryResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a dictionary
+      tags:
+      - Compute
+  /flavors:
+    get:
+      consumes:
+      - application/json
+      description: list flavors
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FlavorListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list flavors
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a flavor
+      parameters:
+      - description: Flavor create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.FlavorPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FlavorResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a flavor
+      tags:
+      - Compute
+  /flavors/{name}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a flavor
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a flavor
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a flavor
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FlavorResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a flavor
+      tags:
+      - Compute
+  /floating_ips:
+    get:
+      consumes:
+      - application/json
+      description: list floating ips
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list floating ips
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a floating ip
+      parameters:
+      - description: Floating ip create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.FloatingIpPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a floating ip
+      tags:
+      - Network
+  /floating_ips/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a floating ip
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a floating ip
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a floating ip
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a floating ip
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a floating ip
+      parameters:
+      - description: Floating ip patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.FloatingIpPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a floating ip
+      tags:
+      - Network
+  /hypers:
+    get:
+      consumes:
+      - application/json
+      description: list hypervisors
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HyperListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list hypervisors
+      tags:
+      - Administration
+  /hypers/{name}:
+    get:
+      consumes:
+      - application/json
+      description: get a hypervisor
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HyperResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a hypervisor
+      tags:
+      - Administration
+  /images:
+    get:
+      consumes:
+      - application/json
+      description: list images
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list images
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a image
+      parameters:
+      - description: Image create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ImagePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a image
+      tags:
+      - Compute
+  /images/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a image
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a image
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a image
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a image
+      tags:
+      - Compute
+    patch:
+      consumes:
+      - application/json
+      description: patch a image
+      parameters:
+      - description: Image patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ImagePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a image
+      tags:
+      - Compute
+  /instance/{id}/interfaces:
+    get:
+      consumes:
+      - application/json
+      description: list interfaces
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.InterfaceResponse'
+            type: array
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list interfaces
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a interface
+      parameters:
+      - description: Interface create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InterfacePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a interface
+      tags:
+      - Network
+  /instance/{id}/interfaces/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a interface
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a interface
+      tags:
+      - Network
+  /instances:
+    get:
+      consumes:
+      - application/json
+      description: list instances
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InstanceListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list instances
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a instance
+      parameters:
+      - description: Instance create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstancePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.InstanceResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a instance
+      tags:
+      - Compute
+  /instances/:id/console:
+    post:
+      consumes:
+      - application/json
+      description: create a console
+      parameters:
+      - description: Instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsoleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a console
+      tags:
+      - Authorization
+  /instances/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a instance
+      parameters:
+      - description: Instance ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a instance
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InstanceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a instance
+      tags:
+      - Compute
+    patch:
+      consumes:
+      - application/json
+      description: patch a instance
+      parameters:
+      - description: Instance patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstancePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InstanceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a instance
+      tags:
+      - Compute
+  /instances/{id}/reinstall:
+    post:
+      consumes:
+      - application/json
+      description: reinstall a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance reinstall payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceReinstallPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: reinstall a instance
+      tags:
+      - Compute
+  /instances/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a instance
+      tags:
+      - Compute
+  /instances/{id}/set_user_password:
+    post:
+      consumes:
+      - application/json
+      description: set user password for a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance set user password payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceSetUserPasswordPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: set user password for a instance
+      tags:
+      - Compute
+  /instances/id/interfaces/{interface_id}:
+    get:
+      consumes:
+      - application/json
+      description: get a interface
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a interface
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a interface
+      parameters:
+      - description: Interface patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InterfacePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a interface
+      tags:
+      - Network
+  /ip_groups:
+    get:
+      consumes:
+      - application/json
+      description: list ipGroup
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list ipGroup
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a ipGroup
+      parameters:
+      - description: IpGroup create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.IpGroupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a ipGroup
+      tags:
+      - Network
+  /ip_groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a ipGroup
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a ipGroup
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a ipGroup
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a ipGroup
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a ipGroup
+      parameters:
+      - description: IpGroup patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.IpGroupPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.IpGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a ipGroup
+      tags:
+      - Network
+  /keys:
+    get:
+      consumes:
+      - application/json
+      description: list keys
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.KeyListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list keys
+      tags:
+      - Authorization
+    post:
+      consumes:
+      - application/json
+      description: create a key
+      parameters:
+      - description: Key create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.KeyPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.KeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a key
+      tags:
+      - Authorization
+  /keys/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a key
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a key
+      tags:
+      - Authorization
+    get:
+      consumes:
+      - application/json
+      description: get a key
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.KeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a key
+      tags:
+      - Authorization
+    patch:
+      consumes:
+      - application/json
+      description: patch a key
+      parameters:
+      - description: Key patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.KeyPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.KeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a key
+      tags:
+      - Authorization
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: get token by user name
+      parameters:
+      - description: User Credential
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.UserPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.UserResponse'
+        "401":
+          description: Invalied user name or password
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: login to get the access token
+      tags:
+      - Authorization
+  /migrations:
+    get:
+      consumes:
+      - application/json
+      description: list migrations
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.MigrationListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list migrations
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a migration
+      parameters:
+      - description: Migration create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.MigrationPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.MigrationResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a migration
+      tags:
+      - Compute
+  /migrations/{id}:
+    get:
+      consumes:
+      - application/json
+      description: get a migration
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.MigrationResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a migration
+      tags:
+      - Compute
+  /orgs:
+    get:
+      consumes:
+      - application/json
+      description: list orgs
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.OrgListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list orgs
+      tags:
+      - Authorization
+    post:
+      consumes:
+      - application/json
+      description: create a org
+      parameters:
+      - description: Org create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.OrgPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.OrgResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a org
+      tags:
+      - Authorization
+  /orgs/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a org
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a org
+      tags:
+      - Authorization
+    get:
+      consumes:
+      - application/json
+      description: get a org
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.OrgResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a org
+      tags:
+      - Authorization
+    patch:
+      consumes:
+      - application/json
+      description: patch a org
+      parameters:
+      - description: Org patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.OrgPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.OrgResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a org
+      tags:
+      - Authorization
+  /security_groups:
+    get:
+      consumes:
+      - application/json
+      description: list secgroups
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecurityGroupListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list secgroups
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a secgroup
+      parameters:
+      - description: Secgroup create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SecurityGroupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecurityGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a secgroup
+      tags:
+      - Network
+  /security_groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a secgroup
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a secgroup
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a secgroup
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecurityGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a secgroup
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a secgroup
+      parameters:
+      - description: Secgroup patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SecurityGroupPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecurityGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a secgroup
+      tags:
+      - Network
+  /security_groups/{id}/rules:
+    get:
+      consumes:
+      - application/json
+      description: list secrules
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecruleListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list secrules
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a secrule
+      parameters:
+      - description: Secrule create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SecurityRulePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecruleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a secrule
+      tags:
+      - Network
+  /security_groups/{id}/rules/{rule_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a secrule
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a secrule
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a secrule
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SecruleResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a secrule
+      tags:
+      - Network
+  /subnets:
+    get:
+      consumes:
+      - application/json
+      description: list subnets
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SubnetListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list subnets
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a subnet
+      parameters:
+      - description: Subnet create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SubnetPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SubnetResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a subnet
+      tags:
+      - Network
+  /subnets/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a subnet
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a subnet
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a subnet
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SubnetResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a subnet
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a subnet
+      parameters:
+      - description: Subnet patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SubnetPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.SubnetResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a subnet
+      tags:
+      - Network
+  /users:
+    get:
+      consumes:
+      - application/json
+      description: list users
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.UserListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list users
+      tags:
+      - Authorization
+    post:
+      consumes:
+      - application/json
+      description: create a user
+      parameters:
+      - description: User create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.UserPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.UserResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a user
+      tags:
+      - Authorization
+  /users/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a user
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a user
+      tags:
+      - Authorization
+    get:
+      consumes:
+      - application/json
+      description: get a user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.UserResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a user
+      tags:
+      - Authorization
+    patch:
+      consumes:
+      - application/json
+      description: patch a user
+      parameters:
+      - description: User patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.UserPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.UserResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a user
+      tags:
+      - Authorization
+  /version:
+    get:
+      consumes:
+      - application/json
+      description: get version
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VersionResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get version
+      tags:
+      - Compute
+  /volumes:
+    get:
+      consumes:
+      - application/json
+      description: list volumes
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list volumes
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a volume
+      parameters:
+      - description: Volume create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a volume
+      tags:
+      - Compute
+  /volumes/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a volume
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a volume
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a volume
+      parameters:
+      - description: Volume UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a volume
+      tags:
+      - Compute
+    patch:
+      consumes:
+      - application/json
+      description: patch a volume
+      parameters:
+      - description: Volume patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a volume
+      parameters:
+      - description: Volume resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a volume
+      tags:
+      - Compute
+  /vpcs:
+    get:
+      consumes:
+      - application/json
+      description: list vpcs
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VPCListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list vpcs
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a vpc
+      parameters:
+      - description: VPC create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VPCPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VPCResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a vpc
+      tags:
+      - Network
+  /vpcs/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a vpc
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a vpc
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a vpc
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VPCResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a vpc
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a vpc
+      parameters:
+      - description: VPC patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VPCPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VPCResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a vpc
+      tags:
+      - Network
+  /zones:
+    get:
+      consumes:
+      - application/json
+      description: list zonevisors
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ZoneListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list zonevisors
+      tags:
+      - Zone
+  /zones/{name}:
+    get:
+      consumes:
+      - application/json
+      description: get a zonevisor
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ZoneResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a zonevisor
+      tags:
+      - Zone
+swagger: "2.0"

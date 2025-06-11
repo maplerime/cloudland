@@ -1,4 +1,4 @@
-basePath: /api/v1
+basePath: /api/v1/rules
 definitions:
   apis.ConsoleResponse:
     properties:
@@ -230,6 +230,11 @@ definitions:
     type: object
   apis.ImagePayload:
     properties:
+      boot_loader:
+        enum:
+        - bios
+        - uefi
+        type: string
       download_url:
         type: string
       instance_uuid:
@@ -255,6 +260,7 @@ definitions:
       uuid:
         type: string
     required:
+    - boot_loader
     - download_url
     - name
     - os_code
@@ -264,6 +270,8 @@ definitions:
   apis.ImageResponse:
     properties:
       architecture:
+        type: string
+      boot_loader:
         type: string
       created_at:
         type: string
@@ -316,6 +324,10 @@ definitions:
     type: object
   apis.InstancePatchPayload:
     properties:
+      flavor:
+        maxLength: 32
+        minLength: 1
+        type: string
       hostname:
         type: string
       power_action:
@@ -411,15 +423,6 @@ definitions:
         type: integer
       password:
         type: string
-    type: object
-  apis.InstanceResizePayload:
-    properties:
-      cpu:
-        minimum: 1
-        type: integer
-      memory:
-        minimum: 1
-        type: integer
     type: object
   apis.InstanceResponse:
     properties:
@@ -1173,14 +1176,6 @@ definitions:
     - name
     - size
     type: object
-  apis.VolumeResizePayload:
-    properties:
-      size:
-        minimum: 1
-        type: integer
-    required:
-    - size
-    type: object
   apis.VolumeResponse:
     properties:
       booting:
@@ -1311,15 +1306,90 @@ definitions:
     x-enum-varnames:
     - Public
     - Internal
+  main.RuleFileRequest:
+    description: Request for rule file operations
+    properties:
+      content:
+        description: |-
+          File content for write operation
+          @Description Content to write to file (required for write operation)
+        type: string
+      file_path:
+        description: |-
+          Source file path
+          @Description Path of the source file (required for all operations except reload)
+          @Required
+        type: string
+      file_user:
+        description: |-
+          File owner username
+          @Description Username to set as file owner (required for chown operation)
+        type: string
+      link_path:
+        description: |-
+          Target path for symlink
+          @Description Path for symlink target (required for symlink operation)
+        type: string
+      operation:
+        description: |-
+          Operation type: write, symlink, chown, reload, delete, read, check
+          @Description Operation type to perform
+          @Required
+          @Enum(write,symlink,chown,reload,delete,read,check)
+        type: string
+    type: object
+host: localhost:8256
 info:
   contact: {}
-  description: APIs for CloudLand Functions
-  license:
-    name: Apache 2.0
-    url: http://www.apache.org/licenses/LICENSE-2.0.html
-  title: CloudLand API
+  description: Path for symlink target (required for symlink operation)
+  title: Alarm Rules Manager API
   version: "1.0"
 paths:
+  /api/v1/rules:
+    post:
+      consumes:
+      - application/json
+      description: Register API routes for managing Prometheus rule files
+      produces:
+      - application/json
+      responses: {}
+      summary: Register rule management API routes
+      tags:
+      - rules
+  /api/v1/rules/{operation}:
+    post:
+      consumes:
+      - application/json
+      description: Handle various operations on rule files (write, symlink, chown,
+        reload, delete, read, check)
+      parameters:
+      - description: Rule file operation request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/main.RuleFileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Operation successful
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Handle rule file operations
+      tags:
+      - rules
   /dictionaries:
     get:
       consumes:
@@ -2092,39 +2162,6 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: reinstall a instance
-      tags:
-      - Compute
-  /instances/{id}/resize:
-    post:
-      consumes:
-      - application/json
-      description: resize a instance
-      parameters:
-      - description: Instance UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Instance resize payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.InstanceResizePayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: resize a instance
       tags:
       - Compute
   /instances/{id}/set_user_password:
@@ -3269,34 +3306,6 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
-      tags:
-      - Compute
-  /volumes/{id}/resize:
-    post:
-      consumes:
-      - application/json
-      description: resize a volume
-      parameters:
-      - description: Volume resize payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.VolumeResizePayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: resize a volume
       tags:
       - Compute
   /vpcs:

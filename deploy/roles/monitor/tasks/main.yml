@@ -1,6 +1,7 @@
 - name: Set scrape interval variable
   set_fact:
     scrape_interval: 15  # 15 seconds
+    alarm_rules_manager_port: 8256
 
 - name: Set prometheus_server_ip from monitor group
   set_fact:
@@ -10,13 +11,42 @@
   set_fact:
     hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
 
+- name: Gather IP addresses from cland group
+  set_fact:
+    cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
+
+- name: Validate WDS configuration
+  fail:
+    msg: "wds_address must be configured with a valid value when wds group exists"
+  when:
+    - "'wds' in groups"
+    - "wds_address | default('') | length == 0 or wds_admin | default('') | length == 0 or wds_pass | default('') | length == 0"
+
+- name: Extract WDS monitor server credentials
+  set_fact:
+    wds_monitor_server_ip: "{{ wds_address | regex_replace('^(?:https?://)?([0-9.]+)(?:.*)$', '\\1') }}"
+    wds_monitor_server_admin: "{{ wds_admin }}"
+    wds_monitor_server_pass: "{{ wds_pass }}"
+  when:
+    - "'wds' in groups"
+    - "wds_address is defined and wds_address | length > 0"
+    - "wds_admin is defined and wds_admin | length > 0"
+    - "wds_pass is defined and wds_pass | length > 0"
+
 - name: Generate node exporters config block
   set_fact:
     node_exporters_block: |
       - job_name: 'prometheus_node_exporter'
         static_configs:
           {% for ip in hyper_ips -%}
-          - targets: ['{{ ip }}:9100']
+          - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'compute'
+          {% endfor -%}
+          {% for ip in cland_ips | difference(hyper_ips) -%}
+          - targets: ['{{ ip }}:9101']
+            labels:
+              node_type: 'management'
           {% endfor %}
 
 - name: Generate libvirt exporters config block
@@ -28,28 +58,461 @@
           - targets: ['{{ ip }}:9177']
           {% endfor %}
 
-- name: Update apt cache
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  apt:
-    update_cache: yes
+- name: Validate Alertmanager variables
+  fail:
+    msg: "Must define {{ item }} for task"
+  when: vars[item] | default('') | length == 0
+  with_items:
+    - smtp_host
+    - alert_sender
+    - smtp_user
+    - smtp_pass
+    - receiver_name
+    - alert_recipient
+    - slack_webhook_url
   tags: [monitor]
 
 - name: Install packages for monitor server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   apt:
-    name: ['prometheus', 'prometheus-node-exporter']
+    name:
+      - prometheus
+      - prometheus-node-exporter
     state: present
   tags: [monitor]
+
+- name: Create Alertmanager system directories
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: 65534
+    group: 65534
+  with_items:
+    - /etc/alertmanager
+    - /var/lib/alertmanager
+  tags: [monitor]
+
+- name: Create prometheus data directory with nobody owner
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  tags: [monitor]
+  file:
+    path: /var/lib/prometheus/data
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+
+- name: Setup Docker for Alertmanager
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  tags: [monitor]
+  block:
+    - name: Install Docker prerequisites
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - software-properties-common
+          - python3-pip
+        state: present
+
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        id: "0EBFCD88"
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker CE
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+    - name: Install Docker SDK for Python
+      pip:
+        name: docker
+        state: present
+      ignore_errors: true
+
+    - name: Ensure Docker is running
+      systemd:
+        name: docker
+        enabled: yes
+        state: started
+
+    - name: Create alertmanager directories
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: 65534
+        group: 65534
+        mode: 0775
+      with_items:
+        - /etc/alertmanager
+        - /var/lib/alertmanager
+
+    - name: Pull Alertmanager image
+      docker_image:
+        name: quay.io/prometheus/alertmanager
+        tag: v0.26.0
+        state: present
+        source: pull
+      check_mode: no
+
+- name: Setup Alertmanager Container
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  tags: [monitor]
+  block:
+    - name: Get alertmanager container info
+      docker_container_info:
+        name: alertmanager
+      register: alertmanager_info
+      ignore_errors: true
+
+    - name: Stop existing alertmanager container
+      docker_container:
+        name: alertmanager
+        image: "{{ alertmanager_info.container.Config.Image if alertmanager_info.exists else 'quay.io/prometheus/alertmanager:v0.26.0' }}"
+        state: stopped
+        stop_timeout: 30
+      register: stop_result
+      ignore_errors: true
+      when: alertmanager_info.exists | default(false)
+
+    - name: Remove existing alertmanager container
+      docker_container:
+        name: alertmanager
+        state: absent
+      when: stop_result is defined
+
+    - name: Ensure SSL directories exist on Prometheus server
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: 0755
+      with_items:
+        - "/etc/ssl/certs"
+        - "/etc/ssl/private"
+      tags: [monitor]
+
+    - name: Install certtool (GnuTLS)
+      apt:
+        name: gnutls-bin
+        state: present
+      tags: [monitor]
+
+    - name: Ensure TLS cert directories exist
+      file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      with_items:
+        - "/etc/ssl/certs"
+        - "/etc/ssl/private"
+        - "/etc/ssl/cloudland"
+      tags: [monitor]
+
+    - name: Create certtool template for alarm_rules_manager
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      copy:
+        dest: /tmp/alarm_rules_manager.info
+        content: |
+          organization = "Cloudland"
+          cn = "alarm_rules_manager"
+          ip_address = {{ prometheus_server_ip }}
+          tls_www_server
+          encryption_key
+          signing_key
+          expiration_days = 7300
+        mode: '0644'
+      tags: [monitor]
+
+    - name: Generate private key for alarm_rules_manager
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      shell: |
+        certtool --generate-privkey --outfile /etc/ssl/certs/alarm_rules_manager.key
+      tags: [monitor]
+
+    - name: Generate self-signed certificate for alarm_rules_manager
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      shell: |
+        certtool --generate-self-signed \
+          --load-privkey /etc/ssl/certs/alarm_rules_manager.key \
+          --template /tmp/alarm_rules_manager.info \
+          --outfile /etc/ssl/certs/alarm_rules_manager.crt
+      tags: [monitor]
+
+    - name: Ensure cland server has access to alarm_rules_manager.crt
+      become: true
+      delegate_to: "{{ prometheus_server_ip }}"
+      file:
+        path: /etc/ssl/certs/alarm_rules_manager.crt
+        owner: root
+        group: root
+        mode: '0644'
+      tags: [monitor]
+
+    - name: Fetch cert from prometheus server
+      fetch:
+        src: /etc/ssl/certs/alarm_rules_manager.crt
+        dest: /tmp/alarm_rules_manager.crt
+        flat: yes
+      delegate_to: "{{ prometheus_server_ip }}"
+      tags: [monitor]
+
+    - name: Ensure cloudland cert directory on cland nodes
+      become: true
+      file:
+        path: /etc/ssl/cloudland
+        state: directory
+        owner: root
+        group: root
+        mode: 0755
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
+    - name: Distribute cert to cland nodes
+      copy:
+        src: /tmp/alarm_rules_manager.crt
+        dest: /etc/ssl/certs/alarm_rules_manager.crt
+        mode: '0644'
+        force: yes
+        remote_src: no
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
+    - name: Set permissions on cland nodes
+      become: true
+      file:
+        path: /etc/ssl/certs/alarm_rules_manager.crt
+        owner: root
+        group: root
+        mode: '0644'
+      delegate_to: "{{ item }}"
+      with_items: "{{ groups['cland'] }}"
+      tags: [monitor]
+
+    - name: Remove temporary certtool template
+      when: true
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      file:
+        path: /tmp/alarm_rules_manager.info
+        state: absent
+      tags: [monitor]
+
+    - name: Set permissions for alarm_rules_manager cert and key
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      file:
+        path: "{{ item.path }}"
+        owner: prometheus
+        group: prometheus
+        mode: "{{ item.mode }}"
+      with_items:
+        - { path: "/etc/ssl/certs/alarm_rules_manager.crt", mode: "0644" }
+        - { path: "/etc/ssl/certs/alarm_rules_manager.key", mode: "0600" }
+      tags: [monitor]
+
+    - name: Configure Alertmanager
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      copy:
+        dest: /etc/alertmanager/alertmanager.yml
+        content: |
+          global:
+            smtp_smarthost: '{{ smtp_host }}'
+            smtp_from: '{{ alert_sender }}'
+            smtp_auth_username: '{{ smtp_user }}'
+            smtp_auth_password: '{{ smtp_pass }}'
+            smtp_require_tls: false
+            smtp_hello: '{{ smtp_hello }}'
+
+          route:
+            group_by: ['node_type', 'alertname', 'instance', 'domain']
+            group_wait: 30s
+            group_interval: 5m
+            repeat_interval: 3h
+            receiver: '{{ receiver_name }}'
+
+            routes:
+            - match:
+                alert_type: cpu
+                severity: warning
+              receiver: 'cpu-webhook'
+              continue: false
+
+            - match:
+                alert_type: bw
+                severity: warning
+              receiver: 'bw-webhook'
+              continue: false
+
+            - match_re:
+                alert_type: node-(unavailable|cpu|disk|network)
+                severity: warning|info
+              receiver: 'node-webhook'
+              continue: true
+
+            - match_re:
+                alert_type: .*
+                severity: .*
+              receiver: 'slack-notifications'
+              continue: true
+
+            - match_re:
+                alert_type: .*
+                severity: .*
+              receiver: '{{ receiver_name }}'
+
+          receivers:
+          - name: '{{ receiver_name }}'
+            email_configs:
+            - to: '{{ alert_recipient }}'
+              send_resolved: true
+              html: |-
+                {% raw %}
+                <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
+                <b>[Alert Name]</b> {{ .CommonLabels.alertname }}<br>
+                <b>[Severity]</b> {{ .CommonLabels.severity }}<br>
+                <b>[Instance/Domain]</b> {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}<br>
+                <b>[Summary]</b> {{ .CommonAnnotations.summary }}<br>
+                <b>[Description]</b> {{ .CommonAnnotations.description }}<br>
+                <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
+                <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
+                {% endraw %}
+              headers:
+                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
+
+          - name: 'cpu-webhook'
+            webhook_configs:
+            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
+              send_resolved: true
+              http_config:
+                tls_config:
+                  insecure_skip_verify: true
+
+          - name: 'bw-webhook'
+            webhook_configs:
+            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
+              send_resolved: true
+              http_config:
+                tls_config:
+                  insecure_skip_verify: true
+
+          - name: 'node-webhook'
+            webhook_configs:
+            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
+              send_resolved: true
+              http_config:
+                tls_config:
+                  insecure_skip_verify: true
+
+          - name: 'slack-notifications'
+            slack_configs:
+            - channel: '{{ slack_channel }}'
+              send_resolved: true
+              username: 'alertmanager'
+              icon_emoji: ':satellite:'
+              title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}{% endraw %}'
+              text: |-
+                {% raw %}
+                *[Summary]*: {{ .CommonAnnotations.summary }}
+                *[Description]*: {{ .CommonAnnotations.description }}
+                *[Alert Type]*: {{ .CommonLabels.alert_type }}
+                *[Alert Name]*: {{ .CommonLabels.alertname }}
+                *[Severity]*: {{ .CommonLabels.severity }}
+                *[Instance/Domain]*: {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}
+                *[Labels]*: `{{ .CommonLabels }}`
+                *[Annotations]*: `{{ .CommonAnnotations }}`
+                {% endraw %}
+        owner: prometheus
+        group: prometheus
+        mode: 0644
+        force: yes
+      tags: [monitor]
+
+    - name: Add Slack API URL to Alertmanager config
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      lineinfile:
+        path: /etc/alertmanager/alertmanager.yml
+        line: "    api_url: '{{ slack_webhook_url }}'"
+        state: present
+        backup: no
+      tags: [monitor]
+
+    - name: Run Alertmanager container
+      docker_container:
+        name: alertmanager
+        image: quay.io/prometheus/alertmanager:v0.26.0
+        state: started
+        restart_policy: unless-stopped
+        network_mode: host
+        volumes:
+          - /etc/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+          - /var/lib/alertmanager:/data
+          - /etc/localtime:/etc/localtime:ro
+          - /etc/ssl/certs:/etc/ssl/certs:ro
+          - /etc/ssl/private:/etc/ssl/private:ro
+        command:
+          - "--config.file=/etc/alertmanager/alertmanager.yml"
+          - "--storage.path=/data"
+          - "--data.retention=720h"
+          - "--log.level=debug"
+        user: "65534:65534"
+
+- name: Verify Alertmanager running status
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  tags: [monitor]
+  uri:
+    url: http://localhost:9093/-/healthy
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: alertmanager_health
+  until: alertmanager_health.status == 200
+  retries: 6
+  delay: 10
 
 - name: Configure Prometheus server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   copy:
     content: |
       global:
         scrape_interval: {{ scrape_interval }}s
+        evaluation_interval: 15s
+
+      rule_files:
+        - /etc/prometheus/rules_enabled/*.yml
+
+      alerting:
+        alertmanagers:
+          - static_configs:
+            - targets: ['localhost:9093']
+
       scrape_configs:
         - job_name: 'prometheus'
           static_configs:
@@ -57,6 +520,51 @@
     dest: /etc/prometheus/prometheus.yml
     owner: prometheus
     group: prometheus
+
+- name: Create alert rules directory structure
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  with_items:
+    - /etc/prometheus/rules_enabled
+    - /etc/prometheus/general_rules
+    - /etc/prometheus/special_rules
+    - /var/log/prometheus
+  tags: [monitor]
+
+- name: Ensure rule_files declaration exists
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /etc/prometheus/prometheus.yml
+    insertafter: '^global:'
+    line: 'rule_files:'
+    backup: yes
+  tags: [monitor]
+
+- name: Update Prometheus config to load enabled rules
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /etc/prometheus/prometheus.yml
+    insertafter: '^rule_files:'
+    line: '  - /etc/prometheus/rules_enabled/*.yml'
+    backup: yes
+  tags: [monitor]
+
+- name: Ensure rule_files declaration exists
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /etc/prometheus/prometheus.yml
+    insertafter: '^global:'
+    line: 'rule_files:'
+    backup: yes
   tags: [monitor]
 
 - name: Update Prometheus with node exporters block
@@ -83,6 +591,59 @@
     create: yes
   tags: [monitor]
 
+- name: Create systemd override directory for Prometheus
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/systemd/system/prometheus.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: 0755
+  tags: [monitor]
+
+- name: Add Prometheus service overrides
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /etc/systemd/system/prometheus.service.d/override.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/bin/prometheus \
+        --config.file=/etc/prometheus/prometheus.yml \
+        --storage.tsdb.retention.time=720h \
+        --storage.tsdb.path=/var/lib/prometheus/data \
+        --log.level=info \
+        --log.format=json
+    mode: 0644
+  tags: [monitor]
+
+- name: Allow prometheus user to run systemctl kill SIGHUP for prometheus without password
+  become: true
+  copy:
+    dest: /etc/sudoers.d/prometheus
+    content: |
+      prometheus ALL=(ALL) NOPASSWD: /usr/bin/systemctl kill -s SIGHUP prometheus.service
+    mode: '0440'
+    owner: root
+    group: root
+  tags: [monitor]
+
+
+- name: Force reload systemd after config change
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  systemd:
+    daemon_reload: yes
+  tags: [monitor]
+
+- name: reload prometheus systemd
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  systemd:
+    daemon_reload: yes
+  tags: [monitor]
 
 - name: Start Prometheus services on Prometheus server
   delegate_to: "{{ prometheus_server_ip }}"
@@ -95,6 +656,68 @@
   loop:
     - 'prometheus-node-exporter'
     - 'prometheus'
+  tags: [monitor]
+
+- name: Create alarm_rules_manager directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /opt/cloudland/web/bin
+    state: directory
+    owner: cland
+    group: cland
+    mode: 0755
+  tags: [monitor]
+
+- name: Compile and deploy alarm_rules_manager
+  tags: [monitor]
+  block:
+    - name: Copy alarm_rules_manager binary to Prometheus server
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      copy:
+        src: /opt/cloudland/web/alarm_rules_manager
+        dest: /opt/cloudland/web/bin/alarm_rules_manager
+        mode: 0755
+        owner: prometheus
+        group: prometheus
+        remote_src: no
+      when: not ansible_check_mode
+
+    - name: Create alarm_rules_manager service file
+      delegate_to: "{{ prometheus_server_ip }}"
+      become: true
+      copy:
+        dest: /lib/systemd/system/alarm_rules_manager.service
+        content: |
+          [Unit]
+          Description=Cloudland Alarm Rules Manager
+          After=network.target
+
+          [Service]
+          Type=simple
+          User=prometheus
+          Group=prometheus
+          Environment=ALARM_RULES_CERT=/etc/ssl/certs/alarm_rules_manager.crt
+          Environment=ALARM_RULES_KEY=/etc/ssl/certs/alarm_rules_manager.key
+          Environment=ALARM_RULES_LISTEN=0.0.0.0:{{ alarm_rules_manager_port }}
+          ExecStart=/opt/cloudland/web/bin/alarm_rules_manager
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+        mode: 0644
+      tags: [monitor]
+
+- name: Start and enable alarm_rules_manager service
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  systemd:
+    name: alarm_rules_manager
+    enabled: yes
+    daemon_reload: yes
+    state: restarted
+  when: not ansible_check_mode
   tags: [monitor]
 
 - name: Add Grafana GPG key
@@ -122,25 +745,73 @@
     state: present
   tags: [monitor]
 
+- name: Ensure Grafana service runs as grafana user
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /lib/systemd/system/grafana-server.service
+    regexp: '^User='
+    line: 'User=grafana'
+  tags: [monitor]
+
+- name: Ensure Grafana service group is grafana
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /lib/systemd/system/grafana-server.service
+    regexp: '^Group='
+    line: 'Group=grafana'
+  tags: [monitor]
+
 - name: Configure Grafana
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor]
   copy:
     dest: /etc/grafana/grafana.ini
     content: |
       [server]
+      # Grafana listen address： 0.0.0.0 allow extern access
+      http_addr = 0.0.0.0
       http_port = 3000
+
       [database]
       type = sqlite3
       path = /var/lib/grafana/grafana.db
+
+      [users]
+      default_theme = light
+      auto_assign_org = true
+      auto_assign_org_role = Admin
+
+      [auth.anonymous]
+      enabled = false
+
+      [auth]
+      login_form = true
+      basic_auth_enabled = true
+
+      [security]
+      allow_embedding = true
+
+      [unified_alerting]
+      enabled = true
+      alertmanager_url = http://{{ prometheus_server_ip }}:9093
+
+      [datasources]
+      editable = true
+    owner: grafana
+    group: grafana
+    mode: 0640
 
 - name: Start and enable Grafana service
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   systemd:
     name: grafana-server
-    state: started
+    state: restarted
     enabled: true
+    daemon_reload: yes
   tags: [monitor]
 
 - name: Wait for Grafana to be ready
@@ -157,6 +828,23 @@
   delay: 5
   tags: [monitor]
 
+- name: Allow Grafana and Prometheus ports in iptables
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  with_items:
+    - 3000
+    - 9090
+    - 8256
+  loop_control:
+    label: "Opening port {{ item }}"
+  iptables:
+    chain: INPUT
+    protocol: tcp
+    destination_port: "{{ item }}"
+    jump: ACCEPT
+    action: insert
+  tags: [monitor]
+
 - name: Add Prometheus as Grafana data source
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -166,7 +854,7 @@
     body:
       name: "Prometheus"
       type: "prometheus"
-      url: "http://{{ prometheus_server_ip }}:9090"  
+      url: "http://{{ prometheus_server_ip }}:9090"
       access: "proxy"
       isDefault: true
     body_format: json
@@ -178,4 +866,60 @@
     force_basic_auth: yes
   ignore_errors: true
   changed_when: false
+  tags: [monitor]
+
+- name: Create directories on Prometheus server
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "/etc/prometheus/{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  loop:
+    - node_rules
+    - node_templates
+  tags: [monitor]
+
+- name: Copy rule files to node_rules directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: /etc/prometheus/node_templates
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+  with_items:
+    - roles/monitor/templates/compute-core-resources.yml.j2
+    - roles/monitor/templates/management-resources.yml.j2
+    - roles/monitor/templates/node-availability.yml.j2
+    - roles/monitor/templates/compute-network-resources.yml.j2
+  tags: [monitor]
+
+- name: Reload Prometheus configuration
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: sudo systemctl kill -s SIGHUP prometheus.service
+  tags: [monitor]
+
+- name: Restart clbase service on control nodes
+  become: true
+  systemd:
+    name: clbase
+    enabled: yes
+    state: restarted
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cland'] }}"
+  tags: [monitor]
+
+- name: Restart clapi service on control nodes
+  become: true
+  systemd:
+    name: clapi
+    enabled: yes
+    state: restarted
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cland'] }}"
   tags: [monitor]

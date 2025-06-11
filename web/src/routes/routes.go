@@ -202,6 +202,11 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/dictionaries/:id", dictionaryView.Delete)
 	m.Get("/dictionaries/:id", dictionaryView.Edit)
 	m.Post("/dictionaries/:id", dictionaryView.Patch)
+	m.Post("/alarms/node", alarmView.CreateNodeAlarmRule)
+	m.Get("/alarms/node", alarmView.GetNodeAlarmRules)
+	m.Get("/alarms/node/new", alarmView.NewNodeAlarmRule)
+	m.Post("/alarms/node/:uuid/delete", alarmView.DeleteNodeAlarmRule)
+	m.Delete("/alarms/node/:uuid", alarmView.DeleteNodeAlarmRule)
 	m.Get("/error", func(c *macaron.Context) {
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")
 		c.HTML(500, "error")

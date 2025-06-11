@@ -235,7 +235,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -952,6 +952,7 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 	return int(instance.ID), nil
 }
 
+
 func joinSecgroup(db *gorm.DB, secgroupID string) *gorm.DB {
 	if secgroupID != "" {
 		db = db.Joins("JOIN interfaces ON interfaces.instance = instances.id").
@@ -963,7 +964,34 @@ func joinSecgroup(db *gorm.DB, secgroupID string) *gorm.DB {
 	return db
 }
 
-func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query, secgroupID string) (total int64, instances []*model.Instance, err error) {
+func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error) {
+	// Parse domain format, example: inst-12345 -> ID=12345
+	if !strings.HasPrefix(domain, "inst-") {
+		return "", fmt.Errorf("invalid domain format, must start with 'inst-'")
+	}
+
+	idStr := strings.TrimPrefix(domain, "inst-")
+	instanceID, err := strconv.Atoi(idStr)
+	if err != nil {
+		logger.Error("Domain conversion failed domain=%s error=%v", domain, err)
+		return "", fmt.Errorf("invalid instance ID in domain format")
+	}
+
+	var instance model.Instance
+	db := DB()
+	if err := db.Where("id = ?", instanceID).First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Error("Instance not found domain=%s id=%d", domain, instanceID)
+			return "", fmt.Errorf("instance not found")
+		}
+		logger.Error("Database query failed domain=%s error=%v", domain, err)
+		return "", fmt.Errorf("database error")
+	}
+
+	return instance.UUID, nil
+}
+
+func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string, secgroupID string) (total int64, instances []*model.Instance, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
@@ -1431,19 +1459,19 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 	}
 	if c.Req.Method == "GET" {
 		images := []*model.Image{}
-		if err := db.Find(&images).Error; err != nil {
+		if err = db.Find(&images).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(500, "500")
 			return
 		}
 		flavors := []*model.Flavor{}
-		if err := db.Find(&flavors).Error; err != nil {
+		if err = db.Find(&flavors).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(500, "500")
 			return
 		}
 		keys := []*model.Key{}
-		if err := db.Find(&keys).Error; err != nil {
+		if err = db.Find(&keys).Error; err != nil {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(500, "500")
 			return
@@ -1460,7 +1488,8 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		if imageID <= 0 {
 			imageID = instance.ImageID
 		}
-		image, err := imageAdmin.Get(ctx, imageID)
+		var image *model.Image
+		image, err = imageAdmin.Get(ctx, imageID)
 		if err != nil {
 			c.Data["ErrorMsg"] = "No valid image"
 			c.HTML(http.StatusBadRequest, "error")
@@ -1473,7 +1502,8 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		}
 		cpu, memory, disk := instance.Cpu, instance.Memory, instance.Disk
 		if flavorID > 0 {
-			flavor, err := flavorAdmin.Get(ctx, flavorID)
+			var flavor *model.Flavor
+			flavor, err = flavorAdmin.Get(ctx, flavorID)
 			if err != nil {
 				logger.Errorf("No valid flavor", err)
 				c.Data["ErrorMsg"] = "No valid flavor"

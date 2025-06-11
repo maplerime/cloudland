@@ -34,6 +34,7 @@ type ImageResponse struct {
 	User         string `json:"user"`
 	Status       string `json:"status"`
 	OSVersion    string `json:"os_version"`
+	BootLoader   string `json:"boot_loader"`
 	// QAEnabled    bool   `json:"qa_enabled"`
 }
 
@@ -52,6 +53,7 @@ type ImagePayload struct {
 	OSVersion    string `json:"os_version" binding:"required,min=2,max=32"`
 	User         string `json:"user" binding:"required,min=2,max=32"`
 	InstanceUUID string `json:"instance_uuid"`
+	BootLoader   string `json:"boot_loader" binding:"required,oneof=bios uefi"`
 	// QAEnabled    bool   `json:"qa_enabled"`
 }
 
@@ -198,7 +200,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", true, instanceID, payload.UUID)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -229,6 +231,7 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 		User:         image.UserName,
 		Status:       image.Status,
 		OSVersion:    image.OsVersion,
+		BootLoader:   image.BootLoader,
 		// QAEnabled:    image.QAEnabled,
 	}
 	return

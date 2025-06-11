@@ -1,17 +1,79 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "APIs for CloudLand Functions",
-        "title": "CloudLand API",
+        "description": "Path for symlink target (required for symlink operation)",
+        "title": "Alarm Rules Manager API",
         "contact": {},
-        "license": {
-            "name": "Apache 2.0",
-            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
-        },
         "version": "1.0"
     },
-    "basePath": "/api/v1",
+    "host": "localhost:8256",
+    "basePath": "/api/v1/rules",
     "paths": {
+        "/api/v1/rules": {
+            "post": {
+                "description": "Register API routes for managing Prometheus rule files",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Register rule management API routes",
+                "responses": {}
+            }
+        },
+        "/api/v1/rules/{operation}": {
+            "post": {
+                "description": "Handle various operations on rule files (write, symlink, chown, reload, delete, read, check)",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "rules"
+                ],
+                "summary": "Handle rule file operations",
+                "parameters": [
+                    {
+                        "description": "Rule file operation request",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/main.RuleFileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Operation successful",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/dictionaries": {
             "get": {
                 "description": "list dictionaries",
@@ -1243,56 +1305,6 @@
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceReinstallPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
-        "/instances/{id}/resize": {
-            "post": {
-                "description": "resize a instance",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Compute"
-                ],
-                "summary": "resize a instance",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Instance UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Instance resize payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.InstanceResizePayload"
                         }
                     }
                 ],
@@ -2972,49 +2984,6 @@
                 }
             }
         },
-        "/volumes/{id}/resize": {
-            "post": {
-                "description": "resize a volume",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Compute"
-                ],
-                "summary": "resize a volume",
-                "parameters": [
-                    {
-                        "description": "Volume resize payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.VolumeResizePayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/vpcs": {
             "get": {
                 "description": "list vpcs",
@@ -3604,6 +3573,7 @@
         "apis.ImagePayload": {
             "type": "object",
             "required": [
+                "boot_loader",
                 "download_url",
                 "name",
                 "os_code",
@@ -3611,6 +3581,13 @@
                 "user"
             ],
             "properties": {
+                "boot_loader": {
+                    "type": "string",
+                    "enum": [
+                        "bios",
+                        "uefi"
+                    ]
+                },
                 "download_url": {
                     "type": "string"
                 },
@@ -3649,6 +3626,9 @@
             "type": "object",
             "properties": {
                 "architecture": {
+                    "type": "string"
+                },
+                "boot_loader": {
                     "type": "string"
                 },
                 "created_at": {
@@ -3729,6 +3709,11 @@
         "apis.InstancePatchPayload": {
             "type": "object",
             "properties": {
+                "flavor": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 1
+                },
                 "hostname": {
                     "type": "string"
                 },
@@ -3859,19 +3844,6 @@
                 },
                 "password": {
                     "type": "string"
-                }
-            }
-        },
-        "apis.InstanceResizePayload": {
-            "type": "object",
-            "properties": {
-                "cpu": {
-                    "type": "integer",
-                    "minimum": 1
-                },
-                "memory": {
-                    "type": "integer",
-                    "minimum": 1
                 }
             }
         },
@@ -4992,18 +4964,6 @@
                 }
             }
         },
-        "apis.VolumeResizePayload": {
-            "type": "object",
-            "required": [
-                "size"
-            ],
-            "properties": {
-                "size": {
-                    "type": "integer",
-                    "minimum": 1
-                }
-            }
-        },
         "apis.VolumeResponse": {
             "type": "object",
             "properties": {
@@ -5193,6 +5153,32 @@
                 "Public",
                 "Internal"
             ]
+        },
+        "main.RuleFileRequest": {
+            "description": "Request for rule file operations",
+            "type": "object",
+            "properties": {
+                "content": {
+                    "description": "File content for write operation\n@Description Content to write to file (required for write operation)",
+                    "type": "string"
+                },
+                "file_path": {
+                    "description": "Source file path\n@Description Path of the source file (required for all operations except reload)\n@Required",
+                    "type": "string"
+                },
+                "file_user": {
+                    "description": "File owner username\n@Description Username to set as file owner (required for chown operation)",
+                    "type": "string"
+                },
+                "link_path": {
+                    "description": "Target path for symlink\n@Description Path for symlink target (required for symlink operation)",
+                    "type": "string"
+                },
+                "operation": {
+                    "description": "Operation type: write, symlink, chown, reload, delete, read, check\n@Description Operation type to perform\n@Required\n@Enum(write,symlink,chown,reload,delete,read,check)",
+                    "type": "string"
+                }
+            }
         }
     }
 }

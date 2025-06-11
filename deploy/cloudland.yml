@@ -66,6 +66,18 @@
   roles:
     - {role: monitor, become: yes, tags: [monitor]}
 
+# deploy monitor for cland nodes
+- name: install monitor for cland
+  hosts: cland
+  roles:
+    - {role: monitor_cland, become: yes, tags: [monitor]}
+
+# deploy monitor for hyper nodes
+- name: install monitor for hyper
+  hosts: hyper
+  roles:
+    - {role: monitor_hyper, become: yes, tags: [monitor]}
+
 # delete tmp ssh key pair
 - name: generate ssh key pair
   hosts: localhost
