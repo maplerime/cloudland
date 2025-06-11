@@ -536,6 +536,12 @@ definitions:
         items:
           $ref: '#/definitions/common.BaseReference'
         type: array
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 32
+        minItems: 1
+        type: array
     type: object
   apis.InterfacePayload:
     properties:

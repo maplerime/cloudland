@@ -457,6 +457,9 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 
 func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, ifacePayload *InterfacePayload) (router *model.Router, ifaceInfo *routes.InterfaceInfo, err error) {
 	logger.Debugf("Get interface info with VPC %+v, ifacePayload %+v", vpc, ifacePayload)
+	if len(ifacePayload.Subnets) == 0 && ifacePayload.Subnet != nil {
+		ifacePayload.Subnets = append(ifacePayload.Subnets, ifacePayload.Subnet)
+	}
 	if ifacePayload == nil || len(ifacePayload.Subnets) == 0 {
 		err = fmt.Errorf("Interface with subnet must be provided")
 		return

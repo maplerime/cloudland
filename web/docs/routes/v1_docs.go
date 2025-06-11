@@ -3953,6 +3953,14 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/common.BaseReference"
                     }
+                },
+                "subnets": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
