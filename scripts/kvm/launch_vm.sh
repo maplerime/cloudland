@@ -118,10 +118,8 @@ if [ "$cpu_vendor" = "GenuineIntel" ]; then
 else
     vm_virt_feature="svm"
 fi
-<<<<<<< HEAD
 os_code=$(jq -r '.os_code' <<< $metadata)
 sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/$vm_nested/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
-=======
 vm_nvram="$image_dir/${vm_ID}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
     cp $nvram_template $vm_nvram
@@ -152,7 +150,6 @@ else
     $vm_xml
 fi
 
->>>>>>> 31b4c0a29fa2be1cc3b018fdb299235048d91aad
 virsh define $vm_xml
 virsh autostart $vm_ID
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
