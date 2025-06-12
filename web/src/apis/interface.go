@@ -41,7 +41,7 @@ type AddressInfo struct {
 type InterfaceResponse struct {
 	*BaseReference
 	Address            *AddressInfo         `json:"-"`
-	SecondaryAddresses []*AddressInfo       `json:"secondary_addresses"`
+	SecondaryAddresses []*AddressInfo       `json:"secondary_addresses,omitempty"`
 	MacAddress         string               `json:"mac_address"`
 	IsPrimary          bool                 `json:"is_primary"`
 	Inbound            int32                `json:"inbound"`
@@ -152,6 +152,17 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					},
 					Network: site.Network,
 					Gateway: site.Gateway,
+				})
+			}
+		}
+		if len(iface.SecondAddresses) > 0 {
+			for _, secondAddr := range iface.SecondAddresses {
+				interfaceResp.SecondaryAddresses = append(interfaceResp.SecondaryAddresses, &AddressInfo{
+					IPAddress:  secondAddr.Address,
+					Subnet: &ResourceReference{
+						ID:   secondAddr.Subnet.UUID,
+						Name: secondAddr.Subnet.Name,
+					},
 				})
 			}
 		}
