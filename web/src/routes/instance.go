@@ -1726,6 +1726,12 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		}
 		primarySubnets = append(primarySubnets, pSubnet)
 	}
+	if len(primarySubnets) == 0 {
+		logger.Error("Subnet(s) for primary interface must be specified", err)
+		c.Data["ErrorMsg"] = "Subnet(s) for primary interface must be specified"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	cnt = c.QueryTrim("ip_count")
 	ipCount, err := strconv.Atoi(cnt)
 	if err != nil {
