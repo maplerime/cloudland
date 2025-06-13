@@ -278,17 +278,17 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create floating ip", err)
 		return
 	}
-	floatingIpResps := make([]*FloatingIpResponse, 0, len(floatingIps))
+	floatingIpResp := make([]*FloatingIpResponse, 0, len(floatingIps))
 	for _, fip := range floatingIps {
 		resp, err := v.getFloatingIpResponse(ctx, fip)
 		if err != nil {
 			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 			return
 		}
-		floatingIpResps = append(floatingIpResps, resp)
+		floatingIpResp = append(floatingIpResp, resp)
 	}
-	logger.Debugf("Created floating ips %+v", floatingIpResps)
-	c.JSON(http.StatusOK, floatingIpResps)
+	logger.Debugf("Created floating ips %+v", floatingIpResp)
+	c.JSON(http.StatusOK, floatingIpResp)
 }
 
 func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *model.FloatingIp) (floatingIpResp *FloatingIpResponse, err error) {

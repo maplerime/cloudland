@@ -145,7 +145,8 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 			}
 			if idleCount == 0 {
 				logger.Errorf("No idle addresses for site subnet %s", subnet.Name)
-				return nil, fmt.Errorf("No idle addresses for site subnet")
+				err = fmt.Errorf("No idle addresses for site subnet")
+				return
 			}
 			subnet.IdleCount = idleCount
 		}
@@ -153,20 +154,22 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 
 	floatingIps = make([]*model.FloatingIp, 0)
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d", pubSubnets, publicIp, instance, activationCount, inbound, outbound)
-	ips, err := a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false)
+	var fips []*model.FloatingIp
+	fips, err = a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false)
 	if err != nil {
-		return nil, err
+		return
 	}
-	floatingIps = append(floatingIps, ips...)
+	floatingIps = append(floatingIps, fips...)
 
 	logger.Debugf("siteSubnets: %v", siteSubnets)
 	for i := 0; i < len(siteSubnets); i++ {
 		logger.Debugf("siteSubnets[%d]: %v, idleCount: %d, activationCount: %d, inbound: %d, outbound: %d", i, siteSubnets[i], siteSubnets[i].IdleCount, siteSubnets[i].IdleCount, inbound, outbound)
-		ips, err := a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true)
+		var siteFips []*model.FloatingIp
+		siteFips, err = a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true)
 		if err != nil {
-			return nil, err
+			return
 		}
-		floatingIps = append(floatingIps, ips...)
+		floatingIps = append(floatingIps, siteFips...)
 	}
 
 	return floatingIps, nil
@@ -532,6 +535,18 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 	if err != nil {
 		logger.Error("Failed to query site subnets %v", err)
 		return
+	}
+
+	for i, subnet := range siteSubnets {
+		var idleCount int64
+		idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(c.Req.Context(), subnet)
+		if err != nil {
+			logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+			return
+		}
+		if idleCount == 0 {
+			siteSubnets = append(siteSubnets[:i], siteSubnets[i+1:]...)
+		}
 	}
 
 	c.Data["Instances"] = instances
