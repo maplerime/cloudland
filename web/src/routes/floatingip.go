@@ -536,7 +536,7 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 		logger.Error("Failed to query site subnets %v", err)
 		return
 	}
-	// 判断闲置数量为0则不输出
+
 	for i, subnet := range siteSubnets {
 		var idleCount int64
 		idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(c.Req.Context(), subnet)
