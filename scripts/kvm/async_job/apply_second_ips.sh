@@ -21,6 +21,11 @@ for i in {1..150}; do
     sleep 2
 done
 chain_as=secgroup-as-$vnic
+for i in {1..60}; do
+    iptables -S $chain_as | grep $mac
+    [ $? -eq 0 ] && break
+    sleep 1
+done
 i=0
 while [ $i -lt $naddrs ]; do
     read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
