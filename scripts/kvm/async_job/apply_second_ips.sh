@@ -15,7 +15,7 @@ naddrs=$(jq length <<< $more_addresses)
 [ $naddrs -eq 0 ] && exit 0 
 
 vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
-for i in {1..30}; do
+for i in {1..150}; do
     bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
     [ -n "$bridge" ] && break
     sleep 2
