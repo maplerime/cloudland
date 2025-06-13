@@ -38,7 +38,7 @@ type FloatingIps struct {
 type FloatingIpAdmin struct{}
 type FloatingIpView struct{}
 
-func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *gorm.DB, memberShip *MemberShip, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance) ([]*model.FloatingIp, error) {
+func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *gorm.DB, memberShip *MemberShip, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool) ([]*model.FloatingIp, error) {
 	floatingIps := make([]*model.FloatingIp, 0)
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
@@ -57,6 +57,10 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
+		fip.Type = "public"
+		if isSite {
+			fip.Type = "site"
+		}
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
 				logger.Error("Execute floating ip failed", err)
@@ -88,25 +92,6 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 		return
 	}
 
-	if len(pubSubnets) != 0 {
-		for _, pubSubnet := range pubSubnets {
-			if pubSubnet.Type != "public" {
-				logger.Error("Subnet must be public", err)
-				err = fmt.Errorf("Subnet must be public")
-				return
-			}
-		}
-	}
-	if len(siteSubnets) != 0 {
-		for _, siteSubnet := range siteSubnets {
-			if siteSubnet.Type != "site" {
-				logger.Error("Subnet must be site", err)
-				err = fmt.Errorf("Subnet must be site")
-				return
-			}
-		}
-	}
-
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -114,10 +99,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 		}
 	}()
 
-	floatingIps = make([]*model.FloatingIp, 0)
-	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d", pubSubnets, publicIp, instance, activationCount, inbound, outbound)
-
-	if len(pubSubnets) < 1 {
+	if len(pubSubnets) == 0 {
 		err = db.Where("type = ?", "public").Find(&pubSubnets).Error
 		if err != nil {
 			logger.Error("Failed to query public subnets ", err)
@@ -127,24 +109,51 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 			logger.Error("No public subnets available")
 			return nil, fmt.Errorf("No public subnets available")
 		}
+	}
+	idleCountTotal := int64(0)
+	for _, subnet := range pubSubnets {
+		if subnet.Type != "public" {
+			logger.Error("Subnet must be public", err)
+			err = fmt.Errorf("Subnet must be public")
+			return
+		}
+		var idleCount int64
+		idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
+		if err != nil {
+			logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
+			return
+		}
+		idleCountTotal += idleCount
+	}
+	if idleCountTotal < int64(activationCount) {
+		logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d, pubSubnets: %v", idleCountTotal, activationCount, pubSubnets)
+		return nil, fmt.Errorf("Not enough idle addresses for public subnets")
+	}
 
-		idleCountTotal := int64(0)
-		for _, subnet := range pubSubnets {
+	if len(siteSubnets) > 0 {
+		for _, subnet := range siteSubnets {
+			if subnet.Type != "site" {
+				logger.Error("Subnet must be site", err)
+				err = fmt.Errorf("Subnet must be site")
+				return
+			}
 			var idleCount int64
 			idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(ctx, subnet)
 			if err != nil {
 				logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
 				return
 			}
-			idleCountTotal += idleCount
-		}
-		if idleCountTotal < int64(activationCount) {
-			logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d, pubSubnets: %v", idleCountTotal, activationCount, pubSubnets)
-			return nil, fmt.Errorf("Not enough idle addresses for public subnets")
+			if idleCount == 0 {
+				logger.Errorf("No idle addresses for site subnet %s", subnet.Name)
+				return nil, fmt.Errorf("No idle addresses for site subnet")
+			}
+			subnet.IdleCount = idleCount
 		}
 	}
 
-	ips, err := a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance)
+	floatingIps = make([]*model.FloatingIp, 0)
+	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d", pubSubnets, publicIp, instance, activationCount, inbound, outbound)
+	ips, err := a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +162,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	logger.Debugf("siteSubnets: %v", siteSubnets)
 	for i := 0; i < len(siteSubnets); i++ {
 		logger.Debugf("siteSubnets[%d]: %v, idleCount: %d, activationCount: %d, inbound: %d, outbound: %d", i, siteSubnets[i], siteSubnets[i].IdleCount, siteSubnets[i].IdleCount, inbound, outbound)
-		ips, err := a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance)
+		ips, err := a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true)
 		if err != nil {
 			return nil, err
 		}
@@ -578,7 +587,7 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	// 获取站点子网
+
 	siteSubnetList := make([]*model.Subnet, 0)
 	if len(siteSubnets) > 0 {
 		for _, subnetID := range siteSubnets {
@@ -618,7 +627,6 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 		}
 	}
 
-	// 获取公共子网
 	pubSubnets := make([]*model.Subnet, 0)
 	if len(publicSubnets) > 0 {
 		idleCountTotal := int64(0)
@@ -676,7 +684,6 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	if len(pubSubnets) > 0 {
 		subnets = append(subnets, pubSubnets...)
 	} else {
-		// 如果没有指定子网，查询所有可用的公共子网
 		err = db.Where("type = ?", "public").Find(&subnets).Error
 		if err != nil {
 			logger.Error("Failed to query public subnets ", err)
