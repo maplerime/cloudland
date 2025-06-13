@@ -3238,6 +3238,17 @@ const docTemplatealarm_v1 = `{
         }
     },
     "definitions": {
+        "apis.AddressInfo": {
+            "type": "object",
+            "properties": {
+                "ip_address": {
+                    "type": "string"
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
@@ -3450,6 +3461,11 @@ const docTemplatealarm_v1 = `{
                 "name"
             ],
             "properties": {
+                "activation_count": {
+                    "type": "integer",
+                    "maximum": 64,
+                    "minimum": 0
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -3473,6 +3489,18 @@ const docTemplatealarm_v1 = `{
                 },
                 "public_subnet": {
                     "$ref": "#/definitions/common.BaseReference"
+                },
+                "public_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
@@ -3955,6 +3983,11 @@ const docTemplatealarm_v1 = `{
                 "allow_spoofing": {
                     "type": "boolean"
                 },
+                "count": {
+                    "type": "integer",
+                    "maximum": 512,
+                    "minimum": 1
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -3975,17 +4008,33 @@ const docTemplatealarm_v1 = `{
                     "items": {
                         "$ref": "#/definitions/common.BaseReference"
                     }
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "subnets": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
         "apis.InterfacePayload": {
             "type": "object",
-            "required": [
-                "subnet"
-            ],
             "properties": {
                 "allow_spoofing": {
                     "type": "boolean"
+                },
+                "count": {
+                    "type": "integer",
+                    "maximum": 512,
+                    "minimum": 1
                 },
                 "inbound": {
                     "type": "integer",
@@ -4014,8 +4063,24 @@ const docTemplatealarm_v1 = `{
                         "$ref": "#/definitions/common.BaseReference"
                     }
                 },
+                "site_subnets": {
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
                 "subnet": {
                     "$ref": "#/definitions/common.BaseReference"
+                },
+                "subnets": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
@@ -4034,9 +4099,6 @@ const docTemplatealarm_v1 = `{
                 "inbound": {
                     "type": "integer"
                 },
-                "ip_address": {
-                    "type": "string"
-                },
                 "is_primary": {
                     "type": "boolean"
                 },
@@ -4051,14 +4113,23 @@ const docTemplatealarm_v1 = `{
                 "outbound": {
                     "type": "integer"
                 },
+                "secondary_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AddressInfo"
+                    }
+                },
                 "security_groups": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/common.ResourceReference"
                     }
                 },
-                "subnet": {
-                    "$ref": "#/definitions/common.ResourceReference"
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.SiteSubnetInfo"
+                    }
                 }
             }
         },
@@ -4548,6 +4619,32 @@ const docTemplatealarm_v1 = `{
                     ]
                 },
                 "remote_cidr": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.SiteSubnetInfo": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "gateway": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }

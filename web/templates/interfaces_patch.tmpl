@@ -15,6 +15,34 @@
                         <label for="address">{{.i18n.Tr "IP Address"}}</label>
                         <input id="address" name="address" value="{{ .Interface.Address.Address }}" disabled>
                     </div>
+                    <div class="inline field">
+                        <label for="second_addresses">{{.i18n.Tr "Secondary IP Addresses"}}</label>
+                        <input id="second_addresses" name="second_addresses" value="{{ range .Interface.SecondAddresses }} {{ .Address }} {{ end }}" disabled>
+                    </div>
+                    <div class="inline field">
+                        <label for="subnets">{{.i18n.Tr "Subnets"}}</label>
+                        <select name="subnets" id="subnets" multiple="" class="ui multiple selection dropdown">
+                            {{ $IfaceSubnets := .IfaceSubnets }}
+                            {{ range .Subnets }}
+                              {{ $subnetID := .ID }}
+                              {{ $selected := false }}
+                              {{ range $IfaceSubnets }}
+                                {{ if eq .ID $subnetID }}
+                                  {{ $selected = true }}
+                                {{ end }}
+                              {{ end }}
+                              {{ if $selected }}
+                                  <option value="{{ .ID }}" selected>{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ else }}
+                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ end }}
+                            {{ end }}
+                        </select>
+                    </div>
+                    <div class="required inline field">
+                        <label for="ip_count">{{.i18n.Tr "IP Count"}}</label>
+                        <input id="ip_count" name="ip_count" value="{{ .IpCount }}" required>
+                    </div>
                     <div class="required inline field">
                         <label for="macaddr">{{.i18n.Tr "Mac Address"}}</label>
                         <input id="macaddr" name="macaddr" value="{{ .Interface.MacAddr }}" disabled>
@@ -42,6 +70,26 @@
                     		<div class="item" data-value="no" data-text="no">{{.i18n.Tr "no"}}</div>
                     	  </div>
                     	</div>
+                    </div>
+                    <div class="inline field">
+                        <label for="sites">{{.i18n.Tr "Site Subnets"}}</label>
+                        <select name="sites" id="sites" multiple="" class="ui multiple selection dropdown">
+                            {{ $IfaceSites := .IfaceSites }}
+                            {{ range .SiteSubnets }}
+                              {{ $siteID := .ID }}
+                              {{ $selected := false }}
+                              {{ range $IfaceSites }}
+                                {{ if eq .ID $siteID }}
+                                  {{ $selected = true }}
+                                {{ end }}
+                              {{ end }}
+                              {{ if $selected }}
+                                  <option value="{{ .ID }}" selected>{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ else }}
+                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ end }}
+                            {{ end }}
+                        </select>
                     </div>
                     <div class="inline field">
                         <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>

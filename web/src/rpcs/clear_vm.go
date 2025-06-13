@@ -52,7 +52,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 		i++
 	}
 	for _, iface := range instance.Interfaces {
-		err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
+		err = db.Model(&model.Address{}).Where("interface = ? or second_interface = ?", iface.ID, iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0, "second_interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to Update addresses, %v", err)
 			return
@@ -60,6 +60,12 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 		err = db.Delete(iface).Error
 		if err != nil {
 			logger.Error("Failed to delete interface", err)
+			return
+		}
+		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
+			"interface": 0}).Error
+		if err != nil {
+			logger.Error("Failed to update subnet", err)
 			return
 		}
 		spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}

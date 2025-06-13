@@ -280,14 +280,26 @@
 			                        <td>
 						{{ if .FloatingIps }}
 							{{ range .FloatingIps }}
-								{{.FipAddress }}<br>
+								floating: {{.FipAddress }}<br>
 							{{ end }}
 						{{ end }}
 						{{ if .Interfaces }}
 							{{ range .Interfaces }}
 								{{ if .Address}}
-								<a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
+								    native: <br><a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
 								{{ end }}
+                                                                {{ if .SecondAddresses }}
+                                                                    secondary:<br>
+								{{ end }}
+                                                                {{ range .SecondAddresses }}
+                                                                    {{ .Address }}<br>
+                                                                {{ end }}
+							        {{ if .SiteSubnets }}
+                                                                    site:<br>
+                                                                {{ end }}
+							        {{ range .SiteSubnets }}
+								    <a href="{{$Link}}/../subnets/{{.ID}}">{{ .ID }}-{{ .Network }}</a><br>
+							        {{ end }}
 							{{ end }}
 					        {{ end }}
 						</td>

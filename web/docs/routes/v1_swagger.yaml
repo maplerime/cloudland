@@ -1,5 +1,12 @@
 basePath: /api/v1
 definitions:
+  apis.AddressInfo:
+    properties:
+      ip_address:
+        type: string
+      subnet:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
   apis.ConsoleResponse:
     properties:
       console_url:
@@ -141,6 +148,10 @@ definitions:
     type: object
   apis.FloatingIpPayload:
     properties:
+      activation_count:
+        maximum: 64
+        minimum: 0
+        type: integer
       inbound:
         maximum: 20000
         minimum: 1
@@ -159,6 +170,14 @@ definitions:
         type: string
       public_subnet:
         $ref: '#/definitions/common.BaseReference'
+      public_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
     required:
     - name
     type: object
@@ -493,6 +512,10 @@ definitions:
     properties:
       allow_spoofing:
         type: boolean
+      count:
+        maximum: 512
+        minimum: 1
+        type: integer
       inbound:
         maximum: 20000
         minimum: 0
@@ -509,11 +532,25 @@ definitions:
         items:
           $ref: '#/definitions/common.BaseReference'
         type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 32
+        minItems: 1
+        type: array
     type: object
   apis.InterfacePayload:
     properties:
       allow_spoofing:
         type: boolean
+      count:
+        maximum: 512
+        minimum: 1
+        type: integer
       inbound:
         maximum: 20000
         minimum: 0
@@ -534,10 +571,20 @@ definitions:
         items:
           $ref: '#/definitions/common.BaseReference'
         type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 32
+        minItems: 1
+        type: array
       subnet:
         $ref: '#/definitions/common.BaseReference'
-    required:
-    - subnet
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 1
+        type: array
     type: object
   apis.InterfaceResponse:
     properties:
@@ -549,8 +596,6 @@ definitions:
         type: string
       inbound:
         type: integer
-      ip_address:
-        type: string
       is_primary:
         type: boolean
       mac_address:
@@ -561,12 +606,18 @@ definitions:
         type: string
       outbound:
         type: integer
+      secondary_addresses:
+        items:
+          $ref: '#/definitions/apis.AddressInfo'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.ResourceReference'
         type: array
-      subnet:
-        $ref: '#/definitions/common.ResourceReference'
+      site_subnets:
+        items:
+          $ref: '#/definitions/apis.SiteSubnetInfo'
+        type: array
     type: object
   apis.IpGroupListResponse:
     properties:
@@ -897,6 +948,23 @@ definitions:
     required:
     - direction
     - protocol
+    type: object
+  apis.SiteSubnetInfo:
+    properties:
+      created_at:
+        type: string
+      gateway:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      network:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
     type: object
   apis.SubnetListResponse:
     properties:
