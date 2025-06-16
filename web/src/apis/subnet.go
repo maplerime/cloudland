@@ -503,9 +503,11 @@ func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Addre
 					logger.Errorf("Failed to get instance for interface %d, err: %v", iface.Instance, err)
 					return
 				}
+				owner = orgAdmin.GetOrgName(instance.Owner)
 				addressResp.TargetInterface.FromInstance = &InstanceInfo{
 					ResourceReference: &ResourceReference{
-						ID: instance.UUID,
+						ID:    instance.UUID,
+						Owner: owner,
 					},
 					Hostname: instance.Hostname,
 				}
@@ -518,9 +520,11 @@ func (v *SubnetAPI) getAddressResponse(ctx context.Context, address *model.Addre
 				return
 			}
 			if floatingIp.Instance != nil {
+				owner = orgAdmin.GetOrgName(floatingIp.Instance.Owner)
 				addressResp.TargetInterface.FromInstance = &InstanceInfo{
 					ResourceReference: &ResourceReference{
-						ID: floatingIp.Instance.UUID,
+						ID:    floatingIp.Instance.UUID,
+						Owner: owner,
 					},
 					Hostname: floatingIp.Instance.Hostname,
 				}

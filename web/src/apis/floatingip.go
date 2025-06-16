@@ -272,7 +272,7 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 	if floatingIp.Instance != nil && len(floatingIp.Instance.Interfaces) > 0 {
 		instance := floatingIp.Instance
 		interIp := strings.Split(floatingIp.IntAddress, "/")[0]
-		owner := orgAdmin.GetOrgName(instance.Owner)
+		owner = orgAdmin.GetOrgName(instance.Owner)
 		floatingIpResp.TargetInterface = &TargetInterface{
 			ResourceReference: &ResourceReference{
 				ID: instance.Interfaces[0].UUID,
