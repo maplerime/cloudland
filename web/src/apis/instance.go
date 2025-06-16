@@ -82,7 +82,7 @@ type InstanceResponse struct {
 	Image       *ResourceReference    `json:"image"`
 	Keys        []*ResourceReference  `json:"keys"`
 	PasswdLogin bool                  `json:"passwd_login"`
-	Zone        string                `json:"zone"`
+	Zone        *BaseReference        `json:"zone"`
 	VPC         *ResourceReference    `json:"vpc,omitempty"`
 	Hypervisor  *BaseReference        `json:"hypervisor,omitempty"`
 	Reason      string                `json:"reason"`
@@ -594,13 +594,13 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 			CreatedAt: instance.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: instance.UpdatedAt.Format(TimeStringForMat),
 		},
-		Hostname:  instance.Hostname,
-		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status.String(),
-		Reason:    instance.Reason,
-		Cpu:       instance.Cpu,
-		Memory:    instance.Memory,
-		Disk:      instance.Disk,
+		Hostname:    instance.Hostname,
+		LoginPort:   int(instance.LoginPort),
+		Status:      instance.Status.String(),
+		Reason:      instance.Reason,
+		Cpu:         instance.Cpu,
+		Memory:      instance.Memory,
+		Disk:        instance.Disk,
 		PasswdLogin: instance.PasswdLogin,
 	}
 	if instance.Image != nil {
@@ -616,7 +616,10 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 		instanceResp.Disk = instance.Flavor.Disk
 	}
 	if instance.Zone != nil {
-		instanceResp.Zone = instance.Zone.Name
+		instanceResp.Zone = &BaseReference{
+			ID:   strconv.Itoa(int(instance.Zone.ID)),
+			Name: instance.Zone.Name,
+		}
 	}
 	keys := make([]*ResourceReference, len(instance.Keys))
 	for i, key := range instance.Keys {
