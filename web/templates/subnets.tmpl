@@ -49,12 +49,9 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.Type}}
-										{{ if ne .Type "internal" }}
-											({{.IdleCount}})
-										{{ end }}
-									</td>
-									<td>
+			                        <td>{{.Type}}</a></td>
+			                        <td>
+			                        <td>
                         {{ if .Group }}
                         {{ .Group.Name }}
                         {{ end }}
