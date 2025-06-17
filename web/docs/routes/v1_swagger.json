@@ -4031,6 +4031,9 @@
                 "inbound": {
                     "type": "integer"
                 },
+                "ip_address": {
+                    "type": "string"
+                },
                 "is_primary": {
                     "type": "boolean"
                 },
@@ -4062,6 +4065,9 @@
                     "items": {
                         "$ref": "#/definitions/apis.SiteSubnetInfo"
                     }
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.ResourceReference"
                 }
             }
         },

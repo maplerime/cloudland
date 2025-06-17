@@ -40,7 +40,7 @@ type AddressInfo struct {
 
 type InterfaceResponse struct {
 	*BaseReference
-	Address            *AddressInfo         `json:"-"`
+	*AddressInfo
 	SecondaryAddresses []*AddressInfo       `json:"secondary_addresses,omitempty"`
 	MacAddress         string               `json:"mac_address"`
 	IsPrimary          bool                 `json:"is_primary"`
@@ -117,7 +117,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			ID:   iface.UUID,
 			Name: iface.Name,
 		},
-		Address: &AddressInfo{
+		AddressInfo: &AddressInfo{
 			IPAddress:  iface.Address.Address,
 			Subnet: &ResourceReference{
 				ID:   iface.Address.Subnet.UUID,

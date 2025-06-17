@@ -596,6 +596,8 @@ definitions:
         type: string
       inbound:
         type: integer
+      ip_address:
+        type: string
       is_primary:
         type: boolean
       mac_address:
@@ -618,6 +620,8 @@ definitions:
         items:
           $ref: '#/definitions/apis.SiteSubnetInfo'
         type: array
+      subnet:
+        $ref: '#/definitions/common.ResourceReference'
     type: object
   apis.IpGroupListResponse:
     properties:
