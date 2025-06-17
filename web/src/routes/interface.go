@@ -76,8 +76,8 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 	db := DB()
 	iface = &model.Interface{}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-                return db.Order("addresses.created_at DESC")
-        }).Preload("SecondAddresses.Subnet").Where(where).Where("uuid = ?", uuID).Take(iface).Error
+		return db.Order("addresses.created_at DESC")
+	}).Preload("SecondAddresses.Subnet").Where(where).Where("uuid = ?", uuID).Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
 		return
@@ -120,8 +120,8 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-                return db.Order("addresses.created_at DESC")
-        }).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
+		return db.Order("addresses.created_at DESC")
+	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
 		logger.Debug("DB failed to query security rule(s), %v", err)
 		return
 	}

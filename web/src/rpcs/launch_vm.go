@@ -163,7 +163,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		err = db.Model(&instance).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),
-			"zoneID":  hyper.ZoneID,
+			"zoneID": hyper.ZoneID,
 			"reason": reason}).Error
 		if err != nil {
 			logger.Error("Failed to update instance", err)

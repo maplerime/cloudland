@@ -4038,6 +4038,9 @@ const docTemplatev1 = `{
                 "inbound": {
                     "type": "integer"
                 },
+                "ip_address": {
+                    "type": "string"
+                },
                 "is_primary": {
                     "type": "boolean"
                 },
@@ -4069,6 +4072,9 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.SiteSubnetInfo"
                     }
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.ResourceReference"
                 }
             }
         },

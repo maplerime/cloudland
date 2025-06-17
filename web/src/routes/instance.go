@@ -638,16 +638,16 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		return
 	}
 	vlans = append(vlans, &VlanInfo{
-		Device: "eth0",
-		Vlan: primary.Vlan, 
-		Inbound: inbound, 
-		Outbound: outbound, 
-		AllowSpoofing: iface.AllowSpoofing, 
-		Gateway: primary.Gateway, 
-		Router: primary.RouterID, 
-		IpAddr: iface.Address.Address, 
-		MacAddr: iface.MacAddr, 
-		SecRules: securityData, 
+		Device:        "eth0",
+		Vlan:          primary.Vlan,
+		Inbound:       inbound,
+		Outbound:      outbound,
+		AllowSpoofing: iface.AllowSpoofing,
+		Gateway:       primary.Gateway,
+		Router:        primary.RouterID,
+		IpAddr:        iface.Address.Address,
+		MacAddr:       iface.MacAddr,
+		SecRules:      securityData,
 		MoreAddresses: moreAddresses,
 	})
 	for i, ifaceInfo := range secondaryIfaces {
@@ -678,16 +678,16 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			return
 		}
 		vlans = append(vlans, &VlanInfo{
-			Device: ifname, 
-			Vlan: subnet.Vlan, 
-			Inbound: inbound, 
-			Outbound: outbound, 
-			AllowSpoofing: iface.AllowSpoofing, 
-			Gateway: subnet.Gateway, 
-			Router: subnet.RouterID, 
-			IpAddr: iface.Address.Address, 
-			MacAddr: iface.MacAddr, 
-			SecRules: securityData,
+			Device:        ifname,
+			Vlan:          subnet.Vlan,
+			Inbound:       inbound,
+			Outbound:      outbound,
+			AllowSpoofing: iface.AllowSpoofing,
+			Gateway:       subnet.Gateway,
+			Router:        subnet.RouterID,
+			IpAddr:        iface.Address.Address,
+			MacAddr:       iface.MacAddr,
+			SecRules:      securityData,
 			MoreAddresses: moreAddresses,
 		})
 	}
@@ -749,15 +749,15 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		vlans = append(vlans, &VlanInfo{
-			Device: iface.Name, 
-			Vlan: subnet.Vlan, 
-			Inbound: iface.Inbound, 
-			Outbound: iface.Outbound, 
-			AllowSpoofing: iface.AllowSpoofing, 
-			Gateway: subnet.Gateway, 
-			Router: subnet.RouterID, 
-			IpAddr: iface.Address.Address, 
-			MacAddr: iface.MacAddr, 
+			Device:        iface.Name,
+			Vlan:          subnet.Vlan,
+			Inbound:       iface.Inbound,
+			Outbound:      iface.Outbound,
+			AllowSpoofing: iface.AllowSpoofing,
+			Gateway:       subnet.Gateway,
+			Router:        subnet.RouterID,
+			IpAddr:        iface.Address.Address,
+			MacAddr:       iface.MacAddr,
 			MoreAddresses: moreAddresses,
 		})
 	}
@@ -901,7 +901,9 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
-	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+		return db.Order("addresses.created_at DESC")
+	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
 		return
 	}
@@ -936,7 +938,9 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
-	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+		return db.Order("addresses.created_at DESC")
+	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
 		return
 	}
