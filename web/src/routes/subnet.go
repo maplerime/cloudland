@@ -581,6 +581,17 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
 	}
 	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "")
+	// 针对type不为internal的子网，输出闲置数量
+	for _, subnet := range subnets {
+		if subnet.Type != "internal" {
+			idleCount, err := subnetAdmin.CountIdleAddressesForSubnet(c.Req.Context(), subnet)
+			if err != nil {
+				logger.Error("Failed to count idle addresses for subnet", err)
+				continue
+			}
+			subnet.IdleCount = idleCount
+		}
+	}
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
