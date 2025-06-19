@@ -271,23 +271,35 @@
 			                        <td>{{ if .LoginPort }}{{.LoginPort}}{{ end }}</td>
 			                        <td>
 			                        {{ if .Cpu }}
-                                        {{ .Cpu }}H{{ .Memory}}M{{ .Disk }}G
+                                        {{ .Cpu }}C{{ .Memory}}M{{ .Disk }}G
                                     {{ else if .Flavor }}
-                                        {{ .Flavor.Cpu }}H{{ .Flavor.Memory }}M{{ .Flavor.Disk }}G
+                                        {{ .Flavor.Cpu }}C{{ .Flavor.Memory }}M{{ .Flavor.Disk }}G
                                     {{ end }}
                                     </td>
 			                        <td>{{ if .Image }}{{.Image.Name}}{{end}}</td>
 			                        <td>
 						{{ if .FloatingIps }}
 							{{ range .FloatingIps }}
-								{{.FipAddress }}<br>
+								floating: {{.FipAddress }}<br>
 							{{ end }}
 						{{ end }}
 						{{ if .Interfaces }}
 							{{ range .Interfaces }}
 								{{ if .Address}}
-								<a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
+								    native: <br><a href="{{$Link}}/../interfaces/{{.ID}}">{{ .Address.Address }}</a><br>
 								{{ end }}
+                                                                {{ if .SecondAddresses }}
+                                                                    secondary:<br>
+								{{ end }}
+                                                                {{ range .SecondAddresses }}
+                                                                    {{ .Address }}<br>
+                                                                {{ end }}
+							        {{ if .SiteSubnets }}
+                                                                    site:<br>
+                                                                {{ end }}
+							        {{ range .SiteSubnets }}
+								    <a href="{{$Link}}/../subnets/{{.ID}}">{{ .ID }}-{{ .Network }}</a><br>
+							        {{ end }}
 							{{ end }}
 					        {{ end }}
 						</td>

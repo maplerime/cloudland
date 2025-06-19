@@ -262,7 +262,8 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 	}
 	cpu, memory, disk := instance.Cpu, instance.Memory, instance.Disk
 	if payload.Flavor != "" {
-		flavor, err := flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
+		var flavor *model.Flavor
+		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
 		if err != nil {
 			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
@@ -457,28 +458,55 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 
 func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, ifacePayload *InterfacePayload) (router *model.Router, ifaceInfo *routes.InterfaceInfo, err error) {
 	logger.Debugf("Get interface info with VPC %+v, ifacePayload %+v", vpc, ifacePayload)
-	if ifacePayload == nil || ifacePayload.Subnet == nil {
+	if len(ifacePayload.Subnets) == 0 && ifacePayload.Subnet != nil {
+		ifacePayload.Subnets = append(ifacePayload.Subnets, ifacePayload.Subnet)
+	}
+	if ifacePayload == nil || len(ifacePayload.Subnets) == 0 {
 		err = fmt.Errorf("Interface with subnet must be provided")
 		return
 	}
-	subnet, err := subnetAdmin.GetSubnet(ctx, ifacePayload.Subnet)
-	if err != nil {
-		return
-	}
+	routerID := int64(0)
 	router = vpc
-	if router != nil && router.ID != subnet.RouterID {
-		err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
-		return
+	if router != nil {
+		routerID = router.ID
 	}
-	if router == nil && subnet.RouterID > 0 {
-		router, err = routerAdmin.Get(ctx, subnet.RouterID)
+	ifaceInfo = &routes.InterfaceInfo{
+		AllowSpoofing: ifacePayload.AllowSpoofing,
+	}
+	for _, snet := range ifacePayload.Subnets {
+		var subnet *model.Subnet
+		subnet, err = subnetAdmin.GetSubnet(ctx, snet)
 		if err != nil {
 			return
 		}
+		if router == nil && subnet.RouterID > 0 {
+			router, err = routerAdmin.Get(ctx, subnet.RouterID)
+			if err != nil {
+				return
+			}
+			routerID = subnet.RouterID
+		}
+		if router != nil && router.ID != subnet.RouterID {
+			err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
+			return
+		}
+		ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
 	}
-	ifaceInfo = &routes.InterfaceInfo{
-		Subnet:        subnet,
-		AllowSpoofing: ifacePayload.AllowSpoofing,
+	if len(ifaceInfo.Subnets) == 0 {
+		err = fmt.Errorf("No valid subnets specified")
+		return
+	}
+	for _, ipSite := range ifacePayload.SiteSubnets {
+		var site *model.Subnet
+		site, err = subnetAdmin.GetSubnet(ctx, ipSite)
+		if err != nil {
+			return
+		}
+		if site.Interface > 0 {
+			err = fmt.Errorf("Site subnet is not available")
+			return
+		}
+		ifaceInfo.SiteSubnets = append(ifaceInfo.SiteSubnets, site)
 	}
 	if ifacePayload.IpAddress != "" {
 		ifaceInfo.IpAddress = ifacePayload.IpAddress
@@ -515,7 +543,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 			if err != nil {
 				return
 			}
-			if secgroup.RouterID != subnet.RouterID {
+			if secgroup.RouterID != routerID {
 				err = fmt.Errorf("Security group not in subnet vpc")
 				return
 			}

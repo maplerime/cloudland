@@ -34,6 +34,29 @@ type SecurityData struct {
 	PortMax     int32  `json:"port_max"`
 }
 
+type NetworkRoute struct {
+	Network string `json:"network"`
+	Netmask string `json:"netmask"`
+	Gateway string `json:"gateway"`
+}
+
+type InstanceNetwork struct {
+	Type    string          `json:"type,omitempty"`
+	Address string          `json:"ip_address"`
+	Netmask string          `json:"netmask"`
+	Link    string          `json:"link"`
+	ID      string          `json:"id"`
+	Routes  []*NetworkRoute `json:"routes,omitempty"`
+}
+
+type SiteIpSubnetInfo struct {
+	SiteID     int64    `json:"site_id"`
+	SiteVlan   int64    `json:"site_vlan"`
+	InternalIp string   `json:"internal_ip"`
+	Gateway    string   `json:"gateway"`
+	Addresses  []string `json:"addresses"`
+}
+
 type VlanInfo struct {
 	Device        string          `json:"device"`
 	Vlan          int64           `json:"vlan"`
@@ -46,6 +69,7 @@ type VlanInfo struct {
 	IpAddr        string          `json:"ip_address"`
 	MacAddr       string          `json:"mac_address"`
 	SecRules      []*SecurityData `json:"security"`
+	MoreAddresses []string        `json:"more_addresses"`
 }
 
 func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
@@ -91,7 +115,11 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	}
 	address.Allocated = true
 	address.Type = addrType
-	address.Interface = ifaceID
+	if addrType == "second" {
+		address.SecondInterface = ifaceID
+	} else {
+		address.Interface = ifaceID
+	}
 	if err = db.Model(address).Update(address).Error; err != nil {
 		logger.Error("Failed to Update address, %v", err)
 		return nil, err
@@ -128,7 +156,7 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup) (iface *model.Interface, err error) {
+func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	primary := false
 	if ifaceName == "eth0" {
@@ -154,6 +182,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		Mtu:            1450,
 		RouterID:       subnet.RouterID,
 		SecurityGroups: secgroups,
+		AllowSpoofing:  allowSpoofing,
 	}
 	logger.Debugf("Interface: %v", iface)
 	if ifType == "instance" {
@@ -274,6 +303,67 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 			PortMax:     rule.PortMax,
 		}
 		securityData = append(securityData, sgr)
+	}
+	return
+}
+
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, netID int) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
+	ctx, db := GetContextDB(ctx)
+	subnet := iface.Address.Subnet
+	address := strings.Split(iface.Address.Address, "/")[0]
+	instNetwork := &InstanceNetwork{
+		Address: address,
+		Netmask: subnet.Netmask,
+		Type:    "ipv4",
+		Link:    iface.Name,
+		ID:      fmt.Sprintf("network%d", netID),
+	}
+	if iface.PrimaryIf {
+		gateway := strings.Split(subnet.Gateway, "/")[0]
+		instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
+		instNetwork.Routes = append(instNetwork.Routes, instRoute)
+		instNetworks = append(instNetworks, instNetwork)
+	}
+	osCode := GetImageOSCode(ctx, instance)
+	for _, addr := range iface.SecondAddresses {
+		if osCode == "linux" {
+			subnet := addr.Subnet
+			address := strings.Split(addr.Address, "/")[0]
+			instNetworks = append(instNetworks, &InstanceNetwork{
+				Address: address,
+				Netmask: subnet.Netmask,
+				Type:    "ipv4",
+				Link:    iface.Name,
+				ID:      fmt.Sprintf("network%d", netID),
+			})
+		}
+		moreAddresses = append(moreAddresses, addr.Address)
+	}
+	for _, site := range iface.SiteSubnets {
+		if site.Vlan != subnet.Vlan {
+			err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
+			logger.Errorf("Site subnets and primary subnet must be with same vlan")
+			return
+		}
+		siteAddrs := []*model.Address{}
+		err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
+		if err != nil {
+			logger.Errorf("Failed to query site ip(s), %v", err)
+			return
+		}
+		for _, addr := range siteAddrs {
+			if osCode == "linux" {
+				address := strings.Split(addr.Address, "/")[0]
+				instNetworks = append(instNetworks, &InstanceNetwork{
+					Address: address,
+					Netmask: site.Netmask,
+					Type:    "ipv4",
+					Link:    iface.Name,
+					ID:      fmt.Sprintf("network%d", netID),
+				})
+			}
+			moreAddresses = append(moreAddresses, addr.Address)
+		}
 	}
 	return
 }

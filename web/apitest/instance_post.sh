@@ -6,15 +6,15 @@ cat >tmp.json <<EOF
 {
   "hostname": "test",
   "primary_interface": {
-    "subnet": {
-      "id": "69e7af0d-2f0d-4fdc-a874-a69a99012e55"
-    },
+    "subnets": [{
+      "id": "8bc206c8-0ced-49f8-ba9b-4b9717fbacc5"
+    }],
     "inbound": 100,
     "outbound": 100
   },
   "flavor": "small",
   "image": {
-    "id": "3c0cca59-df4f-4daa-bfa1-04d771e1a17c"
+    "id": "1655a434-d726-49c2-8286-0866135d2475"
   },
   "keys": [
     {
