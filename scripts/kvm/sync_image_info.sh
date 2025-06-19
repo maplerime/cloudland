@@ -16,9 +16,9 @@ if [ -n "$wds_address" ]; then
     if echo "$volumes" | jq -e 'length > 0' >/dev/null 2>&1; then
         pairs=""
         while read -r volume; do
-            image_id=$(echo "$volume" | jq -r '.id')
+            volume_id=$(echo "$volume" | jq -r '.id')
             pool_id=$(echo "$volume" | jq -r '.pool_id')
-            pairs+="${image_id},${pool_id};"
+            pairs+="${pool_id},${volume_id};"
         done < <(echo "$volumes" | jq -c '.[]')
 
         # Remove the trailing semicolon
