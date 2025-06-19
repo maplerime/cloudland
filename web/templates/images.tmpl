@@ -1,29 +1,4 @@
 {{template "_head" .}}
-<script type="text/javascript">
-$('.sync-button').click(function () {
-    var $this = $(this);
-    $('.sync.modal').modal({
-        closable: false,
-        onApprove: function () {
-            if ($this.data('type') == "form") {
-                $($this.data('form')).submit();
-                return;
-            }
-            $.ajax({
-                url: $this.data('url'),
-                type: 'POST',
-                success: function (data) {
-                    window.location.href = data.redirect;
-                },
-                error: function (jqXHR, textStatus, errorThrown) {
-                    window.location.href = "/error?ErrorMsg=" + jqXHR.responseText;
-                }
-            });
-        }
-    }).modal('show');
-    return false;
-});
-</script>
     <div class="admin user">
 	    <div class="ui container">
 		    <div class="ui grid">
@@ -133,8 +108,35 @@ $('.sync-button').click(function () {
             {{.i18n.Tr "Image Sync Remote Info"}}
         </div>
         <div class="content">
-            <p>{{.i18n.Tr "Image_Deletion_Confirm"}}</p>
+            <p>{{.i18n.Tr "Image_Sync_Remote_Info_Confirm"}}</p>
         </div>
         {{template "_delete_modal_actions" .}}
     </div>
+
+<script type="text/javascript">
+    $('.sync-button').click(function () {
+        var $this = $(this);
+        $('.sync.modal').modal({
+            closable: false,
+            onApprove: function () {
+                if ($this.data('type') == "form") {
+                    $($this.data('form')).submit();
+                    return;
+                }
+                $.ajax({
+                    url: $this.data('url'),
+                    type: 'POST',
+                    success: function (data) {
+                        window.location.href = data.redirect;
+                    },
+                    error: function (jqXHR, textStatus, errorThrown) {
+                        window.location.href = "/error?ErrorMsg=" + jqXHR.responseText;
+                    }
+                });
+            }
+        }).modal('show');
+        return false;
+    });
+</script>
+
 {{template "_footer" .}}
