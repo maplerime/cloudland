@@ -57,7 +57,7 @@ type ImageStorage struct {
 }
 
 func init() {
-	dbs.AutoMigrate(&Image{})
+	dbs.AutoMigrate(&Image{}, &ImageStorage{})
 }
 
 func (i *Image) Clone() *Image {
