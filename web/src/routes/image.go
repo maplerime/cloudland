@@ -372,6 +372,13 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Data["Instances"] = instances
+	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, -1, "", "category='storage_pool'")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusInternalServerError)
+		return
+	}
+	c.Data["Pools"] = pools
 	c.HTML(200, "images_new")
 }
 
