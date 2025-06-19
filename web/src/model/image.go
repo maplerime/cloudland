@@ -44,6 +44,16 @@ type Image struct {
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
 	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	StorageType           string    `gorm:"type:varchar(36);"`
+}
+
+type ImageStorage struct {
+	Model
+	ImageID  int64  `gorm:"default:0"`
+	Image    *Image `gorm:"foreignkey:ImageID"`
+	VolumeID string `gorm:"type:varchar(128)"`
+	PoolID   string `gorm:"type:varchar(128)"`
+	Status   string `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error
 }
 
 func init() {
@@ -75,5 +85,6 @@ func (i *Image) Clone() *Image {
 		QAEnabled:             i.QAEnabled,
 		CaptureFromInstanceID: i.CaptureFromInstanceID,
 		CaptureFromInstance:   i.CaptureFromInstance,
+		StorageType:           i.StorageType,
 	}
 }

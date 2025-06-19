@@ -36,7 +36,7 @@
 			                        <th>{{.i18n.Tr "Default Username"}}</th>
 			                        <th>{{.i18n.Tr "Architecture"}}</th>
 			                        <th>{{.i18n.Tr "Boot Loader"}}</th>
-                                    <th>{{.i18n.Tr "Delete"}}</th>
+                                    <th>{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -58,6 +58,18 @@
 			                        <td>{{.Architecture}}</td>
 			                        <td>{{.BootLoader}}</td>
                                     <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+                                    <td>
+                                        <div class="ui selection dropdown">
+                                            <input id="action" name="action" type="hidden">
+                                                <i class="dropdown icon"></i>
+                                                <div class="default text">Action</div>
+                                                <div class="menu">
+                                                    <div class="item" data-text="DeleteImage">
+                                                        <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete"}}</a>
+                                                    </div>
+                                                </div>
+                                        </div>
+                                    </td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>
