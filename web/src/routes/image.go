@@ -236,6 +236,7 @@ func (a *ImageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Image) (er
 		logger.Error(err)
 		return
 	}
+	db := DB()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -243,15 +244,24 @@ func (a *ImageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Image) (er
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	if image.StorageType == "wds" {
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s'", image.ID, prefix)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Sync remote info command execution failed", err)
-			return
-		}
+	driver := GetVolumeDriver()
+	if driver == "local" {
+		err = fmt.Errorf("Local driver do not need to be synchronized")
+		logger.Error(err)
+		return
+	}
+	// update storage type if not set
+	if image.StorageType == "" {
+		image.StorageType = driver
+		db.Save(image)
+	}
+	prefix := strings.Split(image.UUID, "-")[0]
+	control := "inter="
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s'", image.ID, prefix)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Sync remote info command execution failed", err)
+		return
 	}
 	return
 }

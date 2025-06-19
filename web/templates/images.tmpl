@@ -88,11 +88,9 @@ $('.sync-button').click(function () {
                                                 <i class="dropdown icon"></i>
                                                 <div class="default text">Action</div>
                                                 <div class="menu">
-                                                    {{ if .StorageType }}
                                                     <div class="item" data-text="SyncRemoteInfo">
                                                         <a class="sync-button" data-url="{{$Link}}/{{.ID}}/sync_remote_info" href="javascript:void(0)">{{$.i18n.Tr "SyncRemoteInfo"}}</a>
                                                     </div>
-                                                    {{ end }}
                                                     <div class="item" data-text="DeleteImage">
                                                         <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete"}}</a>
                                                     </div>
