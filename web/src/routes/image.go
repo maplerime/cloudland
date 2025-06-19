@@ -230,6 +230,32 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	return
 }
 
+func (a *ImageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Image) (err error) {
+	if image == nil || image.ID <= 0 {
+		err = fmt.Errorf("Invalid image ID: %d", image.ID)
+		logger.Error(err)
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized to sync remote info for image")
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	if image.StorageType == "wds" {
+		prefix := strings.Split(image.UUID, "-")[0]
+		control := "inter="
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s'", image.ID, prefix)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Sync remote info command execution failed", err)
+			return
+		}
+	}
+	return
+}
+
 func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
 	db := DB()
 	if limit == 0 {
@@ -373,4 +399,36 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
+}
+
+func (v *ImageView) SyncRemoteInfo(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is empty"
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	imageID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	image, err := imageAdmin.Get(ctx, int64(imageID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	err = imageAdmin.SyncRemoteInfo(ctx, image)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	c.JSON(200, map[string]interface{}{
+		"redirect": "images",
+	})
+	return
 }

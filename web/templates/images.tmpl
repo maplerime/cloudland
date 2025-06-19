@@ -1,4 +1,29 @@
 {{template "_head" .}}
+<script type="text/javascript">
+$('.sync-button').click(function () {
+    var $this = $(this);
+    $('.sync.modal').modal({
+        closable: false,
+        onApprove: function () {
+            if ($this.data('type') == "form") {
+                $($this.data('form')).submit();
+                return;
+            }
+            $.ajax({
+                url: $this.data('url'),
+                type: 'POST',
+                success: function (data) {
+                    window.location.href = data.redirect;
+                },
+                error: function (jqXHR, textStatus, errorThrown) {
+                    window.location.href = "/error?ErrorMsg=" + jqXHR.responseText;
+                }
+            });
+        }
+    }).modal('show');
+    return false;
+});
+</script>
     <div class="admin user">
 	    <div class="ui container">
 		    <div class="ui grid">
@@ -63,6 +88,11 @@
                                                 <i class="dropdown icon"></i>
                                                 <div class="default text">Action</div>
                                                 <div class="menu">
+                                                    {{ if .StorageType }}
+                                                    <div class="item" data-text="SyncRemoteInfo">
+                                                        <a class="sync-button" data-url="{{$Link}}/{{.ID}}/sync_remote_info" href="javascript:void(0)">{{$.i18n.Tr "SyncRemoteInfo"}}</a>
+                                                    </div>
+                                                    {{ end }}
                                                     <div class="item" data-text="DeleteImage">
                                                         <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete"}}</a>
                                                     </div>
