@@ -52,7 +52,17 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 		i++
 	}
 	for _, iface := range instance.Interfaces {
-		err = db.Model(&model.Address{}).Where("interface = ? or second_interface = ?", iface.ID, iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0, "second_interface": 0}).Error
+		err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
+		if err != nil {
+			logger.Error("Failed to Update addresses, %v", err)
+			return
+		}
+		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID, iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
+		if err != nil {
+			logger.Error("Failed to Update addresses, %v", err)
+			return
+		}
+		err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID, iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to Update addresses, %v", err)
 			return

@@ -473,28 +473,39 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 	ifaceInfo = &routes.InterfaceInfo{
 		AllowSpoofing: ifacePayload.AllowSpoofing,
 	}
-	for _, snet := range ifacePayload.Subnets {
-		var subnet *model.Subnet
-		subnet, err = subnetAdmin.GetSubnet(ctx, snet)
-		if err != nil {
-			return
-		}
-		if router == nil && subnet.RouterID > 0 {
-			router, err = routerAdmin.Get(ctx, subnet.RouterID)
+	if len(ifacePayload.PublicAddresses) > 0 {
+		for _, pubAddr := range ifacePayload.PublicAddresses {
+			var floatingIp *model.FloatingIp
+			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
 			if err != nil {
 				return
 			}
-			routerID = subnet.RouterID
+			ifaceInfo.PublicIps = append(ifaceInfo.PublicIps, floatingIp)
 		}
-		if router != nil && router.ID != subnet.RouterID {
-			err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
+	} else {
+		for _, snet := range ifacePayload.Subnets {
+			var subnet *model.Subnet
+			subnet, err = subnetAdmin.GetSubnet(ctx, snet)
+			if err != nil {
+				return
+			}
+			if router == nil && subnet.RouterID > 0 {
+				router, err = routerAdmin.Get(ctx, subnet.RouterID)
+				if err != nil {
+					return
+				}
+				routerID = subnet.RouterID
+			}
+			if router != nil && router.ID != subnet.RouterID {
+				err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
+				return
+			}
+			ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
+		}
+		if len(ifaceInfo.Subnets) == 0 {
+			err = fmt.Errorf("No valid subnets specified")
 			return
 		}
-		ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
-	}
-	if len(ifaceInfo.Subnets) == 0 {
-		err = fmt.Errorf("No valid subnets specified")
-		return
 	}
 	for _, ipSite := range ifacePayload.SiteSubnets {
 		var site *model.Subnet

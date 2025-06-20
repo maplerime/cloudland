@@ -34,8 +34,8 @@ type InterfaceListResponse struct {
 }
 
 type AddressInfo struct {
-	IPAddress string `json:"ip_address"`
-	Subnet    *ResourceReference   `json:"subnet"`
+	IPAddress string             `json:"ip_address"`
+	Subnet    *ResourceReference `json:"subnet"`
 }
 
 type InterfaceResponse struct {
@@ -56,6 +56,7 @@ type InterfacePayload struct {
 	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=16"`
 	IpAddress      string           `json:"ip_address", binding:"omitempty,ipv4"`
 	MacAddress     string           `json:"mac_address" binding:"omitempty,mac"`
+	PublicAddresses      []*BaseReference `json:"public_addresses,omitempty"`
 	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
 	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty,gte=1,lte=32"`
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
@@ -69,6 +70,7 @@ type InterfacePatchPayload struct {
 	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound        *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound       *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	Addresses      []*BaseReference `json:"addresses,omitempty"`
 	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
 	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
 	AllowSpoofing  *bool            `json:"allow_spoofing" binding:"omitempty"`
@@ -118,7 +120,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			Name: iface.Name,
 		},
 		AddressInfo: &AddressInfo{
-			IPAddress:  iface.Address.Address,
+			IPAddress: iface.Address.Address,
 			Subnet: &ResourceReference{
 				ID:   iface.Address.Subnet.UUID,
 				Name: iface.Address.Subnet.Name,
@@ -158,7 +160,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 		if len(iface.SecondAddresses) > 0 {
 			for _, secondAddr := range iface.SecondAddresses {
 				interfaceResp.SecondaryAddresses = append(interfaceResp.SecondaryAddresses, &AddressInfo{
-					IPAddress:  secondAddr.Address,
+					IPAddress: secondAddr.Address,
 					Subnet: &ResourceReference{
 						ID:   secondAddr.Subnet.UUID,
 						Name: secondAddr.Subnet.Name,

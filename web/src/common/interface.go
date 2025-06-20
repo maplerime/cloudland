@@ -156,6 +156,52 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
+func DerivePublicInterface(ctx context.Context, instance *model.Instance, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, err error) {
+	ctx, db := GetContextDB(ctx)
+	for i, fip := range floatingIps {
+		if i == 0 {
+			primaryIface = fip.Interface
+			err = db.Model(primaryIface).Updates(map[string]interface{}{
+				"floating_ip": 0,
+				"instance": instance.ID,
+				"primary_if": true,
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update interface, %v", err)
+				return
+			}
+			err = db.Model(fip).Updates(map[string]interface{}{
+				"type": string(PublicReserved),
+				"instance": instance.ID,
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+		} else {
+			secondAddr := fip.Interface.Address
+			err = db.Model(secondAddr).Updates(map[string]interface{}{
+				"type": "second",
+				"second_interface": instance.ID,
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
+			err = db.Model(fip).Updates(map[string]interface{}{
+				"type": string(PublicReserved),
+				"instance": instance.ID,
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+		}
+	}
+	return
+}
+
 func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	primary := false

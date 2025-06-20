@@ -30,6 +30,7 @@ var (
 )
 
 type InterfaceInfo struct {
+	PublicIps      []*model.FloatingIp
 	Subnets        []*model.Subnet
 	MacAddress     string
 	IpAddress      string
@@ -154,7 +155,7 @@ func (a *InterfaceAdmin) checkAddressesChange(ctx context.Context, iface *model.
 	return false
 }
 
-func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets []*model.Subnet, secondAddrsCount int) (err error) {
 	cnt := 0
 	for _, subnet := range ifaceSubnets {
 		for i := 0; i < secondAddrsCount; i++ {
@@ -162,6 +163,13 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, iface *mod
 			addr, err = AllocateAddress(ctx, subnet, iface.ID, "", "second")
 			if err == nil {
 				iface.SecondAddresses = append(iface.SecondAddresses, addr)
+				if subnet.Type == string(Public) {
+					_, err = floatingIpAdmin.createDummyFloatingIp(ctx, instance, addr.Address)
+					if err != nil {
+						logger.Error("DB failed to create dummy floating ip", err)
+						return
+					}
+				}
 				cnt++
 				if cnt >= secondAddrsCount {
 					return
@@ -178,7 +186,7 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, iface *mod
 	return
 }
 
-func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
@@ -199,7 +207,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, iface *model.Inter
 
 	cnt := secondAddrsCount - len(iface.SecondAddresses)
 	if cnt > 0 {
-		err = a.allocateSecondAddresses(ctx, iface, ifaceSubnets, cnt)
+		err = a.allocateSecondAddresses(ctx, instance, iface, ifaceSubnets, cnt)
 		if err != nil {
 			return
 		}
@@ -282,7 +290,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				logger.Error("Update vm nic command execution failed", err)
 				return
 			}
-			err = a.changeAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount)
+			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return

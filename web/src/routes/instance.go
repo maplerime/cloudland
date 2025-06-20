@@ -548,6 +548,10 @@ func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interf
 func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *InterfaceInfo, instance *model.Instance, ifname string) (iface *model.Interface, ifaceSubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
+
+	if len(ifaceInfo.PublicIps) > 0 {
+		return
+	}
 	subnets := ifaceInfo.Subnets
 	siteSubnets := ifaceInfo.SiteSubnets
 	address := ifaceInfo.IpAddress
@@ -558,14 +562,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	secgroups := ifaceInfo.SecurityGroups
 	allowSpoofing := ifaceInfo.AllowSpoofing
 	for i, subnet := range subnets {
-		if subnet.Type == "public" {
-			permit := memberShip.CheckPermission(model.Owner)
-			if !permit {
-				logger.Error("Not authorized to create interface in public subnet")
-				err = fmt.Errorf("Not authorized")
-				return
-			}
-		} else if subnet.Type == "site" {
+		if subnet.Type == "site" {
 			logger.Error("Not allowed to create interface in site subnet")
 			err = fmt.Errorf("Bad request")
 			return
@@ -574,6 +571,14 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups, allowSpoofing)
 			if err == nil {
 				ifaceSubnet = subnets[i]
+				if subnet.Type == "public" {
+					_, err = floatingIpAdmin.createDummyFloatingIp(ctx, instance, iface.Address.Address)
+					if err != nil {
+						logger.Error("DB failed to create dummy floating ip", err)
+						return
+					}
+				}
+				break
 			} else {
 				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
 			}
@@ -583,7 +588,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		err = fmt.Errorf("Failed to create interface")
 		return
 	}
-	err = interfaceAdmin.allocateSecondAddresses(ctx, iface, subnets, count)
+	err = interfaceAdmin.allocateSecondAddresses(ctx, instance, iface, subnets, count)
 	if err != nil {
 		return
 	}

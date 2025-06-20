@@ -43,7 +43,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
 		uniqueName := fmt.Sprintf("%s-%d-%d", name, i, time.Now().UnixNano())
-		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound}
+		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicReserved)}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
 			return nil, err
@@ -57,9 +57,9 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
-		fip.Type = "public"
+		fip.Type = string(PublicFloating)
 		if isSite {
-			fip.Type = "site"
+			fip.Type = string(PublicSite)
 		}
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
@@ -74,6 +74,18 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		floatingIps = append(floatingIps, fip)
 	}
 	return floatingIps, nil
+}
+
+func (a *FloatingIpAdmin) createDummyFloatingIp(ctx context.Context, instance *model.Instance, publicIp string) (floatingIp *model.FloatingIp, err error) {
+	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
+	uniqueName := fmt.Sprintf("%s-%d", instance.Hostname, time.Now().UnixNano())
+	fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: 0, Outbound: 0, FipAddress: publicIp, IntAddress: publicIp, InstanceID: instance.ID, Type: string(PublicNative)}
+	if err = db.Create(fip).Error; err != nil {
+		logger.Error("DB failed to create floating ip", err)
+		return
+	}
+	return
 }
 
 func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, pubSubnets []*model.Subnet, publicIp string, name string, inbound, outbound, activationCount int32, siteSubnets []*model.Subnet) (floatingIps []*model.FloatingIp, err error) {

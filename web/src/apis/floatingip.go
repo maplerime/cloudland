@@ -122,6 +122,11 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid floating ip query", err)
 		return
 	}
+	if ElasticType(floatingIp.Type) != PublicFloating {
+		logger.Errorf("Wrong public ip type %+v", floatingIp.Type)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid public ip type", err)
+		return
+	}
 	payload := &FloatingIpPatchPayload{}
 	err = c.ShouldBindJSON(payload)
 	if err != nil {
@@ -136,14 +141,13 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 	if payload.Outbound != nil {
 		floatingIp.Outbound = *payload.Outbound
 	}
-	if payload.Instance == nil {
-		err = floatingIpAdmin.Detach(ctx, floatingIp)
-		if err != nil {
-			logger.Errorf("Failed to detach floating ip %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
-			return
-		}
-	} else {
+	err = floatingIpAdmin.Detach(ctx, floatingIp)
+	if err != nil {
+		logger.Errorf("Failed to detach floating ip %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
+		return
+	}
+	if payload.Instance != nil {
 		var instance *model.Instance
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
 		if err != nil {
