@@ -10,6 +10,7 @@ package routes
 import (
 	"context"
 	"fmt"
+	"github.com/spf13/viper"
 	"net/http"
 	"os"
 	"strconv"
@@ -37,8 +38,8 @@ func FileExist(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, qaEnabled bool, instID int64, uuid string) (image *model.Image, err error) {
-	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instID)
+func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, qaEnabled bool, instID int64, uuid string, pools []string) (image *model.Image, err error) {
+	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instID, uuid, strings.Join(pools, ","))
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -90,9 +91,51 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 	if err != nil {
 		logger.Error("DB create image failed, %v", err)
 	}
+
+	driver := GetVolumeDriver()
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	if driver != "local" {
+
+		// Filter out invalid pools and check for default pool
+		var validPools []string
+		containsDefault := false
+		for _, pool := range pools {
+			count := 0
+			if err = db.Model(&model.Dictionary{}).Where("value = ? AND category = 'storage_pool'", pool).Count(&count).Error; err != nil {
+				logger.Errorf("Failed to get storages", pool)
+				continue
+			}
+			if count == 0 {
+				logger.Errorf("Storage pool %s is not valid, skipping", pool)
+				continue
+			}
+			validPools = append(validPools, pool)
+			if pool == defaultPoolID {
+				containsDefault = true
+			}
+		}
+		pools = validPools
+
+		if !containsDefault {
+			err = fmt.Errorf("default storage pool %s is not specified in the pools list", defaultPoolID)
+			logger.Error(err)
+			return
+		}
+
+		// create image storage pools data
+		for _, pool := range pools {
+			_, err = imageStorageAdmin.Create(ctx, image.ID, "", "")
+			if err != nil {
+				logger.Error("Failed to create image storage for pool %s, %v", pool, err)
+				return
+			}
+		}
+	}
+
+	// create in first pool, and then sync to others
 	prefix := strings.Split(image.UUID, "-")[0]
-	control := "inter="
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s'", image.ID, prefix, url)
+	control := "inter=0"
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, url, defaultPoolID)
 	if instID > 0 {
 		bootVolumeUUID := ""
 		if instance.Volumes != nil {
@@ -255,13 +298,23 @@ func (a *ImageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Image) (er
 		image.StorageType = driver
 		db.Save(image)
 	}
-	prefix := strings.Split(image.UUID, "-")[0]
-	control := "inter="
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s'", image.ID, prefix)
-	err = HyperExecute(ctx, control, command)
+	_, pools, err := dictionaryAdmin.List(ctx, 0, -1, "", "category='storage_pool'")
 	if err != nil {
-		logger.Error("Sync remote info command execution failed", err)
+		logger.Error("Failed to query pools", err)
 		return
+	}
+	for _, pool := range pools {
+		if pool.Value == "" {
+			continue
+		}
+		prefix := strings.Split(image.UUID, "-")[0]
+		control := "inter=0"
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s'", image.ID, prefix, pool.Value)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Sync remote info command execution failed", err)
+			return
+		}
 	}
 	return
 }
@@ -408,7 +461,11 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	qaEnabled := true
 	architecture := "x86_64"
 	bootLoader := c.QueryTrim("bootLoader")
-	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid)
+
+	poolsStr := c.QueryTrim("pools")
+	pools := strings.Split(poolsStr, ",")
+
+	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid, pools)
 	if err != nil {
 		logger.Error("Create image failed", err)
 		c.Data["ErrorMsg"] = err.Error()

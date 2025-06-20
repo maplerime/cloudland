@@ -3,11 +3,17 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 3 ] && die "$0 <ID> <prefix> <url>"
+[ $# -lt 3 ] && die "$0 <ID> <prefix> <url> <pool_ID>"
 
 ID=$1
 prefix=$2
 url=$3
+pool_ID=$4
+
+# set default values
+if [ -z "$pool_ID" ]; then
+    pool_ID=$wds_pool_id
+fi
 
 image_name=image-$ID-$prefix
 state=error
@@ -15,7 +21,7 @@ mkdir -p $image_cache
 image=$image_cache/$image_name
 inet_access curl -s -k $url -o $image
 if [ ! -s "$image" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format'"
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '' '' ''"
     exit -1
 fi
 
@@ -36,18 +42,26 @@ else
     cat /etc/systemd/system/$uss_service | grep cloudland
     if [ $? -ne 0 ]; then
         wds_curl PUT "api/v2/sync/wds/uss/$uss_id" '{"action":"add","mount_path":"/opt/cloudland/cache/image"}'
-	systemctl restart $uss_service
+	      systemctl restart $uss_service
     fi
-    task_id=$(wds_curl "PUT" "api/v2/sync/block/volumes/import" "{\"volname\": \"$image_name\", \"path\": \"${image}.raw\", \"ussid\": \"$uss_id\", \"start_blockid\": 0, \"volsize\": $image_size, \"poolid\": \"$wds_pool_id\", \"num_block\": 0, \"speed\": 8}" | jq -r .task_id)
+    task_id=$(wds_curl "PUT" "api/v2/sync/block/volumes/import" "{\"volname\": \"$image_name\", \"path\": \"${image}.raw\", \"ussid\": \"$uss_id\", \"start_blockid\": 0, \"volsize\": $image_size, \"poolid\": \"$pool_ID\", \"num_block\": 0, \"speed\": 8}" | jq -r .task_id)
     state=uploading
     for i in {1..100}; do
         st=$(wds_curl GET "api/v2/sync/block/volumes/tasks/$task_id" | jq -r .task.state)
-	[ "$st" = "TASK_COMPLETE" ] && state=uploaded && break
-	[ "$st" = "TASK_FAILED" ] && state=failed && break
-	sleep 5
+        [ "$st" = "TASK_COMPLETE" ] && state=uploaded && break
+        [ "$st" = "TASK_FAILED" ] && state=failed && break
+        sleep 5
     done
     rm -f ${image}
     volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$image_name" | jq -r '.volumes[0].id')
-    [ -n "$volume_id" ] && state=available
+    if [ -n "$volume_id" ]; then
+        snapshot_name=$image_name-1
+        snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$volume_id\"}")
+        read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
+        if [ -n "$snapshot_id" ]; then
+            state=available
+        fi
+    fi
+    [ -n "$volume_id" ]
 fi
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '$image_size'"

@@ -189,3 +189,11 @@ function inet_access()
     ip netns exec router-0 $*
     ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 }
+
+function get_pool_prefix()
+{
+    [ $# -lt 1 ] && return
+    uuid=$1
+    prefix=${uuid%%-*}
+    echo "$prefix"
+}

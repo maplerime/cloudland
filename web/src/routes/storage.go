@@ -31,6 +31,7 @@ func (a *ImageStorageAdmin) Create(ctx context.Context, imageID int64, volumeID,
 		ImageID:  imageID,
 		VolumeID: volumeID,
 		PoolID:   poolID,
+		Status:   "syncing",
 	}
 	err = db.Where(imageStorage).First(&imageStorage).Error
 	if err == nil {
