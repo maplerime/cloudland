@@ -3942,6 +3942,12 @@ const docTemplatev1 = `{
                     "maximum": 20000,
                     "minimum": 0
                 },
+                "public_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
                 "security_groups": {
                     "type": "array",
                     "items": {
@@ -3995,6 +4001,12 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "maximum": 20000,
                     "minimum": 0
+                },
+                "public_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 },
                 "security_groups": {
                     "type": "array",
@@ -5195,11 +5207,13 @@ const docTemplatev1 = `{
             "type": "string",
             "enum": [
                 "public",
-                "internal"
+                "internal",
+                "site"
             ],
             "x-enum-varnames": [
                 "Public",
-                "Internal"
+                "Internal",
+                "Site"
             ]
         }
     }

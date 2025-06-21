@@ -130,7 +130,10 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	return
 }
 
-func (a *InterfaceAdmin) checkAddressesChange(ctx context.Context, iface *model.Interface, siteSubnets []*model.Subnet, secondAddrsCount int) (changed bool) {
+func (a *InterfaceAdmin) checkAddressesChange(ctx context.Context, iface *model.Interface, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (changed bool) {
+	if len(publicIps) > 0 {
+		return true
+	}
 	if siteSubnets == nil && secondAddrsCount == len(iface.SecondAddresses) {
 		return false
 	}
@@ -186,7 +189,7 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *
 	return
 }
 
-func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (err error) {
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
@@ -205,18 +208,26 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		iface.SiteSubnets = append(iface.SiteSubnets, site)
 	}
 
-	cnt := secondAddrsCount - len(iface.SecondAddresses)
-	if cnt > 0 {
-		err = a.allocateSecondAddresses(ctx, instance, iface, ifaceSubnets, cnt)
+	if len(publicIps) > 0 {
+		iface, err = DerivePublicInterface(ctx, instance, publicIps)
 		if err != nil {
+			logger.Error("Failed to derive primary interface", err)
 			return
 		}
-	} else if cnt < 0 {
-		for i := 0; i < -cnt; i++ {
-			err = db.Model(&iface.SecondAddresses[i]).Updates(map[string]interface{}{"second_interface": 0, "allocated": false}).Error
+	} else {
+		cnt := secondAddrsCount - len(iface.SecondAddresses)
+		if cnt > 0 {
+			err = a.allocateSecondAddresses(ctx, instance, iface, ifaceSubnets, cnt)
 			if err != nil {
-				logger.Error("Update interface ", err)
 				return
+			}
+		} else if cnt < 0 {
+			for i := 0; i < -cnt; i++ {
+				err = db.Model(&iface.SecondAddresses[i]).Updates(map[string]interface{}{"second_interface": 0, "allocated": false}).Error
+				if err != nil {
+					logger.Error("Update interface ", err)
+					return
+				}
 			}
 		}
 	}
@@ -230,7 +241,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	return
 }
 
-func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int) (err error) {
+func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -269,7 +280,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		return
 	}
 	if iface.PrimaryIf {
-		changed := a.checkAddressesChange(ctx, iface, siteSubnets, secondAddrsCount)
+		changed := a.checkAddressesChange(ctx, iface, siteSubnets, secondAddrsCount, publicIps)
 		if changed {
 			var oldAddresses []string
 			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
@@ -290,7 +301,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				logger.Error("Update vm nic command execution failed", err)
 				return
 			}
-			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount)
+			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
@@ -601,7 +612,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			siteSubnets = append(siteSubnets, siteSubnet)
 		}
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount)
+	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, nil)
 	if err != nil {
 		logger.Debug("Failed to update interface", err)
 		c.Data["ErrorMsg"] = err.Error()

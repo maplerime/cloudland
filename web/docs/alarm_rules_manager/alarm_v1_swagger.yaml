@@ -528,6 +528,10 @@ definitions:
         maximum: 20000
         minimum: 0
         type: integer
+      public_addresses:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.BaseReference'
@@ -567,6 +571,10 @@ definitions:
         maximum: 20000
         minimum: 0
         type: integer
+      public_addresses:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.BaseReference'
@@ -1374,10 +1382,12 @@ definitions:
     enum:
     - public
     - internal
+    - site
     type: string
     x-enum-varnames:
     - Public
     - Internal
+    - Site
   main.RuleFileRequest:
     description: Request for rule file operations
     properties:
