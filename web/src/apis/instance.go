@@ -473,11 +473,18 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 	ifaceInfo = &routes.InterfaceInfo{
 		AllowSpoofing: ifacePayload.AllowSpoofing,
 	}
+	vlan := int64(0)
 	if len(ifacePayload.PublicAddresses) > 0 {
 		for _, pubAddr := range ifacePayload.PublicAddresses {
 			var floatingIp *model.FloatingIp
 			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
 			if err != nil {
+				return
+			}
+			if vlan == 0 {
+				vlan = floatingIp.Interface.Address.Subnet.Vlan
+			} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {
+				err = fmt.Errorf("All public IPs must be from the same vlan")
 				return
 			}
 			ifaceInfo.PublicIps = append(ifaceInfo.PublicIps, floatingIp)
@@ -487,6 +494,12 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 			var subnet *model.Subnet
 			subnet, err = subnetAdmin.GetSubnet(ctx, snet)
 			if err != nil {
+				return
+			}
+			if vlan == 0 {
+				vlan = subnet.Vlan
+			} else if vlan != subnet.Vlan {
+				err = fmt.Errorf("All subnets must be in the same vlan")
 				return
 			}
 			if router == nil && subnet.RouterID > 0 {
@@ -511,6 +524,10 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 		var site *model.Subnet
 		site, err = subnetAdmin.GetSubnet(ctx, ipSite)
 		if err != nil {
+			return
+		}
+		if vlan != site.Vlan {
+			err = fmt.Errorf("All subnets including sites must be in the same vlan")
 			return
 		}
 		if site.Interface > 0 {

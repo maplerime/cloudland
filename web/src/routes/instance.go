@@ -1246,6 +1246,12 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "", "", "instance_id = 0")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
 	_, secgroups, err := secgroupAdmin.List(ctx, 0, -1, "", "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -1276,6 +1282,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 	c.Data["Images"] = images
 	c.Data["Flavors"] = flavors
 	c.Data["Subnets"] = subnets
+	c.Data["PublicIps"] = floatingIps
 	c.Data["SecurityGroups"] = secgroups
 	c.Data["Keys"] = keys
 	c.Data["Hypers"] = hypers
@@ -1740,8 +1747,28 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		}
 		primarySubnets = append(primarySubnets, pSubnet)
 	}
-	if len(primarySubnets) == 0 {
-		logger.Error("Subnet(s) for primary interface must be specified", err)
+	var publicAddresses []*model.FloatingIp
+	publicIps := c.QueryTrim("public_ips")
+	logger.Error("public ips: ", publicIps)
+	f := strings.Split(publicIps, ",")
+	for i := 0; i < len(f); i++ {
+		fID, err := strconv.Atoi(f[i])
+		if err != nil {
+			logger.Error("Invalid public ip ID", err)
+			continue
+		}
+		var floatingIp *model.FloatingIp
+		floatingIp, err = floatingIpAdmin.Get(ctx, int64(fID))
+		if err != nil {
+			logger.Error("Get public ip failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		publicAddresses = append(publicAddresses, floatingIp)
+	}
+	if len(primarySubnets) == 0 && len(publicAddresses) == 0 {
+		logger.Error("Subnet(s) or public addresses for primary interface must be specified", err)
 		c.Data["ErrorMsg"] = "Subnet(s) for primary interface must be specified"
 		c.HTML(http.StatusBadRequest, "error")
 		return
@@ -1840,6 +1867,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		IpAddress:      ipAddr,
 		MacAddress:     macAddr,
 		Count:          ipCount,
+		PublicIps:      publicAddresses,
 		SecurityGroups: securityGroups,
 		SiteSubnets:    siteSubnets,
 		Inbound:        1000,

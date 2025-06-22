@@ -376,7 +376,7 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 	return
 }
 
-func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, floatingIps []*model.FloatingIp, err error) {
+func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, query string, intQuery string) (total int64, floatingIps []*model.FloatingIp, err error) {
 	memberShip := GetMemberShip(ctx)
 	if limit == 0 {
 		limit = 16
@@ -392,7 +392,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 	db := DB()
 	where := memberShip.GetWhere()
 	floatingIps = []*model.FloatingIp{}
-	if err = db.Model(&model.FloatingIp{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.FloatingIp{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count floating ip(s), %v", err)
 		return
 	}
@@ -461,7 +461,7 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query)
+	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, "")
 	if err != nil {
 		logger.Error("Failed to list floating ip(s), %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -607,12 +607,16 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	instance, err := instanceAdmin.Get(ctx, int64(instID))
-	if err != nil {
-		logger.Error("Failed to get instance ", err)
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(500, "500")
-		return
+	var instance *model.Instance
+	var err error
+	if instID > 0 {
+		instance, err = instanceAdmin.Get(ctx, int64(instID))
+		if err != nil {
+			logger.Error("Failed to get instance ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(500, "500")
+			return
+		}
 	}
 
 	siteSubnetList := make([]*model.Subnet, 0)

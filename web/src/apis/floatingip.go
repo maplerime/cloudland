@@ -367,7 +367,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
 	if err != nil {
 		logger.Errorf("Failed to list floatingIps %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list floatingIps", err)
