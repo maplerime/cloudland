@@ -21,8 +21,12 @@ vm_br=br$vlan
 brctl setageing $vm_br 0
 virsh domiflist $vm_ID | grep $vm_mac
 if [ $? -ne 0 ]; then
-    virsh attach-interface $vm_ID bridge $vm_br --model virtio --mac $vm_mac --target $nic_name --live
-    virsh attach-interface $vm_ID bridge $vm_br --model virtio --mac $vm_mac --target $nic_name --config
+    template=$template_dir/interface.xml
+    interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    cp $template $interface_xml
+    sed -i "s/VM_MAC/$vm_mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g" $interface_xml
+    virsh attach-device $vm_ID $interface_xml --config
+    virsh attach-device $vm_ID $interface_xml --live --persistent
 fi
 udevadm settle
 async_exec ./async_job/send_spoof_arp.py "$vm_br" "$vm_ip" "$vm_mac"
