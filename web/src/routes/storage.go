@@ -50,6 +50,7 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 	return
 }
 
+// InitStorages initializes the image storage records for a given image.
 func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Dictionary) (storagesResp []*model.ImageStorage, err error) {
 
 	db := DB()
@@ -63,12 +64,11 @@ func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Di
 
 	// load exists image storage records
 	var storages []*model.ImageStorage
-	if err = db.Where("image_id = ?", image.ID).Find(&storages).Error; err != nil {
+	if err = db.Where("image_id = ?", image.ID).Preload("image").Find(&storages).Error; err != nil {
 		logger.Errorf("Failed to list image storage data, %v", err)
 		return
 	}
 
-	// build a map from exists storage records
 	storageMap := make(map[string]*model.ImageStorage)
 	for _, storage := range storages {
 		storageMap[storage.PoolID] = storage
@@ -83,11 +83,11 @@ func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Di
 					logger.Error("Update image storage failed", err)
 					return
 				}
-				storagesResp = append(storagesResp, storage)
 			}
-			delete(storageMap, storage.PoolID)
+			storagesResp = append(storagesResp, storage)
 		} else {
 			newStorage := &model.ImageStorage{
+				Image:   image,
 				ImageID: image.ID,
 				PoolID:  poolID,
 				Status:  model.StorageStatusSyncing,
@@ -99,19 +99,7 @@ func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Di
 			storagesResp = append(storagesResp, newStorage)
 		}
 	}
-
-	if len(storageMap) != 0 {
-		logger.Infof("Found %d storages not in pool, will delete them", len(storageMap))
-		for _, storage := range storageMap {
-			if err = db.Delete(storage).Error; err != nil {
-				logger.Error("Delete image storage failed", err)
-				return
-			}
-		}
-	}
-
 	return
-
 }
 
 func (a *ImageStorageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Image) (err error) {
@@ -144,14 +132,36 @@ func (a *ImageStorageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Ima
 	}
 
 	for _, storage := range storages {
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter=0"
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
-		err = HyperExecute(ctx, control, command)
+		err = a.Sync(ctx, storage)
 		if err != nil {
-			logger.Error("Sync remote info command execution failed", err)
+			logger.Error("Failed to sync image storage info", err)
 			return
 		}
+	}
+	return
+}
+
+func (a *ImageStorageAdmin) Sync(ctx context.Context, storage *model.ImageStorage) (err error) {
+	image := storage.Image
+	prefix := strings.Split(image.UUID, "-")[0]
+	control := "inter=0"
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Sync remote info command execution failed", err)
+		return
+	}
+	return
+}
+
+func (a *ImageStorageAdmin) CopyClone(ctx context.Context, storage *model.ImageStorage, from string) (err error) {
+	image := storage.Image
+	prefix := strings.Split(image.UUID, "-")[0]
+	control := "inter=0"
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, from, storage.ID)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Command execution failed", err)
 	}
 	return
 }

@@ -44,9 +44,9 @@
                                 {{ range .Images }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td>{{.ID}}</td>
+									<td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td>{{.UUID}}</td>
+									<td><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
 			                        <td>{{.Name}}</td>
 			                        <td>{{.Format}}</td>
 			                        <td>{{.Status}}</td>

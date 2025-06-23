@@ -3,14 +3,13 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 3 ] && die "$0 <ID> <prefix> <source_ID> <target_pool_ID> <from> <storage_ID>"
+[ $# -lt 3 ] && die "$0 <ID> <prefix> <target_pool_ID> <from> <storage_ID>"
 
 ID=$1
 prefix=$2
-source_ID=$3
-target_pool_ID=$4
-from=$5
-storage_ID=$6
+target_pool_ID=$3
+from=$4
+storage_ID=$5
 pool_prefix=$(get_pool_prefix "$target_pool_ID")
 source_image=image-$ID-$prefix
 target_image=$source_image-$pool_prefix
@@ -21,7 +20,8 @@ if [ "$from" = "snap" ]; then
     snapshot_name=${source_image}-1
     snapshot_id=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0].id"')
     if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-        wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$source_ID\"}"
+        source_volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$source_image" | jq -r '.volumes[0].id')
+        wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$source_volume_id\"}"
         snapshot_id=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0].id')
         if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
             echo "|:-COMMAND-:| sync_image_info.sh '$storage_ID' '' '$state'"

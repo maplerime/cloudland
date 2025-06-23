@@ -10,9 +10,9 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"strings"
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 )
 
 func init() {
@@ -60,12 +60,11 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 			return
 		}
 		storage := &model.ImageStorage{Model: model.Model{ID: int64(storageID)}}
-		err = db.Take(storage).Error
+		err = db.Preload("image").Take(storage).Error
 		if err != nil {
 			logger.Error("Invalid storage ID", err)
 			return
 		}
-		storage.ImageID = image.ID
 		storage.VolumeID = args[5]
 		storage.Status = model.StorageStatus(args[2])
 		err = db.Save(storage).Error
@@ -74,19 +73,13 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 			return
 		}
 
-		// clone
-		var storages []*model.ImageStorage
-		err = db.Where("status = ? AND image_id = ?", model.StorageStatusSyncing, image.ID).Find(&storages).Error
-		if err == nil && storage.VolumeID != "" {
-			cloneFrom := "snap"
-			prefix := strings.Split(image.UUID, "-")[0]
-			control := "inter=0"
-			for _, item := range storages {
-				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%s' '%s' '%d'", image.ID, prefix, storage.VolumeID, item.PoolID, cloneFrom, item.ID)
-				err = HyperExecute(ctx, control, command)
-				if err != nil {
-					logger.Error("Command execution failed", err)
-				}
+		// clone by base storage
+		if storage.Status == model.StorageStatusSynced {
+			storageAdmin := routes.ImageStorageAdmin{}
+			err = storageAdmin.CopyClone(ctx, storage, "snap")
+			if err != nil {
+				logger.Error("Copy clone failed", err)
+				return
 			}
 		}
 	}

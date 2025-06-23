@@ -92,41 +92,18 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		logger.Error("DB create image failed, %v", err)
 	}
 
+	storages, err := a.checkPools(image, pools)
+	if err != nil {
+		logger.Error("Failed to check pools", err)
+		return
+	}
+
 	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 	defaultStorageID := int64(0)
-
-	// format selected pools
-	driver := GetVolumeDriver()
-	var configs []*model.Dictionary
-	if driver != "local" {
-		containsDefault := false
-		for _, poolID := range pools {
-			config := &model.Dictionary{}
-			if err = db.Where("value = ? AND category = 'storage_pool'", poolID).First(&config).Error; err != nil {
-				logger.Errorf("Failed to get pool")
-				continue
-			}
-			configs = append(configs, config)
-			if poolID == defaultPoolID {
-				containsDefault = true
-			}
-		}
-		if !containsDefault {
-			err = fmt.Errorf("default storage pool %s is not specified in the pools list", defaultPoolID)
-			logger.Error(err)
-			return
-		}
-		var storages []*model.ImageStorage
-		storages, err = imageStorageAdmin.InitStorages(image, configs)
-		if err != nil {
-			logger.Error("Failed to initialize image storages", err)
-			return
-		}
-		for _, storage := range storages {
-			if storage.PoolID == defaultPoolID {
-				defaultStorageID = storage.ID
-				break
-			}
+	for _, storage := range storages {
+		if storage.PoolID == defaultPoolID {
+			defaultStorageID = storage.ID
+			break
 		}
 	}
 
@@ -150,6 +127,40 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create image command execution failed", err)
+		return
+	}
+	return
+}
+
+// checkPools
+// check if the pools are valid and contain the default pool
+func (a *ImageAdmin) checkPools(image *model.Image, pools []string) (storages []*model.ImageStorage, err error) {
+	if GetVolumeDriver() == "local" {
+		return
+	}
+	db := DB()
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	var configs []*model.Dictionary
+	containsDefault := false
+	for _, poolID := range pools {
+		dict := &model.Dictionary{}
+		if err = db.Where("value = ? AND category = 'storage_pool'", poolID).First(&dict).Error; err != nil {
+			logger.Errorf("Failed to get dict")
+			continue
+		}
+		configs = append(configs, dict)
+		if poolID == defaultPoolID {
+			containsDefault = true
+		}
+	}
+	if !containsDefault {
+		err = fmt.Errorf("default storage pool %s is not specified in the pools list", defaultPoolID)
+		logger.Error(err)
+		return
+	}
+	storages, err = imageStorageAdmin.InitStorages(image, configs)
+	if err != nil {
+		logger.Error("Failed to initialize image storages", err)
 		return
 	}
 	return
@@ -327,8 +338,30 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		logger.Error("Failed to save image", err)
 		return
 	}
-	// 处理存储池
 
+	storages, err := a.checkPools(image, pools)
+	if err != nil {
+		logger.Error("Failed to check pools", err)
+		return
+	}
+	for _, storage := range storages {
+		if storage.Status == model.StorageStatusSynced {
+			continue
+		}
+		if storage.PoolID == viper.GetString("volume.default_wds_pool_id") {
+			err = imageStorageAdmin.Sync(ctx, storage)
+			if err != nil {
+				logger.Error("Failed to sync image storage", err)
+				return
+			}
+		} else {
+			err = imageStorageAdmin.CopyClone(ctx, storage, "snap")
+			if err != nil {
+				logger.Error("Failed to copy clone image storage", err)
+				return
+			}
+		}
+	}
 	return
 }
 
@@ -510,7 +543,7 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 	c.Data["Image"] = image
 	c.Data["Pools"] = pools
 	c.Data["SelectedPools"] = selectedPools
-	c.HTML(200, "image_patch")
+	c.HTML(200, "images_patch")
 }
 
 func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
