@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -ex
 
 # Load async_job_dir from cloudrc
 CLOUDRC="/opt/cloudland/scripts/cloudrc"
@@ -31,7 +31,10 @@ curl -s "$METRICS_URL" | grep '^libvirt_domain_interface_meta{' | while read -r 
         key="${kv%%=*}"
         val="${kv#*=}"
         case "$key" in
-            vm_ip) vm_ip="$val" ;;
+	    vm_ip)
+                vm_ip="$val"
+                vm_ip="${vm_ip%%/*}"   # 只保留 IP
+                ;;
             floating_ip) floating_ip="$val" ;;
             vm_br) vm_br="$val" ;;
             router) router="$val" ;;
@@ -48,3 +51,5 @@ curl -s "$METRICS_URL" | grep '^libvirt_domain_interface_meta{' | while read -r 
     echo "domain_north_south_inbound_bytes_total{domain=\"$domain\",source_bridge=\"$source_bridge\",target_device=\"$target_device\",vm_ip=\"$vm_ip\",floating_ip=\"$floating_ip\",vm_br=\"$vm_br\",router=\"$router\"} $inbound" >> "$OUTPUT"
     echo "domain_north_south_outbound_bytes_total{domain=\"$domain\",source_bridge=\"$source_bridge\",target_device=\"$target_device\",vm_ip=\"$vm_ip\",floating_ip=\"$floating_ip\",vm_br=\"$vm_br\",router=\"$router\"} $outbound" >> "$OUTPUT"
 done
+
+chown prometheus:prometheus "$OUTPUT"
