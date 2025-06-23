@@ -7,7 +7,7 @@
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "Storage_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
-			                <a class="sync-button ui green tiny button" data-url="{{$Link}}/{{.ID}}/sync_remote_info" href="javascript:void(0)">{{$.i18n.Tr "SyncRemoteInfo"}}</a>
+			                <a class="sync-button ui green tiny button" data-url="/images/{{.ImageID}}/sync_remote_info" href="javascript:void(0)">{{$.i18n.Tr "SyncRemoteInfo"}}</a>
 			            </div>
 		            </h4>
 		            <div class="ui unstackable attached table segment">
@@ -24,7 +24,6 @@
 		                        </tr>
 	                        </thead>
 	                        <tbody>
-                                {{ $Link := .Link }}
                                 {{ range .StoragePools }}
 		                        <tr>
 									{{ if $.IsAdmin }}
@@ -44,7 +43,7 @@
                                  <div class="ui pagination menu">
                                      {{ range  $index, $element := .Pages }}
                                          <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
+                                             <a href="/images/{{.ImageID}}/storages?offset={{$element.Offset}}">{{ $element.Number }}</a>
                                          </a>
                                      {{ end }}
                                  </div>

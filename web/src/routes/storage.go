@@ -28,7 +28,7 @@ var (
 type ImageStorageAdmin struct{}
 type ImageStorageView struct{}
 
-func (a *ImageStorageAdmin) List(offset, limit int64, order string) (total int64, storages []*model.ImageStorage, err error) {
+func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model.Image) (total int64, storages []*model.ImageStorage, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -39,11 +39,11 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string) (total int64
 	}
 
 	storages = []*model.ImageStorage{}
-	if err = db.Model(&model.ImageStorage{}).Count(&total).Error; err != nil {
+	if err = db.Model(&model.ImageStorage{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Image").Find(&storages).Error; err != nil {
+	if err = db.Where("image_id = ?", image.ID).Find(&storages).Error; err != nil {
 		return
 	}
 
@@ -157,6 +157,7 @@ func (a *ImageStorageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Ima
 }
 
 func (v *ImageStorageView) List(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
@@ -167,6 +168,7 @@ func (v *ImageStorageView) List(c *macaron.Context, store session.Store) {
 	}
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
+	id := c.Params("id")
 	if limit == 0 {
 		limit = 16
 	}
@@ -174,16 +176,30 @@ func (v *ImageStorageView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
-	total, images, err := imageStorageAdmin.List(offset, limit, order)
+	imageID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	image, err := imageAdmin.Get(ctx, int64(imageID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	total, images, err := imageStorageAdmin.List(offset, limit, order, image)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)
 		return
 	}
+
 	pages := GetPages(total, limit)
 	c.Data["Storages"] = images
 	c.Data["Total"] = total
 	c.Data["Pages"] = pages
+	c.Data["ImageID"] = imageID
 	c.HTML(200, "storages")
 }
 

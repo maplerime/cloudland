@@ -140,7 +140,7 @@ func New() (m *macaron.Macaron) {
 	m.Get("/images/new", imageView.New)
 	m.Post("/images/new", imageView.Create)
 	m.Delete("/images/:id", imageView.Delete)
-	m.Get("/images/:id", imageStorageView.List)
+	m.Get("/images/:id/storages", imageStorageView.List)
 	m.Post("/images/:id/sync_remote_info", imageStorageView.SyncRemoteInfo)
 	m.Get("/migrations", migrationView.List)
 	m.Get("/migrations/new", migrationView.New)
