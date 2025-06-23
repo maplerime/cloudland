@@ -20,17 +20,17 @@ func init() {
 }
 
 func CreateImage(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_image.sh '5' 'available' 'qcow2' '1024000' 'pool_ID' 'volume_ID'
+	//|:-COMMAND-:| create_image.sh '5' 'available' 'qcow2' '1024000' 'volume_ID' 'storage_ID'
 	db := DB()
 	argn := len(args)
-	if argn < 6 {
+	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
 	}
 	imgID, err := strconv.Atoi(args[1])
 	if err != nil {
-		logger.Error("Invalid gateway ID", err)
+		logger.Error("Invalid image ID", err)
 		return
 	}
 	image := &model.Image{Model: model.Model{ID: int64(imgID)}}
@@ -52,41 +52,43 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		logger.Error("Update image failed", err)
 		return
 	}
+	if args[6] != "0" {
+		storageID := 0
+		storageID, err = strconv.Atoi(args[6])
+		if err != nil {
+			logger.Error("Invalid storage ID", err)
+			return
+		}
+		storage := &model.ImageStorage{Model: model.Model{ID: int64(storageID)}}
+		err = db.Take(storage).Error
+		if err != nil {
+			logger.Error("Invalid storage ID", err)
+			return
+		}
+		storage.ImageID = image.ID
+		storage.VolumeID = args[5]
+		storage.Status = model.StorageStatus(args[2])
+		err = db.Save(storage).Error
+		if err != nil {
+			logger.Error("Update image storage failed", err)
+			return
+		}
 
-	poolID := args[5]
-	volumeID := args[6]
-	storage := &model.ImageStorage{
-		ImageID: image.ID,
-		PoolID:  poolID,
-	}
-	err = db.Take(storage).Error
-	if err != nil {
-		logger.Error("Invalid storage", err)
-		return
-	}
-	storage.VolumeID = volumeID
-	storage.Status = "synced"
-	err = db.Save(storage).Error
-	if err != nil {
-		logger.Error("Update image storage failed", err)
-		return
-	}
-
-	var storages []*model.ImageStorage
-	err = db.Where("status = ? AND image_id = ?", "syncing", image.ID).Find(&storages).Error
-	if err == nil {
-		// run copy clone task from snap
-		cloneFrom := "snap"
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
-		for _, item := range storages {
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%d' '%s' '%s' '%s' '%s' '%s'", item.ID, image.ID, prefix, poolID, volumeID, item.PoolID, cloneFrom)
-			err = HyperExecute(ctx, control, command)
-			if err != nil {
-				logger.Error("Command execution failed", err)
+		// clone
+		var storages []*model.ImageStorage
+		err = db.Where("status = ? AND image_id = ?", model.StorageStatusSyncing, image.ID).Find(&storages).Error
+		if err == nil && storage.VolumeID != "" {
+			cloneFrom := "snap"
+			prefix := strings.Split(image.UUID, "-")[0]
+			control := "inter=0"
+			for _, item := range storages {
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%s' '%s' '%d'", image.ID, prefix, storage.VolumeID, item.PoolID, cloneFrom, item.ID)
+				err = HyperExecute(ctx, control, command)
+				if err != nil {
+					logger.Error("Command execution failed", err)
+				}
 			}
 		}
 	}
-
 	return
 }

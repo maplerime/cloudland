@@ -92,50 +92,48 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		logger.Error("DB create image failed, %v", err)
 	}
 
-	driver := GetVolumeDriver()
 	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-	if driver != "local" {
+	defaultStorageID := int64(0)
 
-		// Filter out invalid pools and check for default pool
-		var validPools []string
+	// format selected pools
+	driver := GetVolumeDriver()
+	var configs []*model.Dictionary
+	if driver != "local" {
 		containsDefault := false
-		for _, pool := range pools {
-			count := 0
-			if err = db.Model(&model.Dictionary{}).Where("value = ? AND category = 'storage_pool'", pool).Count(&count).Error; err != nil {
-				logger.Errorf("Failed to get storages", pool)
+		for _, poolID := range pools {
+			config := &model.Dictionary{}
+			if err = db.Where("value = ? AND category = 'storage_pool'", poolID).First(&config).Error; err != nil {
+				logger.Errorf("Failed to get pool")
 				continue
 			}
-			if count == 0 {
-				logger.Errorf("Storage pool %s is not valid, skipping", pool)
-				continue
-			}
-			validPools = append(validPools, pool)
-			if pool == defaultPoolID {
+			configs = append(configs, config)
+			if poolID == defaultPoolID {
 				containsDefault = true
 			}
 		}
-		pools = validPools
-
 		if !containsDefault {
 			err = fmt.Errorf("default storage pool %s is not specified in the pools list", defaultPoolID)
 			logger.Error(err)
 			return
 		}
-
-		// create image storage pools data
-		for _, pool := range pools {
-			_, err = imageStorageAdmin.Create(ctx, image.ID, "", "")
-			if err != nil {
-				logger.Error("Failed to create image storage for pool %s, %v", pool, err)
-				return
+		var storages []*model.ImageStorage
+		storages, err = imageStorageAdmin.InitStorages(image, configs)
+		if err != nil {
+			logger.Error("Failed to initialize image storages", err)
+			return
+		}
+		for _, storage := range storages {
+			if storage.PoolID == defaultPoolID {
+				defaultStorageID = storage.ID
+				break
 			}
 		}
 	}
 
-	// create in first pool, and then sync to others
+	// create in default pool, and then clone to others
 	prefix := strings.Split(image.UUID, "-")[0]
 	control := "inter=0"
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, url, defaultPoolID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%s' '%d'", image.ID, prefix, url, defaultPoolID, defaultStorageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
 		if instance.Volumes != nil {
@@ -147,7 +145,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			}
 		}
 		control = fmt.Sprintf("inter=%d", instance.Hyper)
-		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s'", image.ID, prefix, instance.ID, bootVolumeUUID)
+		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%s' '%d'", image.ID, prefix, instance.ID, bootVolumeUUID, defaultPoolID, defaultStorageID)
 	}
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -269,52 +267,6 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	}
 	if err = db.Delete(image).Error; err != nil {
 		return
-	}
-	return
-}
-
-func (a *ImageAdmin) SyncRemoteInfo(ctx context.Context, image *model.Image) (err error) {
-	if image == nil || image.ID <= 0 {
-		err = fmt.Errorf("Invalid image ID: %d", image.ID)
-		logger.Error(err)
-		return
-	}
-	db := DB()
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Writer)
-	if !permit {
-		logger.Error("Not authorized to sync remote info for image")
-		err = fmt.Errorf("Not authorized")
-		return
-	}
-	driver := GetVolumeDriver()
-	if driver == "local" {
-		err = fmt.Errorf("Local driver do not need to be synchronized")
-		logger.Error(err)
-		return
-	}
-	// update storage type if not set
-	if image.StorageType == "" {
-		image.StorageType = driver
-		db.Save(image)
-	}
-	_, pools, err := dictionaryAdmin.List(ctx, 0, -1, "", "category='storage_pool'")
-	if err != nil {
-		logger.Error("Failed to query pools", err)
-		return
-	}
-	for _, pool := range pools {
-		if pool.Value == "" {
-			continue
-		}
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter=0"
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s'", image.ID, prefix, pool.Value)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Sync remote info command execution failed", err)
-			return
-		}
 	}
 	return
 }
@@ -461,10 +413,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	qaEnabled := true
 	architecture := "x86_64"
 	bootLoader := c.QueryTrim("bootLoader")
-
-	poolsStr := c.QueryTrim("pools")
-	pools := strings.Split(poolsStr, ",")
-
+	pools := c.QueryStrings("pools")
 	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid, pools)
 	if err != nil {
 		logger.Error("Create image failed", err)
@@ -473,36 +422,4 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
-}
-
-func (v *ImageView) SyncRemoteInfo(c *macaron.Context, store session.Store) {
-	ctx := c.Req.Context()
-	id := c.Params("id")
-	if id == "" {
-		c.Data["ErrorMsg"] = "Id is empty"
-		c.Error(http.StatusBadRequest)
-		return
-	}
-	imageID, err := strconv.Atoi(id)
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.Error(http.StatusBadRequest)
-		return
-	}
-	image, err := imageAdmin.Get(ctx, int64(imageID))
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.Error(http.StatusBadRequest)
-		return
-	}
-	err = imageAdmin.SyncRemoteInfo(ctx, image)
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.Error(http.StatusBadRequest)
-		return
-	}
-	c.JSON(200, map[string]interface{}{
-		"redirect": "images",
-	})
-	return
 }

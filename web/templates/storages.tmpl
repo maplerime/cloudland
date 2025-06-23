@@ -1,0 +1,94 @@
+{{template "_head" .}}
+    <div class="admin user">
+	    <div class="ui container">
+		    <div class="ui grid">
+                {{template "_left" .}}
+          	    <div class="twelve wide column content">
+		            <h4 class="ui top attached header">
+			            {{.i18n.Tr "Storage_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
+			            <div class="ui right">
+			                <a class="sync-button ui green tiny button" data-url="{{$Link}}/{{.ID}}/sync_remote_info" href="javascript:void(0)">{{$.i18n.Tr "SyncRemoteInfo"}}</a>
+			            </div>
+		            </h4>
+		            <div class="ui unstackable attached table segment">
+                        <table class="ui unstackable very basic striped table">
+	                        <thead>
+		                        <tr>
+									{{ if $.IsAdmin }}
+			                        <th>{{.i18n.Tr "ID"}}</th>
+									{{ end }}
+									<th>{{.i18n.Tr "PoolID"}}</th>
+			                        <th>{{.i18n.Tr "Remote Volume ID"}}</th>
+			                        <th>{{.i18n.Tr "Status"}}</th>
+			                        <th>{{.i18n.Tr "Updated_At"}}</th>
+		                        </tr>
+	                        </thead>
+	                        <tbody>
+                                {{ $Link := .Link }}
+                                {{ range .StoragePools }}
+		                        <tr>
+									{{ if $.IsAdmin }}
+			                        <td>{{.ID}}</td>
+									{{ end }}
+									<td>{{.PoolID}}</td>
+			                        <td>{{.VolumeID}}</td>
+			                        <td>{{.Status}}</td>
+			                        <td><span title="Tue, 18 Dec 2018 14:24:59 &#43;0800">{{.UpdatedAt}}</span></td>
+		                        </tr>
+                                {{ end }}
+	                        </tbody>
+                        </table>
+		            </div>
+		            <div class="ui attached segment">
+                                 {{ if .Pages}}
+                                 <div class="ui pagination menu">
+                                     {{ range  $index, $element := .Pages }}
+                                         <a class="active item">
+                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
+                                         </a>
+                                     {{ end }}
+                                 </div>
+                                 {{ end }}
+	                    </div>
+	            </div>
+            </div>
+        </div>
+    </div>
+    <div class="ui small basic sync modal">
+        <div class="ui icon header">
+            <i class="trash icon"></i>
+            {{.i18n.Tr "Image Sync Remote Info"}}
+        </div>
+        <div class="content">
+            <p>{{.i18n.Tr "Image_Sync_Remote_Info_Confirm"}}</p>
+        </div>
+        {{template "_delete_modal_actions" .}}
+    </div>
+
+<script type="text/javascript">
+    $('.sync-button').click(function () {
+        var $this = $(this);
+        $('.sync.modal').modal({
+            closable: false,
+            onApprove: function () {
+                if ($this.data('type') == "form") {
+                    $($this.data('form')).submit();
+                    return;
+                }
+                $.ajax({
+                    url: $this.data('url'),
+                    type: 'POST',
+                    success: function (data) {
+                        window.location.href = data.redirect;
+                    },
+                    error: function (jqXHR, textStatus, errorThrown) {
+                        window.location.href = "/error?ErrorMsg=" + jqXHR.responseText;
+                    }
+                });
+            }
+        }).modal('show');
+        return false;
+    });
+</script>
+
+{{template "_footer" .}}

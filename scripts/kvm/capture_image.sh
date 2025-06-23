@@ -3,12 +3,13 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 3 ] && echo "$0 <img_ID> <img_Prefix> <vm_ID> <boot_volume>" && exit -1
+[ $# -lt 5 ] && echo "$0 <img_ID> <img_Prefix> <vm_ID> <boot_volume> <pool_ID>" && exit -1
 
 img_ID=$1
 prefix=$2
 vm_ID=inst-$3
 boot_volume=$4
+pool_ID=$5
 image_name=image-$img_ID-$prefix
 state=error
 
@@ -31,7 +32,7 @@ else
     fi
     get_wds_token
     # use max speed to clone the boot volume
-    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$boot_volume/copy_clone" "{\"name\":\"$image_name\", \"speed\": 32, \"phy_pool_id\": \"$wds_pool_id\"}")
+    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$boot_volume/copy_clone" "{\"name\":\"$image_name\", \"speed\": 32, \"phy_pool_id\": \"$pool_ID\"}")
     read -d'\n' -r task_id ret_code message < <(jq -r ".task_id .ret_code .message" <<< $clone_ret)
     [ "$ret_code" != "0" ] && echo "|:-COMMAND-:| capture_image.sh '$img_ID' 'error' 'qcow2' 'failed to clone the boot volume: $message'" && exit -1
     state=cloning

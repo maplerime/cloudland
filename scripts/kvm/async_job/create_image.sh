@@ -3,17 +3,13 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 3 ] && die "$0 <ID> <prefix> <url> <pool_ID>"
+[ $# -lt 5 ] && die "$0 <ID> <prefix> <url> <pool_ID> <storage_ID>"
 
 ID=$1
 prefix=$2
 url=$3
 pool_ID=$4
-
-# set default values
-if [ -z "$pool_ID" ]; then
-    pool_ID=$wds_pool_id
-fi
+storage_ID=$5
 
 image_name=image-$ID-$prefix
 state=error
@@ -21,7 +17,7 @@ mkdir -p $image_cache
 image=$image_cache/$image_name
 inet_access curl -s -k $url -o $image
 if [ ! -s "$image" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '' '' ''"
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '' '' '$storage_ID'"
     exit -1
 fi
 
@@ -62,6 +58,6 @@ else
             state=available
         fi
     fi
-    [ -n "$volume_id" ]
+    [ -n "$volume_id" ] && state=available
 fi
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '$image_size'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '$image_size' '$volume_id' '$storage_ID'"

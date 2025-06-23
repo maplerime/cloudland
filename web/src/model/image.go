@@ -19,6 +19,14 @@ const (
 // OSCodes is a list of supported operating systems
 var OSCodes = []string{OS_LINUX, OS_WINDOWS, OS_OTHER}
 
+type StorageStatus string
+
+const (
+	StorageStatusSyncing StorageStatus = "syncing"
+	StorageStatusSynced  StorageStatus = "synced"
+	StorageStatusError   StorageStatus = "error"
+)
+
 type Image struct {
 	Model
 	Owner                 int64     `gorm:"default:1"` /* The organization ID of the resource */
@@ -49,11 +57,11 @@ type Image struct {
 
 type ImageStorage struct {
 	Model
-	ImageID  int64  `gorm:"default:0"`
-	Image    *Image `gorm:"foreignkey:ImageID"`
-	VolumeID string `gorm:"type:varchar(128)"`
-	PoolID   string `gorm:"type:varchar(128)"`
-	Status   string `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error
+	ImageID  int64         `gorm:"default:0"`
+	Image    *Image        `gorm:"foreignkey:ImageID"`
+	VolumeID string        `gorm:"type:varchar(128)"`
+	PoolID   string        `gorm:"type:varchar(128)"`
+	Status   StorageStatus `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error
 }
 
 func init() {

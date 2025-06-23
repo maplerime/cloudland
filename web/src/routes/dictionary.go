@@ -33,6 +33,11 @@ func (a *DictionaryAdmin) Create(ctx context.Context, category string, name stri
 		}
 		logger.Debugf("Exit DictionaryAdmin.Create, dictionary=%+v, err=%v", dictionary, err)
 	}()
+	if value == "" {
+		logger.Errorf("Value cannot be empty")
+		err = fmt.Errorf("value cannot be empty")
+		return
+	}
 	dictionary = &model.Dictionary{
 		Category: category,
 		Name:     name,
