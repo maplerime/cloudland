@@ -43,7 +43,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
 		uniqueName := fmt.Sprintf("%s-%d-%d", name, i, time.Now().UnixNano())
-		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicReserved)}
+		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicFloating)}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
 			return nil, err
@@ -57,7 +57,6 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
-		fip.Type = string(PublicFloating)
 		if isSite {
 			fip.Type = string(PublicSite)
 		}

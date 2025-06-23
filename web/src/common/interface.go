@@ -171,7 +171,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 				return
 			}
 			err = db.Model(fip).Updates(map[string]interface{}{
-				"type": string(PublicReserved),
 				"instance": instance.ID,
 			}).Error
 			if err != nil {
@@ -190,7 +189,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 			}
 			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
 			err = db.Model(fip).Updates(map[string]interface{}{
-				"type": string(PublicReserved),
 				"instance": instance.ID,
 			}).Error
 			if err != nil {
