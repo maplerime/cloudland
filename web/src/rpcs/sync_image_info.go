@@ -38,7 +38,7 @@ func SyncImageInfo(ctx context.Context, args []string) (status string, err error
 		logger.Error("Invalid storage ID", err)
 		return
 	}
-	if err = db.Updates(map[string]interface{}{
+	if err = db.Model(storage).Updates(map[string]interface{}{
 		"volume_id": args[2],
 		"status":    model.StorageStatus(args[3]),
 	}).Error; err != nil {

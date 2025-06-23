@@ -1,0 +1,48 @@
+{{template "_head" .}}
+<div class="user signup">
+	<div class="ui middle very relaxed page grid">
+        <div class="column" >
+            <form class="ui form" action="{{.Link}}" method="post">
+                <h3 class="ui top attached header">
+                    {{.i18n.Tr "Update Image"}}
+                </h3>
+                <div class="ui attached segment">
+                    <div class="required inline field">
+                        <label for="osCode">{{.i18n.Tr "OSCode"}}</label>
+                        <select name="osCode" id="osCode" class="ui selection dropdown">
+                             <option value="linux" {{ if eq .Image.OSCode "linux" }} selected {{ end }}>Linux</option>
+                             <option value="windows" {{ if eq .Image.OSCode "windows" }} selected {{ end }}>Windows</option>
+                             <option value="other" {{ if eq .Image.OSCode "other" }} selected {{ end }}>Others</option>
+                        </select>
+                    </div>
+                    <div class="required inline field">
+                        <label for="name">{{.i18n.Tr "Name"}}</label>
+                        <input id="name" name="name" value="{{ .Image.Name }}" autocomplete="off" required>
+                    </div>
+                    <div class="required inline field">
+                        <label for="osVersion">{{.i18n.Tr "OS Version"}}</label>
+                        <input id="osVersion" name="osVersion" value="{{ .Image.OsVersion }}" autocomplete="off" required>
+                    </div>
+                    <div class="required inline field">
+                        <label for="userName">{{.i18n.Tr "Default Username"}}</label>
+                        <input id="userName" name="userName" value="{{ .Image.UserName }}" autocomplete="off" required>
+                    </div>
+                    <div class="inline field">
+                        <label for="pools">{{.i18n.Tr "StoragePool"}}</label>
+                        <select name="pools" id="pools" multiple="" class="ui multiple selection dropdown">
+                            {{ range .Pools }}
+                                <option value="{{ .Value }}" {{ if index $.SelectedPools .Value }}selected{{ end }}>{{ .Name }}</option>
+                            {{ end }}
+                        </select>
+                    </div>
+                    <div class="inline field">
+                        <label></label>
+                        <button class="ui green button">{{.i18n.Tr "Update Image"}}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+	</div>
+</div>
+{{template "_footer" .}}
+

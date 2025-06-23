@@ -296,6 +296,42 @@ func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64
 	return
 }
 
+func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string) (err error) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		logger.Error("Not authorized to update image")
+		err = fmt.Errorf("Not Authorized")
+		return
+	}
+	if osCode != "" {
+		image.OSCode = osCode
+	}
+	if name != "" {
+		image.Name = name
+	}
+	if osVersion != "" {
+		image.OsVersion = osVersion
+	}
+	if userName != "" {
+		image.UserName = userName
+	}
+	err = db.Model(image).Updates(image).Error
+	if err != nil {
+		logger.Error("Failed to save image", err)
+		return
+	}
+	// 处理存储池
+
+	return
+}
+
 func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
@@ -422,4 +458,106 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
+}
+
+func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	db := DB()
+	id := c.Params(":id")
+	imageID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	permit, err := memberShip.CheckOwner(model.Writer, "images", int64(imageID))
+	if err != nil {
+		logger.Error("Failed to check permission", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	image := &model.Image{Model: model.Model{ID: int64(imageID)}}
+	if err = db.Take(image).Error; err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, -1, "", "category='storage_pool'")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	_, storages, err := imageStorageAdmin.List(0, -1, "", image)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	selectedPools := make(map[string]bool)
+	for _, s := range storages {
+		if s.Status == model.StorageStatusSynced {
+			selectedPools[s.PoolID] = true
+		}
+	}
+	c.Data["Image"] = image
+	c.Data["Pools"] = pools
+	c.Data["SelectedPools"] = selectedPools
+	c.HTML(200, "image_patch")
+}
+
+func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
+	db := DB()
+	memberShip := GetMemberShip(c.Req.Context())
+	redirectTo := "../images"
+	id := c.Params(":id")
+	osCode := c.QueryTrim("osCode")
+	name := c.QueryTrim("name")
+	osVersion := c.QueryTrim("osVersion")
+	userName := c.QueryTrim("userName")
+	imageID, err := strconv.Atoi(id)
+	pools := c.QueryStrings("pools")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	permit, err := memberShip.CheckOwner(model.Writer, "images", int64(imageID))
+	if err != nil {
+		logger.Error("Failed to check permission", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	image := &model.Image{Model: model.Model{ID: int64(imageID)}}
+	if err = db.Take(image).Error; err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+
+	err = imageAdmin.Update(c.Req.Context(), image, osCode, name, osVersion, userName, pools)
+	if err != nil {
+		logger.Error("Failed to update volume", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect(redirectTo)
+	return
 }

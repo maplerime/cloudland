@@ -83,8 +83,8 @@ func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Di
 					logger.Error("Update image storage failed", err)
 					return
 				}
+				storagesResp = append(storagesResp, storage)
 			}
-			storagesResp = append(storagesResp, storage)
 			delete(storageMap, storage.PoolID)
 		} else {
 			newStorage := &model.ImageStorage{
