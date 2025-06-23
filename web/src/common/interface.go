@@ -156,7 +156,7 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func DerivePublicInterface(ctx context.Context, instance *model.Instance, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, err error) {
+func DerivePublicInterface(ctx context.Context, instance *model.Instance, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	for i, fip := range floatingIps {
 		if i == 0 {
@@ -171,13 +171,13 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 				return
 			}
 			err = db.Model(fip).Updates(map[string]interface{}{
-				"type": string(PublicReserved),
 				"instance": instance.ID,
 			}).Error
 			if err != nil {
 				logger.Errorf("Failed to update public ip, %v", err)
 				return
 			}
+			primarySubnet = primaryIface.Address.Subnet
 		} else {
 			secondAddr := fip.Interface.Address
 			err = db.Model(secondAddr).Updates(map[string]interface{}{
@@ -190,7 +190,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 			}
 			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
 			err = db.Model(fip).Updates(map[string]interface{}{
-				"type": string(PublicReserved),
 				"instance": instance.ID,
 			}).Error
 			if err != nil {
