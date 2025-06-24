@@ -3379,6 +3379,9 @@ const docTemplatev1 = `{
         "apis.FloatingIpPatchPayload": {
             "type": "object",
             "properties": {
+                "group": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -3404,6 +3407,9 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "maximum": 64,
                     "minimum": 0
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseID"
                 },
                 "inbound": {
                     "type": "integer",
@@ -3448,6 +3454,9 @@ const docTemplatev1 = `{
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "id": {
                     "type": "string"
@@ -4120,6 +4129,13 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "resource"
+                    ]
                 }
             }
         },
@@ -4127,7 +4143,8 @@ const docTemplatev1 = `{
             "type": "object",
             "required": [
                 "dictionaries",
-                "name"
+                "name",
+                "type"
             ],
             "properties": {
                 "dictionaries": {
@@ -4137,6 +4154,13 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "resource"
+                    ]
                 }
             }
         },
@@ -4159,6 +4183,9 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "subnet_names": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 },
                 "updated_at": {

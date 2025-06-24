@@ -3434,6 +3434,9 @@
         "apis.FloatingIpPatchPayload": {
             "type": "object",
             "properties": {
+                "group": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -3459,6 +3462,9 @@
                     "type": "integer",
                     "maximum": 64,
                     "minimum": 0
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseID"
                 },
                 "inbound": {
                     "type": "integer",
@@ -3503,6 +3509,9 @@
             "properties": {
                 "created_at": {
                     "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "id": {
                     "type": "string"
@@ -4175,6 +4184,13 @@
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "resource"
+                    ]
                 }
             }
         },
@@ -4182,7 +4198,8 @@
             "type": "object",
             "required": [
                 "dictionaries",
-                "name"
+                "name",
+                "type"
             ],
             "properties": {
                 "dictionaries": {
@@ -4192,6 +4209,13 @@
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "resource"
+                    ]
                 }
             }
         },
@@ -4214,6 +4238,9 @@
                     "type": "string"
                 },
                 "subnet_names": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 },
                 "updated_at": {
