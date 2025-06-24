@@ -10,16 +10,6 @@ import (
 	"web/src/dbs"
 )
 
-type IpGroup struct {
-	Model
-	Owner          int64       `gorm:"default:1"` /* The organization ID of the resource */
-	Name           string      `gorm:"unique_index;type:varchar(64)"`
-	TypeID         int64       `gorm:"index"`
-	DictionaryType *Dictionary `gorm:"foreignKey:TypeID;references:ID"`
-	Subnets        []*Subnet   `gorm:"foreignkey:GroupID;"`
-	SubnetNames    string      `gorm:"-"`
-}
-
 type Dictionary struct {
 	Model
 	Owner    int64  `gorm:"default:1"` /* The organization ID of the resource */
@@ -29,6 +19,5 @@ type Dictionary struct {
 }
 
 func init() {
-	dbs.AutoMigrate(&IpGroup{})
 	dbs.AutoMigrate(&Dictionary{})
 }

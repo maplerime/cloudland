@@ -231,10 +231,17 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, gateway, start
 		logger.Debugf("Transaction ended, err=%v", err)
 	}()
 
-	err = db.Model(&model.Subnet{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"name":     name,
-		"group_id": ipGroup.ID,
-	}).Error
+	updates := map[string]interface{}{
+		"name": name,
+	}
+
+	if ipGroup != nil {
+		updates["group_id"] = ipGroup.ID
+	} else {
+		updates["group_id"] = 0
+	}
+
+	err = db.Model(&model.Subnet{}).Where("id = ?", id).Updates(updates).Error
 	if err != nil {
 		logger.Errorf("Failed to save subnet, err=%v", err)
 		return
@@ -581,7 +588,6 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		queryStr = fmt.Sprintf("name like '%%%s%%'", query)
 	}
 	total, subnets, err := subnetAdmin.List(c.Req.Context(), offset, limit, order, queryStr, "")
-	// 针对type不为internal的子网，输出闲置数量
 	for _, subnet := range subnets {
 		if subnet.Type != "internal" {
 			idleCount, err := subnetAdmin.CountIdleAddressesForSubnet(c.Req.Context(), subnet)
@@ -826,10 +832,25 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	start := c.QueryTrim("start")
 	end := c.QueryTrim("end")
 	dns := c.QueryTrim("dns")
-	groupID := c.QueryInt64("group")
+	groupID := c.QueryTrim("group")
+	var groupIDInt int
+	if groupID == "" {
+		groupIDInt = 0
+	} else {
+		groupIDInt, err = strconv.Atoi(groupID)
+		if err != nil {
+			c.HTML(500, err.Error())
+			return
+		}
+	}
+	logger.Debugf("ipGroupTypeInt: %d", groupIDInt)
+	if err != nil {
+		c.HTML(500, err.Error())
+		return
+	}
 	var ipGroup *model.IpGroup
-	if groupID > 0 {
-		ipGroup, err = ipGroupAdmin.Get(ctx, groupID)
+	if groupIDInt > 0 {
+		ipGroup, err = ipGroupAdmin.Get(ctx, int64(groupIDInt))
 		if err != nil {
 			logger.Error("Get ipGroup failed ", err)
 			c.Data["ErrorMsg"] = err.Error()

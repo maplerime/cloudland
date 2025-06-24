@@ -48,6 +48,7 @@ type FloatingIpResponse struct {
 	VPC             *BaseReference   `json:"vpc,omitempty"`
 	Inbound         int32            `json:"inbound"`
 	Outbound        int32            `json:"outbound"`
+	Group           *BaseReference   `json:"group,omitempty"`
 }
 
 type FloatingIpListResponse struct {
@@ -67,12 +68,14 @@ type FloatingIpPayload struct {
 	Inbound         int32            `json:"inbound" binding:"omitempty,min=1,max=20000"`
 	Outbound        int32            `json:"outbound" binding:"omitempty,min=1,max=20000"`
 	ActivationCount int32            `json:"activation_count" binding:"omitempty,min=0,max=64"`
+	Group           *BaseID          `json:"group" binding:"omitempty"`
 }
 
 type FloatingIpPatchPayload struct {
 	Instance *BaseID `json:"instance" binding:"omitempty"`
 	Inbound  *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
 	Outbound *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
+	Group    *BaseID `json:"group" binding:"omitempty"`
 }
 
 // @Summary get a floating ip
@@ -141,27 +144,39 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 	if payload.Outbound != nil {
 		floatingIp.Outbound = *payload.Outbound
 	}
-	err = floatingIpAdmin.Detach(ctx, floatingIp)
-	if err != nil {
-		logger.Errorf("Failed to detach floating ip %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
-		return
-	}
+	var instance *model.Instance
 	if payload.Instance != nil {
-		var instance *model.Instance
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
 		if err != nil {
 			logger.Errorf("Failed to get instance %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
 			return
 		}
-		err = floatingIpAdmin.Attach(ctx, floatingIp, instance)
+	}
+
+	var group *model.IpGroup
+	if payload.Group != nil {
+		groupID, err := strconv.Atoi(payload.Group.ID)
 		if err != nil {
-			logger.Errorf("Failed to attach floating ip %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to attach floating ip", err)
+			logger.Errorf("Invalid group ID %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
+			return
+		}
+		group, err = ipGroupAdmin.Get(ctx, int64(groupID))
+		if err != nil {
+			logger.Errorf("Failed to get ip group %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get ip group", err)
 			return
 		}
 	}
+	logger.Debugf("Updating floating ip %s with instance %s, group %s", uuID, instance, group)
+	floatingIp, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group)
+	if err != nil {
+		logger.Errorf("Failed to update floating ip %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to update floating ip", err)
+		return
+	}
+
 	floatingIpResp, err := v.getFloatingIpResponse(ctx, floatingIp)
 	if err != nil {
 		logger.Errorf("Failed to create floating ip response: %+v", err)
@@ -274,9 +289,24 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 			return
 		}
 	}
+	var group *model.IpGroup
+	if payload.Group != nil {
+		groupID, err := strconv.Atoi(payload.Group.ID)
+		if err != nil {
+			logger.Errorf("Invalid group ID %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
+			return
+		}
+		group, err = ipGroupAdmin.Get(ctx, int64(groupID))
+		if err != nil {
+			logger.Errorf("Failed to get ip group %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get ip group", err)
+			return
+		}
+	}
 
-	logger.Debugf("publicSubnets: %v, instance: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, siteSubnets: %v", publicSubnets, instance, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets)
-	floatingIps, err := floatingIpAdmin.Create(ctx, instance, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets)
+	logger.Debugf("publicSubnets: %v, instance: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, siteSubnets: %v, group: %v", publicSubnets, instance, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets, group)
+	floatingIps, err := floatingIpAdmin.Create(ctx, instance, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets, group)
 	if err != nil {
 		logger.Errorf("Failed to create floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create floating ip", err)
