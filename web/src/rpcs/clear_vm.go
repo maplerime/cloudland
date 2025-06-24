@@ -52,10 +52,12 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 		i++
 	}
 	for _, iface := range instance.Interfaces {
-		err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
-			return
+		if iface.FloatingIp == 0 {
+			err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
+			if err != nil {
+				logger.Error("Failed to Update addresses, %v", err)
+				return
+			}
 		}
 		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
 		if err != nil {
@@ -67,10 +69,12 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 			logger.Error("Failed to Update addresses, %v", err)
 			return
 		}
-		err = db.Delete(iface).Error
-		if err != nil {
-			logger.Error("Failed to delete interface", err)
-			return
+		if iface.FloatingIp == 0 {
+			err = db.Delete(iface).Error
+			if err != nil {
+				logger.Error("Failed to delete interface", err)
+				return
+			}
 		}
 		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
 			"interface": 0}).Error

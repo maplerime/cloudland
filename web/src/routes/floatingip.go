@@ -333,18 +333,21 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 			logger.Error("DB: delete native fip failed", err)
 			return
 		}
+		floatingIp.Instance = nil
 		return
 	} 
 	if floatingIp.Type == string(PublicReserved) {
-			err = db.Model(floatingIp).Updates(map[string]interface{}{
-				"instance": 0,
-				"IntAddress": "",
-				"type": string(PublicFloating),
-			}).Error
-			if err != nil {
-				logger.Errorf("Failed to update public ip, %v", err)
-				return
-			}
+		floatingIp.Instance = nil
+		floatingIp.Interface = nil
+		floatingIp.Router = nil
+		floatingIp.InstanceID = 0
+		floatingIp.IntAddress = ""
+		floatingIp.Type = string(PublicFloating)
+		err = db.Save(floatingIp).Error
+		if err != nil {
+			logger.Errorf("Failed to update public ip, %v", err)
+			return
+		}
 		return
 	}
 	if floatingIp.Instance != nil {

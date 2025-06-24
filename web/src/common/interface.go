@@ -161,19 +161,18 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 	for i, fip := range floatingIps {
 		if i == 0 {
 			primaryIface = fip.Interface
-			err = db.Model(primaryIface).Updates(map[string]interface{}{
-				"instance": instance.ID,
-				"primary_if": true,
-			}).Error
+			primaryIface.Instance = instance.ID
+			primaryIface.PrimaryIf = true
+			err = db.Model(primaryIface).Updates(primaryIface).Error
 			if err != nil {
 				logger.Errorf("Failed to update interface, %v", err)
 				return
 			}
-			err = db.Model(fip).Updates(map[string]interface{}{
-				"instance": instance.ID,
-				"IntAddress": primaryIface.Address.Address,
-				"type": string(PublicReserved),
-			}).Error
+			fip.InstanceID = instance.ID
+			fip.IntAddress = primaryIface.Address.Address
+			fip.Type = string(PublicReserved)
+			fip.Instance = nil
+			err = db.Model(fip).Updates(fip).Error
 			if err != nil {
 				logger.Errorf("Failed to update public ip, %v", err)
 				return
@@ -181,25 +180,30 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 			primarySubnet = primaryIface.Address.Subnet
 		} else {
 			secondAddr := fip.Interface.Address
-			err = db.Model(secondAddr).Updates(map[string]interface{}{
-				"type": "second",
-				"second_interface": primaryIface.ID,
-			}).Error
+			secondAddr.Type = "second"
+			secondAddr.SecondInterface = primaryIface.ID
+			err = db.Model(secondAddr).Updates(secondAddr).Error
 			if err != nil {
 				logger.Errorf("Failed to update public ip, %v", err)
 				return
 			}
+			iface := fip.Interface
+			if err != nil {
+				logger.Errorf("Failed to update interface, %v", err)
+				return
+			}
 			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
-			err = db.Model(fip).Updates(map[string]interface{}{
-				"instance": instance.ID,
-				"IntAddress": primaryIface.Address.Address,
-				"type": string(PublicReserved),
-			}).Error
+			fip.InstanceID = instance.ID
+			fip.IntAddress = iface.Address.Address
+			fip.Type = string(PublicReserved)
+			fip.Instance = nil
+			err = db.Model(fip).Updates(fip).Error
 			if err != nil {
 				logger.Errorf("Failed to update public ip, %v", err)
 				return
 			}
 		}
+		fip.Instance = instance
 	}
 	return
 }
