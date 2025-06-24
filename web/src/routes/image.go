@@ -428,6 +428,12 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	err := imageStorageAdmin.CheckDefaultPool()
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -494,6 +500,12 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	err = imageStorageAdmin.CheckDefaultPool()
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}

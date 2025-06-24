@@ -8,7 +8,9 @@ SPDX-License-Identifier: Apache-2.0
 package routes
 
 import (
+	"fmt"
 	"github.com/go-macaron/session"
+	"github.com/spf13/viper"
 	"gopkg.in/macaron.v1"
 	"net/http"
 	"strconv"
@@ -136,4 +138,17 @@ func (v *ImageStorageView) List(c *macaron.Context, store session.Store) {
 	c.Data["Pages"] = pages
 	c.Data["ImageID"] = imageID
 	c.HTML(200, "storages")
+}
+
+func (a *ImageStorageAdmin) CheckDefaultPool() (err error) {
+	driver := GetVolumeDriver()
+	db := DB()
+	if driver != "local" {
+		defaultPool := viper.GetString("volume.default_wds_pool_id")
+		err = db.Where("category='storage_pool' AND value=?", defaultPool).First(&model.Dictionary{}).Error
+		if err != nil {
+			err = fmt.Errorf("default storage pool %s is not in configurations", defaultPool)
+		}
+	}
+	return
 }
