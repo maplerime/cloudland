@@ -8,6 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package routes
 
 import (
+	"context"
 	"fmt"
 	"github.com/go-macaron/session"
 	"github.com/spf13/viper"
@@ -49,9 +50,32 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 	return
 }
 
-// InitStorages initializes the image storage records for a given image and configs.
-func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Dictionary) (storagesResp []*model.ImageStorage, err error) {
+// InitStorages initializes the image storage records for a given image and pool
+func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image, pools []string) (storagesResp []*model.ImageStorage, err error) {
 	db := DB()
+
+	// valid pools
+	finalPools := make([]string, 0)
+	for _, poolID := range pools {
+		dictionary := &model.Dictionary{}
+		dictionary, err = dictionaryAdmin.Find(ctx, "storage_pool", poolID)
+		if err == nil {
+			finalPools = append(finalPools, dictionary.Value)
+		}
+	}
+
+	// set default
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	containsDefault := false
+	for _, poolID := range finalPools {
+		if poolID == defaultPoolID {
+			containsDefault = true
+			break
+		}
+	}
+	if !containsDefault {
+		finalPools = append(finalPools, defaultPoolID)
+	}
 
 	// load exists image storage records
 	var storages []*model.ImageStorage
@@ -65,8 +89,7 @@ func (a *ImageStorageAdmin) InitStorages(image *model.Image, configs []*model.Di
 		storageMap[storage.PoolID] = storage
 	}
 
-	for _, config := range configs {
-		poolID := config.Value
+	for _, poolID := range finalPools {
 		if storage, exists := storageMap[poolID]; exists {
 			if storage.Status != model.StorageStatusSynced {
 				storage.Status = model.StorageStatusUnknown

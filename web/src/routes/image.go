@@ -234,17 +234,35 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 		err = fmt.Errorf("The image can not be deleted if there are instances using it")
 		return
 	}
+	prefix := strings.Split(image.UUID, "-")[0]
+	control := "inter=0"
+	total, storages, _ := imageStorageAdmin.List(0, -1, "", image)
 	if image.Status == "available" {
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s'", image.ID, prefix, image.Format)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Clear image command execution failed", err)
-			return
+		if total > 0 {
+			for _, storage := range storages {
+				if storage.Status != model.StorageStatusSynced {
+					continue
+				}
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, image.Format, storage.VolumeID)
+				err = HyperExecute(ctx, control, command)
+				if err != nil {
+					logger.Error("Clear image storage command execution failed", err)
+					return
+				}
+			}
+		} else {
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' %s'", image.ID, prefix, image.Format, "")
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Clear image command execution failed", err)
+				return
+			}
 		}
 	}
 	if err = db.Delete(image).Error; err != nil {
+		return
+	}
+	if err = db.Where("image_id = ?", image.ID).Error; err != nil {
 		return
 	}
 	return
@@ -312,25 +330,8 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		return
 	}
 
-	// with default pool
 	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-	withDefault := false
-	var configs []*model.Dictionary
-	for _, poolID := range pools {
-		config := &model.Dictionary{}
-		if err = db.Where("value = ? AND category = 'storage_pool'", poolID).First(&config).Error; err != nil {
-			logger.Errorf("Failed to get config")
-			continue
-		}
-		configs = append(configs, config)
-		if poolID == defaultPoolID {
-			withDefault = true
-		}
-	}
-	if !withDefault {
-		configs = append(configs, &model.Dictionary{Value: defaultPoolID})
-	}
-	storages, err := imageStorageAdmin.InitStorages(image, configs)
+	storages, err := imageStorageAdmin.InitStorages(ctx, image, pools)
 	if err != nil {
 		logger.Error("Failed to initialize image storages", err)
 		return
