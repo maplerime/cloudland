@@ -25,6 +25,7 @@ const (
 	Site     SubnetType = "site"
 
 	PublicNative   ElasticType = "native"
+	PublicReserved ElasticType = "reserved"
 	PublicFloating ElasticType = "floating"
 	PublicSite     ElasticType = "site"
 

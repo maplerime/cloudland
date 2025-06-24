@@ -322,15 +322,31 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 }
 
 func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
-	if floatingIp.Type != string(PublicFloating) {
-		return
-	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
+	if floatingIp.Type == string(PublicNative) {
+		if err = db.Delete(floatingIp).Error; err != nil {
+			logger.Error("DB: delete native fip failed", err)
+			return
+		}
+		return
+	} 
+	if floatingIp.Type == string(PublicReserved) {
+			err = db.Model(floatingIp).Updates(map[string]interface{}{
+				"instance": 0,
+				"IntAddress": "",
+				"type": string(PublicFloating),
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+		return
+	}
 	if floatingIp.Instance != nil {
 		var primaryIface *model.Interface
 		instance := floatingIp.Instance
