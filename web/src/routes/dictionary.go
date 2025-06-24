@@ -135,9 +135,10 @@ func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictio
 
 func (a *DictionaryAdmin) Find(ctx context.Context, category, value string) (dictionary *model.Dictionary, err error) {
 	db := DB()
+	dictionary = &model.Dictionary{}
 	err = db.Where("category = ? AND value = ?", category, value).Take(dictionary).Error
 	if err != nil {
-		logger.Error("DictionaryAdmin.GetByCategoryAndValue: failed to get dictionary", err)
+		logger.Error("DictionaryAdmin.Find: failed to get dictionary", err)
 		return
 	}
 	return

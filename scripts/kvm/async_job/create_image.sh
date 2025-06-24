@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 5 ] && die "$0 <ID> <prefix> <url> <storage_ID>"
+[ $# -lt 4 ] && die "$0 <ID> <prefix> <url> <storage_ID>"
 
 ID=$1
 prefix=$2

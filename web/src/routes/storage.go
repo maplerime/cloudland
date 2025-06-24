@@ -52,8 +52,7 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 
 // InitStorages initializes the image storage records for a given image and pool
 func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image, pools []string) (storagesResp []*model.ImageStorage, err error) {
-	db := DB()
-
+	ctx, db := GetContextDB(ctx)
 	// valid pools
 	finalPools := make([]string, 0)
 	for _, poolID := range pools {

@@ -153,6 +153,9 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		logger.Debug("Root password login enabled")
 	}
 
+	// if not
+	// if selected pool is not defined, use default pool
+
 	execCommands := []*ExecutionCommand{}
 	i := 0
 	hostname := prefix

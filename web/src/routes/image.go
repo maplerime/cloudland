@@ -262,7 +262,7 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	if err = db.Delete(image).Error; err != nil {
 		return
 	}
-	if err = db.Where("image_id = ?", image.ID).Error; err != nil {
+	if err = db.Where("image_id = ?", image.ID).Delete(&model.ImageStorage{}).Error; err != nil {
 		return
 	}
 	return
