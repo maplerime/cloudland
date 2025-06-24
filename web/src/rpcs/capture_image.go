@@ -21,9 +21,9 @@ func init() {
 }
 
 func CaptureImage(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| capture_image.sh '5' 'available' 'qcow2' 'message'
+	//|:-COMMAND-:| capture_image.sh '5' 'available' 'qcow2' 'message' 'volume_ID' 'storage_ID'
 	argn := len(args)
-	if argn < 4 {
+	if argn < 6 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -40,14 +40,15 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Invalid image ID", err)
 		return
 	}
-	image.Status = args[2]
+	state := args[2]
+	image.Status = state
 	if image.Status == "error" {
-		err_msg := args[4]
+		errMsg := args[4]
 		// log the error message and continue to save image
-		logger.Errorf("Capture image failed: %s", err_msg)
+		logger.Errorf("Capture image failed: %s", errMsg)
 	}
-	vol_driver := routes.GetVolumeDriver()
-	if vol_driver == "local" {
+	volDriver := routes.GetVolumeDriver()
+	if volDriver == "local" {
 		image.Format = args[3]
 		var imageSize int
 		imageSize, err = strconv.Atoi(args[4])
@@ -61,6 +62,32 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 	if err != nil {
 		logger.Error("Update image failed", err)
 		return
+	}
+
+	storageID := 0
+	storageID, err = strconv.Atoi(args[6])
+	if err != nil {
+		logger.Error("Invalid storage ID", err)
+		return
+	}
+	if storageID > 0 {
+		storage := &model.ImageStorage{Model: model.Model{ID: int64(storageID)}}
+		err = db.Take(storage).Error
+		if err != nil {
+			logger.Error("Invalid storage ID", err)
+			return
+		}
+		storage.VolumeID = args[5]
+		if state == "success" {
+			storage.Status = model.StorageStatusSynced
+		} else {
+			storage.Status = model.StorageStatusError
+		}
+		err = db.Save(storage).Error
+		if err != nil {
+			logger.Error("Update image storage failed", err)
+			return
+		}
 	}
 	return
 }

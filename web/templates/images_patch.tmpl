@@ -31,7 +31,7 @@
                         <label for="pools">{{.i18n.Tr "StoragePool"}}</label>
                         <select name="pools" id="pools" multiple="" class="ui multiple selection dropdown">
                             {{ range .Pools }}
-                                <option value="{{ .Value }}" {{ if index $.SelectedPools .Value }}selected{{ end }}>{{ .Name }}</option>
+                                <option value="{{ .Value }}" {{ if index $.Storages .Value }}selected{{ end }}>{{ .Name }}</option>
                             {{ end }}
                         </select>
                     </div>

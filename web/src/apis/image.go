@@ -45,15 +45,14 @@ type ImageListResponse struct {
 }
 
 type ImagePayload struct {
-	UUID         string   `json:"uuid,omitempty" binding:"omitempty"`
-	Name         string   `json:"name" binding:"required,min=2,max=32"`
-	OSCode       string   `json:"os_code" binding:"required,oneof=linux windows other"`
-	DownloadURL  string   `json:"download_url" binding:"required,http_url"`
-	OSVersion    string   `json:"os_version" binding:"required,min=2,max=32"`
-	User         string   `json:"user" binding:"required,min=2,max=32"`
-	InstanceUUID string   `json:"instance_uuid"`
-	BootLoader   string   `json:"boot_loader" binding:"required,oneof=bios uefi"`
-	Pools        []string `json:"pools" binding:"omitempty"`
+	UUID         string `json:"uuid,omitempty" binding:"omitempty"`
+	Name         string `json:"name" binding:"required,min=2,max=32"`
+	OSCode       string `json:"os_code" binding:"required,oneof=linux windows other"`
+	DownloadURL  string `json:"download_url" binding:"required,http_url"`
+	OSVersion    string `json:"os_version" binding:"required,min=2,max=32"`
+	User         string `json:"user" binding:"required,min=2,max=32"`
+	InstanceUUID string `json:"instance_uuid"`
+	BootLoader   string `json:"boot_loader" binding:"required,oneof=bios uefi"`
 	// QAEnabled    bool   `json:"qa_enabled"`
 }
 
@@ -202,7 +201,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID, payload.Pools)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

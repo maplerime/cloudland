@@ -3,13 +3,13 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 5 ] && echo "$0 <img_ID> <img_Prefix> <vm_ID> <boot_volume> <pool_ID>" && exit -1
+[ $# -lt 5 ] && echo "$0 <img_ID> <img_Prefix> <vm_ID> <boot_volume> <storage_ID>" && exit -1
 
 img_ID=$1
 prefix=$2
 vm_ID=inst-$3
 boot_volume=$4
-pool_ID=$5
+storage_ID=$5
 image_name=image-$img_ID-$prefix
 state=error
 
@@ -24,15 +24,16 @@ if [ -z "$wds_address" ]; then
     qemu-img convert -f $format -O qcow2 $inst_img $image
     [ -s "$image" ] && state=available
     sync_target /opt/cloudland/cache/image/
+    volume_id=""
 else
     # clone the image from the boot volume on the remote storage WDS
     if [ -z "$boot_volume" ]; then
-        echo "|:-COMMAND-:| capture_image.sh '$img_ID' 'error' 'qcow2' 'boot_volume is not specified'"
+        echo "|:-COMMAND-:| capture_image.sh '$img_ID' 'error' 'qcow2' 'boot_volume is not specified' '' '$storage_ID'"
         exit -1
     fi
     get_wds_token
     # use max speed to clone the boot volume
-    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$boot_volume/copy_clone" "{\"name\":\"$image_name\", \"speed\": 32, \"phy_pool_id\": \"$pool_ID\"}")
+    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$boot_volume/copy_clone" "{\"name\":\"$image_name\", \"speed\": 32, \"phy_pool_id\": \"$wds_pool_id\"}")
     read -d'\n' -r task_id ret_code message < <(jq -r ".task_id .ret_code .message" <<< $clone_ret)
     [ "$ret_code" != "0" ] && echo "|:-COMMAND-:| capture_image.sh '$img_ID' 'error' 'qcow2' 'failed to clone the boot volume: $message'" && exit -1
     state=cloning
@@ -47,4 +48,4 @@ else
     [ -n "$volume_id" ] && state=available
 fi
 # virsh resume $vm_ID
-echo "|:-COMMAND-:| capture_image.sh '$img_ID' '$state' 'qcow2' 'success'"
+echo "|:-COMMAND-:| capture_image.sh '$img_ID' '$state' 'qcow2' 'success' '$volume_id' '$storage_ID'"

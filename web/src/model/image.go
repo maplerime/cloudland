@@ -22,9 +22,10 @@ var OSCodes = []string{OS_LINUX, OS_WINDOWS, OS_OTHER}
 type StorageStatus string
 
 const (
-	StorageStatusSyncing StorageStatus = "syncing"
-	StorageStatusSynced  StorageStatus = "synced"
-	StorageStatusError   StorageStatus = "error"
+	StorageStatusSynced   StorageStatus = "synced"
+	StorageStatusError    StorageStatus = "error"
+	StorageStatusUnknown  StorageStatus = "unknown"
+	StorageStatusNotFound StorageStatus = "not_found"
 )
 
 type Image struct {
@@ -61,7 +62,7 @@ type ImageStorage struct {
 	Image    *Image        `gorm:"foreignkey:ImageID"`
 	VolumeID string        `gorm:"type:varchar(128)"`
 	PoolID   string        `gorm:"type:varchar(128)"`
-	Status   StorageStatus `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error
+	Status   StorageStatus `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error, not-found
 }
 
 func init() {

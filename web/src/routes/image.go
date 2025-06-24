@@ -38,8 +38,8 @@ func FileExist(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, qaEnabled bool, instID int64, uuid string, pools []string) (image *model.Image, err error) {
-	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instID, uuid, strings.Join(pools, ","))
+func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, qaEnabled bool, instID int64, uuid string) (image *model.Image, err error) {
+	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instID, uuid)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -92,25 +92,27 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		logger.Error("DB create image failed, %v", err)
 	}
 
-	storages, err := a.checkPools(image, pools)
-	if err != nil {
-		logger.Error("Failed to check pools", err)
-		return
-	}
-
-	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-	defaultStorageID := int64(0)
-	for _, storage := range storages {
-		if storage.PoolID == defaultPoolID {
-			defaultStorageID = storage.ID
-			break
+	// create default storage
+	defaultPool := viper.GetString("volume.default_wds_pool_id")
+	storageID := int64(0)
+	if defaultPool != "" {
+		storage := &model.ImageStorage{
+			ImageID: image.ID,
+			Image:   image,
+			PoolID:  defaultPool,
+			Status:  model.StorageStatusUnknown,
 		}
+		if err = db.Create(storage).Error; err != nil {
+			logger.Error("Failed to create default image storage", err)
+			return
+		}
+		storageID = storage.ID
 	}
 
-	// create in default pool, and then clone to others
+	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
 	control := "inter=0"
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%s' '%d'", image.ID, prefix, url, defaultPoolID, defaultStorageID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
 		if instance.Volumes != nil {
@@ -122,45 +124,11 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			}
 		}
 		control = fmt.Sprintf("inter=%d", instance.Hyper)
-		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%s' '%d'", image.ID, prefix, instance.ID, bootVolumeUUID, defaultPoolID, defaultStorageID)
+		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d'", image.ID, prefix, instance.ID, bootVolumeUUID, storageID)
 	}
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create image command execution failed", err)
-		return
-	}
-	return
-}
-
-// checkPools
-// check if the pools are valid and contain the default pool
-func (a *ImageAdmin) checkPools(image *model.Image, pools []string) (storages []*model.ImageStorage, err error) {
-	if GetVolumeDriver() == "local" {
-		return
-	}
-	db := DB()
-	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-	var configs []*model.Dictionary
-	containsDefault := false
-	for _, poolID := range pools {
-		dict := &model.Dictionary{}
-		if err = db.Where("value = ? AND category = 'storage_pool'", poolID).First(&dict).Error; err != nil {
-			logger.Errorf("Failed to get dict")
-			continue
-		}
-		configs = append(configs, dict)
-		if poolID == defaultPoolID {
-			containsDefault = true
-		}
-	}
-	if !containsDefault {
-		err = fmt.Errorf("default storage pool %s is not specified in the pools list", defaultPoolID)
-		logger.Error(err)
-		return
-	}
-	storages, err = imageStorageAdmin.InitStorages(image, configs)
-	if err != nil {
-		logger.Error("Failed to initialize image storages", err)
 		return
 	}
 	return
@@ -339,27 +307,48 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		return
 	}
 
-	storages, err := a.checkPools(image, pools)
-	if err != nil {
-		logger.Error("Failed to check pools", err)
+	driver := GetVolumeDriver()
+	if driver == "local" {
 		return
 	}
+
+	// with default pool
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	withDefault := false
+	var configs []*model.Dictionary
+	for _, poolID := range pools {
+		config := &model.Dictionary{}
+		if err = db.Where("value = ? AND category = 'storage_pool'", poolID).First(&config).Error; err != nil {
+			logger.Errorf("Failed to get config")
+			continue
+		}
+		configs = append(configs, config)
+		if poolID == defaultPoolID {
+			withDefault = true
+		}
+	}
+	if !withDefault {
+		configs = append(configs, &model.Dictionary{Value: defaultPoolID})
+	}
+	storages, err := imageStorageAdmin.InitStorages(image, configs)
+	if err != nil {
+		logger.Error("Failed to initialize image storages", err)
+		return
+	}
+
 	for _, storage := range storages {
 		if storage.Status == model.StorageStatusSynced {
 			continue
 		}
-		if storage.PoolID == viper.GetString("volume.default_wds_pool_id") {
-			err = imageStorageAdmin.Sync(ctx, storage)
-			if err != nil {
-				logger.Error("Failed to sync image storage", err)
-				return
-			}
-		} else {
-			err = imageStorageAdmin.CopyClone(ctx, storage, "snap")
-			if err != nil {
-				logger.Error("Failed to copy clone image storage", err)
-				return
-			}
+		prefix := strings.Split(image.UUID, "-")[0]
+		control := "inter=0"
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+		if storage.PoolID == defaultPoolID {
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+		}
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Sync remote info command execution failed", err)
 		}
 	}
 	return
@@ -446,13 +435,6 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Data["Instances"] = instances
-	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, -1, "", "category='storage_pool'")
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.Error(http.StatusInternalServerError)
-		return
-	}
-	c.Data["Pools"] = pools
 	c.HTML(200, "images_new")
 }
 
@@ -482,8 +464,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	qaEnabled := true
 	architecture := "x86_64"
 	bootLoader := c.QueryTrim("bootLoader")
-	pools := c.QueryStrings("pools")
-	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid, pools)
+	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid)
 	if err != nil {
 		logger.Error("Create image failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -522,7 +503,8 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, -1, "", "category='storage_pool'")
+	query := fmt.Sprintf("category='%s'", "storage_pool")
+	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, -1, "", query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, err.Error())
@@ -542,7 +524,7 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 	}
 	c.Data["Image"] = image
 	c.Data["Pools"] = pools
-	c.Data["SelectedPools"] = selectedPools
+	c.Data["Storages"] = selectedPools
 	c.HTML(200, "images_patch")
 }
 

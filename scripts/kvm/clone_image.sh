@@ -3,36 +3,20 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 3 ] && die "$0 <ID> <prefix> <target_pool_ID> <from> <storage_ID>"
+[ $# -lt 3 ] && die "$0 <ID> <prefix> <target_pool_ID> <storage_ID>"
 
 ID=$1
 prefix=$2
 target_pool_ID=$3
-from=$4
-storage_ID=$5
+storage_ID=$4
 pool_prefix=$(get_pool_prefix "$target_pool_ID")
 source_image=image-$ID-$prefix
 target_image=$source_image-$pool_prefix
 state=error
 
-if [ "$from" = "snap" ]; then
-    # if from is snap, get the first snap based on source_ID, then copy clone by snap id
-    snapshot_name=${source_image}-1
-    snapshot_id=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0].id"')
-    if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-        source_volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$source_image" | jq -r '.volumes[0].id')
-        wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$source_volume_id\"}"
-        snapshot_id=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0].id')
-        if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-            echo "|:-COMMAND-:| sync_image_info.sh '$storage_ID' '' '$state'"
-            exit -1
-        fi
-    fi
-    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$snapshot_id/copy_clone" "{\"name\":\"$target_image\", \"speed\": 32, \"phy_pool_id\": \"$target_pool_ID\"}")
-else
-    # if from is volume, copy clone by volume id
-    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$source_ID/copy_clone" "{\"name\":\"$target_image\", \"speed\": 32, \"phy_pool_id\": \"$target_pool_ID\"}")
-fi
+# if from is volume, copy clone by volume id
+source_volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$source_image" | jq -r '.volumes[0].id')
+clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$source_volume_id/copy_clone" "{\"name\":\"$target_image\", \"speed\": 32, \"phy_pool_id\": \"$target_pool_ID\"}")
 
 read -d'\n' -r task_id ret_code < <(jq -r ".task_id .ret_code" <<< $clone_ret)
 [ "$ret_code" != "0" ] && echo "|:-COMMAND-:| sync_image_info.sh '$storage_ID' '' '$state'" && exit -1

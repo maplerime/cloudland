@@ -24,6 +24,7 @@ if [ -n "$wds_address" ]; then
     get_wds_token
     volume_ID=$(wds_curl GET "api/v2/sync/block/volumes?name=$image" | jq -r '.volumes[0].id')
     if [ -z "$volume_ID" -o "$volume_ID" = null ]; then
+        state=not_found
         echo "|:-COMMAND-:| $(basename "$0") '$storage_ID' '' '$state'"
         exit 1
     fi
