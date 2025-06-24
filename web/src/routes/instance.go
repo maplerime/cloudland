@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/viper"
 	"net"
 	"net/http"
 	"strconv"
@@ -153,8 +154,22 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		logger.Debug("Root password login enabled")
 	}
 
-	// if not
-	// if selected pool is not defined, use default pool
+	driver := GetVolumeDriver()
+	if driver != "local" {
+		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+		storage := &model.ImageStorage{}
+		if poolID == "" {
+			poolID = defaultPoolID
+		}
+		if poolID != defaultPoolID {
+			err = db.Where("image_id = ? AND status = ?", image.ID, model.StorageStatusSynced).First(storage).Error
+			if err != nil {
+				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
+				err = fmt.Errorf("Image storage not found")
+				return
+			}
+		}
+	}
 
 	execCommands := []*ExecutionCommand{}
 	i := 0
@@ -164,9 +179,19 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			hostname = fmt.Sprintf("%s-%d", prefix, i+1)
 		}
 		total := 0
-		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-			logger.Error("Failed to query total instances with the image", err)
-			return
+
+		if driver == "local" {
+			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+				logger.Error("Failed to query total instances with the image", err)
+				return
+			}
+		} else {
+			if err = db.Model(&model.Instance{}).
+				Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
+				Where("b.path LIKE ?", "%pool_id%").
+				Count(&total).Error; err != nil {
+				logger.Error("Failed to count instances with volumes matching pool_id", err)
+			}
 		}
 		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
@@ -224,7 +249,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,

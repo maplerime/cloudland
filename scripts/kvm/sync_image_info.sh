@@ -15,7 +15,7 @@ if [ -z "$pool_ID" ]; then
     pool_ID=$wds_pool_id
 fi
 if [ "$pool_ID" != "$wds_pool_id" ]; then
-    pool_prefix=$(get_pool_prefix "$pool_ID")
+    pool_prefix=$(get_uuid_prefix "$pool_ID")
     image=image-$pool_prefix
 fi
 
