@@ -135,6 +135,8 @@ definitions:
     type: object
   apis.FloatingIpPatchPayload:
     properties:
+      group:
+        $ref: '#/definitions/common.BaseID'
       inbound:
         maximum: 20000
         minimum: 1
@@ -152,6 +154,8 @@ definitions:
         maximum: 64
         minimum: 0
         type: integer
+      group:
+        $ref: '#/definitions/common.BaseID'
       inbound:
         maximum: 20000
         minimum: 1
@@ -185,6 +189,8 @@ definitions:
     properties:
       created_at:
         type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
       id:
         type: string
       inbound:
@@ -652,6 +658,11 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      type:
+        enum:
+        - system
+        - resource
+        type: string
     type: object
   apis.IpGroupPayload:
     properties:
@@ -661,9 +672,15 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      type:
+        enum:
+        - system
+        - resource
+        type: string
     required:
     - dictionaries
     - name
+    - type
     type: object
   apis.IpGroupResponse:
     properties:
@@ -678,6 +695,8 @@ definitions:
       owner:
         type: string
       subnet_names:
+        type: string
+      type:
         type: string
       updated_at:
         type: string

@@ -466,7 +466,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Where(where).Where(query).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return
 	}
