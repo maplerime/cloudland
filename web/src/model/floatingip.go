@@ -24,7 +24,9 @@ type FloatingIp struct {
 	Outbound   int32
 	Router     *Router `gorm:"foreignkey:RouterID"`
 	IPAddress  string
-	Type       string `gorm:"type:varchar(64)"`
+	Type       string   `gorm:"type:varchar(64)"`
+	GroupID    int64    `gorm:"index"`
+	Group      *IpGroup `gorm:"foreignkey:GroupID" json:"-" gorm:"-"`
 }
 
 func init() {

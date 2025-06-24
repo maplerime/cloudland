@@ -11,13 +11,26 @@
                         <label for="name">{{.i18n.Tr "Name"}}</label>
                         <input id="name" name="name" type="text" value="{{ .IpGroup.Name }}">
                     </div>
-                    <div class="inline field">
+                    <div class="required inline field">
                         <label for="type">{{.i18n.Tr "Type"}}</label>
-                        <select name="ipgrouptype" id="ipgrouptype" class="ui selection dropdown">
-                               {{range  .IpGroupTypes}}
-                                   <option value="{{.ID}}" {{if eq .ID $.IpGroup.TypeID}}selected{{end}}>{{.Name}}</option>
-                               {{end}}
-                           </select>
+                        <div class="ui selection dropdown">
+                            <input id="type" name="type" type="hidden" value="{{$.IpGroup.Type}}">
+                            <i class="dropdown icon"></i>
+                            <div class="default text">{{.i18n.Tr "Type"}}</div>
+                            <div class="menu">
+                                <div class="item" data-value="system">{{.i18n.Tr "System"}}</div>
+                                <div class="item" data-value="resource">{{.i18n.Tr "Resource"}}</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="inline field">
+                        <label for="category">{{.i18n.Tr "Category"}}</label>
+                        <select name="category" id="category" class="ui selection dropdown">
+                            <option value="0" {{if not $.IpGroup.TypeID}}selected{{end}}>-- Please select --</option>
+                            {{range  .IpGroupTypes}}
+                                <option value="{{.ID}}" {{if eq .ID $.IpGroup.TypeID}}selected{{end}}>{{.Name}}</option>
+                            {{end}}
+                        </select>
                     </div>
                     <div class="inline field">
                         <label></label>
