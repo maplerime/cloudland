@@ -209,7 +209,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	}
 
 	if len(publicIps) > 0 {
-		iface, err = DerivePublicInterface(ctx, instance, publicIps)
+		iface, _, err = DerivePublicInterface(ctx, instance, publicIps)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return

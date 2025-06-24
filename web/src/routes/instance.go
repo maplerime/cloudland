@@ -550,53 +550,53 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	memberShip := GetMemberShip(ctx)
 
 	if len(ifaceInfo.PublicIps) > 0 {
-		iface, err = DerivePublicInterface(ctx, instance, ifaceInfo.PublicIps)
+		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, ifaceInfo.PublicIps)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
 		}
-		return
-	}
-	subnets := ifaceInfo.Subnets
-	siteSubnets := ifaceInfo.SiteSubnets
-	address := ifaceInfo.IpAddress
-	count := ifaceInfo.Count - 1
-	mac := ifaceInfo.MacAddress
-	inbound := ifaceInfo.Inbound
-	outbound := ifaceInfo.Outbound
-	secgroups := ifaceInfo.SecurityGroups
-	allowSpoofing := ifaceInfo.AllowSpoofing
-	for i, subnet := range subnets {
-		if subnet.Type == "site" {
-			logger.Error("Not allowed to create interface in site subnet")
-			err = fmt.Errorf("Bad request")
-			return
-		}
-		if iface == nil {
-			iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups, allowSpoofing)
-			if err == nil {
-				ifaceSubnet = subnets[i]
-				if subnet.Type == "public" {
-					_, err = floatingIpAdmin.createDummyFloatingIp(ctx, instance, iface.Address.Address)
-					if err != nil {
-						logger.Error("DB failed to create dummy floating ip", err)
-						return
+	} else { 
+		subnets := ifaceInfo.Subnets
+		address := ifaceInfo.IpAddress
+		count := ifaceInfo.Count - 1
+		mac := ifaceInfo.MacAddress
+		inbound := ifaceInfo.Inbound
+		outbound := ifaceInfo.Outbound
+		secgroups := ifaceInfo.SecurityGroups
+		allowSpoofing := ifaceInfo.AllowSpoofing
+		for i, subnet := range subnets {
+			if subnet.Type == "site" {
+				logger.Error("Not allowed to create interface in site subnet")
+				err = fmt.Errorf("Bad request")
+				return
+			}
+			if iface == nil {
+				iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups, allowSpoofing)
+				if err == nil {
+					ifaceSubnet = subnets[i]
+					if subnet.Type == "public" {
+						_, err = floatingIpAdmin.createDummyFloatingIp(ctx, instance, iface.Address.Address)
+						if err != nil {
+							logger.Error("DB failed to create dummy floating ip", err)
+							return
+						}
 					}
+					break
+				} else {
+					logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
 				}
-				break
-			} else {
-				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
 			}
 		}
+		if iface == nil {
+			err = fmt.Errorf("Failed to create interface")
+			return
+		}
+		err = interfaceAdmin.allocateSecondAddresses(ctx, instance, iface, subnets, count)
+		if err != nil {
+			return
+		}
 	}
-	if iface == nil {
-		err = fmt.Errorf("Failed to create interface")
-		return
-	}
-	err = interfaceAdmin.allocateSecondAddresses(ctx, instance, iface, subnets, count)
-	if err != nil {
-		return
-	}
+	siteSubnets := ifaceInfo.SiteSubnets
 	for _, site := range siteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 		if err != nil {
@@ -629,6 +629,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	if err != nil {
 		return
 	}
+	vlan := iface.Address.Subnet.Vlan
 	interfaces = append(interfaces, iface)
 	var moreAddresses []string
 	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
@@ -649,7 +650,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	}
 	vlans = append(vlans, &VlanInfo{
 		Device:        "eth0",
-		Vlan:          primary.Vlan,
+		Vlan:          vlan,
 		Inbound:       inbound,
 		Outbound:      outbound,
 		AllowSpoofing: iface.AllowSpoofing,
@@ -1812,7 +1813,10 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	routerID := primarySubnets[0].RouterID
+	routerID := int64(0)
+	if len(primarySubnets) > 0 {
+		routerID = primarySubnets[0].RouterID
+	}
 	secgroups := c.QueryTrim("secgroups")
 	var securityGroups []*model.SecurityGroup
 	if secgroups != "" {

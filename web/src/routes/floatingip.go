@@ -47,7 +47,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		if group != nil && group.ID != 0 {
 			groupID = group.ID
 		}
-		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicReserved), GroupID: groupID}
+		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicFloating), GroupID: groupID}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
 			return nil, err
@@ -61,7 +61,6 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
-		fip.Type = string(PublicFloating)
 		if isSite {
 			fip.Type = string(PublicSite)
 		}
@@ -192,6 +191,9 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 }
 
 func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance) (err error) {
+	if floatingIp.Type != string(PublicFloating) {
+		return
+	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -258,7 +260,7 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 	db := DB()
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{Model: model.Model{ID: id}}
-	err = db.Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("DB failed to query floatingIp ", err)
 		return
@@ -293,7 +295,7 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{}
-	err = db.Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to query floatingIp, %v", err)
 		return
@@ -330,6 +332,25 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 			EndTransaction(ctx, err)
 		}
 	}()
+	if floatingIp.Type == string(PublicNative) {
+		if err = db.Delete(floatingIp).Error; err != nil {
+			logger.Error("DB: delete native fip failed", err)
+			return
+		}
+		return
+	} 
+	if floatingIp.Type == string(PublicReserved) {
+			err = db.Model(floatingIp).Updates(map[string]interface{}{
+				"instance": 0,
+				"IntAddress": "",
+				"type": string(PublicFloating),
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+		return
+	}
 	if floatingIp.Instance != nil {
 		var primaryIface *model.Interface
 		instance := floatingIp.Instance
@@ -399,6 +420,9 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
+	if floatingIp.Type != string(PublicFloating) {
+		return
+	}
 	ctx, _, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -958,8 +982,14 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	}
 	name := "fip"
 	logger.Debugf("Available subnets: %v", subnets)
+	var secGroup *model.SecurityGroup
+	secGroup, err = secgroupAdmin.Get(ctx, int64(0))
+	if err != nil {
+		logger.Error("Get security groups failed", err)
+		return
+	}
 	for _, subnet := range subnets {
-		fipIface, err = CreateInterface(ctx, subnet, floatingIpID, owner, -1, 0, 0, address, "", name, "floating", nil, false)
+		fipIface, err = CreateInterface(ctx, subnet, floatingIpID, owner, -1, 0, 0, address, "", name, "floating", []*model.SecurityGroup{secGroup}, false)
 		if err == nil {
 			logger.Debugf("Successfully created floating IP interface: %v", fipIface)
 			break
