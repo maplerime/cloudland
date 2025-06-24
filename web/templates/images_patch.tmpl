@@ -28,12 +28,14 @@
                         <input id="userName" name="userName" value="{{ .Image.UserName }}" autocomplete="off" required>
                     </div>
                     <div class="inline field">
-                        <label for="pools">{{.i18n.Tr "StoragePool"}}</label>
-                        <select name="pools" id="pools" multiple="" class="ui multiple selection dropdown">
-                            {{ range .Pools }}
-                                <option value="{{ .Value }}" {{ if index $.Storages .Value }}selected{{ end }}>{{ .Name }}</option>
-                            {{ end }}
-                        </select>
+                        <label>{{.i18n.Tr "StoragePool"}}</label>
+                        {{ range .Pools }}
+                            <div class="ui checkbox">
+                                <input type="checkbox" name="pools" value="{{ .Value }}"
+                                    {{ if index $.Storages .Value }}checked="checked" disabled="disabled"{{ end }}>
+                                <label>{{ .Name }}</label>
+                            </div>
+                        {{ end }}
                     </div>
                     <div class="inline field">
                         <label></label>

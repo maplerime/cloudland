@@ -535,6 +535,10 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 			selectedPools[s.PoolID] = true
 		}
 	}
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	if defaultPoolID != "" {
+		selectedPools[defaultPoolID] = true
+	}
 	c.Data["Image"] = image
 	c.Data["Pools"] = pools
 	c.Data["Storages"] = selectedPools
