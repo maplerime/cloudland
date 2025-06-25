@@ -295,7 +295,7 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{}
-	err = db.Preload("Interface").Preload("SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to query floatingIp, %v", err)
 		return
@@ -339,7 +339,7 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		}
 		floatingIp.Instance = nil
 		return
-	} 
+	}
 	if floatingIp.Type == string(PublicReserved) {
 		floatingIp.Instance = nil
 		floatingIp.Interface = nil
@@ -422,6 +422,8 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
 	if floatingIp.Type != string(PublicFloating) {
+		logger.Infof("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
+		err = fmt.Errorf("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
 		return
 	}
 	ctx, _, newTransaction := StartTransaction(ctx)
