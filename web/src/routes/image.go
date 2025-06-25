@@ -338,7 +338,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	}
 
 	for _, storage := range storages {
-		if storage.Status == model.StorageStatusSynced {
+		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusUnknown {
 			continue
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
