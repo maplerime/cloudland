@@ -104,6 +104,10 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool) (instances []*model.Instance, err error) {
 	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t",
 		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, nestedEnable)
+	if count > 1 && len(primaryIface.PublicIps) > 0 {
+		err = fmt.Errorf("Public addresses are not allowed to set when count > 1")
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {

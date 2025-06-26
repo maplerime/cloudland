@@ -487,6 +487,8 @@ func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
 	// Find and attach floating IPs for each site subnet
 	var attachedFloatingIps []*model.FloatingIp
 	for _, subnet := range siteSubnets {
+		logger.Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
+
 		// Find floating IPs associated with this site subnet that are not attached to any instance
 		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("type = '%s' AND instance_id = 0", PublicSite))
 		if err != nil {
@@ -495,16 +497,38 @@ func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
 			return
 		}
 
+		logger.Debugf("Found %d available floating IPs for site subnet %s", len(floatingIps), subnet.Name)
+
 		// Find floating IPs that belong to this specific site subnet
 		var subnetFloatingIps []*model.FloatingIp
 		for _, fip := range floatingIps {
-			// Check if this floating IP belongs to the site subnet
-			// This would need to be implemented based on how floating IPs are associated with subnets
-			// For now, we'll assume there's a direct association or we can determine it through other means
-			if fip.Interface != nil && fip.Interface.Address != nil && fip.Interface.Address.Subnet != nil {
-				if fip.Interface.Address.Subnet.ID == subnet.ID {
-					subnetFloatingIps = append(subnetFloatingIps, fip)
-				}
+			logger.Debugf("Checking floating IP: %s (ID: %d)", fip.FipAddress, fip.ID)
+
+			if fip.Interface == nil {
+				logger.Debugf("Floating IP %s has no interface", fip.FipAddress)
+				continue
+			}
+
+			if fip.Interface.Address == nil {
+				logger.Debugf("Floating IP %s interface has no address", fip.FipAddress)
+				continue
+			}
+
+			if fip.Interface.Address.Subnet == nil {
+				logger.Debugf("Floating IP %s interface address has no subnet", fip.FipAddress)
+				continue
+			}
+
+			logger.Debugf("Floating IP %s belongs to subnet %s (ID: %d), checking against target subnet %s (ID: %d)",
+				fip.FipAddress, fip.Interface.Address.Subnet.Name, fip.Interface.Address.Subnet.ID,
+				subnet.Name, subnet.ID)
+
+			if fip.Interface.Address.Subnet.ID == subnet.ID {
+				logger.Debugf("Found matching floating IP %s for subnet %s, adding to attach list", fip.FipAddress, subnet.Name)
+				subnetFloatingIps = append(subnetFloatingIps, fip)
+			} else {
+				logger.Debugf("Floating IP %s subnet ID (%d) doesn't match target subnet ID (%d)",
+					fip.FipAddress, fip.Interface.Address.Subnet.ID, subnet.ID)
 			}
 		}
 
@@ -515,14 +539,18 @@ func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
 			return
 		}
 
+		logger.Debugf("Found %d floating IPs to attach for site subnet %s", len(subnetFloatingIps), subnet.Name)
+
 		// Attach the floating IPs to the instance
 		for _, fip := range subnetFloatingIps {
+			logger.Debugf("Attaching floating IP %s to instance %s", fip.FipAddress, instance.UUID)
 			err = floatingIpAdmin.Attach(ctx, fip, instance)
 			if err != nil {
 				logger.Errorf("Failed to attach floating ip %s to instance %s: %v", fip.FipAddress, instance.UUID, err)
 				ErrorResponse(c, http.StatusBadRequest, "Failed to attach floating ip", err)
 				return
 			}
+			logger.Debugf("Successfully attached floating IP %s to instance %s", fip.FipAddress, instance.UUID)
 			attachedFloatingIps = append(attachedFloatingIps, fip)
 		}
 	}
@@ -597,6 +625,8 @@ func (v *FloatingIpAPI) BatchDetach(c *gin.Context) {
 	// Find and detach floating IPs for each site subnet
 	detachedCount := 0
 	for _, subnet := range siteSubnets {
+		logger.Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
+
 		// Find floating IPs associated with this subnet and instance
 		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d AND type = '%s'", instance.ID, PublicSite))
 		if err != nil {
@@ -605,18 +635,44 @@ func (v *FloatingIpAPI) BatchDetach(c *gin.Context) {
 			return
 		}
 
+		logger.Debugf("Found %d floating IPs for instance %d (ID: %d)", len(floatingIps), instance.ID, instance.ID)
+
 		// Detach floating IPs that are associated with the specified site subnet
 		for _, fip := range floatingIps {
-			if fip.Interface != nil && fip.Interface.Address != nil && fip.Interface.Address.Subnet != nil {
-				if fip.Interface.Address.Subnet.ID == subnet.ID {
-					err = floatingIpAdmin.Detach(ctx, fip)
-					if err != nil {
-						logger.Errorf("Failed to detach floating ip %s: %v", fip.FipAddress, err)
-						ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
-						return
-					}
-					detachedCount++
+			logger.Debugf("Checking floating IP: %s (ID: %d)", fip.FipAddress, fip.ID)
+
+			if fip.Interface == nil {
+				logger.Debugf("Floating IP %s has no interface", fip.FipAddress)
+				continue
+			}
+
+			if fip.Interface.Address == nil {
+				logger.Debugf("Floating IP %s interface has no address", fip.FipAddress)
+				continue
+			}
+
+			if fip.Interface.Address.Subnet == nil {
+				logger.Debugf("Floating IP %s interface address has no subnet", fip.FipAddress)
+				continue
+			}
+
+			logger.Debugf("Floating IP %s belongs to subnet %s (ID: %d), checking against target subnet %s (ID: %d)",
+				fip.FipAddress, fip.Interface.Address.Subnet.Name, fip.Interface.Address.Subnet.ID,
+				subnet.Name, subnet.ID)
+
+			if fip.Interface.Address.Subnet.ID == subnet.ID {
+				logger.Debugf("Found matching floating IP %s for subnet %s, detaching...", fip.FipAddress, subnet.Name)
+				err = floatingIpAdmin.Detach(ctx, fip)
+				if err != nil {
+					logger.Errorf("Failed to detach floating ip %s: %v", fip.FipAddress, err)
+					ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
+					return
 				}
+				detachedCount++
+				logger.Debugf("Successfully detached floating IP %s", fip.FipAddress)
+			} else {
+				logger.Debugf("Floating IP %s subnet ID (%d) doesn't match target subnet ID (%d)",
+					fip.FipAddress, fip.Interface.Address.Subnet.ID, subnet.ID)
 			}
 		}
 	}
