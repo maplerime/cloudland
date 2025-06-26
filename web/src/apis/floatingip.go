@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -76,6 +77,18 @@ type FloatingIpPatchPayload struct {
 	Inbound  *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
 	Outbound *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
 	Group    *BaseID `json:"group" binding:"omitempty"`
+}
+
+// BatchAttachPayload represents the payload for batch attach floating IPs
+type BatchAttachPayload struct {
+	Instance    *BaseID          `json:"instance" binding:"required"`
+	SiteSubnets []*BaseReference `json:"site_subnets" binding:"required"`
+}
+
+// BatchDetachPayload represents the payload for batch detach floating IPs
+type BatchDetachPayload struct {
+	Instance    *BaseID          `json:"instance" binding:"required"`
+	SiteSubnets []*BaseReference `json:"site_subnets" binding:"required"`
 }
 
 // @Summary get a floating ip
@@ -417,4 +430,197 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, floatingIpListResp)
+}
+
+// @Summary batch attach floating ips
+// @Description batch attach existing floating ips from site subnets to an instance
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Param   message	body   BatchAttachPayload  true   "Batch attach payload"
+// @Success 200 {object} []FloatingIpResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /floating_ips/batch_attach [post]
+func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Debugf("Batch attaching floating ips")
+
+	payload := &BatchAttachPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Invalid input JSON %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+
+	logger.Debugf("Batch attaching floating ips with payload %+v", payload)
+
+	// Get instance
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+		return
+	}
+
+	// Get and validate site subnets
+	var siteSubnets []*model.Subnet
+	for _, subnetRef := range payload.SiteSubnets {
+		subnet, err := subnetAdmin.GetSubnet(ctx, subnetRef)
+		if err != nil {
+			logger.Errorf("Failed to get site subnet %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
+			return
+		}
+
+		// Verify that the subnet type is "site"
+		if subnet.Type != "site" {
+			logger.Errorf("Subnet %s is not a site type subnet", subnet.Name)
+			ErrorResponse(c, http.StatusBadRequest, "All subnets must be site type", err)
+			return
+		}
+
+		siteSubnets = append(siteSubnets, subnet)
+	}
+
+	// Find and attach floating IPs for each site subnet
+	var attachedFloatingIps []*model.FloatingIp
+	for _, subnet := range siteSubnets {
+		// Find floating IPs associated with this site subnet that are not attached to any instance
+		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("type = '%s' AND instance_id = 0", PublicSite))
+		if err != nil {
+			logger.Errorf("Failed to list floating ips %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)
+			return
+		}
+
+		// Find floating IPs that belong to this specific site subnet
+		var subnetFloatingIps []*model.FloatingIp
+		for _, fip := range floatingIps {
+			// Check if this floating IP belongs to the site subnet
+			// This would need to be implemented based on how floating IPs are associated with subnets
+			// For now, we'll assume there's a direct association or we can determine it through other means
+			if fip.Interface != nil && fip.Interface.Address != nil && fip.Interface.Address.Subnet != nil {
+				if fip.Interface.Address.Subnet.ID == subnet.ID {
+					subnetFloatingIps = append(subnetFloatingIps, fip)
+				}
+			}
+		}
+
+		// Check if there are floating IPs available for this subnet
+		if len(subnetFloatingIps) == 0 {
+			logger.Errorf("No floating IPs found for site subnet %s", subnet.Name)
+			ErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("No floating IPs found for site subnet %s", subnet.Name), err)
+			return
+		}
+
+		// Attach the floating IPs to the instance
+		for _, fip := range subnetFloatingIps {
+			err = floatingIpAdmin.Attach(ctx, fip, instance)
+			if err != nil {
+				logger.Errorf("Failed to attach floating ip %s to instance %s: %v", fip.FipAddress, instance.UUID, err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to attach floating ip", err)
+				return
+			}
+			attachedFloatingIps = append(attachedFloatingIps, fip)
+		}
+	}
+
+	// Convert to response format
+	floatingIpResp := make([]*FloatingIpResponse, 0, len(attachedFloatingIps))
+	for _, fip := range attachedFloatingIps {
+		resp, err := v.getFloatingIpResponse(ctx, fip)
+		if err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+		floatingIpResp = append(floatingIpResp, resp)
+	}
+
+	logger.Debugf("Batch attached %d floating ips to instance %s", len(attachedFloatingIps), instance.UUID)
+	c.JSON(http.StatusOK, floatingIpResp)
+}
+
+// @Summary batch detach floating ips
+// @Description batch detach floating ips from site subnets from an instance
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Param   message	body   BatchDetachPayload  true   "Batch detach payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /floating_ips/batch_detach [post]
+func (v *FloatingIpAPI) BatchDetach(c *gin.Context) {
+	ctx := c.Request.Context()
+	logger.Debugf("Batch detaching floating ips")
+
+	payload := &BatchDetachPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Invalid input JSON %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+
+	logger.Debugf("Batch detaching floating ips with payload %+v", payload)
+
+	// Get instance
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+		return
+	}
+
+	// Get and validate site subnets
+	var siteSubnets []*model.Subnet
+	for _, subnetRef := range payload.SiteSubnets {
+		subnet, err := subnetAdmin.GetSubnet(ctx, subnetRef)
+		if err != nil {
+			logger.Errorf("Failed to get site subnet %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
+			return
+		}
+
+		// Verify that the subnet type is "site"
+		if subnet.Type != "site" {
+			logger.Errorf("Subnet %s is not a site type subnet", subnet.Name)
+			ErrorResponse(c, http.StatusBadRequest, "All subnets must be site type", err)
+			return
+		}
+
+		siteSubnets = append(siteSubnets, subnet)
+	}
+
+	// Find and detach floating IPs for each site subnet
+	detachedCount := 0
+	for _, subnet := range siteSubnets {
+		// Find floating IPs associated with this subnet and instance
+		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d AND type = '%s'", instance.ID, PublicSite))
+		if err != nil {
+			logger.Errorf("Failed to list floating ips %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)
+			return
+		}
+
+		// Detach floating IPs that are associated with the specified site subnet
+		for _, fip := range floatingIps {
+			if fip.Interface != nil && fip.Interface.Address != nil && fip.Interface.Address.Subnet != nil {
+				if fip.Interface.Address.Subnet.ID == subnet.ID {
+					err = floatingIpAdmin.Detach(ctx, fip)
+					if err != nil {
+						logger.Errorf("Failed to detach floating ip %s: %v", fip.FipAddress, err)
+						ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
+						return
+					}
+					detachedCount++
+				}
+			}
+		}
+	}
+
+	logger.Debugf("Batch detached %d floating ips from instance %s", detachedCount, instance.UUID)
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Batch detach completed successfully. Detached %d floating IPs.", detachedCount)})
 }

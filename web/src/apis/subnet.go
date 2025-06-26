@@ -152,7 +152,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	if payload.VPC == nil && payload.Type != Public {
+	if payload.VPC == nil && payload.Type == Internal {
 		ErrorResponse(c, http.StatusBadRequest, "VPC must be specified if network type not public", err)
 		return
 	}

@@ -61,13 +61,31 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
-		if isSite {
-			fip.Type = string(PublicSite)
-		}
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
 				logger.Error("Execute floating ip failed", err)
 				return nil, err
+			}
+		}
+		if isSite {
+			fip.Type = string(PublicSite)
+			if i == 0 {
+				var primaryInterfaceID int64
+				for _, iface := range instance.Interfaces {
+					if iface.PrimaryIf {
+						primaryInterfaceID = iface.ID
+						break
+					}
+				}
+				for _, subnet := range subnets {
+					if subnet.Interface != primaryInterfaceID {
+						subnet.Interface = primaryInterfaceID
+						if err := db.Save(subnet).Error; err != nil {
+							logger.Error("Failed to update subnet interface", err)
+							return nil, err
+						}
+					}
+				}
 			}
 		}
 		if err := db.Model(fip).Updates(fip).Error; err != nil {
@@ -192,6 +210,8 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 
 func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance) (err error) {
 	if floatingIp.Type != string(PublicFloating) {
+		logger.Infof("Cannot attach floating IP of type %s, only PublicFloating type is supported for attachment", floatingIp.Type)
+		err = fmt.Errorf("Cannot attach floating IP of type %s, only PublicFloating type is supported for attachment", floatingIp.Type)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
