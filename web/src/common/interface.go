@@ -157,6 +157,11 @@ func genMacaddr() (mac string, err error) {
 }
 
 func DerivePublicInterface(ctx context.Context, instance *model.Instance, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
+	if instance.RouterID > 0 {
+		logger.Error("VPC instance is not allowed to set public addresses", err)
+		err = fmt.Errorf("VPC instance is not allowed to set public addresses")
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	for i, fip := range floatingIps {
 		if i == 0 {
@@ -392,11 +397,6 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		moreAddresses = append(moreAddresses, addr.Address)
 	}
 	for _, site := range iface.SiteSubnets {
-		if site.Vlan != subnet.Vlan {
-			err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
-			logger.Errorf("Site subnets and primary subnet must be with same vlan")
-			return
-		}
 		siteAddrs := []*model.Address{}
 		err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
 		if err != nil {

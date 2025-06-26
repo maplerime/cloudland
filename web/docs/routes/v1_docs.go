@@ -4693,15 +4693,7 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "type": {
-                    "enum": [
-                        "public",
-                        "internal"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/common.SubnetType"
-                        }
-                    ]
+                    "$ref": "#/definitions/common.SubnetType"
                 },
                 "vlan": {
                     "type": "integer",

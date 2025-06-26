@@ -48,6 +48,7 @@ func Register() (r *gin.Engine) {
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
+	//r.POST("/api/v1/meter/vmagnt", meterAPI.convert)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)

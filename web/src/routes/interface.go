@@ -130,32 +130,29 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	return
 }
 
-func (a *InterfaceAdmin) checkAddressesChange(ctx context.Context, iface *model.Interface, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (changed bool) {
+func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (valid bool) {
+	vlan := iface.Address.Subnet.Vlan
 	if len(publicIps) > 0 {
-		return true
-	}
-	if siteSubnets == nil && secondAddrsCount == len(iface.SecondAddresses) {
-		return false
-	}
-
-	if (len(iface.SiteSubnets) != len(siteSubnets)) || (len(iface.SecondAddresses) != secondAddrsCount) {
-		return true
-	}
-
-	for _, ifaceSite := range iface.SiteSubnets {
-		found := false
-		for _, site := range siteSubnets {
-			if ifaceSite.ID == site.ID {
-				found = true
-				break
+		for _, pubIp := range publicIps {
+			if vlan != pubIp.Interface.Address.Subnet.Vlan {
+				return false
 			}
 		}
-		if !found {
-			return true
+	} else {
+		for _, subnet := range ifaceSubnets {
+			if vlan != subnet.Vlan {
+				return false
+			}
 		}
 	}
 
-	return false
+	for _, site := range siteSubnets {
+		if vlan != site.Vlan {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets []*model.Subnet, secondAddrsCount int) (err error) {
@@ -280,32 +277,34 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		return
 	}
 	if iface.PrimaryIf {
-		changed := a.checkAddressesChange(ctx, iface, siteSubnets, secondAddrsCount, publicIps)
-		if changed {
-			var oldAddresses []string
-			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
-			if err != nil {
-				logger.Errorf("Failed to get instance networks, %v", err)
-				return
-			}
-			var oldAddrsJson []byte
-			oldAddrsJson, err = json.Marshal(oldAddresses)
-			if err != nil {
-				logger.Errorf("Failed to marshal instance json data, %v", err)
-				return
-			}
-			control := fmt.Sprintf("inter=%d", instance.Hyper)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
-			err = HyperExecute(ctx, control, command)
-			if err != nil {
-				logger.Error("Update vm nic command execution failed", err)
-				return
-			}
-			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-			if err != nil {
-				logger.Errorf("Failed to get instance networks, %v", err)
-				return
-			}
+		valid := a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		if !valid {
+			logger.Errorf("Failed to check addresses, %v", err)
+			return
+		}
+		var oldAddresses []string
+		_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
+		var oldAddrsJson []byte
+		oldAddrsJson, err = json.Marshal(oldAddresses)
+		if err != nil {
+			logger.Errorf("Failed to marshal instance json data, %v", err)
+			return
+		}
+		control := fmt.Sprintf("inter=%d", instance.Hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Update vm nic command execution failed", err)
+			return
+		}
+		err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
 		}
 	}
 	if needUpdate || needRemoteUpdate {

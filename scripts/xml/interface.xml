@@ -1,8 +1,7 @@
 <interface type='bridge'>
- <mac address='VM_MAC'/>
- <script path="/etc/xen/scripts/vif-openvswitch"/>
- <source bridge='VM_BRIDGE'/>
- <target dev='VM_VTEP'/>
- <virtualport type='openvswitch'/>
+  <mac address='VM_MAC'/>
+  <source bridge='VM_BRIDGE'/>
+  <target dev='VM_VTEP'/>
+  <model type='virtio'/>
+  <driver name='vhost' queues='2'/>
 </interface>
-

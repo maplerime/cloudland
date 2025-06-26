@@ -1035,11 +1035,7 @@ definitions:
       start_ip:
         type: string
       type:
-        allOf:
-        - $ref: '#/definitions/common.SubnetType'
-        enum:
-        - public
-        - internal
+        $ref: '#/definitions/common.SubnetType'
       vlan:
         maximum: 16777215
         minimum: 1
