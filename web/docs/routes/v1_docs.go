@@ -433,6 +433,98 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/floating_ips/batch_attach": {
+            "post": {
+                "description": "batch attach existing floating ips from site subnets to an instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "batch attach floating ips",
+                "parameters": [
+                    {
+                        "description": "Batch attach payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.BatchAttachPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apis.FloatingIpResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/floating_ips/batch_detach": {
+            "post": {
+                "description": "batch detach floating ips from site subnets from an instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "batch detach floating ips",
+                "parameters": [
+                    {
+                        "description": "Batch detach payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.BatchDetachPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/floating_ips/{id}": {
             "get": {
                 "description": "get a floating ip",
@@ -3185,6 +3277,42 @@ const docTemplatev1 = `{
                 },
                 "subnet": {
                     "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
+        "apis.BatchAttachPayload": {
+            "type": "object",
+            "required": [
+                "instance",
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
+        "apis.BatchDetachPayload": {
+            "type": "object",
+            "required": [
+                "instance",
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },

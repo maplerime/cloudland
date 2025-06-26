@@ -1058,13 +1058,6 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			return
 		}
 
-		mergedFloatingIps, mergeErr := a.mergeSiteFloatingIpsForInstance(ctx, instance.FloatingIps)
-		if mergeErr != nil {
-			logger.Errorf("Failed to merge site floating ips for instance %d: %v", instance.ID, mergeErr)
-		} else {
-			instance.FloatingIps = mergedFloatingIps
-		}
-
 		if instance.RouterID > 0 {
 			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
 			if err = db.Take(instance.Router).Error; err != nil {
@@ -1083,96 +1076,6 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	}
 
 	return
-}
-
-// mergeSiteFloatingIpsForInstance merges site type floating IPs for an instance
-func (a *InstanceAdmin) mergeSiteFloatingIpsForInstance(ctx context.Context, floatingIps []*model.FloatingIp) ([]*model.FloatingIp, error) {
-	// Group by site subnet and interface ID
-	siteGroups := make(map[string][]*model.FloatingIp)
-	nonSiteFloatingIps := make([]*model.FloatingIp, 0)
-
-	for _, fip := range floatingIps {
-		// Check if it's a site type floating IP
-		if fip.Type == string(PublicSite) {
-			// Create group key: subnetID + interfaceID
-			// For site type, we need to get subnet ID through interface info
-			var subnetID int64
-			var interfaceID int64
-
-			// Try to get subnet ID from interface info
-			if fip.Interface != nil && fip.Interface.Address != nil && fip.Interface.Address.Subnet != nil {
-				subnetID = fip.Interface.Address.Subnet.ID
-				interfaceID = fip.Interface.ID
-			} else {
-				// If no interface info, use floating IP ID as group key
-				subnetID = fip.ID
-				interfaceID = 0
-			}
-
-			groupKey := fmt.Sprintf("%d_%d", subnetID, interfaceID)
-
-			if siteGroups[groupKey] == nil {
-				siteGroups[groupKey] = make([]*model.FloatingIp, 0)
-			}
-			siteGroups[groupKey] = append(siteGroups[groupKey], fip)
-		} else {
-			// Non-site type floating IPs are kept as is
-			nonSiteFloatingIps = append(nonSiteFloatingIps, fip)
-		}
-	}
-
-	// Merge site type floating IPs
-	mergedFloatingIps := make([]*model.FloatingIp, 0)
-	mergedFloatingIps = append(mergedFloatingIps, nonSiteFloatingIps...)
-
-	for groupKey, groupFips := range siteGroups {
-		if len(groupFips) == 1 {
-			// Only one floating IP, add directly
-			mergedFloatingIps = append(mergedFloatingIps, groupFips[0])
-		} else {
-			// Multiple floating IPs, merge into one
-			mergedFip, err := a.createMergedSiteFloatingIpForInstance(groupFips)
-			if err != nil {
-				logger.Errorf("Failed to merge floating IPs for group %s: %v", groupKey, err)
-				// If merge fails, keep all original floating IPs
-				mergedFloatingIps = append(mergedFloatingIps, groupFips...)
-			} else {
-				mergedFloatingIps = append(mergedFloatingIps, mergedFip)
-			}
-		}
-	}
-
-	return mergedFloatingIps, nil
-}
-
-// createMergedSiteFloatingIpForInstance creates a merged site floating IP
-func (a *InstanceAdmin) createMergedSiteFloatingIpForInstance(groupFips []*model.FloatingIp) (*model.FloatingIp, error) {
-	if len(groupFips) == 0 {
-		return nil, fmt.Errorf("empty floating IP group")
-	}
-
-	// Use the first floating IP as base
-	baseFip := groupFips[0]
-	mergedFip := &model.FloatingIp{
-		Model:      baseFip.Model,
-		Owner:      baseFip.Owner,
-		Name:       fmt.Sprintf("%s (merged %d)", baseFip.Name, len(groupFips)),
-		FipAddress: fmt.Sprintf("site subnet (total %d IPs)", len(groupFips)),
-		IntAddress: baseFip.IntAddress,
-		InstanceID: baseFip.InstanceID,
-		Instance:   baseFip.Instance,
-		Interface:  baseFip.Interface,
-		RouterID:   baseFip.RouterID,
-		Router:     baseFip.Router,
-		Inbound:    baseFip.Inbound,
-		Outbound:   baseFip.Outbound,
-		IPAddress:  baseFip.IPAddress,
-		Type:       baseFip.Type,
-		GroupID:    baseFip.GroupID,
-		Group:      baseFip.Group,
-	}
-
-	return mergedFip, nil
 }
 
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
