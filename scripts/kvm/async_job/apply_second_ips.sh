@@ -15,13 +15,13 @@ naddrs=$(jq length <<< $more_addresses)
 [ $naddrs -eq 0 ] && exit 0 
 
 vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
-for i in {1..150}; do
+for i in {1..300}; do
     bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
     [ -n "$bridge" ] && break
     sleep 2
 done
 chain_as=secgroup-as-$vnic
-for i in {1..60}; do
+for i in {1..120}; do
     iptables -S $chain_as | grep $mac
     [ $? -eq 0 ] && break
     sleep 1
@@ -38,7 +38,7 @@ while [ $i -lt $naddrs ]; do
         \"link\": \"eth0\",
         \"id\": \"network0\"
     }"
-    ./send_spoof_arp.py $bridge $ip $mac
+    ./send_spoof_arp.py $bridge $ip $mac &
     let i=$i+1
 done
 

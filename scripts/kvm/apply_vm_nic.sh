@@ -29,7 +29,7 @@ if [ $? -ne 0 ]; then
     virsh attach-device $vm_ID $interface_xml --live --persistent
 fi
 udevadm settle
-async_exec ./async_job/send_spoof_arp.py "$vm_br" "$vm_ip" "$vm_mac"
+./send_spoof_arp.py "$vm_br" "$vm_ip" "$vm_mac" &
 ./set_nic_speed.sh "$ID" "$nic_name" "$inbound" "$outbound"
 ./reapply_secgroup.sh "$vm_ip" "$vm_mac" "$allow_spoofing" "$nic_name"
 ./set_subnet_gw.sh "$router" "$vlan" "$gateway" "$ext_vlan"
