@@ -276,6 +276,19 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
+	if needUpdate || needRemoteUpdate {
+		if err = db.Model(iface).Save(iface).Error; err != nil {
+			logger.Debug("Failed to save interface", err)
+			return
+		}
+	}
+	if needRemoteUpdate {
+		err = ApplyInterface(ctx, instance, iface)
+		if err != nil {
+			logger.Error("Update vm nic command execution failed", err)
+			return
+		}
+	}
 	if iface.PrimaryIf {
 		valid := a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if !valid {
@@ -304,19 +317,6 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if err != nil {
 			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-	}
-	if needUpdate || needRemoteUpdate {
-		if err = db.Model(iface).Save(iface).Error; err != nil {
-			logger.Debug("Failed to save interface", err)
-			return
-		}
-	}
-	if needRemoteUpdate {
-		err = ApplyInterface(ctx, instance, iface)
-		if err != nil {
-			logger.Error("Update vm nic command execution failed", err)
 			return
 		}
 	}
@@ -378,8 +378,15 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "created_at desc", "", fmt.Sprintf("instance_id = 0 or instance_id = %d", iface.Instance))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
 	c.Data["Interface"] = iface
 	c.Data["Secgroups"] = secgroups
+	c.Data["PublicIps"] = floatingIps
 	c.Data["IfaceSubnets"] = ifaceSubnets
 	c.Data["IpCount"] = len(iface.SecondAddresses) + 1
 	c.Data["Subnets"] = subnets
