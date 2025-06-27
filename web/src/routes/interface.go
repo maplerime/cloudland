@@ -56,7 +56,7 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 	db := DB()
 	iface = &model.Interface{Model: model.Model{ID: id}}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.created_at DESC")
+		return db.Order("addresses.updated_at DESC")
 	}).Preload("SecondAddresses.Subnet").Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
@@ -77,7 +77,7 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 	db := DB()
 	iface = &model.Interface{}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.created_at DESC")
+		return db.Order("addresses.updated_at DESC")
 	}).Preload("SecondAddresses.Subnet").Where(where).Where("uuid = ?", uuID).Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
@@ -121,7 +121,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.created_at DESC")
+		return db.Order("addresses.updated_at DESC")
 	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
 		logger.Debug("DB failed to query security rule(s), %v", err)
 		return
@@ -144,11 +144,16 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 			}
 			if i == 0 {
 				if pubIp.FipAddress != iface.Address.Address {
+					logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, iface.Address.Address, i)
 					return
 				}
 			} else {
-				if pubIp.FipAddress != iface.SecondAddresses[i-1].Address {
-					return
+				if (i - 1) < secondIpsLength {
+					secondAddr := iface.SecondAddresses[i-1].Address
+					if pubIp.FipAddress != secondAddr {
+						logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, secondAddr, i)
+						return
+					}
 				}
 			}
 		}
@@ -324,6 +329,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		valid, changed := a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if !valid {
 			logger.Errorf("Failed to check addresses, %v", err)
+			err = fmt.Errorf("Failed to check addresses")
 			return
 		}
 		var oldAddresses []string
@@ -572,6 +578,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 	}
 
 	sgs := c.QueryStrings("secgroups")
+	logger.Error("security groups: ", sgs)
 	secgroups := []*model.SecurityGroup{}
 	if len(sgs) > 0 {
 		for _, sg := range sgs {
@@ -593,25 +600,27 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 		}
 	}
 	var publicAddresses []*model.FloatingIp
-	publicIps := c.QueryTrim("public_ips")
+	publicIps := c.QueryStrings("public_ips")
 	logger.Error("public ips: ", publicIps)
-	f := strings.Split(publicIps, ",")
-	for i := 0; i < len(f); i++ {
-		fID, err := strconv.Atoi(f[i])
-		if err != nil {
-			logger.Error("Invalid public ip ID", err)
-			continue
+	if len(publicIps) > 0 {
+		for _, pubIp := range publicIps {
+			fID, err := strconv.Atoi(pubIp)
+			if err != nil {
+				logger.Error("Invalid public ip ID", err)
+				continue
+			}
+			var floatingIp *model.FloatingIp
+			floatingIp, err = floatingIpAdmin.Get(ctx, int64(fID))
+			if err != nil {
+				logger.Error("Get public ip failed", err)
+				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			publicAddresses = append(publicAddresses, floatingIp)
 		}
-		var floatingIp *model.FloatingIp
-		floatingIp, err = floatingIpAdmin.Get(ctx, int64(fID))
-		if err != nil {
-			logger.Error("Get public ip failed", err)
-			c.Data["ErrorMsg"] = err.Error()
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
-		publicAddresses = append(publicAddresses, floatingIp)
 	}
+	logger.Errorf("public addresses: ", publicAddresses)
 	subnets := c.QueryStrings("subnets")
 	ifaceSubnets := []*model.Subnet{}
 	if len(subnets) > 0 {
