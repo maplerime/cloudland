@@ -19,7 +19,8 @@ state=error
 source_volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$source_image" | jq -r '.volumes[0].id')
 clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$source_volume_id/copy_clone" "{\"name\":\"$target_image\", \"speed\": 32, \"phy_pool_id\": \"$target_pool_ID\"}")
 
-read -d'\n' -r task_id ret_code < <(jq -r ".task_id .ret_code" <<< $clone_ret)
+task_id=$(jq -r '.task_id' <<< "$clone_ret")
+ret_code=$(jq -r '.ret_code' <<< "$clone_ret")
 [ "$ret_code" != "0" ] && echo "|:-COMMAND-:| sync_image_info.sh '$storage_ID' '' '$state'" && exit -1
 state=cloning
 for i in {1..100}; do

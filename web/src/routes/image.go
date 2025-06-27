@@ -342,6 +342,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	for _, storage := range storages {
 		// ignore already synced or syncing storages
 		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
+			logger.Debugf("Image %s storage %s is already synced or syncing, skipping", image.UUID, storage.PoolID)
 			continue
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
