@@ -401,6 +401,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 	total := 0
 	if driver == "local" {
+		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+			logger.Error("Failed to query total instances with the image", err)
+			return
+		}
+	} else {
 		if poolID != defaultPoolID {
 			err = db.Where("image_id = ? AND status = ?", image.ID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
 			if err != nil {
@@ -409,11 +414,6 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 				return
 			}
 		}
-		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-			logger.Error("Failed to query total instances with the image", err)
-			return
-		}
-	} else {
 		if err = db.Model(&model.Instance{}).
 			Unscoped().
 			Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
