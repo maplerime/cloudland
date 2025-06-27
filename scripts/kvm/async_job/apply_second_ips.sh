@@ -38,7 +38,7 @@ while [ $i -lt $naddrs ]; do
         \"link\": \"eth0\",
         \"id\": \"network0\"
     }"
-    ./send_spoof_arp.py $bridge $ip $mac &
+    ../send_spoof_arp.py $bridge $ip $mac &
     let i=$i+1
 done
 

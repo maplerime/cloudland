@@ -172,6 +172,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, floati
 				continue
 			}
 			primaryIface.Instance = instance.ID
+			primaryIface.Name = "eth0"
 			primaryIface.PrimaryIf = true
 			err = db.Model(primaryIface).Updates(primaryIface).Error
 			if err != nil {

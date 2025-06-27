@@ -130,29 +130,60 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	return
 }
 
-func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (valid bool) {
+func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (valid, changed bool) {
 	vlan := iface.Address.Subnet.Vlan
-	if len(publicIps) > 0 {
-		for _, pubIp := range publicIps {
+	publicIpsLength := len(publicIps)
+	secondIpsLength := len(iface.SecondAddresses)
+	if publicIpsLength > 0 {
+		if publicIpsLength != secondIpsLength + 1 {
+			changed = true
+		}
+		for i, pubIp := range publicIps {
 			if vlan != pubIp.Interface.Address.Subnet.Vlan {
-				return false
+				return
+			}
+			if i == 0 {
+				if pubIp.FipAddress != iface.Address.Address {
+					return
+				}
+			} else {
+				if pubIp.FipAddress != iface.SecondAddresses[i-1].Address {
+					return
+				}
 			}
 		}
 	} else {
+		if secondAddrsCount != secondIpsLength {
+			changed = true
+		}
 		for _, subnet := range ifaceSubnets {
 			if vlan != subnet.Vlan {
-				return false
+				return
 			}
 		}
 	}
-
+	if len(siteSubnets) != len(iface.SiteSubnets) {
+		changed = true
+	}
 	for _, site := range siteSubnets {
 		if vlan != site.Vlan {
-			return false
+			return
+		}
+		found := false
+		for _, ifaceSite := range iface.SiteSubnets {
+			if site.ID == ifaceSite.ID {
+				found = true
+				break
+			}
+		}
+		if !found {
+			changed = true
+			break
 		}
 	}
+	valid = true
 
-	return true
+	return
 }
 
 func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets []*model.Subnet, secondAddrsCount int) (err error) {
@@ -290,7 +321,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 	}
 	if iface.PrimaryIf {
-		valid := a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		valid, changed := a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if !valid {
 			logger.Errorf("Failed to check addresses, %v", err)
 			return
@@ -308,7 +339,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), changed, oldAddrsJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Update vm nic command execution failed", err)
@@ -378,7 +409,7 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "created_at desc", "", fmt.Sprintf("instance_id = 0 or instance_id = %d", iface.Instance))
+	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "updated_at", "", fmt.Sprintf("instance_id = 0 or instance_id = %d", iface.Instance))
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
@@ -561,6 +592,26 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			secgroups = append(secgroups, secgroup)
 		}
 	}
+	var publicAddresses []*model.FloatingIp
+	publicIps := c.QueryTrim("public_ips")
+	logger.Error("public ips: ", publicIps)
+	f := strings.Split(publicIps, ",")
+	for i := 0; i < len(f); i++ {
+		fID, err := strconv.Atoi(f[i])
+		if err != nil {
+			logger.Error("Invalid public ip ID", err)
+			continue
+		}
+		var floatingIp *model.FloatingIp
+		floatingIp, err = floatingIpAdmin.Get(ctx, int64(fID))
+		if err != nil {
+			logger.Error("Get public ip failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		publicAddresses = append(publicAddresses, floatingIp)
+	}
 	subnets := c.QueryStrings("subnets")
 	ifaceSubnets := []*model.Subnet{}
 	if len(subnets) > 0 {
@@ -618,7 +669,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			siteSubnets = append(siteSubnets, siteSubnet)
 		}
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, nil)
+	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, publicAddresses)
 	if err != nil {
 		logger.Debug("Failed to update interface", err)
 		c.Data["ErrorMsg"] = err.Error()

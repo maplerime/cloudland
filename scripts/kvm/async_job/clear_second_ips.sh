@@ -3,11 +3,12 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 3 ] && echo "$0 <vm_ID> <mac> <os_code>" && exit -1
+[ $# -lt 3 ] && echo "$0 <vm_ID> <mac> <os_code> <changed>" && exit -1
 
 ID=$1
 mac=$2
 os_code=$3
+changed=$4
 
 more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
@@ -38,4 +39,4 @@ if [ "$os_code" = "windows" ]; then
         let i=$i+1
     done
 fi
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$os_code'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$os_code' '$changed'"
