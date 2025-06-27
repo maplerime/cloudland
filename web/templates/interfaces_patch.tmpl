@@ -24,6 +24,7 @@
                         <label for="public_ips">{{.i18n.Tr "Public IPs"}}</label>
                         <select name="public_ips" id="public_ips" multiple="" class="ui multiple selection dropdown">
                             <option value="{{ .Interface.FloatingIp }}" selected>{{ .Interface.Address.Address }}</option>
+                            {{ $PrimaryAddress := .Interface.Address.Address }}
                             {{ $PublicIps := .PublicIps }}
                             {{ range .Interface.SecondAddresses }}
                               {{ $Address := .Address }}
@@ -37,9 +38,13 @@
                             {{ range .PublicIps }}
                               {{ $selected := false }}
                               {{ $FipAddress := .FipAddress }}
-                              {{ range $SecondAddresses }}
-                                {{ if eq .Address $FipAddress }}
-                                  {{ $selected = true }}
+                              {{ if eq $PrimaryAddress $FipAddress }}
+                                {{ $selected = true }}
+                              {{ else }}
+                                {{ range $SecondAddresses }}
+                                  {{ if eq .Address $FipAddress }}
+                                    {{ $selected = true }}
+                                  {{ end }}
                                 {{ end }}
                               {{ end }}
                               {{ if not $selected }}

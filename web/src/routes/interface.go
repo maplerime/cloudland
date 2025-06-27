@@ -56,7 +56,7 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 	db := DB()
 	iface = &model.Interface{Model: model.Model{ID: id}}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at DESC")
+		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
@@ -77,7 +77,7 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 	db := DB()
 	iface = &model.Interface{}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at DESC")
+		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where(where).Where("uuid = ?", uuID).Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
@@ -121,7 +121,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at DESC")
+		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
 		logger.Debug("DB failed to query security rule(s), %v", err)
 		return
@@ -242,7 +242,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	}
 
 	if len(publicIps) > 0 {
-		iface, _, err = DerivePublicInterface(ctx, instance, publicIps)
+		iface, _, err = DerivePublicInterface(ctx, instance, iface, publicIps)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
@@ -344,16 +344,17 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			logger.Errorf("Failed to marshal instance json data, %v", err)
 			return
 		}
+		// 1. Get old addresses 2. Change addresses 3. Remote execute
+		err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), changed, oldAddrsJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Update vm nic command execution failed", err)
-			return
-		}
-		err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
 			return
 		}
 	}
@@ -383,7 +384,9 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		return
 	}
 	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error
+	err = db.Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+                return db.Order("addresses.updated_at")
+        }).Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error
 	if err != nil {
 		logger.Error("Interface query failed", err)
 		c.Data["ErrorMsg"] = err.Error()
