@@ -157,12 +157,11 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	driver := GetVolumeDriver()
 	if driver != "local" {
 		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-		storage := &model.ImageStorage{}
 		if poolID == "" {
 			poolID = defaultPoolID
 		}
 		if poolID != defaultPoolID {
-			err = db.Where("image_id = ? AND status = ?", image.ID, model.StorageStatusSynced).First(storage).Error
+			err = db.Where("image_id = ? AND status = ?", image.ID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
 			if err != nil {
 				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
 				err = fmt.Errorf("Image storage not found")
@@ -399,8 +398,17 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 	driver := GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 	total := 0
 	if driver == "local" {
+		if poolID != defaultPoolID {
+			err = db.Where("image_id = ? AND status = ?", image.ID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
+			if err != nil {
+				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
+				err = fmt.Errorf("Image storage not found")
+				return
+			}
+		}
 		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 			logger.Error("Failed to query total instances with the image", err)
 			return
