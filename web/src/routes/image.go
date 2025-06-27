@@ -86,6 +86,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			image.UUID = uuid
 		}
 	}
+	image.StorageType = GetVolumeDriver()
 	logger.Debugf("Creating image %+v", image)
 	err = db.Create(image).Error
 	if err != nil {
