@@ -169,6 +169,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 				return
 			}
 		}
+		logger.Debugf("Using volume driver %s with pool ID %s", driver, poolID)
 	}
 
 	execCommands := []*ExecutionCommand{}
@@ -188,7 +189,8 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		} else {
 			if err = db.Model(&model.Instance{}).
 				Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
-				Where("b.path LIKE ?", "%pool_id%").
+				Where(fmt.Sprintf("b.path like '%%%s%%'", poolID)).
+				Where("instances.image_id = ?", image.ID).
 				Count(&total).Error; err != nil {
 				logger.Error("Failed to count instances with volumes matching pool_id", err)
 			}

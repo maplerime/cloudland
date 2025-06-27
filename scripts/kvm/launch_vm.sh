@@ -58,11 +58,11 @@ else
     if [ -z "$pool_ID" ]; then
         pool_ID=$wds_pool_id
     fi
+    image=$(basename $img_name .raw)
     if [ "$pool_ID" != "$wds_pool_id" ]; then
         pool_prefix=$(get_uuid_prefix "$pool_ID")
-        img_name=$img_name-$pool_prefix
+        image=${image}-${pool_prefix}
     fi
-    image=$(basename $img_name .raw)
     vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
     snapshot_name=${image}-${snapshot}
     read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
