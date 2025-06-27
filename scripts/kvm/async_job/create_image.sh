@@ -34,10 +34,18 @@ else
     format=raw
     uss_id=$(get_uss_gateway)
     uss_service=$(systemctl -a | grep uss | awk '{print $1}')
-    cat /etc/systemd/system/$uss_service | grep cloudland
-    if [ $? -ne 0 ]; then
-        wds_curl PUT "api/v2/sync/wds/uss/$uss_id" '{"action":"add","mount_path":"/opt/cloudland/cache/image"}'
-	      systemctl restart $uss_service
+    if [ -n "$uss_service" ]; then
+        cat /etc/systemd/system/$uss_service | grep cloudland
+        if [ $? -ne 0 ]; then
+            wds_curl PUT "api/v2/sync/wds/uss/$uss_id" '{"action":"add","mount_path":"/opt/cloudland/cache/image"}'
+            systemctl restart $uss_service
+        fi
+    else
+        docker ps | grep USS | awk '{print $1}' | xargs docker inspect | grep cloudland
+        if [ $? -ne 0 ]; then
+            wds_curl PUT "api/v2/sync/wds/uss/$uss_id" '{"action":"add","mount_path":"/opt/cloudland/cache/image"}'
+            sleep 60
+        fi
     fi
     task_id=$(wds_curl "PUT" "api/v2/sync/block/volumes/import" "{\"volname\": \"$image_name\", \"path\": \"${image}.raw\", \"ussid\": \"$uss_id\", \"start_blockid\": 0, \"volsize\": $image_size, \"poolid\": \"$wds_pool_id\", \"num_block\": 0, \"speed\": 8}" | jq -r .task_id)
     state=uploading
