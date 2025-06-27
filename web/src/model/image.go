@@ -25,6 +25,7 @@ const (
 	StorageStatusSynced   StorageStatus = "synced"
 	StorageStatusError    StorageStatus = "error"
 	StorageStatusUnknown  StorageStatus = "unknown"
+	StorageStatusSyncing  StorageStatus = "syncing"
 	StorageStatusNotFound StorageStatus = "not_found"
 )
 

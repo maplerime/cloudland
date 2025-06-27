@@ -338,8 +338,10 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		return
 	}
 
+	logger.Debugf("Image %s storages: %+v", image.UUID, storages)
 	for _, storage := range storages {
-		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusUnknown {
+		// ignore already synced or syncing storages
+		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
 			continue
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
@@ -347,6 +349,11 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
 		if storage.PoolID == defaultPoolID {
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+		}
+		storage.Status = model.StorageStatusSyncing
+		if err = db.Model(storage).Updates(storage).Error; err != nil {
+			logger.Error("Failed to update image storage status", err)
+			return
 		}
 		err = HyperExecute(ctx, control, command)
 		if err != nil {

@@ -90,7 +90,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 
 	for _, poolID := range finalPools {
 		if storage, exists := storageMap[poolID]; exists {
-			if storage.Status != model.StorageStatusSynced {
+			if storage.Status != model.StorageStatusSynced && storage.Status != model.StorageStatusSyncing {
 				storage.Status = model.StorageStatusUnknown
 				if err = db.Save(&storage).Error; err != nil {
 					logger.Error("Update image storage failed", err)
