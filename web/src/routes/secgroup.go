@@ -143,6 +143,31 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 	return
 }
 
+func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model.SecurityGroup, err error) {
+	db := DB()
+	memberShip := GetMemberShip(ctx)
+	org, err := orgAdmin.Get(ctx, memberShip.OrgID)
+	if err != nil {
+		logger.Error("Failed to query organization ", err)
+		return
+	}
+	if org.DefaultSG == 0 {
+		secgroup, err = a.Create(ctx, org.Name + "-default", true, nil)
+		if err != nil {
+			logger.Error("Failed to create account secgroup ", err)
+			return
+		}
+	} else {
+		secgroup = &model.SecurityGroup{Model: model.Model{ID: org.DefaultSG}}
+		err = db.Model(secgroup).Take(secgroup).Error
+		if err != nil {
+			logger.Error("Failed to query account secgroup ", err)
+			return
+		}
+	}
+	return
+}
+
 func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (secgroup *model.SecurityGroup, err error) {
 	db := DB()
 	memberShip := GetMemberShip(ctx)
@@ -246,7 +271,7 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 		}
 		routerID = router.ID
 	} else {
-		permit := memberShip.CheckPermission(model.Admin)
+		permit := memberShip.CheckPermission(model.Owner)
 		if !permit {
 			logger.Error("Not authorized for this operation")
 			err = fmt.Errorf("Not authorized")

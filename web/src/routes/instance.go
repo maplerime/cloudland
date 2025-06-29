@@ -1852,6 +1852,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		}
 	} else {
 		var sgID int64
+		var secGroup *model.SecurityGroup
 		if routerID > 0 {
 			var router *model.Router
 			router, err = routerAdmin.Get(ctx, routerID)
@@ -1862,14 +1863,21 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 				return
 			}
 			sgID = router.DefaultSG
-		}
-		var secGroup *model.SecurityGroup
-		secGroup, err = secgroupAdmin.Get(ctx, int64(sgID))
-		if err != nil {
-			logger.Error("Get security groups failed", err)
-			c.Data["ErrorMsg"] = "Get security groups failed"
-			c.HTML(http.StatusBadRequest, "error")
-			return
+			secGroup, err = secgroupAdmin.Get(ctx, int64(sgID))
+			if err != nil {
+				logger.Error("Get security group failed", err)
+				c.Data["ErrorMsg"] = "Get security group failed"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+		} else {
+			secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			if err != nil {
+				logger.Error("Get default security group failed", err)
+				c.Data["ErrorMsg"] = "Get security group failed"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
 		}
 		securityGroups = append(securityGroups, secGroup)
 	}

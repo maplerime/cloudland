@@ -550,18 +550,24 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 	}
 	if len(ifacePayload.SecurityGroups) == 0 {
 		var routerID, sgID int64
+		var secgroup *model.SecurityGroup
 		if router != nil {
 			routerID = router.ID
 			sgID = router.DefaultSG
-		}
-		var secgroup *model.SecurityGroup
-		secgroup, err = secgroupAdmin.Get(ctx, sgID)
-		if err != nil {
-			return
-		}
-		if secgroup.RouterID != routerID {
-			err = fmt.Errorf("Security group not in subnet vpc")
-			return
+			secgroup, err = secgroupAdmin.Get(ctx, sgID)
+			if err != nil {
+				return
+			}
+			if secgroup.RouterID != routerID {
+				err = fmt.Errorf("Security group not in subnet vpc")
+				return
+			}
+		} else {
+			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			if err != nil {
+				logger.Error("Get default security group failed", err)
+				return
+			}
 		}
 		ifaceInfo.SecurityGroups = append(ifaceInfo.SecurityGroups, secgroup)
 	} else {
