@@ -14,6 +14,8 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+
+	"github.com/jinzhu/gorm"
 )
 
 func init() {
@@ -137,7 +139,9 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		reason = err.Error()
 		return
 	}
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+		return db.Order("addresses.updated_at")
+	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 	if err != nil {
 		logger.Error("Failed to get interfaces", err)
 		reason = err.Error()
@@ -225,21 +229,39 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 
 func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 	vlans := []*VlanInfo{}
-	var securityData []*SecurityData
 	db := DB()
-	for _, iface := range instance.Interfaces {
+	for i, iface := range instance.Interfaces {
 		err = db.Model(iface).Related(&iface.SecurityGroups, "SecurityGroups").Error
 		if err != nil {
 			logger.Error("Get security groups for interface failed", err)
 			return
 		}
+		var securityData []*SecurityData
 		securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
 		if err != nil {
 			logger.Error("Get security data for interface failed", err)
 			return
 		}
+		var moreAddresses []string
+		_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, i)
+		if err != nil {
+			logger.Errorf("Failed to get instance networks, %v", err)
+			return
+		}
 		subnet := iface.Address.Subnet
-		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SecRules: securityData})
+		vlans = append(vlans, &VlanInfo{
+			Device:        iface.Name,
+			Vlan:          subnet.Vlan,
+			Inbound:       iface.Inbound,
+			Outbound:      iface.Outbound,
+			AllowSpoofing: iface.AllowSpoofing,
+			Gateway:       subnet.Gateway,
+			Router:        subnet.RouterID,
+			IpAddr:        iface.Address.Address,
+			MacAddr:       iface.MacAddr,
+			SecRules:      securityData,
+			MoreAddresses: moreAddresses,
+		})
 	}
 	jsonData, err := json.Marshal(vlans)
 	if err != nil {
