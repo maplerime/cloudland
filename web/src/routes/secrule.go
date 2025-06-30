@@ -78,7 +78,7 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 }
 
 func (a *SecruleAdmin) Update(ctx context.Context, id int64, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	//secrule = &model.SecurityRule{Model: model.Model{ID: id}}
 	secrules := &model.SecurityRule{Model: model.Model{ID: id}}
 	err = db.Take(secrules).Error
@@ -259,7 +259,7 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

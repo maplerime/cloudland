@@ -54,7 +54,7 @@ func (v *ConsoleAPI) Create(c *gin.Context) {
 		return
 	}
 	consoleURL := fmt.Sprintf("wss://%s/websockify?token=%s", c.Request.Host, token)
-	owner := orgAdmin.GetOrgName(instance.Owner)
+	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	consoleResp := &ConsoleResponse{
 		Instance: &ResourceReference{
 			ID:    instance.UUID,

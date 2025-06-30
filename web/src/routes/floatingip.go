@@ -20,7 +20,6 @@ import (
 	"web/src/model"
 
 	"github.com/go-macaron/session"
-	"github.com/jinzhu/gorm"
 	macaron "gopkg.in/macaron.v1"
 )
 
@@ -38,7 +37,9 @@ type FloatingIps struct {
 type FloatingIpAdmin struct{}
 type FloatingIpView struct{}
 
-func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, db *gorm.DB, memberShip *MemberShip, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool, group *model.IpGroup) ([]*model.FloatingIp, error) {
+func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool, group *model.IpGroup) ([]*model.FloatingIp, error) {
+	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
 	floatingIps := make([]*model.FloatingIp, 0)
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
@@ -188,7 +189,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	floatingIps = make([]*model.FloatingIp, 0)
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d, siteSubnets: %v, group: %v", pubSubnets, publicIp, instance, activationCount, inbound, outbound, siteSubnets, group)
 	var fips []*model.FloatingIp
-	fips, err = a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false, group)
+	fips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false, group)
 	if err != nil {
 		return
 	}
@@ -198,7 +199,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	for i := 0; i < len(siteSubnets); i++ {
 		logger.Debugf("siteSubnets[%d]: %v, idleCount: %d, activationCount: %d, inbound: %d, outbound: %d, group: %v", i, siteSubnets[i], siteSubnets[i].IdleCount, siteSubnets[i].IdleCount, inbound, outbound, group)
 		var siteFips []*model.FloatingIp
-		siteFips, err = a.createAndAllocateFloatingIps(ctx, db, memberShip, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true, group)
+		siteFips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true, group)
 		if err != nil {
 			return
 		}
@@ -277,7 +278,7 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{Model: model.Model{ID: id}}
 	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Take(floatingIp).Error
@@ -311,7 +312,7 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 }
 
 func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) (floatingIp *model.FloatingIp, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{}
@@ -480,7 +481,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		query = fmt.Sprintf("fip_address like '%%%s%%' or int_address like '%%%s%%' or name like '%%%s%%'", query, query)
 	}
 
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	where := memberShip.GetWhere()
 	floatingIps = []*model.FloatingIp{}
 	if err = db.Model(&model.FloatingIp{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
@@ -1006,7 +1007,7 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	name := "fip"
 	logger.Debugf("Available subnets: %v", subnets)
 	var secGroup *model.SecurityGroup
-	secGroup, err = secgroupAdmin.Get(ctx, int64(0))
+	secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 	if err != nil {
 		logger.Error("Get security groups failed", err)
 		return

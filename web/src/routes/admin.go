@@ -66,7 +66,7 @@ func adminInit() {
 			}
 		}
 		if org == nil {
-			org, err = orgAdmin.GetOrgByName(username)
+			org, err = orgAdmin.GetOrgByName(ctx, username)
 			if err != nil {
 				logger.Error("Failed to get org", err)
 				return

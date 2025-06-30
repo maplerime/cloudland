@@ -339,7 +339,7 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 }
 
 func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *model.FloatingIp) (floatingIpResp *FloatingIpResponse, err error) {
-	owner := orgAdmin.GetOrgName(floatingIp.Owner)
+	owner := orgAdmin.GetOrgName(ctx, floatingIp.Owner)
 	floatingIpResp = &FloatingIpResponse{
 		ResourceReference: &ResourceReference{
 			ID:        floatingIp.UUID,
@@ -361,7 +361,7 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 	if floatingIp.Instance != nil && len(floatingIp.Instance.Interfaces) > 0 {
 		instance := floatingIp.Instance
 		interIp := strings.Split(floatingIp.IntAddress, "/")[0]
-		owner := orgAdmin.GetOrgName(instance.Owner)
+		owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 		floatingIpResp.TargetInterface = &TargetInterface{
 			ResourceReference: &ResourceReference{
 				ID: instance.Interfaces[0].UUID,

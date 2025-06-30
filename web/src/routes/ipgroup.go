@@ -77,7 +77,7 @@ func (a *IpGroupAdmin) Get(ctx context.Context, id int64) (ipGroup *model.IpGrou
 		logger.Errorf("%v", err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	ipGroup = &model.IpGroup{Model: model.Model{ID: id}}
@@ -121,7 +121,7 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 
 func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGroup *model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByUUID, uuID=%s", uuID)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	ipGroup = &model.IpGroup{}
 	err = db.Where("uuid = ?", uuID).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
@@ -134,7 +134,7 @@ func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGro
 
 func (a *IpGroupAdmin) GetIpGroupByName(ctx context.Context, name string) (ipGroup *model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByName, name=%s", name)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	ipGroup = &model.IpGroup{}
 	err = db.Where("name = ?", name).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
@@ -194,7 +194,7 @@ func (a *IpGroupAdmin) Update(ctx context.Context, ipGroup *model.IpGroup, name 
 
 func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, ipGroups []*model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.List, offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

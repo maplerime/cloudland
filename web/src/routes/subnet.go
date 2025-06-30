@@ -55,8 +55,8 @@ func ipToInt(ip net.IP) (*big.Int, int) {
 	}
 }
 
-func getValidVni() (vni int, err error) {
-	db := DB()
+func getValidVni(ctx context.Context) (vni int, err error) {
+	ctx, db := GetContextDB(ctx)
 	count := 1
 	for count > 0 {
 		vni = rand.Intn(vniMax-vniMin) + vniMin
@@ -68,8 +68,8 @@ func getValidVni() (vni int, err error) {
 	return
 }
 
-func checkIfExistVni(vni int64) (result bool, err error) {
-	db := DB()
+func checkIfExistVni(ctx context.Context, vni int64) (result bool, err error) {
+	ctx, db := GetContextDB(ctx)
 	count := 0
 	if err = db.Model(&model.Subnet{}).Where("vlan = ?", vni).Count(&count).Error; err != nil {
 		logger.Error("Failed to query existing vlan, %v", err)
@@ -82,8 +82,8 @@ func checkIfExistVni(vni int64) (result bool, err error) {
 	}
 }
 
-func generateIPAddresses(subnet *model.Subnet, start net.IP, end net.IP, preSize int) (err error) {
-	db := DB()
+func generateIPAddresses(ctx context.Context, subnet *model.Subnet, start net.IP, end net.IP, preSize int) (err error) {
+	ctx, db := GetContextDB(ctx)
 	ip := start
 	for {
 		ipstr := fmt.Sprintf("%s/%d", ip.String(), preSize)
@@ -123,7 +123,7 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	subnet = &model.Subnet{Model: model.Model{ID: id}}
 	err = db.Preload("Router").Preload("Group").Take(subnet).Error
 	if err != nil {
@@ -150,7 +150,7 @@ func (a *SubnetAdmin) Get(ctx context.Context, id int64) (subnet *model.Subnet, 
 }
 
 func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet *model.Subnet, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	subnet = &model.Subnet{}
 	err = db.Preload("Router").Preload("Group").Where("uuid = ?", uuID).Take(subnet).Error
@@ -178,7 +178,7 @@ func (a *SubnetAdmin) GetSubnetByUUID(ctx context.Context, uuID string) (subnet 
 }
 
 func (a *SubnetAdmin) GetSubnetByName(ctx context.Context, name string) (subnet *model.Subnet, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	subnet = &model.Subnet{}
 	err = db.Preload("Router").Preload("Group").Where("name = ?", name).Take(subnet).Error
@@ -250,7 +250,7 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, gateway, start
 }
 
 func clearRouting(ctx context.Context, routerID int64, subnet *model.Subnet) (err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	router := &model.Router{Model: model.Model{ID: routerID}}
 	err = db.Take(router).Error
 	if err != nil {
@@ -310,6 +310,12 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup) (subnet *model.Subnet, err error) {
 	logger.Debugf("Creating subnet with vlan: %d, name: %s, network: %s, gateway: %s, start: %s, end: %s, rtype: %s, dns: %s, domain: %s, dhcp: %t, router: %+v, ipGroup: %+v", vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
 	memberShip := GetMemberShip(ctx)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized for this operation")
@@ -330,19 +336,13 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		}
 	}
 	if vlan <= 0 {
-		vlan, err = getValidVni()
+		vlan, err = getValidVni(ctx)
 		if err != nil {
 			logger.Error("Failed to get valid vlan %s, %v", vlan, err)
 			return
 		}
 	}
 	owner := memberShip.OrgID
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
-		}
-	}()
 	count := 0
 	err = db.Model(&model.Subnet{}).Where("vlan = ?", vlan).Count(&count).Error
 	if err != nil {
@@ -508,7 +508,7 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 }
 
 func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *model.Subnet) (int64, error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	var idleCount int64
 
 	err := db.Model(&model.Address{}).
@@ -527,7 +527,7 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 }
 
 func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

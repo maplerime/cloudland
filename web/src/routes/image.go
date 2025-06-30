@@ -115,7 +115,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 }
 
 func (a *ImageAdmin) GetImageByUUID(ctx context.Context, uuID string) (image *model.Image, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	image = &model.Image{}
 	err = db.Where("uuid = ?", uuID).Take(image).Error
 	if err != nil {
@@ -133,7 +133,7 @@ func (a *ImageAdmin) GetImageByUUID(ctx context.Context, uuID string) (image *mo
 }
 
 func (a *ImageAdmin) GetImageByName(ctx context.Context, name string) (image *model.Image, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	image = &model.Image{}
 	err = db.Where("name = ?", name).Take(image).Error
 	if err != nil {
@@ -156,7 +156,7 @@ func (a *ImageAdmin) Get(ctx context.Context, id int64) (image *model.Image, err
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	image = &model.Image{Model: model.Model{ID: id}}
 	err = db.Take(image).Error
 	if err != nil {
@@ -230,8 +230,8 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	return
 }
 
-func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
-	db := DB()
+func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -274,7 +274,7 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, images, err := imageAdmin.List(offset, limit, order, query)
+	total, images, err := imageAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)

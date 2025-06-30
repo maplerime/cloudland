@@ -88,7 +88,7 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 
 func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []string, roles []model.Role) (org *model.Organization, err error) {
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	org = &model.Organization{Model: model.Model{ID: orgID}}
 	err = db.Set("gorm:auto_preload", true).Take(org).Take(org).Error
 	if err != nil {
@@ -176,7 +176,7 @@ func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, 
 		logger.Error("%v", err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	org = &model.Organization{Model: model.Model{ID: id}}
@@ -195,7 +195,7 @@ func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, 
 }
 
 func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Organization, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	org = &model.Organization{}
@@ -213,16 +213,16 @@ func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Or
 	return
 }
 
-func (a *OrgAdmin) GetOrgByName(name string) (org *model.Organization, err error) {
+func (a *OrgAdmin) GetOrgByName(ctx context.Context, name string) (org *model.Organization, err error) {
 	org = &model.Organization{}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	err = db.Take(org, &model.Organization{Name: name}).Error
 	return
 }
 
-func (a *OrgAdmin) GetOrgName(id int64) (name string) {
+func (a *OrgAdmin) GetOrgName(ctx context.Context, id int64) (name string) {
 	org := &model.Organization{Model: model.Model{ID: id}}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	err := db.Take(org, &model.Organization{Name: name}).Error
 	if err != nil {
 		logger.Error("DB failed to query org", err)
@@ -303,7 +303,7 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	user := &model.User{Model: model.Model{ID: memberShip.UserID}}
 	err = db.Take(user).Error
 	if err != nil {

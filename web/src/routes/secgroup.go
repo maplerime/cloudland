@@ -87,7 +87,7 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 		return a.GetSecgroupByName(ctx, SystemDefaultSGName)
 	}
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	where := memberShip.GetWhere()
 	secgroup = &model.SecurityGroup{Model: model.Model{ID: id}}
 	err = db.Where(where).Take(secgroup).Error
@@ -115,7 +115,7 @@ func (a *SecgroupAdmin) Get(ctx context.Context, id int64) (secgroup *model.Secu
 }
 
 func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (secgroup *model.SecurityGroup, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	secgroup = &model.SecurityGroup{}
@@ -144,7 +144,7 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 }
 
 func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model.SecurityGroup, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	org, err := orgAdmin.Get(ctx, memberShip.OrgID)
 	if err != nil {
@@ -155,6 +155,12 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 		secgroup, err = a.Create(ctx, org.Name + "-default", true, nil)
 		if err != nil {
 			logger.Error("Failed to create account secgroup ", err)
+			return
+		}
+		org.DefaultSG = secgroup.ID
+		err = db.Model(org).Updates(org).Error
+		if err != nil {
+			logger.Error("DB failed to update user owner", err)
 			return
 		}
 	} else {
@@ -169,7 +175,7 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 }
 
 func (a *SecgroupAdmin) GetSecgroupByName(ctx context.Context, name string) (secgroup *model.SecurityGroup, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	secgroup = &model.SecurityGroup{}
 	err = db.Where("name = ?", name).Take(secgroup).Error
@@ -287,7 +293,7 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 	secgroup = &model.SecurityGroup{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, IsDefault: isDefault, RouterID: routerID}
 	err = db.Create(secgroup).Error
 	if err != nil {
-		logger.Error("DB failed to create security group, %v", err)
+		logger.Errorf("DB failed to create security group %s, %v", name, err)
 		return
 	}
 	_, err = secruleAdmin.Create(ctx, "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
@@ -414,7 +420,7 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

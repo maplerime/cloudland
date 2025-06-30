@@ -233,7 +233,7 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 }
 
 func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGroup) (ipGroupResp *IpGroupResponse, err error) {
-	owner := orgAdmin.GetOrgName(ipGroup.Owner)
+	owner := orgAdmin.GetOrgName(ctx, ipGroup.Owner)
 
 	var names []string
 	for _, subnet := range ipGroup.Subnets {

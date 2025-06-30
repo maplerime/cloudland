@@ -204,7 +204,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 }
 
 func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet) (subnetResp *SubnetResponse, err error) {
-	owner := orgAdmin.GetOrgName(subnet.Owner)
+	owner := orgAdmin.GetOrgName(ctx, subnet.Owner)
 	subnetResp = &SubnetResponse{
 		ResourceReference: &ResourceReference{
 			ID:        subnet.UUID,

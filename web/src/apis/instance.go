@@ -590,7 +590,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 
 func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance) (instanceResp *InstanceResponse, err error) {
 	logger.Debugf("Create instance response for instance %+v", instance)
-	owner := orgAdmin.GetOrgName(instance.Owner)
+	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	instanceResp = &InstanceResponse{
 		ResourceReference: &ResourceReference{
 			ID:        instance.UUID,

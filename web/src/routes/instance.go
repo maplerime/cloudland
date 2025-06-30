@@ -904,7 +904,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	instance = &model.Instance{Model: model.Model{ID: id}}
@@ -941,7 +941,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 }
 
 func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (instance *model.Instance, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	instance = &model.Instance{}
@@ -1054,8 +1054,8 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	db = db.Offset(0).Limit(-1)
 	for _, instance := range instances {
 		if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-                return db.Order("addresses.updated_at")
-        }).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+			return db.Order("addresses.updated_at")
+		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			return
 		}
@@ -1299,7 +1299,8 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
 	db := DB()
 	id := c.Params("id")
 	if id == "" {
@@ -1330,7 +1331,7 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
-	_, subnets, err := subnetAdmin.List(c.Req.Context(), 0, -1, "", "", "interface = 0")
+	_, subnets, err := subnetAdmin.List(ctx, 0, -1, "", "", "interface = 0")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
@@ -1347,7 +1348,7 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 			}
 		}
 	}
-	_, flavors, err := flavorAdmin.List(0, -1, "", "")
+	_, flavors, err := flavorAdmin.List(ctx, 0, -1, "", "")
 	if err := db.Find(&flavors).Error; err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
