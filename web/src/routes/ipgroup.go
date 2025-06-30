@@ -246,6 +246,9 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
+	if query != "" {
+		query = fmt.Sprintf("name like '%%%s%%'", query)
+	}
 	total, ipGroups, err := ipGroupAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		logger.Error("Failed to list ipGroup(s)", err)

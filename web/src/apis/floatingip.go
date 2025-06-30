@@ -543,8 +543,14 @@ func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
 
 		// Attach the floating IPs to the instance
 		for _, fip := range subnetFloatingIps {
+			floatingIp, err := floatingIpAdmin.GetFloatingIpByUUID(ctx, fip.UUID)
+			if err != nil {
+				logger.Errorf("Failed to get floating ip %s: %v", fip.FipAddress, err)
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get floating ip", err)
+				return
+			}
 			logger.Debugf("Attaching floating IP %s to instance %s", fip.FipAddress, instance.UUID)
-			err = floatingIpAdmin.Attach(ctx, fip, instance)
+			err = floatingIpAdmin.Attach(ctx, floatingIp, instance)
 			if err != nil {
 				logger.Errorf("Failed to attach floating ip %s to instance %s: %v", fip.FipAddress, instance.UUID, err)
 				ErrorResponse(c, http.StatusBadRequest, "Failed to attach floating ip", err)
@@ -662,7 +668,15 @@ func (v *FloatingIpAPI) BatchDetach(c *gin.Context) {
 
 			if fip.Interface.Address.Subnet.ID == subnet.ID {
 				logger.Debugf("Found matching floating IP %s for subnet %s, detaching...", fip.FipAddress, subnet.Name)
-				err = floatingIpAdmin.Detach(ctx, fip)
+
+				floatingIp, err := floatingIpAdmin.GetFloatingIpByUUID(ctx, fip.UUID)
+				if err != nil {
+					logger.Errorf("Failed to get floating ip %s: %v", fip.FipAddress, err)
+					ErrorResponse(c, http.StatusBadRequest, "Failed to get floating ip", err)
+					return
+				}
+
+				err = floatingIpAdmin.Detach(ctx, floatingIp)
 				if err != nil {
 					logger.Errorf("Failed to detach floating ip %s: %v", fip.FipAddress, err)
 					ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
