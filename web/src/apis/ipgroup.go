@@ -43,7 +43,7 @@ type IpGroupListResponse struct {
 type IpGroupPayload struct {
 	Name        string             `json:"name" binding:"required,min=2,max=32"`
 	Type        string             `json:"type" binding:"required,oneof=system resource"`
-	IpGroupType *ResourceReference `json:"dictionaries" binding:"required"`
+	IpGroupType *ResourceReference `json:"dictionaries" binding:"omitempty"`
 }
 type IpGroupPatchPayload struct {
 	Name        string             `json:"name" binding:"omitempty,min=2,max=32"`
