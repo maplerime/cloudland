@@ -171,7 +171,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 	secondIpsLength := len(primaryIface.SecondAddresses)
 	floatingIpsLength := len(floatingIps)
 	cnt := floatingIpsLength - 1 - secondIpsLength
-	if cnt > 0 {
+	if cnt >= 0 {
 		for i, fip := range floatingIps {
 			iface := fip.Interface
 			if i == 0 {
