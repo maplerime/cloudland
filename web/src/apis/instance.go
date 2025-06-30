@@ -472,6 +472,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 	}
 	ifaceInfo = &routes.InterfaceInfo{
 		AllowSpoofing: ifacePayload.AllowSpoofing,
+		Count: ifacePayload.Count,
 	}
 	vlan := int64(0)
 	if len(ifacePayload.PublicAddresses) > 0 {
