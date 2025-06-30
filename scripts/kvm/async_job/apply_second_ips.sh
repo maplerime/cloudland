@@ -26,6 +26,7 @@ for i in {1..120}; do
     [ $? -eq 0 ] && break
     sleep 1
 done
+wait_qemu_ping $ID
 i=0
 while [ $i -lt $naddrs ]; do
     read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
@@ -43,15 +44,7 @@ while [ $i -lt $naddrs ]; do
 done
 
 if [ "$os_code" = "windows" ]; then
-    count=0
-    for i in {1..240}; do
-        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-ping"}'
-        if [ $? -eq 0 ]; then
-            let count=$count+1
-        fi
-	[ $count -gt 10 ] && break
-	sleep 5
-    done
+    wait_qemu_ping $ID 10
     i=0
     while [ $i -lt $naddrs ]; do
         read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
