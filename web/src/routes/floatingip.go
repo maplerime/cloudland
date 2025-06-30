@@ -210,9 +210,9 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 }
 
 func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance) (err error) {
-	if floatingIp.Type != string(PublicFloating) {
-		logger.Infof("Cannot attach floating IP of type %s, only PublicFloating type is supported for attachment", floatingIp.Type)
-		err = fmt.Errorf("Cannot attach floating IP of type %s, only PublicFloating type is supported for attachment", floatingIp.Type)
+	if floatingIp.Type != string(PublicFloating) && floatingIp.Type != string(PublicSite) {
+		logger.Infof("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type)
+		err = fmt.Errorf("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
