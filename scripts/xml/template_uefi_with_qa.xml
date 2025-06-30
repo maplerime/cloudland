@@ -30,9 +30,9 @@
       <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
     </disk>
     <disk type="file" device="cdrom">
-      <driver name="qemu" type="raw" cache="none"/>
+      <driver name="qemu" type="raw"/>
       <source file="VM_META"/>
-      <target dev='sda' bus='scsi'/>
+      <target dev='hdb' bus='scsi'/>
       <readonly/>
     </disk>
     <controller type='usb' index='0'>
