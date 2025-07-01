@@ -294,7 +294,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 	}
 	var siteSubnets []*model.Subnet
-	if iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
+	if !iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
 		logger.Errorf("Only primary interface can have site subnets")
 		ErrorResponse(c, http.StatusBadRequest, "Only primary interface can have site subnets", err)
 		return
