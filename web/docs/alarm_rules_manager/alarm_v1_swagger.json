@@ -4897,6 +4897,9 @@
                 "dns": {
                     "type": "string"
                 },
+                "end": {
+                    "type": "string"
+                },
                 "gateway": {
                     "type": "string"
                 },
@@ -4919,6 +4922,9 @@
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "start": {
                     "type": "string"
                 },
                 "type": {

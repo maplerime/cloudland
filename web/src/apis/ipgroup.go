@@ -216,7 +216,15 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 		}
 		dictionaryEntry = dictionary
 	}
-	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, payload.Type, int(dictionaryEntry.ID))
+
+	var dictionaryID int
+	if dictionaryEntry != nil {
+		dictionaryID = int(dictionaryEntry.ID)
+	} else {
+		dictionaryID = 0
+	}
+
+	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, payload.Type, dictionaryID)
 	if err != nil {
 		logger.Errorf("IpGroupAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipGroup", err)

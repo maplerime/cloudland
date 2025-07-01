@@ -4903,6 +4903,9 @@ const docTemplatealarm_v1 = `{
                 "dns": {
                     "type": "string"
                 },
+                "end": {
+                    "type": "string"
+                },
                 "gateway": {
                     "type": "string"
                 },
@@ -4925,6 +4928,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "start": {
                     "type": "string"
                 },
                 "type": {

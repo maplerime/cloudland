@@ -31,6 +31,8 @@ type SubnetResponse struct {
 	Network    string             `json:"network"`
 	Netmask    string             `json:"netmask"`
 	Gateway    string             `json:"gateway"`
+	Start      string             `json:"start"`
+	End        string             `json:"end"`
 	NameServer string             `json:"dns,omitempty"`
 	VPC        *ResourceReference `json:"vpc,omitempty"`
 	Group      *ResourceReference `json:"group,omitempty"`
@@ -216,6 +218,8 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		Network:    subnet.Network,
 		Netmask:    subnet.Netmask,
 		Gateway:    subnet.Gateway,
+		Start:      subnet.Start,
+		End:        subnet.End,
 		NameServer: subnet.NameServer,
 		Type:       SubnetType(subnet.Type),
 	}

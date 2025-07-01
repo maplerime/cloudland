@@ -189,3 +189,19 @@ function inet_access()
     ip netns exec router-0 $*
     ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 }
+
+function wait_qemu_ping()
+{
+    vm_ID=inst-$1
+    num=$2
+    [ -z "$num" ] && num=0
+    count=0
+    for i in {1..240}; do
+        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-ping"}'
+        if [ $? -eq 0 ]; then
+            let count=$count+1
+        fi
+        [ $count -gt $num ] && break
+        sleep 5
+    done
+}

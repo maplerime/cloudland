@@ -72,22 +72,55 @@ type VlanInfo struct {
 	MoreAddresses []string        `json:"more_addresses"`
 }
 
-func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
+func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *model.Interface) (vlanInfo *VlanInfo, err error) {
+	ctx, db := GetContextDB(ctx)
+	err = db.Model(iface).Related(&iface.SecurityGroups, "SecurityGroups").Error
+	if err != nil {
+		logger.Error("Get security groups for interface failed", err)
+		return
+	}
 	var securityData []*SecurityData
 	securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
 	if err != nil {
-		logger.Debug("DB failed to get security data, %v", err)
+		logger.Error("Get security data for interface failed", err)
 		return
 	}
-	var jsonData []byte
-	jsonData, err = json.Marshal(securityData)
+	var moreAddresses []string
+	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
 	if err != nil {
-		logger.Error("Failed to marshal security json data, %v", err)
+		logger.Errorf("Failed to get instance networks, %v", err)
 		return
 	}
 	subnet := iface.Address.Subnet
+	vlanInfo = &VlanInfo{
+		Device:        iface.Name,
+		Vlan:          subnet.Vlan,
+		Inbound:       iface.Inbound,
+		Outbound:      iface.Outbound,
+		AllowSpoofing: iface.AllowSpoofing,
+		Gateway:       subnet.Gateway,
+		Router:        subnet.RouterID,
+		IpAddr:        iface.Address.Address,
+		MacAddr:       iface.MacAddr,
+		SecRules:      securityData,
+		MoreAddresses: moreAddresses,
+	}
+	return
+}
+
+func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, updateMeta bool) (err error) {
+	vlanInfo, err := GetInterfaceInfo(ctx, instance, iface)
+	if err != nil {
+		logger.Error("Failed to get interface info", err)
+		return
+	}
+	jsonData, err := json.Marshal([]*VlanInfo{vlanInfo})
+	if err != nil {
+		logger.Error("Failed to marshal instance json data", err)
+		return
+	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/apply_vm_nic.sh '%d' '%d' '%s' '%s' '%s' '%d' '%d' '%d' '%t'<<EOF\n%s\nEOF", iface.Instance, subnet.Vlan, iface.Address.Address, iface.MacAddr, subnet.Gateway, subnet.RouterID, iface.Inbound, iface.Outbound, iface.AllowSpoofing, jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), updateMeta, jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Update vm nic command execution failed", err)
@@ -97,8 +130,7 @@ func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.
 }
 
 func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, ipaddr, addrType string) (address *model.Address, err error) {
-	var db *gorm.DB
-	ctx, db = GetContextDB(ctx)
+	ctx, db := GetContextDB(ctx)
 	address = &model.Address{}
 	if ipaddr == "" {
 		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and address != ?", subnet.ID, false, subnet.Gateway).Take(address).Error
@@ -298,6 +330,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		if err2 != nil {
 			logger.Error("Failed to delete interface, ", err)
 		}
+		iface = nil
 		return
 	}
 	return

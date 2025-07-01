@@ -4842,6 +4842,9 @@ const docTemplatev1 = `{
                 "dns": {
                     "type": "string"
                 },
+                "end": {
+                    "type": "string"
+                },
                 "gateway": {
                     "type": "string"
                 },
@@ -4864,6 +4867,9 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "start": {
                     "type": "string"
                 },
                 "type": {
