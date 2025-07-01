@@ -31,8 +31,8 @@ type SubnetResponse struct {
 	Network    string             `json:"network"`
 	Netmask    string             `json:"netmask"`
 	Gateway    string             `json:"gateway"`
-	Start      string             `json:"gateway"`
-	End        string             `json:"gateway"`
+	Start      string             `json:"start"`
+	End        string             `json:"end"`
 	NameServer string             `json:"dns,omitempty"`
 	VPC        *ResourceReference `json:"vpc,omitempty"`
 	Group      *ResourceReference `json:"group,omitempty"`
