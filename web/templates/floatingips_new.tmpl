@@ -49,15 +49,16 @@
 									  </div>
 									</div>
 								</div>
+								<div class="inline field">
+									<label for="count">{{.i18n.Tr "Count"}}</label>
+									<input id="count" name="count" type="number" min="0" max="64" value="1" placeholder="1">
+								</div>
 						{{ if .IsAdmin }}
 								<div class="inline field">
 									<label for="publicip">{{.i18n.Tr "Public IP"}}</label>
 									<input id="publicip" name="publicip" placeholder="192.168.1.25">
 								</div>
-								<div class="inline field">
-									<label for="count">{{.i18n.Tr "Count"}}</label>
-									<input id="count" name="count" type="number" min="0" max="64" value="1" placeholder="1">
-								</div>
+						{{ end }}
 								<div class="inline field">
 									<label for="publicsubnet">{{.i18n.Tr "Public Subnet"}}</label>
 									<div class="ui fluid multiple search selection dropdown">
@@ -92,7 +93,6 @@
 									<label for="outbound">{{.i18n.Tr "Outbound Bandwidth"}}</label>
 									<input id="outbound" name="outbound" placeholder="1000">
 								</div>
-						{{ end }}
 								<div class="inline field">
 									<label></label>
 									<button class="ui green button">{{.i18n.Tr "Create New Floating Ip"}}</button>
