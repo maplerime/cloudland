@@ -1076,6 +1076,8 @@ definitions:
         type: string
       dns:
         type: string
+      end:
+        type: string
       gateway:
         type: string
       group:
@@ -1091,6 +1093,8 @@ definitions:
       network:
         type: string
       owner:
+        type: string
+      start:
         type: string
       type:
         $ref: '#/definitions/common.SubnetType'
