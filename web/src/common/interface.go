@@ -298,6 +298,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		if err2 != nil {
 			logger.Error("Failed to delete interface, ", err)
 		}
+		iface = nil
 		return
 	}
 	return
