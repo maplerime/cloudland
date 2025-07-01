@@ -265,7 +265,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		}
 	}
 	iface.SecondAddresses = nil
-	err = db.Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
+	err = db.Preload("Subnet").Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
 	if err != nil {
 		logger.Error("Second addresses query failed", err)
 		return
@@ -312,6 +312,46 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
+	changed := false
+	if iface.PrimaryIf {
+		valid := false
+		valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		if !valid {
+			logger.Errorf("Failed to check addresses, %v", err)
+			err = fmt.Errorf("Failed to check addresses")
+			return
+		}
+		if changed {
+			var oldAddresses []string
+			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			var oldAddrsJson []byte
+			oldAddrsJson, err = json.Marshal(oldAddresses)
+			if err != nil {
+				logger.Errorf("Failed to marshal instance json data, %v", err)
+				return
+			}
+			// 1. Get old addresses 2. Change addresses 3. Remote execute
+			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			osCode := GetImageOSCode(ctx, instance)
+			if osCode == "windows" {
+				control := fmt.Sprintf("inter=%d", instance.Hyper)
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+				err = HyperExecute(ctx, control, command)
+				if err != nil {
+					logger.Error("clear_second_ips command execution failed", err)
+					return
+				}
+			}
+		}
+	}
 	if needUpdate || needRemoteUpdate {
 		if err = db.Model(iface).Save(iface).Error; err != nil {
 			logger.Debug("Failed to save interface", err)
@@ -319,40 +359,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 	}
 	if needRemoteUpdate {
-		err = ApplyInterface(ctx, instance, iface)
-		if err != nil {
-			logger.Error("Update vm nic command execution failed", err)
-			return
-		}
-	}
-	if iface.PrimaryIf {
-		valid, changed := a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		if !valid {
-			logger.Errorf("Failed to check addresses, %v", err)
-			err = fmt.Errorf("Failed to check addresses")
-			return
-		}
-		var oldAddresses []string
-		_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		var oldAddrsJson []byte
-		oldAddrsJson, err = json.Marshal(oldAddresses)
-		if err != nil {
-			logger.Errorf("Failed to marshal instance json data, %v", err)
-			return
-		}
-		// 1. Get old addresses 2. Change addresses 3. Remote execute
-		err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		control := fmt.Sprintf("inter=%d", instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), changed, oldAddrsJson)
-		err = HyperExecute(ctx, control, command)
+		err = ApplyInterface(ctx, instance, iface, changed)
 		if err != nil {
 			logger.Error("Update vm nic command execution failed", err)
 			return

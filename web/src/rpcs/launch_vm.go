@@ -229,39 +229,14 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 
 func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 	vlans := []*VlanInfo{}
-	db := DB()
-	for i, iface := range instance.Interfaces {
-		err = db.Model(iface).Related(&iface.SecurityGroups, "SecurityGroups").Error
+	for _, iface := range instance.Interfaces {
+		var vlanInfo *VlanInfo
+		vlanInfo, err = GetInterfaceInfo(ctx, instance, iface)
 		if err != nil {
-			logger.Error("Get security groups for interface failed", err)
+			logger.Error("Failed to get interface info", err)
 			return
 		}
-		var securityData []*SecurityData
-		securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
-		if err != nil {
-			logger.Error("Get security data for interface failed", err)
-			return
-		}
-		var moreAddresses []string
-		_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, i)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		subnet := iface.Address.Subnet
-		vlans = append(vlans, &VlanInfo{
-			Device:        iface.Name,
-			Vlan:          subnet.Vlan,
-			Inbound:       iface.Inbound,
-			Outbound:      iface.Outbound,
-			AllowSpoofing: iface.AllowSpoofing,
-			Gateway:       subnet.Gateway,
-			Router:        subnet.RouterID,
-			IpAddr:        iface.Address.Address,
-			MacAddr:       iface.MacAddr,
-			SecRules:      securityData,
-			MoreAddresses: moreAddresses,
-		})
+		vlans = append(vlans, vlanInfo)
 	}
 	jsonData, err := json.Marshal(vlans)
 	if err != nil {
