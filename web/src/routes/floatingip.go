@@ -635,7 +635,7 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 	siteSubnets := []*model.Subnet{}
-	err = db.Where("type = ?", "site").Find(&siteSubnets).Error
+	err = db.Where("type = ? AND interface = ?", "site", 0).Find(&siteSubnets).Error
 	if err != nil {
 		logger.Error("Failed to query site subnets %v", err)
 		return
@@ -647,17 +647,20 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	for i, subnet := range siteSubnets {
+	// Collect subnets with idle addresses
+	var validSiteSubnets []*model.Subnet
+	for _, subnet := range siteSubnets {
 		var idleCount int64
 		idleCount, err = subnetAdmin.CountIdleAddressesForSubnet(c.Req.Context(), subnet)
 		if err != nil {
 			logger.Errorf("Failed to count idle addresses for subnet, err=%v", err)
 			return
 		}
-		if idleCount == 0 {
-			siteSubnets = append(siteSubnets[:i], siteSubnets[i+1:]...)
+		if idleCount > 0 {
+			validSiteSubnets = append(validSiteSubnets, subnet)
 		}
 	}
+	siteSubnets = validSiteSubnets
 
 	c.Data["Instances"] = instances
 	c.Data["Subnets"] = subnets
