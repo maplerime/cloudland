@@ -169,13 +169,7 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 
 	var group *model.IpGroup
 	if payload.Group != nil {
-		groupID, err := strconv.Atoi(payload.Group.ID)
-		if err != nil {
-			logger.Errorf("Invalid group ID %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
-			return
-		}
-		group, err = ipGroupAdmin.Get(ctx, int64(groupID))
+		group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 		if err != nil {
 			logger.Errorf("Failed to get ip group %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get ip group", err)
@@ -304,13 +298,7 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 	}
 	var group *model.IpGroup
 	if payload.Group != nil {
-		groupID, err := strconv.Atoi(payload.Group.ID)
-		if err != nil {
-			logger.Errorf("Invalid group ID %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
-			return
-		}
-		group, err = ipGroupAdmin.Get(ctx, int64(groupID))
+		group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
 		if err != nil {
 			logger.Errorf("Failed to get ip group %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get ip group", err)

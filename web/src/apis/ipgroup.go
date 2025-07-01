@@ -43,7 +43,7 @@ type IpGroupListResponse struct {
 type IpGroupPayload struct {
 	Name        string             `json:"name" binding:"required,min=2,max=32"`
 	Type        string             `json:"type" binding:"required,oneof=system resource"`
-	IpGroupType *ResourceReference `json:"dictionaries" binding:"required"`
+	IpGroupType *ResourceReference `json:"dictionaries" binding:"omitempty"`
 }
 type IpGroupPatchPayload struct {
 	Name        string             `json:"name" binding:"omitempty,min=2,max=32"`
@@ -216,7 +216,15 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 		}
 		dictionaryEntry = dictionary
 	}
-	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, payload.Type, int(dictionaryEntry.ID))
+
+	var dictionaryID int
+	if dictionaryEntry != nil {
+		dictionaryID = int(dictionaryEntry.ID)
+	} else {
+		dictionaryID = 0
+	}
+
+	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, payload.Type, dictionaryID)
 	if err != nil {
 		logger.Errorf("IpGroupAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipGroup", err)
@@ -312,7 +320,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 		}
 		logger.Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
 		logger.Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
-		queryStr = fmt.Sprintf("type_id = %d AND type = %s", dictionary.ID, SystemIpGroupType)
+		queryStr = fmt.Sprintf("type_id = %d AND type = '%s'", dictionary.ID, SystemIpGroupType)
 	}
 	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
