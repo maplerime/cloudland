@@ -27,7 +27,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 	hyperNode := instance.Hyper
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
-	if err != nil || hyper.Hostid < 0 {
+	if err != nil {
 		logger.Error("Failed to query hypervisor")
 		return
 	}
@@ -88,14 +88,16 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 			logger.Error("Failed to update subnet", err)
 			return
 		}
-		spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
-		fdbJson, _ := json.Marshal(spreadRules)
-		control := "toall=" + hyperList
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Execute floating ip failed", err)
-			return
+		if instance.RouterID > 0 && hyperNode >= 0 {
+			spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
+			fdbJson, _ := json.Marshal(spreadRules)
+			control := "toall=" + hyperList
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Execute floating ip failed", err)
+				return
+			}
 		}
 	}
 	return
