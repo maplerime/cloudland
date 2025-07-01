@@ -249,11 +249,19 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 	} else {
 		var secgroup *model.SecurityGroup
-		secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
-		if err != nil {
-			logger.Errorf("Get security group failed, %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
-			return
+		if instance.Router != nil {
+			secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
+			if err != nil {
+				logger.Errorf("Get security group failed, %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
+				return
+			}
+		} else {
+			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			if err != nil {
+				logger.Error("Get default security group failed", err)
+				return
+			}
 		}
 		secgroups = append(secgroups, secgroup)
 	}
