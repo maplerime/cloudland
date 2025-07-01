@@ -320,7 +320,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 		}
 		logger.Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
 		logger.Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
-		queryStr = fmt.Sprintf("type_id = %d AND type = %s", dictionary.ID, SystemIpGroupType)
+		queryStr = fmt.Sprintf("type_id = %d AND type = '%s'", dictionary.ID, SystemIpGroupType)
 	}
 	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
