@@ -70,7 +70,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		}
 		if isSite {
 			fip.Type = string(PublicSite)
-			if i == 0 {
+			if i == 0 && instance != nil {
 				var primaryInterfaceID int64
 				for _, iface := range instance.Interfaces {
 					if iface.PrimaryIf {

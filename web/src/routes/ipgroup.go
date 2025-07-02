@@ -123,7 +123,7 @@ func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGro
 	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByUUID, uuID=%s", uuID)
 	ctx, db := GetContextDB(ctx)
 	ipGroup = &model.IpGroup{}
-	err = db.Where("uuid = ?", uuID).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
+	err = db.Where("uuid = ?", uuID).Preload("Subnets").Preload("FloatingIPs").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
 		logger.Errorf("Failed to query ipGroup, %v", err)
 		return

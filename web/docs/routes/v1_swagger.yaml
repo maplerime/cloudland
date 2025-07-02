@@ -711,6 +711,10 @@ definitions:
         type: string
       dictionaries:
         $ref: '#/definitions/common.BaseReference'
+      floating_ips:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
       id:
         type: string
       name:
@@ -719,6 +723,10 @@ definitions:
         type: string
       subnet_names:
         type: string
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
       type:
         type: string
       updated_at:

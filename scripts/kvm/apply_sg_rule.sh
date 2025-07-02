@@ -43,7 +43,21 @@ function allow_icmp()
     apply_fw $action $chain -p icmp $args -j RETURN
 }
 
-sec_data=$(cat)
+vlan_info=$(cat)
+more_addresses=$(jq -r .more_addresses <<<$vlan_info)
+naddrs=$(jq length <<< $more_addresses)
+if [ $naddrs -gt 0 ]; then
+    i=0
+    while [ $i -lt $naddrs ]; do
+        read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
+        read -d'\n' -r ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
+        apply_fw -I $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
+        ./send_spoof_arp.py $bridge $ip $mac &
+        let i=$i+1
+    done
+fi
+
+sec_data=$(jq -r .security <<<$vlan_info)
 i=0
 len=$(jq length <<< $sec_data)
 while [ $i -lt $len ]; do

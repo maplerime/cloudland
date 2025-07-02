@@ -72,7 +72,7 @@ type InterfacePatchPayload struct {
 	Outbound        *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
 	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
 	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
-	Count           *int              `json:"count" binding:"omitempty,gte=1,lte=512"`
+	Count           *int             `json:"count" binding:"omitempty,gte=1,lte=512"`
 	AllowSpoofing   *bool            `json:"allow_spoofing" binding:"omitempty"`
 	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	SecurityGroups  []*BaseReference `json:"security_groups" binding:"omitempty"`
@@ -142,19 +142,38 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					},
 					IpAddress: floatingip.FipAddress,
 				}
+				if floatingip.GroupID != 0 {
+					group, err := ipGroupAdmin.Get(ctx, floatingip.GroupID)
+					if err == nil && group != nil {
+						floatingIps[i].Group = &BaseReference{
+							ID:   group.UUID,
+							Name: group.Name,
+						}
+					}
+				}
 			}
 			interfaceResp.FloatingIps = floatingIps
 		}
 		if len(iface.SiteSubnets) > 0 {
 			for _, site := range iface.SiteSubnets {
-				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, &SiteSubnetInfo{
+				siteInfo := &SiteSubnetInfo{
 					ResourceReference: &ResourceReference{
 						ID:   site.UUID,
 						Name: site.Name,
 					},
 					Network: site.Network,
 					Gateway: site.Gateway,
-				})
+				}
+				if site.GroupID != 0 {
+					group, err := ipGroupAdmin.Get(ctx, site.GroupID)
+					if err == nil && group != nil {
+						siteInfo.Group = &BaseReference{
+							ID:   group.UUID,
+							Name: group.Name,
+						}
+					}
+				}
+				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, siteInfo)
 			}
 		}
 		if len(iface.SecondAddresses) > 0 {
