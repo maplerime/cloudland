@@ -547,6 +547,20 @@ func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
 			logger.Debugf("Successfully attached floating IP %s to instance %s", fip.FipAddress, instance.UUID)
 			attachedFloatingIps = append(attachedFloatingIps, fip)
 		}
+		var primaryInterfaceID int64
+		for _, iface := range instance.Interfaces {
+			if iface.PrimaryIf {
+				primaryInterfaceID = iface.ID
+				break
+			}
+		}
+		_, db := GetContextDB(ctx)
+		err = db.Model(&model.Subnet{}).Where("id = ?", subnet.ID).Update("interface", primaryInterfaceID).Error
+		if err != nil {
+			logger.Errorf("Failed to update subnet %s interface to instance %s: %v", subnet.Name, instance.UUID, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet interface", err)
+			return
+		}
 	}
 
 	// Convert to response format
@@ -676,6 +690,14 @@ func (v *FloatingIpAPI) BatchDetach(c *gin.Context) {
 				logger.Debugf("Floating IP %s subnet ID (%d) doesn't match target subnet ID (%d)",
 					fip.FipAddress, fip.Interface.Address.Subnet.ID, subnet.ID)
 			}
+		}
+		// Update subnet interface to 0 after successful detachment
+		_, db := GetContextDB(ctx)
+		err = db.Model(&model.Subnet{}).Where("id = ?", subnet.ID).Update("interface", 0).Error
+		if err != nil {
+			logger.Errorf("Failed to update subnet %s interface to 0: %v", subnet.Name, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet interface", err)
+			return
 		}
 	}
 

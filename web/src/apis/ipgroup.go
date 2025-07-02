@@ -28,9 +28,11 @@ type IpGroupAPI struct{}
 
 type IpGroupResponse struct {
 	*ResourceReference
-	Type        string         `json:"type"`
-	Dictionary  *BaseReference `json:"dictionaries,omitempty"`
-	SubnetNames string         `json:"subnet_names"`
+	Type        string           `json:"type"`
+	Dictionary  *BaseReference   `json:"dictionaries,omitempty"`
+	SubnetNames string           `json:"subnet_names"`
+	Subnets     []*BaseReference `json:"subnets,omitempty"`
+	FloatingIps []*BaseReference `json:"floating_ips,omitempty"`
 }
 
 type IpGroupListResponse struct {
@@ -258,6 +260,33 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		}
 	}
 
+	// 构建关联的subnets列表
+	var subnets []*BaseReference
+	for _, subnet := range ipGroup.Subnets {
+		subnets = append(subnets, &BaseReference{
+			ID:   subnet.UUID,
+			Name: subnet.Name,
+		})
+	}
+
+	// 查询关联的floating ips
+	ctx, db := GetContextDB(ctx)
+	var floatingIps []*model.FloatingIp
+	err = db.Where("group_id = ?", ipGroup.ID).Find(&floatingIps).Error
+	if err != nil {
+		logger.Errorf("Failed to query floating ips for ip group %s: %v", ipGroup.UUID, err)
+		return
+	}
+
+	// 构建关联的floating ips列表
+	var floatingIpRefs []*BaseReference
+	for _, fip := range floatingIps {
+		floatingIpRefs = append(floatingIpRefs, &BaseReference{
+			ID:   fip.UUID,
+			Name: fip.Name,
+		})
+	}
+
 	ipGroupResp = &IpGroupResponse{
 		ResourceReference: &ResourceReference{
 			ID:        ipGroup.UUID,
@@ -269,6 +298,8 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		Type:        ipGroup.Type,
 		Dictionary:  dictInfo,
 		SubnetNames: ipGroup.SubnetNames,
+		Subnets:     subnets,
+		FloatingIps: floatingIpRefs,
 	}
 	return
 }

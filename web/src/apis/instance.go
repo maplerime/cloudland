@@ -491,7 +491,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 			ifaceInfo.PublicIps = append(ifaceInfo.PublicIps, floatingIp)
 		}
 	} else {
-		if ifacePayload == nil || len(ifacePayload.Subnets) == 0 {
+		if len(ifacePayload.Subnets) == 0 {
 			err = fmt.Errorf("Subnets or public addresses must be provided")
 			return
 		}
