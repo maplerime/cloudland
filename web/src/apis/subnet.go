@@ -42,8 +42,9 @@ type SubnetResponse struct {
 
 type SiteSubnetInfo struct {
 	*ResourceReference
-	Network string `json:"network"`
-	Gateway string `json:"gateway"`
+	Network string         `json:"network"`
+	Gateway string         `json:"gateway"`
+	Group   *BaseReference `json:"group,omitempty"`
 }
 
 type SubnetListResponse struct {

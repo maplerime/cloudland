@@ -4361,6 +4361,12 @@ const docTemplatealarm_v1 = `{
                 "dictionaries": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
+                "floating_ips": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4372,6 +4378,12 @@ const docTemplatealarm_v1 = `{
                 },
                 "subnet_names": {
                     "type": "string"
+                },
+                "subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 },
                 "type": {
                     "type": "string"
