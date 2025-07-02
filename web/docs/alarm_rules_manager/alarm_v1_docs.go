@@ -4331,7 +4331,6 @@ const docTemplatealarm_v1 = `{
         "apis.IpGroupPayload": {
             "type": "object",
             "required": [
-                "dictionaries",
                 "name",
                 "type"
             ],

@@ -702,7 +702,6 @@ definitions:
         - resource
         type: string
     required:
-    - dictionaries
     - name
     - type
     type: object

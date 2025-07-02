@@ -72,7 +72,7 @@ type InterfacePatchPayload struct {
 	Outbound        *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
 	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
 	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
-	Count           int              `json:"count" binding:"omitempty,gte=1,lte=512"`
+	Count           *int              `json:"count" binding:"omitempty,gte=1,lte=512"`
 	AllowSpoofing   *bool            `json:"allow_spoofing" binding:"omitempty"`
 	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty"`
 	SecurityGroups  []*BaseReference `json:"security_groups" binding:"omitempty"`
@@ -225,7 +225,10 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if payload.Outbound != nil {
 		outbound = *payload.Outbound
 	}
-	count := payload.Count - 1
+	count := len(iface.SecondAddresses)
+	if payload.Count != nil {
+		count = *payload.Count - 1
+	}
 	allowSpoofing := iface.AllowSpoofing
 	if payload.AllowSpoofing != nil {
 		allowSpoofing = *payload.AllowSpoofing

@@ -4270,7 +4270,6 @@ const docTemplatev1 = `{
         "apis.IpGroupPayload": {
             "type": "object",
             "required": [
-                "dictionaries",
                 "name",
                 "type"
             ],
