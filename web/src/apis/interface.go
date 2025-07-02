@@ -142,13 +142,10 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					},
 					IpAddress: floatingip.FipAddress,
 				}
-				if floatingip.GroupID != 0 {
-					group, err := ipGroupAdmin.Get(ctx, floatingip.GroupID)
-					if err == nil && group != nil {
-						floatingIps[i].Group = &BaseReference{
-							ID:   group.UUID,
-							Name: group.Name,
-						}
+				if floatingip.Group != nil {
+					floatingIps[i].Group = &BaseReference{
+						ID:   floatingip.Group.UUID,
+						Name: floatingip.Group.Name,
 					}
 				}
 			}
@@ -164,13 +161,10 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					Network: site.Network,
 					Gateway: site.Gateway,
 				}
-				if site.GroupID != 0 {
-					group, err := ipGroupAdmin.Get(ctx, site.GroupID)
-					if err == nil && group != nil {
-						siteInfo.Group = &BaseReference{
-							ID:   group.UUID,
-							Name: group.Name,
-						}
+				if site.Group != nil {
+					siteInfo.Group = &BaseReference{
+						ID:   site.Group.UUID,
+						Name: site.Group.Name,
 					}
 				}
 				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, siteInfo)
