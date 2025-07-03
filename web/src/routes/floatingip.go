@@ -62,6 +62,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
+		fip.SubnetID = fipIface.Address.Subnet.ID
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
 				logger.Error("Execute floating ip failed", err)
@@ -460,7 +461,7 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 			return
 		}
 	}
-	err = DeallocateFloatingIp(ctx, floatingIp.ID)
+	err = a.DeallocateFloatingIp(ctx, floatingIp.ID)
 	if err != nil {
 		logger.Error("DB failed to deallocate floating ip", err)
 		return
@@ -1026,7 +1027,7 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	return
 }
 
-func DeallocateFloatingIp(ctx context.Context, floatingIpID int64) (err error) {
+func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID int64) (err error) {
 	ctx, db := GetContextDB(ctx)
 	DeleteInterfaces(ctx, floatingIpID, 0, "floating")
 	floatingIp := &model.FloatingIp{Model: model.Model{ID: floatingIpID}}
