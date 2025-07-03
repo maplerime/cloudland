@@ -27,6 +27,8 @@ type FloatingIp struct {
 	Type       string   `gorm:"type:varchar(64)"`
 	GroupID    int64    `gorm:"index"`
 	Group      *IpGroup `gorm:"foreignkey:GroupID" json:"-" gorm:"-"`
+	SubnetID   int64
+	Subnet     *Subnet `gorm:"foreignkey:SubnetID"`
 }
 
 func init() {
