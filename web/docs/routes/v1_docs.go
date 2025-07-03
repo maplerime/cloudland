@@ -1108,85 +1108,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/instances/id/interfaces/{interface_id}": {
-            "get": {
-                "description": "get a interface",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Network"
-                ],
-                "summary": "get a interface",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.InterfaceResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "description": "patch a interface",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Network"
-                ],
-                "summary": "patch a interface",
-                "parameters": [
-                    {
-                        "description": "Interface patch payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.InterfacePatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.InterfaceResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/instances/{id}": {
             "get": {
                 "description": "get a instance",
@@ -1297,6 +1218,85 @@ const docTemplatev1 = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/interfaces/{interface_id}": {
+            "get": {
+                "description": "get a interface",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "get a interface",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.InterfaceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a interface",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "patch a interface",
+                "parameters": [
+                    {
+                        "description": "Interface patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InterfacePatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.InterfaceResponse"
                         }
                     },
                     "400": {
@@ -3467,6 +3467,9 @@ const docTemplatev1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4754,6 +4757,9 @@ const docTemplatev1 = `{
                 },
                 "gateway": {
                     "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "id": {
                     "type": "string"

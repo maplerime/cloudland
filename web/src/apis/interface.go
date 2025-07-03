@@ -86,7 +86,7 @@ type InterfacePatchPayload struct {
 // @Success 200 {object} InterfaceResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instances/id/interfaces/{interface_id} [get]
+// @Router /instances/{id}/interfaces/{interface_id} [get]
 func (v *InterfaceAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
@@ -200,7 +200,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 // @Success 200 {object} InterfaceResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instances/id/interfaces/{interface_id} [patch]
+// @Router /instances/{id}/interfaces/{interface_id} [patch]
 func (v *InterfaceAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")

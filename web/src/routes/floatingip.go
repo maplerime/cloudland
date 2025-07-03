@@ -62,6 +62,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		fip.FipAddress = fipIface.Address.Address
 		fip.IPAddress = strings.Split(fip.FipAddress, "/")[0]
 		fip.Interface = fipIface
+		fip.SubnetID = fipIface.Address.Subnet.ID
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
 				logger.Error("Execute floating ip failed", err)
