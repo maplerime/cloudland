@@ -44,6 +44,7 @@ type Image struct {
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
 	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	RescueImage           int64     `gorm:"default:0"`
 }
 
 func init() {
