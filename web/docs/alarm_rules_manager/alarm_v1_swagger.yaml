@@ -133,6 +133,8 @@ definitions:
     properties:
       created_at:
         type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
       id:
         type: string
       ip_address:
@@ -1017,6 +1019,8 @@ definitions:
         type: string
       gateway:
         type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
       id:
         type: string
       name:
@@ -2323,6 +2327,58 @@ paths:
       summary: patch a instance
       tags:
       - Compute
+  /instances/{id}/interfaces/{interface_id}:
+    get:
+      consumes:
+      - application/json
+      description: get a interface
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a interface
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a interface
+      parameters:
+      - description: Interface patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InterfacePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a interface
+      tags:
+      - Network
   /instances/{id}/reinstall:
     post:
       consumes:
@@ -2389,58 +2445,6 @@ paths:
       summary: set user password for a instance
       tags:
       - Compute
-  /instances/id/interfaces/{interface_id}:
-    get:
-      consumes:
-      - application/json
-      description: get a interface
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.InterfaceResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: get a interface
-      tags:
-      - Network
-    patch:
-      consumes:
-      - application/json
-      description: patch a interface
-      parameters:
-      - description: Interface patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.InterfacePatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.InterfaceResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch a interface
-      tags:
-      - Network
   /ip_groups:
     get:
       consumes:
