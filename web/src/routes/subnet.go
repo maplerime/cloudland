@@ -494,28 +494,26 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		logger.Error("Database delete subnet failed, %v", err)
 		return
 	}
-	//delete ip address
+	// delete ip address
 	err = db.Where("subnet_id = ?", subnet.ID).Delete(model.Address{}).Error
 	if err != nil {
 		logger.Error("Database delete ip address failed, %v", err)
 		return
 	}
-	//delete floatingip
+	// delete floatingip
 	var floatingIps []*model.FloatingIp
 	err = db.Where("subnet_id = ?", subnet.ID).Find(&floatingIps).Error
 	if err != nil {
 		logger.Error("Database query floatingip failed, %v", err)
 		return
 	}
-
 	for _, floatingIp := range floatingIps {
-		err = floatingIpAdmin.Delete(ctx, floatingIp)
+		err = floatingIpAdmin.DeallocateFloatingIp(ctx, floatingIp.ID)
 		if err != nil {
-			logger.Error("Failed to delete floatingip %d, %v", floatingIp.ID, err)
+			logger.Error("Failed to deallocate floatingip %d, %v", floatingIp.ID, err)
 			return
 		}
 	}
-
 	if subnet.RouterID > 0 {
 		err = clearRouting(ctx, subnet.RouterID, subnet)
 		if err != nil {
