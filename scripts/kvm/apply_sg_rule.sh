@@ -11,7 +11,6 @@ action='-I'
 [ "$act" = "delete" ] && action='-D'
 
 chain_in=secgroup-in-$vnic
-chain_as=secgroup-as-$vnic
 chain_out=secgroup-out-$vnic
 
 function allow_ipv4()

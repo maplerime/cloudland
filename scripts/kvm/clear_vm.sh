@@ -17,8 +17,6 @@ count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)
     ./clear_sg_chain.sh $vif_dev
-    meta_file="$async_job_dir/$vif_deve"
-    [ -f "$meta_file" ] && rm -f "$meta_file"
 done
 ./clear_local_router.sh $router
 
