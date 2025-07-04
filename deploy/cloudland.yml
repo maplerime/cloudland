@@ -88,3 +88,16 @@
         path: /tmp/.ssh/
         state: absent
   tags: [ssh_key]
+
+# deploy metering for prometheus server
+- name: metering prometheus config
+  hosts: prometheus
+  become: yes
+  roles:
+    - { role: metering_prometheus, tags: [metering_prometheus] }
+
+# deploy metering for hyper nodes
+- name: install metering for hyper
+  hosts: hyper
+  roles:
+    - {role: metering_hyper, become: yes, tags: [metering]}

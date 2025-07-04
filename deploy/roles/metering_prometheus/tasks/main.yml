@@ -1,0 +1,26 @@
+- name: Ensure remote_write for billing metrics is present
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - remote_write for billing"
+    insertafter: '^global:'
+    block: |
+      remote_write:
+        - url: "http://{{ metering_server_ip | default('localhost') }}:8429/api/v1/write"
+          tls_config:
+            insecure_skip_verify: true
+          queue_config:
+            batch_send_deadline: 5m
+            max_samples_per_send: 10000
+            max_shards: 1
+          write_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|wds_volume_size_bytes'
+              action: keep
+
+- name: Restart prometheus after config change
+  delegate_to: "{{ prometheus_server_ip }}"
+  systemd:
+    name: prometheus
+    state: restarted

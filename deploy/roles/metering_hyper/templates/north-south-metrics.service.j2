@@ -1,0 +1,13 @@
+[Unit]
+Description=Generate North-South Traffic Metrics
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/cloudland/scripts/metering/generate_north_south_metrics.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

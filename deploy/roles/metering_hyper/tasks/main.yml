@@ -1,0 +1,117 @@
+- name: Copy north-south traffic metrics collection script
+  copy:
+    src: generate_north_south_metrics.sh
+    dest: /opt/cloudland/scripts/metering/generate_north_south_metrics.sh
+    mode: 0755
+    owner: root
+    group: root
+  tags: [metering_hyper]
+
+- name: Deploy systemd service for north-south metrics
+  template:
+    src: north-south-metrics.service.j2
+    dest: /etc/systemd/system/north-south-metrics.service
+    mode: 0644
+  tags: [metering_hyper]
+
+- name: Deploy systemd timer for north-south metrics
+  template:
+    src: north-south-metrics.timer.j2
+    dest: /etc/systemd/system/north-south-metrics.timer
+    mode: 0644
+  tags: [metering_hyper]
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  tags: [metering_hyper]
+
+- name: Enable and start north-south-metrics.timer
+  systemd:
+    name: north-south-metrics.timer
+    enabled: yes
+    state: started
+  tags: [metering_hyper]
+
+- name: Check north-south-metrics.timer status
+  systemd:
+    name: north-south-metrics.timer
+  register: timer_status
+
+- name: Check north-south-metrics.service status
+  systemd:
+    name: north-south-metrics.service
+  register: service_status
+
+- name: Show timer and service status
+  debug:
+    msg: "Timer active: {{ timer_status.status.ActiveState }}, Service last result: {{ service_status.status.Result }}"
+
+- name: Set vmagent_host variable
+  set_fact:
+    vmagent_host: "{{ management_virtual_ip | default(hostvars[groups['cland'][0]]['ansible_host'] | default('localhost')) }}"
+
+- name: Copy volume size metrics collection script
+  copy:
+    src: generate_volume_size_metrics.sh
+    dest: /opt/cloudland/scripts/metering/generate_volume_size_metrics.sh
+    mode: 0755
+    owner: root
+    group: root
+  tags: [metering_hyper]
+
+- name: Deploy systemd service for volume size metrics
+  template:
+    src: volume-size-metrics.service.j2
+    dest: /etc/systemd/system/volume-size-metrics.service
+    mode: 0644
+  tags: [metering_hyper]
+
+- name: Deploy systemd timer for volume size metrics
+  template:
+    src: volume-size-metrics.timer.j2
+    dest: /etc/systemd/system/volume-size-metrics.timer
+    mode: 0644
+  tags: [metering_hyper]
+
+- name: Reload systemd daemon (for volume size metrics)
+  systemd:
+    daemon_reload: yes
+  tags: [metering_hyper]
+
+- name: Enable and start volume-size-metrics.timer
+  systemd:
+    name: volume-size-metrics.timer
+    enabled: yes
+    state: started
+  tags: [metering_hyper]
+
+- name: Ensure remote_write for billing metrics is present
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - remote_write for billing"
+    block: |
+      remote_write:
+        - url: "http://{{ vmagent_host }}:443/api/v1/meter/vmagnt"
+          write_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'libvirt_domain_info_state|domain_north_south_.*|libvirt_domain_info_vcpu|libvirt_domain_info_memory_maximum_bytes|libvirt_domain_block_stats_capacity_bytes|wds_volume_size_bytes'
+              action: keep
+  notify: Reload prometheus
+
+- name: Check volume-size-metrics.timer status
+  systemd:
+    name: volume-size-metrics.timer
+  register: volume_timer_status
+  tags: [metering_hyper]
+
+- name: Check volume-size-metrics.service status
+  systemd:
+    name: volume-size-metrics.service
+  register: volume_service_status
+  tags: [metering_hyper]
+
+- name: Show volume size metrics timer and service status
+  debug:
+    msg: "Timer active: {{ volume_timer_status.status.ActiveState }}, Service last result: {{ volume_service_status.status.Result }}"
+  tags: [metering_hyper]
