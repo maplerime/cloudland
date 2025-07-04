@@ -19,3 +19,13 @@ else
     virsh detach-interface $vm_ID bridge --mac $vm_mac --config
 fi
 ./clear_sg_chain.sh $nic_name
+
+meta_file="$async_job_dir/$nic_name"
+# build item to delete
+del_line="vm_ip=$vm_ip floating_ip=$floating_ip vm_br=$vm_br router=$router"
+if [ -f "$meta_file" ]; then
+    # delete item
+    grep -vF -- "$del_line" "$meta_file" > "${meta_file}.tmp" && mv "${meta_file}.tmp" "$meta_file"
+    # delete file if empty
+    [ ! -s "$meta_file" ] && rm -f "$meta_file"
+fi

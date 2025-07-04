@@ -67,7 +67,7 @@ func Authorize() gin.HandlerFunc {
 		if realOrg == "" {
 			realOrg = realUser
 		}
-		org, err := orgAdmin.GetOrgByName(realOrg)
+		org, err := orgAdmin.GetOrgByName(c.Request.Context(), realOrg)
 		if err != nil {
 			ErrorResponse(c, http.StatusBadRequest, "Invalid resource org", err)
 			c.Abort()

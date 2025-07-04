@@ -66,19 +66,21 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 			err = nil
 			continue
 		}
-		control := fmt.Sprintf("inter=%d", instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/reapply_secgroup.sh '%s' '%s' '%t'<<EOF\n%s\nEOF", iface.Address.Address, iface.MacAddr, iface.AllowSpoofing, jsonData)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Reapply security groups execution failed, %v", err)
-			return
+		if iface.Address != nil {
+			control := fmt.Sprintf("inter=%d", instance.Hyper)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/reapply_secgroup.sh '%s' '%s' '%t'<<EOF\n%s\nEOF", iface.Address.Address, iface.MacAddr, iface.AllowSpoofing, jsonData)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Reapply security groups execution failed, %v", err)
+				return
+			}
 		}
 	}
 	return
 }
 
 func (a *SecruleAdmin) Update(ctx context.Context, id int64, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	//secrule = &model.SecurityRule{Model: model.Model{ID: id}}
 	secrules := &model.SecurityRule{Model: model.Model{ID: id}}
 	err = db.Take(secrules).Error
@@ -259,7 +261,7 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

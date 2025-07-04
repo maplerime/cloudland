@@ -234,7 +234,7 @@ func (v *ImageAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, images, err := imageAdmin.List(int64(offset), int64(limit), "-created_at", queryStr)
+	total, images, err := imageAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
 		logger.Errorf("Failed to list images %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list images", err)

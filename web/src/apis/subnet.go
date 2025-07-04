@@ -31,6 +31,8 @@ type SubnetResponse struct {
 	Network    string             `json:"network"`
 	Netmask    string             `json:"netmask"`
 	Gateway    string             `json:"gateway"`
+	Start      string             `json:"start"`
+	End        string             `json:"end"`
 	NameServer string             `json:"dns,omitempty"`
 	VPC        *ResourceReference `json:"vpc,omitempty"`
 	Group      *ResourceReference `json:"group,omitempty"`
@@ -40,8 +42,9 @@ type SubnetResponse struct {
 
 type SiteSubnetInfo struct {
 	*ResourceReference
-	Network string `json:"network"`
-	Gateway string `json:"gateway"`
+	Network string         `json:"network"`
+	Gateway string         `json:"gateway"`
+	Group   *BaseReference `json:"group,omitempty"`
 }
 
 type SubnetListResponse struct {
@@ -63,7 +66,7 @@ type SubnetPayload struct {
 	VPC         *BaseReference `json:"vpc" binding:"omitempty"`
 	Group       *BaseReference `json:"group" binding:"omitempty"`
 	Vlan        int            `json:"vlan" binding:"omitempty,gte=1,lte=16777215"`
-	Type        SubnetType     `json:"type" binding:"omitempty,oneof=public internal"`
+	Type        SubnetType     `json:"type" binding:"omitempty"`
 }
 
 type SubnetPatchPayload struct {
@@ -152,7 +155,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	if payload.VPC == nil && payload.Type != Public {
+	if payload.VPC == nil && payload.Type == Internal {
 		ErrorResponse(c, http.StatusBadRequest, "VPC must be specified if network type not public", err)
 		return
 	}
@@ -204,7 +207,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 }
 
 func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet) (subnetResp *SubnetResponse, err error) {
-	owner := orgAdmin.GetOrgName(subnet.Owner)
+	owner := orgAdmin.GetOrgName(ctx, subnet.Owner)
 	subnetResp = &SubnetResponse{
 		ResourceReference: &ResourceReference{
 			ID:        subnet.UUID,
@@ -216,6 +219,8 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		Network:    subnet.Network,
 		Netmask:    subnet.Netmask,
 		Gateway:    subnet.Gateway,
+		Start:      subnet.Start,
+		End:        subnet.End,
 		NameServer: subnet.NameServer,
 		Type:       SubnetType(subnet.Type),
 	}

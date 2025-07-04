@@ -44,7 +44,7 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	volume = &model.Volume{Model: model.Model{ID: id}}
@@ -62,7 +62,7 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 }
 
 func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume *model.Volume, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	volume = &model.Volume{}
 	where := memberShip.GetWhere()
@@ -161,7 +161,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 }
 
 func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
@@ -293,7 +293,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 }
 
 func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	volume := &model.Volume{}
 	if err = db.Where("uuid = ?", uuID).Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
@@ -309,7 +309,7 @@ func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, quer
 
 func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

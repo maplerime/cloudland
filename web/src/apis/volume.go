@@ -274,7 +274,7 @@ func (v *VolumeAPI) List(c *gin.Context) {
 }
 
 func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume) (*VolumeResponse, error) {
-	owner := orgAdmin.GetOrgName(volume.Owner)
+	owner := orgAdmin.GetOrgName(ctx, volume.Owner)
 	volumeResp := &VolumeResponse{
 		ResourceReference: &ResourceReference{
 			ID:        volume.UUID,

@@ -48,6 +48,7 @@ func ClearSecondIps(ctx context.Context, args []string) (status string, err erro
 	}
 	mac := args[2]
 	osCode := args[3]
+	updateMeta := args[4]
 	var moreAddresses []string
 	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, primaryIface, 0)
 	if err != nil {
@@ -61,7 +62,7 @@ func ClearSecondIps(ctx context.Context, args []string) (status string, err erro
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/apply_second_ips.sh '%d' '%s' '%s' 'true'<<EOF\n%s\nEOF", instID, mac, osCode, moreAddrsJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/apply_second_ips.sh '%d' '%s' '%s' '%s'<<EOF\n%s\nEOF", instID, mac, osCode, updateMeta, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Applying second ips execution failed", err)

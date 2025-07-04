@@ -71,7 +71,7 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	data.Write([]byte(secret))
 	data.Read(tokenHash)
 	hashSecret := fmt.Sprintf("%x", tokenHash)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	console := &model.Console{
 		Instance:   instance.ID,
 		Type:       "vnc",
@@ -87,7 +87,7 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	return
 }
 
-func ResolveToken(tokenString string) (int, *MemberShip, error) {
+func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaim{}, func(token *jwt.Token) (interface{}, error) {
 		return SignedSeret, nil
 	})
@@ -98,9 +98,10 @@ func ResolveToken(tokenString string) (int, *MemberShip, error) {
 	if !ok || !token.Valid {
 		return 0, nil, errors.New("invalid token")
 	}
+	ctx, db := GetContextDB(ctx)
 	instanceID := claims.InstanceID
 	console := &model.Console{Instance: int64(instanceID)}
-	err = DB().Where(console).Take(console).Error
+	err = db.Where(console).Take(console).Error
 	if err != nil {
 		return 0, nil, err
 	}

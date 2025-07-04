@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../../cloudrc
 
-secgroup_taps=$(iptables -S | grep 'A secgroup-in-tap\|A secgroup-as-tap\|A secgroup-out-tap' | cut -d' ' -f2 | cut -d- -f3 | sort -u)
+secgroup_taps=$(iptables -S | grep 'tap.*physdev-is-bridged' | awk '{print $6}' | sort -u)
 instances=$(virsh list --all | grep inst- | awk '{print $2}')
 for instance in $instances; do
     instance_taps="$instance_taps "$(virsh dumpxml $instance | grep tap | cut -d= -f2 | tr -d "'/>")

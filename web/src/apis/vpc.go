@@ -152,7 +152,7 @@ func (v *VPCAPI) Create(c *gin.Context) {
 }
 
 func (v *VPCAPI) getVPCResponse(ctx context.Context, router *model.Router) (vpcResp *VPCResponse, err error) {
-	owner := orgAdmin.GetOrgName(router.Owner)
+	owner := orgAdmin.GetOrgName(ctx, router.Owner)
 	vpcResp = &VPCResponse{
 		ResourceReference: &ResourceReference{
 			ID:        router.UUID,

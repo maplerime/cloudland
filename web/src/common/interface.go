@@ -72,22 +72,55 @@ type VlanInfo struct {
 	MoreAddresses []string        `json:"more_addresses"`
 }
 
-func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
+func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *model.Interface) (vlanInfo *VlanInfo, err error) {
+	ctx, db := GetContextDB(ctx)
+	err = db.Model(iface).Related(&iface.SecurityGroups, "SecurityGroups").Error
+	if err != nil {
+		logger.Error("Get security groups for interface failed", err)
+		return
+	}
 	var securityData []*SecurityData
 	securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
 	if err != nil {
-		logger.Debug("DB failed to get security data, %v", err)
+		logger.Error("Get security data for interface failed", err)
 		return
 	}
-	var jsonData []byte
-	jsonData, err = json.Marshal(securityData)
+	var moreAddresses []string
+	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
 	if err != nil {
-		logger.Error("Failed to marshal security json data, %v", err)
+		logger.Errorf("Failed to get instance networks, %v", err)
 		return
 	}
 	subnet := iface.Address.Subnet
+	vlanInfo = &VlanInfo{
+		Device:        iface.Name,
+		Vlan:          subnet.Vlan,
+		Inbound:       iface.Inbound,
+		Outbound:      iface.Outbound,
+		AllowSpoofing: iface.AllowSpoofing,
+		Gateway:       subnet.Gateway,
+		Router:        subnet.RouterID,
+		IpAddr:        iface.Address.Address,
+		MacAddr:       iface.MacAddr,
+		SecRules:      securityData,
+		MoreAddresses: moreAddresses,
+	}
+	return
+}
+
+func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, updateMeta bool) (err error) {
+	vlanInfo, err := GetInterfaceInfo(ctx, instance, iface)
+	if err != nil {
+		logger.Error("Failed to get interface info", err)
+		return
+	}
+	jsonData, err := json.Marshal([]*VlanInfo{vlanInfo})
+	if err != nil {
+		logger.Error("Failed to marshal instance json data", err)
+		return
+	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/apply_vm_nic.sh '%d' '%d' '%s' '%s' '%s' '%d' '%d' '%d' '%t'<<EOF\n%s\nEOF", iface.Instance, subnet.Vlan, iface.Address.Address, iface.MacAddr, subnet.Gateway, subnet.RouterID, iface.Inbound, iface.Outbound, iface.AllowSpoofing, jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), updateMeta, jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Update vm nic command execution failed", err)
@@ -97,8 +130,7 @@ func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.
 }
 
 func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, ipaddr, addrType string) (address *model.Address, err error) {
-	var db *gorm.DB
-	ctx, db = GetContextDB(ctx)
+	ctx, db := GetContextDB(ctx)
 	address = &model.Address{}
 	if ipaddr == "" {
 		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and address != ?", subnet.ID, false, subnet.Gateway).Take(address).Error
@@ -156,6 +188,98 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
+func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
+	if instance.RouterID > 0 {
+		logger.Error("VPC instance is not allowed to set public addresses", err)
+		err = fmt.Errorf("VPC instance is not allowed to set public addresses")
+		return
+	}
+	ctx, db := GetContextDB(ctx)
+	primaryIface = iface
+	if primaryIface == nil {
+		primaryIface = floatingIps[0].Interface
+	}
+	primarySubnet = primaryIface.Address.Subnet
+	secondIpsLength := len(primaryIface.SecondAddresses)
+	floatingIpsLength := len(floatingIps)
+	cnt := floatingIpsLength - 1 - secondIpsLength
+	if cnt >= 0 {
+		for i, fip := range floatingIps {
+			iface := fip.Interface
+			if i == 0 {
+				if primaryIface.Instance > 0 {
+					continue
+				}
+				primaryIface.Instance = instance.ID
+				primaryIface.Name = "eth0"
+				primaryIface.PrimaryIf = true
+				err = db.Model(primaryIface).Updates(primaryIface).Error
+				if err != nil {
+					logger.Errorf("Failed to update interface, %v", err)
+					return
+				}
+				fip.InstanceID = instance.ID
+				fip.IntAddress = primaryIface.Address.Address
+				fip.Type = string(PublicReserved)
+				fip.Instance = nil
+				err = db.Model(fip).Updates(fip).Error
+				if err != nil {
+					logger.Errorf("Failed to update public ip, %v", err)
+					return
+				}
+			} else {
+				secondAddr := fip.Interface.Address
+				secondAddr.Type = "second"
+				secondAddr.SecondInterface = primaryIface.ID
+				err = db.Model(secondAddr).Updates(secondAddr).Error
+				if err != nil {
+					logger.Errorf("Failed to update public ip, %v", err)
+					return
+				}
+				primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
+				fip.InstanceID = instance.ID
+				fip.IntAddress = iface.Address.Address
+				fip.Type = string(PublicReserved)
+				fip.Instance = nil
+				err = db.Model(fip).Updates(fip).Error
+				if err != nil {
+					logger.Errorf("Failed to update public ip, %v", err)
+					return
+				}
+			}
+			fip.Instance = instance
+		}
+	} else if cnt < 0 {
+		for i := secondIpsLength - 1; i > floatingIpsLength-2; i-- {
+			address := primaryIface.SecondAddresses[i]
+			err = db.Model(address).Updates(map[string]interface{}{"second_interface": 0}).Error
+			if err != nil {
+				logger.Error("Update interface ", err)
+				return
+			}
+			if address.Interface > 0 {
+				iface := &model.Interface{Model: model.Model{ID: address.Interface}}
+				if err = db.Model(iface).Take(iface).Error; err != nil {
+					logger.Errorf("Failed to query interface, %v", err)
+					return
+				}
+				if iface.FloatingIp > 0 {
+					floatingIp := &model.FloatingIp{Model: model.Model{ID: iface.FloatingIp}}
+					err = db.Model(floatingIp).Updates(map[string]interface{}{
+						"instance_id": 0,
+						"int_address": "",
+						"type":        string(PublicFloating)}).Error
+					if err != nil {
+						logger.Error("Update interface ", err)
+						return
+					}
+				}
+			}
+		}
+	}
+	return
+}
+
 func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	primary := false
@@ -206,6 +330,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		if err2 != nil {
 			logger.Error("Failed to delete interface, ", err)
 		}
+		iface = nil
 		return
 	}
 	return
@@ -340,11 +465,6 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		moreAddresses = append(moreAddresses, addr.Address)
 	}
 	for _, site := range iface.SiteSubnets {
-		if site.Vlan != subnet.Vlan {
-			err = fmt.Errorf("Site subnets and primary subnet must be with same vlan")
-			logger.Errorf("Site subnets and primary subnet must be with same vlan")
-			return
-		}
 		siteAddrs := []*model.Address{}
 		err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
 		if err != nil {

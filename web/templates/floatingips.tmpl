@@ -27,11 +27,14 @@
 									{{ end }}
 									<th>{{.i18n.Tr "UUID"}}</th>
 									<th>{{.i18n.Tr "Name"}}</th>
+									<th>{{.i18n.Tr "IpGroup"}}</th>
 			                        <th>{{.i18n.Tr "FloatingIP"}}</th>
 			                        <th>{{.i18n.Tr "InternalIP"}}</th>
+			                        <th>{{.i18n.Tr "Type"}}</th>
 			                        <th>{{.i18n.Tr "Inbound Bandwidth"}}</th>
 			                        <th>{{.i18n.Tr "Outbound Bandwidth"}}</th>
 			                        <th>{{.i18n.Tr "Instance"}}</th>
+									<th>{{.i18n.Tr "Edit"}}</th>
                                     <th>{{.i18n.Tr "Delete"}}</th>
 		                        </tr>
 	                        </thead>
@@ -44,15 +47,18 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 									<td>{{.Name}}</td>
+									<td>{{if .Group}}{{.Group.Name}}{{end}}</td>
 			                        <td>{{.FipAddress}}</td>
 			                        <td>{{.IntAddress}}</td>
+			                        <td>{{.Type}}</td>
 			                        <td>{{.Inbound}}</td>
 			                        <td>{{.Outbound}}</td>
 			                        <td>
 						{{ if .Instance }}
 						{{.Instance.Hostname}}
 						{{ end }}
-						</td>
+						</td>						
+                                    <td><a href="{{$Link}}/{{.ID}}"><i class="dark purple pencil alternate icon"></i></a></td>
                                     <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
