@@ -1735,6 +1735,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	if primaryIP != "" {
 		ipAddr = strings.Split(primaryIP, "/")[0]
 	}
+	vlan := int64(0)
 	primaryMac := c.QueryTrim("primarymac")
 	var primarySubnets []*model.Subnet
 	primary := c.QueryTrim("primary")
@@ -1752,6 +1753,12 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			logger.Error("Get primary subnet failed", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if vlan == 0 {
+			vlan = pSubnet.Vlan
+		} else if vlan != pSubnet.Vlan {
+			err = fmt.Errorf("All primary subnets must be in the same vlan")
 			return
 		}
 		primarySubnets = append(primarySubnets, pSubnet)
@@ -1772,6 +1779,12 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			logger.Error("Get public ip failed", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if vlan == 0 {
+			vlan = floatingIp.Interface.Address.Subnet.Vlan
+		} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {
+			err = fmt.Errorf("All public IPs must be from the same vlan")
 			return
 		}
 		publicAddresses = append(publicAddresses, floatingIp)
@@ -1811,6 +1824,10 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			logger.Error("Site subnet is not available", err)
 			c.Data["ErrorMsg"] = "Site subnet is not available"
 			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if vlan != site.Vlan {
+			err = fmt.Errorf("All subnets including sites must be in the same vlan")
 			return
 		}
 		siteSubnets = append(siteSubnets, site)
