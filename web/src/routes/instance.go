@@ -1759,7 +1759,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			vlan = pSubnet.Vlan
 		} else if vlan != pSubnet.Vlan {
 			logger.Error("All subnets including sites must be in the same vlan")
-			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan")
+			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan"
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
@@ -1787,7 +1787,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			vlan = floatingIp.Interface.Address.Subnet.Vlan
 		} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {
 			logger.Error("All public ips must be in the same vlan")
-			c.Data["ErrorMsg"] = "All public ips must be in the same vlan")
+			c.Data["ErrorMsg"] = "All public ips must be in the same vlan"
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
@@ -1832,7 +1832,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		}
 		if vlan != site.Vlan {
 			logger.Error("All subnets including sites must be in the same vlan")
-			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan")
+			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan"
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
