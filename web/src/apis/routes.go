@@ -110,8 +110,8 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/floating_ips/:id", floatingIpAPI.Get)
 		authGroup.DELETE("/api/v1/floating_ips/:id", floatingIpAPI.Delete)
 		authGroup.PATCH("/api/v1/floating_ips/:id", floatingIpAPI.Patch)
-		authGroup.POST("/api/v1/floating_ips/batch_attach", floatingIpAPI.BatchAttach)
-		authGroup.POST("/api/v1/floating_ips/batch_detach", floatingIpAPI.BatchDetach)
+		authGroup.POST("/api/v1/floating_ips/site_attach", floatingIpAPI.SiteAttach)
+		authGroup.POST("/api/v1/floating_ips/site_detach", floatingIpAPI.SiteDetach)
 
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)

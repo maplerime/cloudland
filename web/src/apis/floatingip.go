@@ -431,7 +431,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /floating_ips/batch_attach [post]
-func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
+func (v *FloatingIpAPI) SiteAttach(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Debugf("Batch attaching floating ips")
 
@@ -589,7 +589,7 @@ func (v *FloatingIpAPI) BatchAttach(c *gin.Context) {
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /floating_ips/batch_detach [post]
-func (v *FloatingIpAPI) BatchDetach(c *gin.Context) {
+func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Debugf("Batch detaching floating ips")
 
