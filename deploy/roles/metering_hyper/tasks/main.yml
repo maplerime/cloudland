@@ -1,0 +1,59 @@
+- name: Ensure /opt/cloudland/scripts/metering directory exists
+  file:
+    path: /opt/cloudland/scripts/metering
+    state: directory
+    mode: '0755'
+  tags: [metering_hyper]
+
+- name: Copy north-south traffic metrics collection script
+  copy:
+    src: generate_north_south_metrics.sh
+    dest: /opt/cloudland/scripts/metering/generate_north_south_metrics.sh
+    mode: 0755
+    owner: root
+    group: root
+  tags: [metering_hyper]
+
+- name: Deploy systemd service for north-south metrics
+  template:
+    src: north-south-metrics.service.j2
+    dest: /etc/systemd/system/north-south-metrics.service
+    mode: 0644
+  tags: [metering_hyper]
+
+- name: Deploy systemd timer for north-south metrics
+  template:
+    src: north-south-metrics.timer.j2
+    dest: /etc/systemd/system/north-south-metrics.timer
+    mode: 0644
+  tags: [metering_hyper]
+
+- name: Reload systemd daemon
+  systemd:
+    daemon_reload: yes
+  tags: [metering_hyper]
+
+- name: Enable and start north-south-metrics.timer
+  systemd:
+    name: north-south-metrics.timer
+    enabled: yes
+    state: started
+  tags: [metering_hyper]
+
+- name: Check north-south-metrics.timer status
+  systemd:
+    name: north-south-metrics.timer
+  register: timer_status
+
+- name: Check north-south-metrics.service status
+  systemd:
+    name: north-south-metrics.service
+  register: service_status
+
+- name: Show timer and service status
+  debug:
+    msg: "Timer active: {{ timer_status.status.ActiveState }}, Service last result: {{ service_status.status.Result }}"
+
+- name: Set vmagent_host variable
+  set_fact:
+    vmagent_host: "{{ management_virtual_ip | default(hostvars[groups['cland'][0]]['ansible_host'] | default('localhost')) }}"

@@ -192,6 +192,11 @@ func Register() (r *gin.Engine) {
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
 			authGroup.DELETE("/api/v1/node-alarm-rules/:uuid", alarmAPI.DeleteNodeAlarmRule)
 
+			// OpenMeter API routes
+			authGroup.GET("/api/v1/openmeter/metrics", openMeterAPI.QueryOpenMeterMetrics)
+			authGroup.GET("/api/v1/openmeter/metrics/:instance_id/:subject", openMeterAPI.QueryInstanceMetricsBySubject)
+			authGroup.GET("/api/v1/openmeter/subjects", openMeterAPI.GetAvailableSubjects)
+
 		}
 
 	}
