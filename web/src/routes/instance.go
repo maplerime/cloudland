@@ -1758,7 +1758,9 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		if vlan == 0 {
 			vlan = pSubnet.Vlan
 		} else if vlan != pSubnet.Vlan {
-			err = fmt.Errorf("All primary subnets must be in the same vlan")
+			logger.Error("All subnets including sites must be in the same vlan")
+			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan"
+			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
 		primarySubnets = append(primarySubnets, pSubnet)
@@ -1784,7 +1786,9 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		if vlan == 0 {
 			vlan = floatingIp.Interface.Address.Subnet.Vlan
 		} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {
-			err = fmt.Errorf("All public IPs must be from the same vlan")
+			logger.Error("All public ips must be in the same vlan")
+			c.Data["ErrorMsg"] = "All public ips must be in the same vlan"
+			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
 		publicAddresses = append(publicAddresses, floatingIp)
@@ -1827,7 +1831,9 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 		if vlan != site.Vlan {
-			err = fmt.Errorf("All subnets including sites must be in the same vlan")
+			logger.Error("All subnets including sites must be in the same vlan")
+			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan"
+			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
 		siteSubnets = append(siteSubnets, site)

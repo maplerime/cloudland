@@ -280,7 +280,7 @@
 			                        <td>
 						{{ if .FloatingIps }}
 							{{ range .FloatingIps }}
-								{{ if eq .Type "floating" }}
+								{{ if and (ne .Type "site") (ne .Type "native") (ne .Type "reserved") }}
 									public: {{.FipAddress }}<br>
 								{{ end }}
 							{{ end }}
