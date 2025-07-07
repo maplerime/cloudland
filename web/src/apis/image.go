@@ -53,7 +53,8 @@ type ImagePayload struct {
 	User         string `json:"user" binding:"required,min=2,max=32"`
 	InstanceUUID string `json:"instance_uuid"`
 	BootLoader   string `json:"boot_loader" binding:"required,oneof=bios uefi"`
-	// QAEnabled    bool   `json:"qa_enabled"`
+	IsRescue     bool   `json:"is_resque"`
+	RescueImage  *BaseReference      `json:"rescue_image" binding:"omitempty"`
 }
 
 type ImagePatchPayload struct {
@@ -166,8 +167,17 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input UUID", nil)
 		return
 	}
+	var rescueImage *model.Image
+	if payload.RescueImage != nil {
+		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
+		if err != nil {
+			logger.Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid rescue image", err)
+			return
+		}
+	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID, rescueImage)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

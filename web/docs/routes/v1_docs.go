@@ -1272,6 +1272,56 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/instances/{id}/rescue": {
+            "post": {
+                "description": "rescue a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "rescue a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance rescue payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceRescuePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/set_user_password": {
             "post": {
                 "description": "set user password for a instance",
@@ -3567,6 +3617,9 @@ const docTemplatev1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
+                "is_resque": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -3584,6 +3637,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "user": {
                     "type": "string",
@@ -3817,6 +3873,14 @@ const docTemplatev1 = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.InstanceRescuePayload": {
+            "type": "object",
+            "properties": {
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },

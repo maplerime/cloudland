@@ -258,6 +258,8 @@ definitions:
         type: string
       instance_uuid:
         type: string
+      is_resque:
+        type: boolean
       name:
         maxLength: 32
         minLength: 2
@@ -272,6 +274,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      rescue_image:
+        $ref: '#/definitions/common.BaseReference'
       user:
         maxLength: 32
         minLength: 2
@@ -442,6 +446,11 @@ definitions:
         type: integer
       password:
         type: string
+    type: object
+  apis.InstanceRescuePayload:
+    properties:
+      rescue_image:
+        $ref: '#/definitions/common.BaseReference'
     type: object
   apis.InstanceResponse:
     properties:
@@ -2159,6 +2168,39 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: reinstall a instance
+      tags:
+      - Compute
+  /instances/{id}/rescue:
+    post:
+      consumes:
+      - application/json
+      description: rescue a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance rescue payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceRescuePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: rescue a instance
       tags:
       - Compute
   /instances/{id}/set_user_password:
