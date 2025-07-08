@@ -37,14 +37,6 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 		return
 	}
 	for _, iface := range secgroup.Interfaces {
-		/*
-		err = secgroupAdmin.GetInterfaceSecgroups(ctx, iface)
-		if err != nil {
-			logger.Error("DB failed to get security data, %v", err)
-			err = nil
-			continue
-		}
-		*/
 		logger.Debugf("iface: %+v", iface)
 		instance := &model.Instance{Model: model.Model{ID: iface.Instance}}
 		err = db.Take(instance).Error
