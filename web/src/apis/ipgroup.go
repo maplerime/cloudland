@@ -260,7 +260,6 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		}
 	}
 
-	// 构建关联的subnets列表
 	var subnets []*BaseReference
 	for _, subnet := range ipGroup.Subnets {
 		subnets = append(subnets, &BaseReference{
@@ -269,7 +268,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		})
 	}
 
-	// 查询关联的floating ips
+	// Query associated floating ips
 	ctx, db := GetContextDB(ctx)
 	var floatingIps []*model.FloatingIp
 	err = db.Where("group_id = ?", ipGroup.ID).Find(&floatingIps).Error
@@ -278,7 +277,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		return
 	}
 
-	// 构建关联的floating ips列表
+	// Build associated floating ips list
 	var floatingIpRefs []*BaseReference
 	for _, fip := range floatingIps {
 		floatingIpRefs = append(floatingIpRefs, &BaseReference{
