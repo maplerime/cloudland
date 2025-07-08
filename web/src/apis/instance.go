@@ -350,8 +350,40 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 
 	err = instanceAdmin.Rescue(ctx, instance, rescueImage)
 	if err != nil {
-		logger.Error("Reinstall failed", err)
-		ErrorResponse(c, http.StatusBadRequest, "Reinstall failed", err)
+		logger.Error("Rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "Rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, nil)
+
+}
+
+// @Summary end rescue a instance
+// @Description end rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/end_rescue [post]
+func (v *InstanceAPI) EndRescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	err = instanceAdmin.EndRescue(ctx, instance)
+	if err != nil {
+		logger.Error("End rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "End rescue failed", err)
 		return
 	}
 

@@ -141,10 +141,10 @@ func Register() (r *gin.Engine) {
 		authGroup.PATCH("/api/v1/instances/:id", instanceAPI.Patch)
 
 		authGroup.POST("/api/v1/instances/:id/set_user_password", instanceAPI.SetUserPassword)
-
 		authGroup.POST("/api/v1/instances/:id/console", consoleAPI.Create)
-
 		authGroup.POST("/api/v1/instances/:id/reinstall", instanceAPI.Reinstall)
+		authGroup.POST("/api/v1/instances/:id/rescue", instanceAPI.Rescue)
+		authGroup.POST("/api/v1/instances/:id/end_rescue", instanceAPI.EndRescue)
 
 		authGroup.GET("/api/v1/instances/:id/interfaces", interfaceAPI.List)
 		authGroup.POST("/api/v1/instances/:id/interfaces", interfaceAPI.Create)
