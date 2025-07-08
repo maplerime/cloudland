@@ -45,11 +45,13 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 			err = nil
 			continue
 		}
-		err = ApplyInterface(ctx, instance, iface, false)
-		if err != nil {
-			logger.Error("DB failed to apply interface, %v", err)
-			err = nil
-			continue
+		if iface.Address != nil {
+			err = ApplyInterface(ctx, instance, iface, false)
+			if err != nil {
+				logger.Error("DB failed to apply interface, %v", err)
+				err = nil
+				continue
+			}
 		}
 	}
 	return
