@@ -205,12 +205,27 @@ definitions:
         type: string
       public_ip:
         type: string
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
       target_interface:
         $ref: '#/definitions/apis.TargetInterface'
       updated_at:
         type: string
+      vlan:
+        type: integer
       vpc:
         $ref: '#/definitions/common.BaseReference'
+    type: object
+  apis.FloatingIpWithVlan:
+    properties:
+      id:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      vlan:
+        type: integer
     type: object
   apis.HyperListResponse:
     properties:
@@ -691,7 +706,7 @@ definitions:
         $ref: '#/definitions/common.BaseReference'
       floating_ips:
         items:
-          $ref: '#/definitions/common.BaseReference'
+          $ref: '#/definitions/apis.FloatingIpWithVlan'
         type: array
       id:
         type: string
@@ -703,7 +718,7 @@ definitions:
         type: string
       subnets:
         items:
-          $ref: '#/definitions/common.BaseReference'
+          $ref: '#/definitions/apis.SubnetWithVlan'
         type: array
       type:
         type: string
@@ -1110,8 +1125,21 @@ definitions:
         $ref: '#/definitions/common.SubnetType'
       updated_at:
         type: string
+      vlan:
+        type: integer
       vpc:
         $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.SubnetWithVlan:
+    properties:
+      id:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      vlan:
+        type: integer
     type: object
   apis.TargetInterface:
     properties:

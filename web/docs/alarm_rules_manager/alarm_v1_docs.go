@@ -3632,14 +3632,36 @@ const docTemplatealarm_v1 = `{
                 "public_ip": {
                     "type": "string"
                 },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "target_interface": {
                     "$ref": "#/definitions/apis.TargetInterface"
                 },
                 "updated_at": {
                     "type": "string"
                 },
+                "vlan": {
+                    "type": "integer"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.FloatingIpWithVlan": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -4331,7 +4353,7 @@ const docTemplatealarm_v1 = `{
                 "floating_ips": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/common.BaseReference"
+                        "$ref": "#/definitions/apis.FloatingIpWithVlan"
                     }
                 },
                 "id": {
@@ -4349,7 +4371,7 @@ const docTemplatealarm_v1 = `{
                 "subnets": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/common.BaseReference"
+                        "$ref": "#/definitions/apis.SubnetWithVlan"
                     }
                 },
                 "type": {
@@ -4955,8 +4977,27 @@ const docTemplatealarm_v1 = `{
                 "updated_at": {
                     "type": "string"
                 },
+                "vlan": {
+                    "type": "integer"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
+        "apis.SubnetWithVlan": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },

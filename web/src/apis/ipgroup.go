@@ -28,11 +28,11 @@ type IpGroupAPI struct{}
 
 type IpGroupResponse struct {
 	*ResourceReference
-	Type        string           `json:"type"`
-	Dictionary  *BaseReference   `json:"dictionaries,omitempty"`
-	SubnetNames string           `json:"subnet_names"`
-	Subnets     []*BaseReference `json:"subnets,omitempty"`
-	FloatingIps []*BaseReference `json:"floating_ips,omitempty"`
+	Type        string                `json:"type"`
+	Dictionary  *BaseReference        `json:"dictionaries,omitempty"`
+	SubnetNames string                `json:"subnet_names"`
+	Subnets     []*SubnetWithVlan     `json:"subnets,omitempty"`
+	FloatingIps []*FloatingIpWithVlan `json:"floating_ips,omitempty"`
 }
 
 type IpGroupListResponse struct {
@@ -51,6 +51,16 @@ type IpGroupPatchPayload struct {
 	Name        string             `json:"name" binding:"omitempty,min=2,max=32"`
 	Type        string             `json:"type" binding:"omitempty,oneof=system resource"`
 	IpGroupType *ResourceReference `json:"dictionaries" binding:"omitempty"`
+}
+
+type SubnetWithVlan struct {
+	*BaseReference
+	Vlan int64 `json:"vlan"`
+}
+
+type FloatingIpWithVlan struct {
+	*BaseReference
+	Vlan int64 `json:"vlan"`
 }
 
 // @Summary get a ipGroup
@@ -260,29 +270,30 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		}
 	}
 
-	var subnets []*BaseReference
+	var subnets []*SubnetWithVlan
 	for _, subnet := range ipGroup.Subnets {
-		subnets = append(subnets, &BaseReference{
-			ID:   subnet.UUID,
-			Name: subnet.Name,
+		subnets = append(subnets, &SubnetWithVlan{
+			BaseReference: &BaseReference{
+				ID:   subnet.UUID,
+				Name: subnet.Name,
+			},
+			Vlan: subnet.Vlan,
 		})
 	}
 
-	// Query associated floating ips
-	ctx, db := GetContextDB(ctx)
-	var floatingIps []*model.FloatingIp
-	err = db.Where("group_id = ?", ipGroup.ID).Find(&floatingIps).Error
-	if err != nil {
-		logger.Errorf("Failed to query floating ips for ip group %s: %v", ipGroup.UUID, err)
-		return
-	}
-
 	// Build associated floating ips list
-	var floatingIpRefs []*BaseReference
-	for _, fip := range floatingIps {
-		floatingIpRefs = append(floatingIpRefs, &BaseReference{
-			ID:   fip.UUID,
-			Name: fip.Name,
+	var floatingIpRefs []*FloatingIpWithVlan
+	for _, fip := range ipGroup.FloatingIPs {
+		var vlan int64
+		if fip.Subnet != nil {
+			vlan = fip.Subnet.Vlan
+		}
+		floatingIpRefs = append(floatingIpRefs, &FloatingIpWithVlan{
+			BaseReference: &BaseReference{
+				ID:   fip.UUID,
+				Name: fip.Name,
+			},
+			Vlan: vlan,
 		})
 	}
 
