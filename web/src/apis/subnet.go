@@ -44,7 +44,10 @@ type SubnetResponse struct {
 type SiteSubnetInfo struct {
 	*ResourceReference
 	Network string         `json:"network"`
+	Netmask string         `json:"netmask"`
 	Gateway string         `json:"gateway"`
+	Start   string         `json:"start"`
+	End     string         `json:"end"`
 	Group   *BaseReference `json:"group,omitempty"`
 	Vlan    int64          `json:"vlan"`
 }

@@ -109,6 +109,8 @@ definitions:
     properties:
       created_at:
         type: string
+      fip_address:
+        type: string
       group:
         $ref: '#/definitions/common.BaseReference'
       id:
@@ -121,6 +123,8 @@ definitions:
         type: string
       updated_at:
         type: string
+      vlan:
+        type: integer
     type: object
   apis.FloatingIpListResponse:
     properties:
@@ -216,9 +220,13 @@ definitions:
       vpc:
         $ref: '#/definitions/common.BaseReference'
     type: object
-  apis.FloatingIpWithVlan:
+  apis.FloatingIpWithInfo:
     properties:
+      fip_address:
+        type: string
       id:
+        type: string
+      ip_address:
         type: string
       name:
         maxLength: 32
@@ -706,7 +714,7 @@ definitions:
         $ref: '#/definitions/common.BaseReference'
       floating_ips:
         items:
-          $ref: '#/definitions/apis.FloatingIpWithVlan'
+          $ref: '#/definitions/apis.FloatingIpWithInfo'
         type: array
       id:
         type: string
@@ -718,7 +726,7 @@ definitions:
         type: string
       subnets:
         items:
-          $ref: '#/definitions/apis.SubnetWithVlan'
+          $ref: '#/definitions/apis.SubnetWithInfo'
         type: array
       type:
         type: string
@@ -1031,6 +1039,8 @@ definitions:
     properties:
       created_at:
         type: string
+      end:
+        type: string
       gateway:
         type: string
       group:
@@ -1039,12 +1049,18 @@ definitions:
         type: string
       name:
         type: string
+      netmask:
+        type: string
       network:
         type: string
       owner:
         type: string
+      start:
+        type: string
       updated_at:
         type: string
+      vlan:
+        type: integer
     type: object
   apis.SubnetListResponse:
     properties:
@@ -1130,13 +1146,23 @@ definitions:
       vpc:
         $ref: '#/definitions/common.ResourceReference'
     type: object
-  apis.SubnetWithVlan:
+  apis.SubnetWithInfo:
     properties:
+      end:
+        type: string
+      gateway:
+        type: string
       id:
         type: string
       name:
         maxLength: 32
         minLength: 2
+        type: string
+      netmask:
+        type: string
+      network:
+        type: string
+      start:
         type: string
       vlan:
         type: integer
