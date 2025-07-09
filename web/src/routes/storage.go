@@ -53,25 +53,26 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 // InitStorages initializes the image storage records for a given image and pool
 func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image, pools []string) (storagesResp []*model.ImageStorage, err error) {
 	ctx, db := GetContextDB(ctx)
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	containsDefault := false
 	// valid pools
 	finalPools := make([]string, 0)
 	for _, poolID := range pools {
 		dictionary := &model.Dictionary{}
-		dictionary, err = dictionaryAdmin.Find(ctx, "storage_pool", poolID)
-		if err == nil {
-			finalPools = append(finalPools, dictionary.Value)
+		if poolID == defaultPoolID {
+			finalPools = append(finalPools, defaultPoolID)
+			containsDefault = true
+			continue
 		}
+		dictionary, err = dictionaryAdmin.Find(ctx, "storage_pool", poolID)
+		if err != nil {
+			logger.Errorf("Failed to find storage pool %s, %v", poolID, err)
+			return
+		}
+		finalPools = append(finalPools, dictionary.Value)
 	}
 
 	// set default
-	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-	containsDefault := false
-	for _, poolID := range finalPools {
-		if poolID == defaultPoolID {
-			containsDefault = true
-			break
-		}
-	}
 	if !containsDefault {
 		finalPools = append(finalPools, defaultPoolID)
 	}
