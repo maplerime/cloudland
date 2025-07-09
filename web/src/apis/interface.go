@@ -141,6 +141,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 						Name: floatingip.Name,
 					},
 					IpAddress: floatingip.FipAddress,
+					Vlan:      floatingip.Subnet.Vlan,
 				}
 				if floatingip.Group != nil {
 					floatingIps[i].Group = &BaseReference{
@@ -167,6 +168,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 						Name: site.Group.Name,
 					}
 				}
+				siteInfo.Vlan = site.Vlan
 				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, siteInfo)
 			}
 		}
