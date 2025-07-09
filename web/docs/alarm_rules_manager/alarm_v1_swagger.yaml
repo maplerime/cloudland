@@ -7,30 +7,6 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
-  apis.BatchAttachPayload:
-    properties:
-      instance:
-        $ref: '#/definitions/common.BaseID'
-      site_subnets:
-        items:
-          $ref: '#/definitions/common.BaseReference'
-        type: array
-    required:
-    - instance
-    - site_subnets
-    type: object
-  apis.BatchDetachPayload:
-    properties:
-      instance:
-        $ref: '#/definitions/common.BaseID'
-      site_subnets:
-        items:
-          $ref: '#/definitions/common.BaseReference'
-        type: array
-    required:
-    - instance
-    - site_subnets
-    type: object
   apis.ConsoleResponse:
     properties:
       console_url:
@@ -1013,6 +989,29 @@ definitions:
     - direction
     - protocol
     type: object
+  apis.SiteAttachPayload:
+    properties:
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    required:
+    - instance
+    - site_subnets
+    type: object
+  apis.SiteDetachPayload:
+    properties:
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    required:
+    - site_subnets
+    type: object
   apis.SiteSubnetInfo:
     properties:
       created_at:
@@ -1877,12 +1876,12 @@ paths:
       - application/json
       description: batch attach existing floating ips from site subnets to an instance
       parameters:
-      - description: Batch attach payload
+      - description: Site attach payload
         in: body
         name: message
         required: true
         schema:
-          $ref: '#/definitions/apis.BatchAttachPayload'
+          $ref: '#/definitions/apis.SiteAttachPayload'
       produces:
       - application/json
       responses:
@@ -1909,12 +1908,12 @@ paths:
       - application/json
       description: batch detach floating ips from site subnets from an instance
       parameters:
-      - description: Batch detach payload
+      - description: Site detach payload
         in: body
         name: message
         required: true
         schema:
-          $ref: '#/definitions/apis.BatchDetachPayload'
+          $ref: '#/definitions/apis.SiteDetachPayload'
       produces:
       - application/json
       responses:

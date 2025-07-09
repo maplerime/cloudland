@@ -448,12 +448,12 @@ const docTemplatev1 = `{
                 "summary": "batch attach floating ips",
                 "parameters": [
                     {
-                        "description": "Batch attach payload",
+                        "description": "Site attach payload",
                         "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/apis.BatchAttachPayload"
+                            "$ref": "#/definitions/apis.SiteAttachPayload"
                         }
                     }
                 ],
@@ -497,12 +497,12 @@ const docTemplatev1 = `{
                 "summary": "batch detach floating ips",
                 "parameters": [
                     {
-                        "description": "Batch detach payload",
+                        "description": "Site detach payload",
                         "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/apis.BatchDetachPayload"
+                            "$ref": "#/definitions/apis.SiteDetachPayload"
                         }
                     }
                 ],
@@ -3280,42 +3280,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.BatchAttachPayload": {
-            "type": "object",
-            "required": [
-                "instance",
-                "site_subnets"
-            ],
-            "properties": {
-                "instance": {
-                    "$ref": "#/definitions/common.BaseID"
-                },
-                "site_subnets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/common.BaseReference"
-                    }
-                }
-            }
-        },
-        "apis.BatchDetachPayload": {
-            "type": "object",
-            "required": [
-                "instance",
-                "site_subnets"
-            ],
-            "properties": {
-                "instance": {
-                    "$ref": "#/definitions/common.BaseID"
-                },
-                "site_subnets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/common.BaseReference"
-                    }
-                }
-            }
-        },
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
@@ -4746,6 +4710,41 @@ const docTemplatev1 = `{
                 },
                 "remote_cidr": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.SiteAttachPayload": {
+            "type": "object",
+            "required": [
+                "instance",
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
+        "apis.SiteDetachPayload": {
+            "type": "object",
+            "required": [
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 }
             }
         },
