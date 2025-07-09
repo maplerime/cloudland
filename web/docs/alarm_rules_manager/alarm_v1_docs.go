@@ -3706,7 +3706,44 @@ const docTemplatealarm_v1 = `{
             }
         },
         "apis.ImagePatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name",
+                "os_code",
+                "os_version",
+                "user"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "os_code": {
+                    "type": "string",
+                    "enum": [
+                        "linux",
+                        "windows",
+                        "other"
+                    ]
+                },
+                "os_version": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "pools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "user": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.ImagePayload": {
             "type": "object",
@@ -3930,6 +3967,9 @@ const docTemplatealarm_v1 = `{
                 },
                 "nested_enable": {
                     "type": "boolean"
+                },
+                "pool_id": {
+                    "type": "string"
                 },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"

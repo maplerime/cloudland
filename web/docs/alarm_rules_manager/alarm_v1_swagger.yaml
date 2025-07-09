@@ -254,6 +254,34 @@ definitions:
         type: integer
     type: object
   apis.ImagePatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      os_code:
+        enum:
+        - linux
+        - windows
+        - other
+        type: string
+      os_version:
+        maxLength: 32
+        minLength: 2
+        type: string
+      pools:
+        items:
+          type: string
+        type: array
+      user:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    - os_code
+    - os_version
+    - user
     type: object
   apis.ImagePayload:
     properties:
@@ -408,6 +436,8 @@ definitions:
         type: integer
       nested_enable:
         type: boolean
+      pool_id:
+        type: string
       primary_interface:
         $ref: '#/definitions/apis.InterfacePayload'
       root_passwd:
