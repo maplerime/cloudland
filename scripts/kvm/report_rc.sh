@@ -34,6 +34,19 @@ function probe_arp()
     cd -
 }
 
+function daily_job()
+{
+    daily_state_file=$run_dir/daily_state_file
+    current_date=$(date +%Y%m%d)
+    if [ -f "$daily_state_file" ]; then
+        last_run_date=$(cat $daily_state_file)
+    fi
+    if [ "$last_run_date" != "$current_date" ]; then
+        ./operation/cleanup_outdated_iptables.sh
+        echo "$current_date" >$daily_state_file
+    fi
+}
+
 function inst_status()
 {
     old_inst_list=$(cat $image_dir/old_inst_list 2>/dev/null)
@@ -176,5 +189,6 @@ sync_instance
 sync_delayed_job
 #probe_arp >/dev/null 2>&1
 inst_status
+daily_job
 #vlan_status
 #router_status

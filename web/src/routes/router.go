@@ -42,7 +42,7 @@ type RouterAdmin struct{}
 type RouterView struct{}
 
 func createRouterIface(ctx context.Context, rtype string, router *model.Router, owner int64) (iface *model.Interface, subnet *model.Subnet, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", rtype).Find(&subnets).Error
 	if err != nil {
@@ -109,7 +109,7 @@ func (a *RouterAdmin) Get(ctx context.Context, id int64) (router *model.Router, 
 		logger.Error("returning nil router")
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	router = &model.Router{Model: model.Model{ID: id}}
@@ -127,7 +127,7 @@ func (a *RouterAdmin) Get(ctx context.Context, id int64) (router *model.Router, 
 }
 
 func (a *RouterAdmin) GetRouterByUUID(ctx context.Context, uuID string) (router *model.Router, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	router = &model.Router{}
@@ -146,7 +146,7 @@ func (a *RouterAdmin) GetRouterByUUID(ctx context.Context, uuID string) (router 
 }
 
 func (a *RouterAdmin) GetRouterByName(ctx context.Context, name string) (router *model.Router, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	router = &model.Router{}
@@ -181,7 +181,7 @@ func (a *RouterAdmin) GetRouter(ctx context.Context, reference *BaseReference) (
 }
 
 func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, pubID int64) (router *model.Router, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	router = &model.Router{Model: model.Model{ID: id}}
 	if err = db.Find(router).Error; err != nil {
 		logger.Error("Failed to query router", err)
@@ -280,7 +280,7 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 
 func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, routers []*model.Router, err error) {
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

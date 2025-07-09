@@ -54,7 +54,7 @@ func (a *FlavorAdmin) Create(ctx context.Context, name string, cpu, memory, disk
 }
 
 func (a *FlavorAdmin) GetFlavorByName(ctx context.Context, name string) (flavor *model.Flavor, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	flavor = &model.Flavor{}
 	err = db.Where("name = ?", name).Take(flavor).Error
 	if err != nil {
@@ -70,7 +70,7 @@ func (a *FlavorAdmin) Get(ctx context.Context, id int64) (flavor *model.Flavor, 
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	flavor = &model.Flavor{Model: model.Model{ID: id}}
 	err = db.Take(flavor).Error
 	if err != nil {
@@ -112,8 +112,8 @@ func (a *FlavorAdmin) Delete(ctx context.Context, flavor *model.Flavor) (err err
 	return
 }
 
-func (a *FlavorAdmin) List(offset, limit int64, order, query string) (total int64, flavors []*model.Flavor, err error) {
-	db := DB()
+func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, flavors []*model.Flavor, err error) {
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -148,7 +148,7 @@ func (v *FlavorView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, flavors, err := flavorAdmin.List(offset, limit, order, query)
+	total, flavors, err := flavorAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

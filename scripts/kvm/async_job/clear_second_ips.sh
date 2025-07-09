@@ -13,16 +13,6 @@ more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
 [ $naddr -eq 0 ] && return
 
-vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
-chain_as=secgroup-as-$vnic
-i=0
-while [ $i -lt $naddrs ]; do
-    read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
-    read -d'\n' -r ip < <(ipcalc -nb $address | awk '/Address/ {print $2}')
-    apply_fw -D $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
-    let i=$i+1
-done
-
 if [ "$os_code" = "windows" ]; then
     for i in {1..120}; do
         virsh qemu-agent-command "$vm_ID" '{"execute":"guest-ping"}'
@@ -38,4 +28,3 @@ if [ "$os_code" = "windows" ]; then
         let i=$i+1
     done
 fi
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$os_code'"

@@ -49,7 +49,7 @@ func (a *DictionaryAdmin) Create(ctx context.Context, category string, name stri
 
 func (a *DictionaryAdmin) Get(ctx context.Context, id int64) (*model.Dictionary, error) {
 	logger.Debugf("Enter DictionaryAdmin.Get, id=%d", id)
-	db := dbs.DB()
+	ctx, db := GetContextDB(ctx)
 	dictionary := &model.Dictionary{}
 	if err := db.First(dictionary, id).Error; err != nil {
 		logger.Debugf("DictionaryAdmin.Get: failed to get dictionary, id=%d, err=%v", id, err)
@@ -62,7 +62,7 @@ func (a *DictionaryAdmin) Get(ctx context.Context, id int64) (*model.Dictionary,
 
 func (a *DictionaryAdmin) List(ctx context.Context, offset, limit int64, order string, query string) (total int64, dictionaries []*model.Dictionary, err error) {
 	logger.Debugf("Enter DictionaryAdmin.List, offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -87,7 +87,7 @@ func (a *DictionaryAdmin) List(ctx context.Context, offset, limit int64, order s
 }
 func (a *DictionaryAdmin) GetDictionaryByUUID(ctx context.Context, uuID string) (dictionaries *model.Dictionary, err error) {
 	logger.Debugf("Enter DictionaryAdmin.GetDictionaryByUUID, uuID=%s", uuID)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	dictionaries = &model.Dictionary{}
 	err = db.Where("uuid = ?", uuID).Take(dictionaries).Error
 	if err != nil {

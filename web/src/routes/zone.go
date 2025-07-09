@@ -28,8 +28,8 @@ var (
 type ZoneAdmin struct{}
 type ZoneView struct{}
 
-func (a *ZoneAdmin) List(offset, limit int64, order, query string) (total int64, zones []*model.Zone, err error) {
-	db := DB()
+func (a *ZoneAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, zones []*model.Zone, err error) {
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -54,7 +54,7 @@ func (a *ZoneAdmin) List(offset, limit int64, order, query string) (total int64,
 }
 
 func (a *ZoneAdmin) Get(ctx context.Context, id int64) (zone *model.Zone, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	zone = &model.Zone{ID: id}
 	if err = db.Take(zone).Error; err != nil {
 		logger.Error("Failed to query zone", err)
@@ -64,7 +64,7 @@ func (a *ZoneAdmin) Get(ctx context.Context, id int64) (zone *model.Zone, err er
 }
 
 func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model.Zone, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	zone = &model.Zone{}
 	err = db.Where("name = ?", name).Take(zone).Error
 	if err != nil {
@@ -93,7 +93,7 @@ func (v *ZoneView) List(c *macaron.Context, store session.Store) {
 		order = "hostid"
 	}
 	query := c.QueryTrim("q")
-	total, zones, err := zoneAdmin.List(offset, limit, order, query)
+	total, zones, err := zoneAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

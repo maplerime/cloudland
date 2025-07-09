@@ -14,23 +14,10 @@ more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
 [ $naddrs -eq 0 ] && exit 0 
 
-vnic=tap$(echo $mac | cut -d: -f4- | tr -d :)
-for i in {1..150}; do
-    bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
-    [ -n "$bridge" ] && break
-    sleep 2
-done
-chain_as=secgroup-as-$vnic
-for i in {1..60}; do
-    iptables -S $chain_as | grep $mac
-    [ $? -eq 0 ] && break
-    sleep 1
-done
 i=0
 while [ $i -lt $naddrs ]; do
     read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
     read -d'\n' -r ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
-    apply_fw -I $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
     second_addrs_json="$second_addrs_json,{
         \"type\": \"ipv4\",
         \"ip_address\": \"$ip\",
@@ -38,20 +25,11 @@ while [ $i -lt $naddrs ]; do
         \"link\": \"eth0\",
         \"id\": \"network0\"
     }"
-    ./send_spoof_arp.py $bridge $ip $mac
     let i=$i+1
 done
 
 if [ "$os_code" = "windows" ]; then
-    count=0
-    for i in {1..240}; do
-        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-ping"}'
-        if [ $? -eq 0 ]; then
-            let count=$count+1
-        fi
-	[ $count -gt 10 ] && break
-	sleep 5
-    done
+    wait_qemu_ping $ID 10
     i=0
     while [ $i -lt $naddrs ]; do
         read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)

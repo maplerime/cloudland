@@ -203,7 +203,7 @@ func (v *MigrationAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", err)
 		return
 	}
-	total, migrations, err := migrationAdmin.List(int64(offset), int64(limit), "-created_at", queryStr)
+	total, migrations, err := migrationAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
 		logger.Errorf("Failed to list migrations %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list migrations", err)

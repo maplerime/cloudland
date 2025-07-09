@@ -26,14 +26,13 @@ var ipGroupAdmin = &routes.IpGroupAdmin{}
 
 type IpGroupAPI struct{}
 
-type IpGroupType struct {
-	Type int `json:"type" binding:"omitempty"`
-}
-
 type IpGroupResponse struct {
 	*ResourceReference
-	Dictionary  *BaseReference `json:"dictionaries,omitempty"`
-	SubnetNames string         `json:"subnet_names"`
+	Type        string           `json:"type"`
+	Dictionary  *BaseReference   `json:"dictionaries,omitempty"`
+	SubnetNames string           `json:"subnet_names"`
+	Subnets     []*BaseReference `json:"subnets,omitempty"`
+	FloatingIps []*BaseReference `json:"floating_ips,omitempty"`
 }
 
 type IpGroupListResponse struct {
@@ -45,10 +44,12 @@ type IpGroupListResponse struct {
 
 type IpGroupPayload struct {
 	Name        string             `json:"name" binding:"required,min=2,max=32"`
-	IpGroupType *ResourceReference `json:"dictionaries" binding:"required"`
+	Type        string             `json:"type" binding:"required,oneof=system resource"`
+	IpGroupType *ResourceReference `json:"dictionaries" binding:"omitempty"`
 }
 type IpGroupPatchPayload struct {
 	Name        string             `json:"name" binding:"omitempty,min=2,max=32"`
+	Type        string             `json:"type" binding:"omitempty,oneof=system resource"`
 	IpGroupType *ResourceReference `json:"dictionaries" binding:"omitempty"`
 }
 
@@ -137,7 +138,7 @@ func (v *IpGroupAPI) Patch(c *gin.Context) {
 		ipGroupType = int(dictionaryEntry.ID)
 		logger.Debugf("IpGroupAPI.Patch: update type to %d", ipGroupType)
 	}
-	ipGroup, err = ipGroupAdmin.Update(ctx, ipGroup, name, ipGroupType)
+	ipGroup, err = ipGroupAdmin.Update(ctx, ipGroup, name, payload.Type, ipGroupType)
 	if err != nil {
 		logger.Errorf("IpGroupAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch ipGroup failed", err)
@@ -217,7 +218,15 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 		}
 		dictionaryEntry = dictionary
 	}
-	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, int(dictionaryEntry.ID))
+
+	var dictionaryID int
+	if dictionaryEntry != nil {
+		dictionaryID = int(dictionaryEntry.ID)
+	} else {
+		dictionaryID = 0
+	}
+
+	ipGroup, err := ipGroupAdmin.Create(ctx, payload.Name, payload.Type, dictionaryID)
 	if err != nil {
 		logger.Errorf("IpGroupAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create ipGroup", err)
@@ -234,7 +243,7 @@ func (v *IpGroupAPI) Create(c *gin.Context) {
 }
 
 func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGroup) (ipGroupResp *IpGroupResponse, err error) {
-	owner := orgAdmin.GetOrgName(ipGroup.Owner)
+	owner := orgAdmin.GetOrgName(ctx, ipGroup.Owner)
 
 	var names []string
 	for _, subnet := range ipGroup.Subnets {
@@ -251,6 +260,32 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		}
 	}
 
+	var subnets []*BaseReference
+	for _, subnet := range ipGroup.Subnets {
+		subnets = append(subnets, &BaseReference{
+			ID:   subnet.UUID,
+			Name: subnet.Name,
+		})
+	}
+
+	// Query associated floating ips
+	ctx, db := GetContextDB(ctx)
+	var floatingIps []*model.FloatingIp
+	err = db.Where("group_id = ?", ipGroup.ID).Find(&floatingIps).Error
+	if err != nil {
+		logger.Errorf("Failed to query floating ips for ip group %s: %v", ipGroup.UUID, err)
+		return
+	}
+
+	// Build associated floating ips list
+	var floatingIpRefs []*BaseReference
+	for _, fip := range floatingIps {
+		floatingIpRefs = append(floatingIpRefs, &BaseReference{
+			ID:   fip.UUID,
+			Name: fip.Name,
+		})
+	}
+
 	ipGroupResp = &IpGroupResponse{
 		ResourceReference: &ResourceReference{
 			ID:        ipGroup.UUID,
@@ -259,8 +294,11 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			CreatedAt: ipGroup.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: ipGroup.UpdatedAt.Format(TimeStringForMat),
 		},
+		Type:        ipGroup.Type,
 		Dictionary:  dictInfo,
 		SubnetNames: ipGroup.SubnetNames,
+		Subnets:     subnets,
+		FloatingIps: floatingIpRefs,
 	}
 	return
 }
@@ -312,7 +350,7 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 		}
 		logger.Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
 		logger.Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
-		queryStr = fmt.Sprintf("type_id = %d", dictionary.ID)
+		queryStr = fmt.Sprintf("type_id = %d AND type = '%s'", dictionary.ID, SystemIpGroupType)
 	}
 	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {

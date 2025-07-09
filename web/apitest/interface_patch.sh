@@ -3,28 +3,7 @@
 source tokenrc
 
 cat >tmp.json <<EOF
-{
-  "security_groups": [
-    {
-      "id": "382fb8d9-44ac-46e7-9660-867e289e182c"
-    }
-  ]
-}
+{"site_subnets": [{"id": ""}]}
 EOF
 
-instances=$(curl -k -XGET -H "Authorization: bearer $token" "$endpoint/api/v1/instances")
-length=$(jq '.instances | length' <<<$instances)
-i=0
-while [ $i -lt $length ]; do
-	instance_id=$(jq -r .instances[$i].id <<<$instances)
-	interfaces=$(curl -k -XGET -H "Authorization: bearer $token" "$endpoint/api/v1/instances/$instance_id/interfaces")
-	len=$(jq '.interfaces | length' <<<$interfaces)
-	j=0
-	while [ $j -lt $len ]; do
-		interface_id=$(jq -r .interfaces[$j].id <<<$interfaces)
-		echo interface_id: $interface_id
-		curl -k -XPATCH -H "Authorization: bearer $token" "$endpoint/api/v1/instances/$instance_id/interfaces/$interface_id" -d@./tmp.json | jq .
-		let j=$j+1
-	done
-	let i=$i+1
-done
+curl -k -v -XPATCH -H "Authorization: bearer $token" "$endpoint/api/v1/instances/b4b1302e-5cf6-46aa-a175-b34700514744/interfaces/b2f47aa2-3137-41a3-a67b-bd844596a0b3" -d@./tmp.json

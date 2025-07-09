@@ -27,7 +27,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 	hyperNode := instance.Hyper
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
-	if err != nil || hyper.Hostid < 0 {
+	if err != nil {
 		logger.Error("Failed to query hypervisor")
 		return
 	}
@@ -52,15 +52,35 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 		i++
 	}
 	for _, iface := range instance.Interfaces {
-		err = db.Model(&model.Address{}).Where("interface = ? or second_interface = ?", iface.ID, iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0, "second_interface": 0}).Error
+		if iface.FloatingIp == 0 {
+			err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
+			if err != nil {
+				logger.Error("Failed to Update addresses, %v", err)
+				return
+			}
+		}
+		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to Update addresses, %v", err)
 			return
 		}
-		err = db.Delete(iface).Error
+		err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error
 		if err != nil {
-			logger.Error("Failed to delete interface", err)
+			logger.Error("Failed to Update addresses, %v", err)
 			return
+		}
+		if iface.FloatingIp == 0 {
+			err = db.Delete(iface).Error
+			if err != nil {
+				logger.Error("Failed to delete interface", err)
+				return
+			}
+		} else {
+			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip"}).Error
+			if err != nil {
+				logger.Error("Failed to Update addresses, %v", err)
+				return
+			}
 		}
 		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
 			"interface": 0}).Error
@@ -68,14 +88,16 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 			logger.Error("Failed to update subnet", err)
 			return
 		}
-		spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
-		fdbJson, _ := json.Marshal(spreadRules)
-		control := "toall=" + hyperList
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Execute floating ip failed", err)
-			return
+		if instance.RouterID > 0 && hyperNode >= 0 {
+			spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
+			fdbJson, _ := json.Marshal(spreadRules)
+			control := "toall=" + hyperList
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Execute floating ip failed", err)
+				return
+			}
 		}
 	}
 	return

@@ -16,9 +16,9 @@ if [ "$force" != "true" ]; then
         [ -f $async_job_dir/$vnic ] && break
         sleep 1
     done
-    rm -f $async_job_dir/$vnic
 fi
 
+rm -f $async_job_dir/$vnic
 apply_fw -D FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j secgroup-chain
 apply_fw -D FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j secgroup-chain
 apply_fw -D secgroup-chain -m physdev --physdev-out $vnic --physdev-is-bridged -j $chain_in

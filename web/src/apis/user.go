@@ -308,13 +308,14 @@ func (v *UserAPI) LoginPost(c *gin.Context) {
 	if payload.Org != nil {
 		orgName = payload.Org.Name
 	}
-	org, err := orgAdmin.GetOrgByName(orgName)
+	ctx := c.Request.Context()
+	org, err := orgAdmin.GetOrgByName(ctx, orgName)
 	if err != nil {
 		logger.Errorf("Failed to get org: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid organization", err)
 		return
 	}
-	_, role, token, _, _, err := userAdmin.AccessToken(user.ID, username, orgName)
+	_, role, token, _, _, err := userAdmin.AccessToken(ctx, user.ID, username, orgName)
 	if err != nil {
 		logger.Errorf("Failed to get access token: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid organization with username", err)
