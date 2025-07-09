@@ -38,10 +38,10 @@ type IpGroupView struct{}
 func (a *IpGroupAdmin) Create(ctx context.Context, name string, typeName string, ipGroupType int) (ipGroup *model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.Create, name=%s,typeName=%s, ipGroupType=%d", name, typeName, ipGroupType)
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
-		logger.Error("Not authorized to create the IpGroup")
-		err = fmt.Errorf("Not authorized")
+		logger.Error("Not authorized for this operation")
+		err = fmt.Errorf("Not authorized for this operation")
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -52,6 +52,8 @@ func (a *IpGroupAdmin) Create(ctx context.Context, name string, typeName string,
 		logger.Debugf("Exit IpGroupAdmin.Create, ipGroup=%+v, err=%v", ipGroup, err)
 	}()
 	ipGroup = &model.IpGroup{
+		Model:  model.Model{Creater: memberShip.UserID},
+		Owner:  memberShip.OrgID,
 		Name:   name,
 		Type:   typeName,
 		TypeID: int64(ipGroupType),
@@ -122,8 +124,10 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGroup *model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByUUID, uuID=%s", uuID)
 	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
 	ipGroup = &model.IpGroup{}
-	err = db.Where("uuid = ?", uuID).Preload("Subnets").Preload("FloatingIPs").Preload("FloatingIPs.Subnet").Preload("DictionaryType").Take(ipGroup).Error
+	err = db.Where(where).Where("uuid = ?", uuID).Preload("Subnets").Preload("FloatingIPs").Preload("FloatingIPs.Subnet").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
 		logger.Errorf("Failed to query ipGroup, %v", err)
 		return
@@ -135,8 +139,10 @@ func (a *IpGroupAdmin) GetIpGroupByUUID(ctx context.Context, uuID string) (ipGro
 func (a *IpGroupAdmin) GetIpGroupByName(ctx context.Context, name string) (ipGroup *model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.GetIpGroupByName, name=%s", name)
 	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
 	ipGroup = &model.IpGroup{}
-	err = db.Where("name = ?", name).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
+	err = db.Where(where).Where("name = ?", name).Preload("Subnets").Preload("DictionaryType").Take(ipGroup).Error
 	if err != nil {
 		logger.Errorf("Failed to query ipGroup, %v", err)
 		return
@@ -168,13 +174,13 @@ func (a *IpGroupAdmin) Update(ctx context.Context, ipGroup *model.IpGroup, name 
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
-		logger.Debugf("Exit IpGroupAdmin.Update, ipGroup=%+v, err=%v", ipGroup, err)
+		logger.Debugf("Exit IpGroupAdmin.Update, id=%d, err=%v", ipGroup.ID, err)
 	}()
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
+	permit := memberShip.ValidateOwner(model.Writer, ipGroup.Owner)
 	if !permit {
-		logger.Error("Not authorized to update the IpGroup")
-		err = fmt.Errorf("Not Authorized")
+		logger.Error("Not authorized to update the ip group")
+		err = fmt.Errorf("Not authorized")
 		return
 	}
 	if name != "" && ipGroup.Name != name {
@@ -195,6 +201,8 @@ func (a *IpGroupAdmin) Update(ctx context.Context, ipGroup *model.IpGroup, name 
 func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, ipGroups []*model.IpGroup, err error) {
 	logger.Debugf("Enter IpGroupAdmin.List, offset=%d, limit=%d, order=%s, query=%s", offset, limit, order, query)
 	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
 	if limit == 0 {
 		limit = 16
 	}
@@ -202,12 +210,12 @@ func (a *IpGroupAdmin) List(ctx context.Context, offset, limit int64, order, que
 		order = "created_at"
 	}
 	ipGroups = []*model.IpGroup{}
-	if err = db.Model(&model.IpGroup{}).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.IpGroup{}).Where(where).Where(query).Count(&total).Error; err != nil {
 		logger.Errorf("IpGroupAdmin.List: count error, err=%v", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Subnets").Preload("DictionaryType").Preload("FloatingIPs").Preload("FloatingIPs.Subnet").Where(query).Find(&ipGroups).Error; err != nil {
+	if err = db.Preload("Subnets").Preload("DictionaryType").Preload("FloatingIPs").Preload("FloatingIPs.Subnet").Where(where).Where(query).Find(&ipGroups).Error; err != nil {
 		logger.Errorf("IpGroupAdmin.List: find error, err=%v", err)
 		return
 	}

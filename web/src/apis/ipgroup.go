@@ -31,8 +31,8 @@ type IpGroupResponse struct {
 	Type        string                `json:"type"`
 	Dictionary  *BaseReference        `json:"dictionaries,omitempty"`
 	SubnetNames string                `json:"subnet_names"`
-	Subnets     []*SubnetWithVlan     `json:"subnets,omitempty"`
-	FloatingIps []*FloatingIpWithVlan `json:"floating_ips,omitempty"`
+	Subnets     []*SubnetWithInfo     `json:"subnets,omitempty"`
+	FloatingIps []*FloatingIpWithInfo `json:"floating_ips,omitempty"`
 }
 
 type IpGroupListResponse struct {
@@ -53,14 +53,21 @@ type IpGroupPatchPayload struct {
 	IpGroupType *ResourceReference `json:"dictionaries" binding:"omitempty"`
 }
 
-type SubnetWithVlan struct {
+type SubnetWithInfo struct {
 	*BaseReference
-	Vlan int64 `json:"vlan"`
+	Vlan    int64  `json:"vlan"`
+	Network string `json:"network"`
+	Netmask string `json:"netmask"`
+	Gateway string `json:"gateway"`
+	Start   string `json:"start"`
+	End     string `json:"end"`
 }
 
-type FloatingIpWithVlan struct {
+type FloatingIpWithInfo struct {
 	*BaseReference
-	Vlan int64 `json:"vlan"`
+	Vlan       int64  `json:"vlan"`
+	IPAddress  string `json:"ip_address"`
+	FipAddress string `json:"fip_address"`
 }
 
 // @Summary get a ipGroup
@@ -270,30 +277,37 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		}
 	}
 
-	var subnets []*SubnetWithVlan
+	var subnets []*SubnetWithInfo
 	for _, subnet := range ipGroup.Subnets {
-		subnets = append(subnets, &SubnetWithVlan{
+		subnets = append(subnets, &SubnetWithInfo{
 			BaseReference: &BaseReference{
 				ID:   subnet.UUID,
 				Name: subnet.Name,
 			},
-			Vlan: subnet.Vlan,
+			Vlan:    subnet.Vlan,
+			Network: subnet.Network,
+			Netmask: subnet.Netmask,
+			Gateway: subnet.Gateway,
+			Start:   subnet.Start,
+			End:     subnet.End,
 		})
 	}
 
 	// Build associated floating ips list
-	var floatingIpRefs []*FloatingIpWithVlan
+	var floatingIpRefs []*FloatingIpWithInfo
 	for _, fip := range ipGroup.FloatingIPs {
 		var vlan int64
 		if fip.Subnet != nil {
 			vlan = fip.Subnet.Vlan
 		}
-		floatingIpRefs = append(floatingIpRefs, &FloatingIpWithVlan{
+		floatingIpRefs = append(floatingIpRefs, &FloatingIpWithInfo{
 			BaseReference: &BaseReference{
 				ID:   fip.UUID,
 				Name: fip.Name,
 			},
-			Vlan: vlan,
+			Vlan:       vlan,
+			IPAddress:  fip.IPAddress,
+			FipAddress: fip.FipAddress,
 		})
 	}
 

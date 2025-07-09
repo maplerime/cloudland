@@ -3431,6 +3431,9 @@ const docTemplatev1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "fip_address": {
+                    "type": "string"
+                },
                 "group": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -3448,6 +3451,9 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -3588,10 +3594,16 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.FloatingIpWithVlan": {
+        "apis.FloatingIpWithInfo": {
             "type": "object",
             "properties": {
+                "fip_address": {
+                    "type": "string"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "ip_address": {
                     "type": "string"
                 },
                 "name": {
@@ -4292,7 +4304,7 @@ const docTemplatev1 = `{
                 "floating_ips": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/apis.FloatingIpWithVlan"
+                        "$ref": "#/definitions/apis.FloatingIpWithInfo"
                     }
                 },
                 "id": {
@@ -4310,7 +4322,7 @@ const docTemplatev1 = `{
                 "subnets": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/apis.SubnetWithVlan"
+                        "$ref": "#/definitions/apis.SubnetWithInfo"
                     }
                 },
                 "type": {
@@ -4776,6 +4788,9 @@ const docTemplatev1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "end": {
+                    "type": "string"
+                },
                 "gateway": {
                     "type": "string"
                 },
@@ -4788,14 +4803,23 @@ const docTemplatev1 = `{
                 "name": {
                     "type": "string"
                 },
+                "netmask": {
+                    "type": "string"
+                },
                 "network": {
                     "type": "string"
                 },
                 "owner": {
                     "type": "string"
                 },
+                "start": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -4924,9 +4948,15 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.SubnetWithVlan": {
+        "apis.SubnetWithInfo": {
             "type": "object",
             "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "gateway": {
+                    "type": "string"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4934,6 +4964,15 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "netmask": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
                 },
                 "vlan": {
                     "type": "integer"

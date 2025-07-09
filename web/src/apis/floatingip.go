@@ -28,9 +28,10 @@ type FloatingIpAPI struct{}
 
 type FloatingIpInfo struct {
 	*ResourceReference
-	IpAddress string         `json:"ip_address"`
-	Group     *BaseReference `json:"group,omitempty"`
-	Vlan      int64          `json:"vlan,omitempty"`
+	IpAddress  string         `json:"ip_address"`
+	FipAddress string         `json:"fip_address"`
+	Group      *BaseReference `json:"group,omitempty"`
+	Vlan       int64          `json:"vlan,omitempty"`
 }
 
 type TargetInterface struct {
