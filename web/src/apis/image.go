@@ -76,7 +76,7 @@ type ImageStorageListResponse struct {
 	Offset   int                     `json:"offset"`
 	Total    int                     `json:"total"`
 	Limit    int                     `json:"limit"`
-	Storages []*ImageStorageResponse `json:"images"`
+	Storages []*ImageStorageResponse `json:"storages"`
 }
 
 // @Summary get a image
