@@ -2212,6 +2212,33 @@ paths:
       summary: patch a instance
       tags:
       - Compute
+  /instances/{id}/end_rescue:
+    post:
+      consumes:
+      - application/json
+      description: end rescue a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: end rescue a instance
+      tags:
+      - Compute
   /instances/{id}/reinstall:
     post:
       consumes:

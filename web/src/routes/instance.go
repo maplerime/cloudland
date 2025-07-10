@@ -240,6 +240,10 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 			EndTransaction(ctx, err)
 		}
 	}()
+	if instance.Status == "rescuing" {
+		err = fmt.Errorf("Instance is already in rescue status")
+		return
+	}
 	image := instance.Image
 	if rescueImage == nil {
 		if image.RescueImage <= 0 {
@@ -250,6 +254,11 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		if err != nil {
 			return
 		}
+	}
+	err = db.Model(instance).Update("status", "rescuing").Error
+	if err != nil {
+		logger.Error("Update instance status to rescuing failed", err)
+		return
 	}
 	logger.Debugf("Rescue image is %s", rescueImage.Name)
 	imagePrefix := fmt.Sprintf("image-%d-%s", rescueImage.ID, strings.Split(rescueImage.UUID, "-")[0])
@@ -265,7 +274,7 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%t' '%d' '%d' '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%d' '%d' '%d' '%d' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed", err)
@@ -276,8 +285,23 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 
 func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance) (err error) {
 	logger.Debugf("End rescuing instance %d", instance.ID)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if instance.Status != "rescuing" {
+		err = fmt.Errorf("Instance is not in rescue status")
+		return
+	}
+	err = db.Model(instance).Update("status", "shut_off").Error
+	if err != nil {
+		logger.Error("Update instance status to rescuing failed", err)
+		return
+	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/end_rescue_vm.sh '%d'", instance.ID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/end_rescue.sh '%d'", instance.ID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed", err)
@@ -1273,7 +1297,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 	}
 	db := DB()
 	images := []*model.Image{}
-	if err := db.Find(&images).Error; err != nil {
+	if err := db.Where("").Find(&images).Error; err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return

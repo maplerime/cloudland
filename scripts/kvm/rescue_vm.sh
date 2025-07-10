@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 8 ] && die "$0 <vm_ID> <image> <cpu> <memory> <disk_size> <volume_id> <boot_loader> <disk_id>"
+[ $# -lt 7 ] && die "$0 <vm_ID> <image> <cpu> <memory> <disk_size> <disk_id> <boot_loader>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -11,21 +11,21 @@ img_name=$2
 vm_cpu=$3
 vm_mem=$4
 disk_size=$5
-vol_ID=$6
+disk_ID=$6
 boot_loader=$7
-disk_id=$8
 state=error
 vm_vnc=""
 vol_state=error
 snapshot=1
+vm_rescue=$vm_ID-rescue
 
-./action_vm.sh stop
-./action_vm.sh hard_stop
+./action_vm.sh $ID stop
+./action_vm.sh $ID hard_stop
 md=$(cat)
 metadata=$(echo $md | base64 -d)
 
-if [ $fsize -gt 30 ]; then
-    fsize=30
+if [ $disk_size -gt 30 ]; then
+    disk_size=30
 fi
 let fsize=$disk_size*1024*1024*1024
 vm_meta=$cache_dir/meta/$vm_ID.iso
@@ -34,9 +34,9 @@ if [ "$boot_loader" = "uefi" ]; then
     template=$template_dir/template_uefi_with_qa.xml
 fi
 if [ -z "$wds_address" ]; then
-    vm_img=$volume_dir/$vm_ID.disk
+    vm_img=$volume_dir/$vm_rescue.disk
     if [ ! -f "$vm_img" ]; then
-        vm_img=$image_dir/$vm_ID.disk
+        vm_img=$image_dir/$vm_rescue.disk
         if [ ! -s "$image_cache/$img_name" ]; then
             echo "Image is not available!"
             echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
@@ -53,6 +53,7 @@ if [ -z "$wds_address" ]; then
         qemu-img resize -q $vm_img "${disk_size}G" &> /dev/null
         vol_state=attached
     fi
+    disk_template=$template_dir/volume.xml
 else
     get_wds_token
     image=$(basename $img_name .raw)
@@ -99,14 +100,15 @@ else
     if [ "$boot_loader" = "uefi" ]; then
         template=$template_dir/wds_template_uefi_with_qa.xml
     fi
+    disk_vhost=$(ls /var/run/wds/instance-$ID-volume-$disk_ID-*)
+    disk_template=$template_dir/wds_volume.xml
 fi
 
 [ -z "$vm_mem" ] && vm_mem='1024m'
 [ -z "$vm_cpu" ] && vm_cpu=1
 let vm_mem=${vm_mem%[m|M]}*1024
-mkdir -p $xml_dir/$vm_ID
-vm_QA="$qemu_agent_dir/$vm_ID.agent"
-vm_xml=$xml_dir/$vm_ID/${vm_ID}_rescue.xml
+vm_QA="$qemu_agent_dir/$vm_rescue.agent"
+vm_xml=$xml_dir/$vm_ID/$vm_rescue.xml
 cp $template $vm_xml
 cpu_vendor=$(lscpu | grep "Vendor ID" | awk -F ':' '{print $2}' | tr -d ' ')
 if [ "$cpu_vendor" = "GenuineIntel" ]; then
@@ -115,12 +117,12 @@ else
     vm_virt_feature="svm"
 fi
 os_code=$(jq -r '.os_code' <<< $metadata)
-sed -i "s/VM_ID/$vm_ID-rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
-vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+sed -i "s/VM_ID/$vm_rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
+vm_nvram="$image_dir/${vm_rescue}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
     cp $nvram_template $vm_nvram
     sed -i \
-    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_ID/$vm_rescue/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
     -e "s#VM_IMG#$vm_img#g" \
@@ -134,7 +136,7 @@ if [ "$boot_loader" = "uefi" ]; then
     $vm_xml
 else
     sed -i \
-    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_ID/$vm_rescue/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
     -e "s#VM_IMG#$vm_img#g" \
@@ -147,17 +149,25 @@ else
 fi
 
 virsh define $vm_xml
-virsh autostart $vm_ID
 
-disk_vhost=$(ls /var/run/wds/instance-$ID-volume-$disk_id-*)
-disk_xml=$xml_dir/$vm_ID/disk-${vol_ID}.xml
-sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#/dev/vdb#g;" $disk_xml
-virsh attach-device $vm_ID-rescue $disk_xml --config --persistent
+disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}.xml
+cp $disk_template $disk_xml
+sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;" $disk_xml
+virsh attach-device $vm_rescue $disk_xml --config --persistent
 
-jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
-virsh start $vm_ID
+vlans=$(jq .vlans <<< $metadata)
+nvlan=$(jq length <<< $vlans)
+i=0
+while [ $i -lt $nvlan ]; do
+    read -d'\n' -r mac < <(jq -r ".[$i].mac_address" <<<$vlans)
+    nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
+    interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    virsh attach-device $vm_rescue $interface_xml --config --persistent
+    let i=$i+1
+done
+virsh start $vm_rescue
 [ $? -eq 0 ] && state=rescuing
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port
 if [ "$os_code" = "windows" ]; then

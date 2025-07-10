@@ -340,21 +340,22 @@
 															<div class="item" data-value="5" data-text="ReinstallInstance        ">
 															<a href="{{$Link}}/{{.ID}}/reinstall">{{$.i18n.Tr "OS Reinstall"}}        </a>
 															</div>
-                                                            <div class="item" data-value="7" data-text="DeleteInstance        ">
+                                                            <div class="item" data-value="6" data-text="DeleteInstance        ">
                                                                 <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "DeleteInstance"}}        </a>
                                                             </div>
-															<div class="item" data-value="8" data-text="SetUserPassword        ">
+															<div class="item" data-value="7" data-text="SetUserPassword        ">
 															<a href="{{$Link}}/{{.ID}}/set_user_password">{{$.i18n.Tr "Set User Password"}}        </a>
 															</div>
 						{{ if eq .Status "rescuing" }}
-															<div class="item" data-value="9" data-text="EndRescue        ">
-                                                                                                                        <form name="submitForm{{.ID}}" method="post" target="_blank" action="{{$Link}}/{{.ID}}/end_rescue">
+															<div class="item" data-value="8" data-text="EndRescue        ">
+                                                                                                                        <form class="ui form" name="submitForm{{.ID}}" method="post" action="{{$Link}}/{{.ID}}/end_rescue">
+												<button type="submit" class="btn-link">End Rescue</button>
                                                                                                                         <a href="javascript:document.submitForm{{.ID}}.submit()">End Rescue</a>
                                                                                                                         </form>
 															</div>
 						{{ else }}
-															<div class="item" data-value="9" data-text="RescueInstance        ">
-															<a href="{{$Link}}/{{.ID}}/rescue">{{$.i18n.Tr "Rescue Instance"}}        </a>
+															<div class="item" data-value="8" data-text="RescueInstance        ">
+															<a href="{{$Link}}/{{.ID}}/rescue">{{$.i18n.Tr "OS Rescue"}}        </a>
 															</div>
 						{{ end }}
 														</div>

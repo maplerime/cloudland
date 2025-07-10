@@ -29,8 +29,9 @@ if [ -z "$wds_address" ]; then
     rm -f ${image_dir}/${vm_ID}.*
 else
     get_wds_token
-    vhosts=$(basename $(ls /var/run/wds/instance-${ID}-*))
-    for vhost_name in $vhosts; do
+    vhosts=$(ls /var/run/wds/instance-${ID}-*)
+    for vhost in $vhosts; do
+	vhost_name=$(basename $vhost)
         if [ -S "/var/run/wds/$vhost_name" ]; then
            vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$vhost_name" | jq -r '.vhosts[0].id')
            uss_id=$(get_uss_gateway)
