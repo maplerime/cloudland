@@ -3672,6 +3672,9 @@ const docTemplatealarm_v1 = `{
                     "maxLength": 32,
                     "minLength": 2
                 },
+                "type": {
+                    "type": "string"
+                },
                 "vlan": {
                     "type": "integer"
                 }
@@ -5033,6 +5036,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "start": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 },
                 "vlan": {

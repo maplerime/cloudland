@@ -61,6 +61,7 @@ type SubnetWithInfo struct {
 	Gateway string `json:"gateway"`
 	Start   string `json:"start"`
 	End     string `json:"end"`
+	Type    string `json:"type"`
 }
 
 type FloatingIpWithInfo struct {
@@ -68,6 +69,7 @@ type FloatingIpWithInfo struct {
 	Vlan       int64  `json:"vlan"`
 	IPAddress  string `json:"ip_address"`
 	FipAddress string `json:"fip_address"`
+	Type       string `json:"type"`
 }
 
 // @Summary get a ipGroup
@@ -290,6 +292,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			Gateway: subnet.Gateway,
 			Start:   subnet.Start,
 			End:     subnet.End,
+			Type:    subnet.Type,
 		})
 	}
 
@@ -308,6 +311,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			Vlan:       vlan,
 			IPAddress:  fip.IPAddress,
 			FipAddress: fip.FipAddress,
+			Type:       fip.Type,
 		})
 	}
 
