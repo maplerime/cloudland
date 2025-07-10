@@ -232,6 +232,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      type:
+        type: string
       vlan:
         type: integer
     type: object
@@ -1163,6 +1165,8 @@ definitions:
       network:
         type: string
       start:
+        type: string
+      type:
         type: string
       vlan:
         type: integer
