@@ -129,6 +129,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/images/:id", imageAPI.Get)
 		authGroup.DELETE("/api/v1/images/:id", imageAPI.Delete)
 		authGroup.PATCH("/api/v1/images/:id", imageAPI.Patch)
+		authGroup.GET("/api/v1/images/:id/storages", imageAPI.ListStorages)
 
 		authGroup.GET("/api/v1/volumes", volumeAPI.List)
 		authGroup.POST("/api/v1/volumes", volumeAPI.Create)

@@ -28,7 +28,7 @@ var (
 type ImageStorageAdmin struct{}
 type ImageStorageView struct{}
 
-func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model.Image) (total int64, storages []*model.ImageStorage, err error) {
+func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model.Image, query string) (total int64, storages []*model.ImageStorage, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -38,12 +38,16 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 		order = "created_at"
 	}
 
+	if query != "" {
+		query = fmt.Sprintf("pool_id = '%s'", query)
+	}
+
 	storages = []*model.ImageStorage{}
-	if err = db.Model(&model.ImageStorage{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+	if err = db.Model(&model.ImageStorage{}).Where("image_id = ?", image.ID).Where(query).Count(&total).Error; err != nil {
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where("image_id = ?", image.ID).Find(&storages).Error; err != nil {
+	if err = db.Where("image_id = ?", image.ID).Where(query).Find(&storages).Error; err != nil {
 		return
 	}
 
@@ -148,7 +152,7 @@ func (v *ImageStorageView) List(c *macaron.Context, store session.Store) {
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	total, images, err := imageStorageAdmin.List(offset, limit, order, image)
+	total, images, err := imageStorageAdmin.List(offset, limit, order, image, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)

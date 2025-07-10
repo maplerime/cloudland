@@ -112,7 +112,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 
 	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
-	control := "inter=0"
+	control := "inter="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
@@ -237,7 +237,7 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	}
 	prefix := strings.Split(image.UUID, "-")[0]
 	control := "inter=0"
-	total, storages, _ := imageStorageAdmin.List(0, -1, "", image)
+	total, storages, _ := imageStorageAdmin.List(0, -1, "", image, "")
 	if image.Status == "available" {
 		if total > 0 {
 			for _, storage := range storages {
@@ -346,7 +346,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 			continue
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter=0"
+		control := "inter="
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
 		if storage.PoolID == defaultPoolID {
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
@@ -532,7 +532,7 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	_, storages, err := imageStorageAdmin.List(0, -1, "", image)
+	_, storages, err := imageStorageAdmin.List(0, -1, "", image, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, err.Error())
