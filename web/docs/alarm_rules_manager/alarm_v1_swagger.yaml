@@ -349,6 +349,25 @@ definitions:
       user:
         type: string
     type: object
+  apis.ImageStorageResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      pool_id:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      volume_id:
+        type: string
+    type: object
   apis.InstanceInfo:
     properties:
       created_at:
@@ -2120,6 +2139,25 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
+      tags:
+      - Compute
+  /images/{id}/storages:
+    get:
+      consumes:
+      - application/json
+      description: list image storages
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageStorageResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list image storages
       tags:
       - Compute
   /instance/{id}/interfaces:
