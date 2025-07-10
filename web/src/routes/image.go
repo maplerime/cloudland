@@ -320,6 +320,13 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	if userName != "" {
 		image.UserName = userName
 	}
+
+	if image.Status != "available" {
+		logger.Error("Image status is not available, cannot update")
+		err = fmt.Errorf("Image status is not available, cannot update")
+		return
+	}
+
 	err = db.Model(image).Updates(image).Error
 	if err != nil {
 		logger.Error("Failed to save image", err)
