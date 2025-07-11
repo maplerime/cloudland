@@ -289,7 +289,7 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 	ctx, db := GetContextDB(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{Model: model.Model{ID: id}}
-	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("DB failed to query floatingIp ", err)
 		return
@@ -331,7 +331,7 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{}
-	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to query floatingIp, %v", err)
 		return
@@ -447,20 +447,26 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 		}
 	}
 
-	groupID := int64(0)
 	if group != nil {
-		groupID = group.ID
+		groupID := int64(0)
+		if group != nil {
+			groupID = group.ID
+		}
+
+		err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("group_id", groupID).Error
+		if err != nil {
+			logger.Error("Failed to update floating ip group_id", err)
+			return
+		}
 	}
 
-	err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("group_id", groupID).Error
+	floatingIpTemp, err = a.Get(ctx, floatingIp.ID)
 	if err != nil {
-		logger.Error("Failed to update floating ip group_id", err)
+		logger.Error("Failed to get updated floating ip", err)
 		return
 	}
 
-	floatingIp.GroupID = groupID
-
-	return
+	return floatingIpTemp, nil
 }
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
@@ -511,31 +517,43 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return
 	}
 	for _, fip := range floatingIps {
-		if fip.InstanceID <= 0 {
-			continue
+		if fip.InstanceID > 0 {
+			if fip.Instance != nil && fip.Instance.ID > 0 {
+				instance := fip.Instance
+				err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
+				if err != nil {
+					logger.Error("Failed to query interfaces ", err)
+					err = nil
+					continue
+				}
+			} else {
+				fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
+				err = db.Take(fip.Instance).Error
+				if err != nil {
+					logger.Error("DB failed to query instance ", err)
+					err = nil
+					continue
+				}
+				instance := fip.Instance
+				err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
+				if err != nil {
+					logger.Error("Failed to query interfaces ", err)
+					err = nil
+					continue
+				}
+			}
 		}
-		fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
-		err = db.Take(fip.Instance).Error
-		if err != nil {
-			logger.Error("DB failed to query instance ", err)
-		}
-		instance := fip.Instance
-		err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
-		if err != nil {
-			logger.Error("Failed to query interfaces ", err)
-			err = nil
-			continue
-		}
+
 		if fip.RouterID > 0 {
 			fip.Router = &model.Router{Model: model.Model{ID: fip.RouterID}}
 			err = db.Take(fip.Router).Error
 			if err != nil {
-				logger.Error("DB failed to query instance ", err)
+				logger.Error("DB failed to query router ", err)
 				err = nil
 				continue
 			}

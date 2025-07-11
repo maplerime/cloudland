@@ -448,12 +448,12 @@ const docTemplatev1 = `{
                 "summary": "batch attach floating ips",
                 "parameters": [
                     {
-                        "description": "Batch attach payload",
+                        "description": "Site attach payload",
                         "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/apis.BatchAttachPayload"
+                            "$ref": "#/definitions/apis.SiteAttachPayload"
                         }
                     }
                 ],
@@ -497,12 +497,12 @@ const docTemplatev1 = `{
                 "summary": "batch detach floating ips",
                 "parameters": [
                     {
-                        "description": "Batch detach payload",
+                        "description": "Site detach payload",
                         "name": "message",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/apis.BatchDetachPayload"
+                            "$ref": "#/definitions/apis.SiteDetachPayload"
                         }
                     }
                 ],
@@ -3280,42 +3280,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "apis.BatchAttachPayload": {
-            "type": "object",
-            "required": [
-                "instance",
-                "site_subnets"
-            ],
-            "properties": {
-                "instance": {
-                    "$ref": "#/definitions/common.BaseID"
-                },
-                "site_subnets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/common.BaseReference"
-                    }
-                }
-            }
-        },
-        "apis.BatchDetachPayload": {
-            "type": "object",
-            "required": [
-                "instance",
-                "site_subnets"
-            ],
-            "properties": {
-                "instance": {
-                    "$ref": "#/definitions/common.BaseID"
-                },
-                "site_subnets": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/common.BaseReference"
-                    }
-                }
-            }
-        },
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
@@ -3467,6 +3431,9 @@ const docTemplatev1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "fip_address": {
+                    "type": "string"
+                },
                 "group": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -3484,6 +3451,9 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -3607,14 +3577,45 @@ const docTemplatev1 = `{
                 "public_ip": {
                     "type": "string"
                 },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "target_interface": {
                     "$ref": "#/definitions/apis.TargetInterface"
                 },
                 "updated_at": {
                     "type": "string"
                 },
+                "vlan": {
+                    "type": "integer"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.FloatingIpWithInfo": {
+            "type": "object",
+            "properties": {
+                "fip_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "type": {
+                    "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -4306,7 +4307,7 @@ const docTemplatev1 = `{
                 "floating_ips": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/common.BaseReference"
+                        "$ref": "#/definitions/apis.FloatingIpWithInfo"
                     }
                 },
                 "id": {
@@ -4324,7 +4325,7 @@ const docTemplatev1 = `{
                 "subnets": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/common.BaseReference"
+                        "$ref": "#/definitions/apis.SubnetWithInfo"
                     }
                 },
                 "type": {
@@ -4749,10 +4750,48 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.SiteAttachPayload": {
+            "type": "object",
+            "required": [
+                "instance",
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
+        "apis.SiteDetachPayload": {
+            "type": "object",
+            "required": [
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
         "apis.SiteSubnetInfo": {
             "type": "object",
             "properties": {
                 "created_at": {
+                    "type": "string"
+                },
+                "end": {
                     "type": "string"
                 },
                 "gateway": {
@@ -4767,14 +4806,23 @@ const docTemplatev1 = `{
                 "name": {
                     "type": "string"
                 },
+                "netmask": {
+                    "type": "string"
+                },
                 "network": {
                     "type": "string"
                 },
                 "owner": {
                     "type": "string"
                 },
+                "start": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -4895,8 +4943,45 @@ const docTemplatev1 = `{
                 "updated_at": {
                     "type": "string"
                 },
+                "vlan": {
+                    "type": "integer"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
+        "apis.SubnetWithInfo": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "gateway": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "netmask": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },

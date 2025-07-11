@@ -911,6 +911,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		logger.Errorf("Failed to query instance, %v", err)
 		return
 	}
+
 	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
@@ -948,6 +949,7 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 		logger.Errorf("Failed to query instance, %v", err)
 		return
 	}
+
 	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
@@ -1058,6 +1060,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			logger.Errorf("Failed to query interfaces %v", err)
 			return
 		}
+
 		if err = db.Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
 			return

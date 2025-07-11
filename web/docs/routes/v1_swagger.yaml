@@ -7,30 +7,6 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
-  apis.BatchAttachPayload:
-    properties:
-      instance:
-        $ref: '#/definitions/common.BaseID'
-      site_subnets:
-        items:
-          $ref: '#/definitions/common.BaseReference'
-        type: array
-    required:
-    - instance
-    - site_subnets
-    type: object
-  apis.BatchDetachPayload:
-    properties:
-      instance:
-        $ref: '#/definitions/common.BaseID'
-      site_subnets:
-        items:
-          $ref: '#/definitions/common.BaseReference'
-        type: array
-    required:
-    - instance
-    - site_subnets
-    type: object
   apis.ConsoleResponse:
     properties:
       console_url:
@@ -133,6 +109,8 @@ definitions:
     properties:
       created_at:
         type: string
+      fip_address:
+        type: string
       group:
         $ref: '#/definitions/common.BaseReference'
       id:
@@ -145,6 +123,8 @@ definitions:
         type: string
       updated_at:
         type: string
+      vlan:
+        type: integer
     type: object
   apis.FloatingIpListResponse:
     properties:
@@ -229,12 +209,33 @@ definitions:
         type: string
       public_ip:
         type: string
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
       target_interface:
         $ref: '#/definitions/apis.TargetInterface'
       updated_at:
         type: string
+      vlan:
+        type: integer
       vpc:
         $ref: '#/definitions/common.BaseReference'
+    type: object
+  apis.FloatingIpWithInfo:
+    properties:
+      fip_address:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      type:
+        type: string
+      vlan:
+        type: integer
     type: object
   apis.HyperListResponse:
     properties:
@@ -715,7 +716,7 @@ definitions:
         $ref: '#/definitions/common.BaseReference'
       floating_ips:
         items:
-          $ref: '#/definitions/common.BaseReference'
+          $ref: '#/definitions/apis.FloatingIpWithInfo'
         type: array
       id:
         type: string
@@ -727,7 +728,7 @@ definitions:
         type: string
       subnets:
         items:
-          $ref: '#/definitions/common.BaseReference'
+          $ref: '#/definitions/apis.SubnetWithInfo'
         type: array
       type:
         type: string
@@ -1013,9 +1014,34 @@ definitions:
     - direction
     - protocol
     type: object
+  apis.SiteAttachPayload:
+    properties:
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    required:
+    - instance
+    - site_subnets
+    type: object
+  apis.SiteDetachPayload:
+    properties:
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    required:
+    - site_subnets
+    type: object
   apis.SiteSubnetInfo:
     properties:
       created_at:
+        type: string
+      end:
         type: string
       gateway:
         type: string
@@ -1025,12 +1051,18 @@ definitions:
         type: string
       name:
         type: string
+      netmask:
+        type: string
       network:
         type: string
       owner:
         type: string
+      start:
+        type: string
       updated_at:
         type: string
+      vlan:
+        type: integer
     type: object
   apis.SubnetListResponse:
     properties:
@@ -1111,8 +1143,33 @@ definitions:
         $ref: '#/definitions/common.SubnetType'
       updated_at:
         type: string
+      vlan:
+        type: integer
       vpc:
         $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.SubnetWithInfo:
+    properties:
+      end:
+        type: string
+      gateway:
+        type: string
+      id:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      netmask:
+        type: string
+      network:
+        type: string
+      start:
+        type: string
+      type:
+        type: string
+      vlan:
+        type: integer
     type: object
   apis.TargetInterface:
     properties:
@@ -1802,12 +1859,12 @@ paths:
       - application/json
       description: batch attach existing floating ips from site subnets to an instance
       parameters:
-      - description: Batch attach payload
+      - description: Site attach payload
         in: body
         name: message
         required: true
         schema:
-          $ref: '#/definitions/apis.BatchAttachPayload'
+          $ref: '#/definitions/apis.SiteAttachPayload'
       produces:
       - application/json
       responses:
@@ -1834,12 +1891,12 @@ paths:
       - application/json
       description: batch detach floating ips from site subnets from an instance
       parameters:
-      - description: Batch detach payload
+      - description: Site detach payload
         in: body
         name: message
         required: true
         schema:
-          $ref: '#/definitions/apis.BatchDetachPayload'
+          $ref: '#/definitions/apis.SiteDetachPayload'
       produces:
       - application/json
       responses:

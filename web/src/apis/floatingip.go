@@ -28,8 +28,10 @@ type FloatingIpAPI struct{}
 
 type FloatingIpInfo struct {
 	*ResourceReference
-	IpAddress string         `json:"ip_address"`
-	Group     *BaseReference `json:"group,omitempty"`
+	IpAddress  string         `json:"ip_address"`
+	FipAddress string         `json:"fip_address"`
+	Group      *BaseReference `json:"group,omitempty"`
+	Vlan       int64          `json:"vlan,omitempty"`
 }
 
 type TargetInterface struct {
@@ -51,6 +53,8 @@ type FloatingIpResponse struct {
 	Inbound         int32            `json:"inbound"`
 	Outbound        int32            `json:"outbound"`
 	Group           *BaseReference   `json:"group,omitempty"`
+	Subnet          *BaseReference   `json:"subnet,omitempty"`
+	Vlan            int64            `json:"vlan,omitempty"`
 }
 
 type FloatingIpListResponse struct {
@@ -80,15 +84,15 @@ type FloatingIpPatchPayload struct {
 	Group    *BaseID `json:"group" binding:"omitempty"`
 }
 
-// BatchAttachPayload represents the payload for batch attach floating IPs
-type BatchAttachPayload struct {
+// SiteAttachPayload represents the payload for site attach floating IPs
+type SiteAttachPayload struct {
 	Instance    *BaseID          `json:"instance" binding:"required"`
 	SiteSubnets []*BaseReference `json:"site_subnets" binding:"required"`
 }
 
-// BatchDetachPayload represents the payload for batch detach floating IPs
-type BatchDetachPayload struct {
-	Instance    *BaseID          `json:"instance" binding:"required"`
+// SiteDetachPayload represents the payload for site detach floating IPs
+type SiteDetachPayload struct {
+	Instance    *BaseID          `json:"instance" binding:"omitempty"`
 	SiteSubnets []*BaseReference `json:"site_subnets" binding:"required"`
 }
 
@@ -353,6 +357,19 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 			Name: floatingIp.Router.Name,
 		}
 	}
+	if floatingIp.Group != nil {
+		floatingIpResp.Group = &BaseReference{
+			ID:   floatingIp.Group.UUID,
+			Name: floatingIp.Group.Name,
+		}
+	}
+	if floatingIp.Subnet != nil {
+		floatingIpResp.Subnet = &BaseReference{
+			ID:   floatingIp.Subnet.UUID,
+			Name: floatingIp.Subnet.Name,
+		}
+		floatingIpResp.Vlan = floatingIp.Subnet.Vlan
+	}
 	if floatingIp.Instance != nil && len(floatingIp.Instance.Interfaces) > 0 {
 		instance := floatingIp.Instance
 		interIp := strings.Split(floatingIp.IntAddress, "/")[0]
@@ -432,7 +449,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 // @tags Network
 // @Accept  json
 // @Produce json
-// @Param   message	body   BatchAttachPayload  true   "Batch attach payload"
+// @Param   message	body   SiteAttachPayload  true   "Site attach payload"
 // @Success 200 {object} []FloatingIpResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -441,7 +458,7 @@ func (v *FloatingIpAPI) SiteAttach(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Debugf("Batch attaching floating ips")
 
-	payload := &BatchAttachPayload{}
+	payload := &SiteAttachPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
 		logger.Errorf("Invalid input JSON %+v", err)
@@ -590,7 +607,7 @@ func (v *FloatingIpAPI) SiteAttach(c *gin.Context) {
 // @tags Network
 // @Accept  json
 // @Produce json
-// @Param   message	body   BatchDetachPayload  true   "Batch detach payload"
+// @Param   message	body   SiteDetachPayload  true   "Site detach payload"
 // @Success 200
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
@@ -599,7 +616,7 @@ func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 	ctx := c.Request.Context()
 	logger.Debugf("Batch detaching floating ips")
 
-	payload := &BatchDetachPayload{}
+	payload := &SiteDetachPayload{}
 	err := c.ShouldBindJSON(payload)
 	if err != nil {
 		logger.Errorf("Invalid input JSON %+v", err)
@@ -609,12 +626,15 @@ func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 
 	logger.Debugf("Batch detaching floating ips with payload %+v", payload)
 
-	// Get instance
-	instance, err := instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
-	if err != nil {
-		logger.Errorf("Failed to get instance %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
-		return
+	var instance *model.Instance
+	if payload.Instance != nil {
+		// Get instance
+		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+		if err != nil {
+			logger.Errorf("Failed to get instance %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+			return
+		}
 	}
 
 	// Get and validate site subnets
@@ -643,14 +663,21 @@ func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 		logger.Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
 
 		// Find floating IPs associated with this subnet and instance
-		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d AND type = '%s'", instance.ID, PublicSite))
+		var queryCondition string
+		if payload.Instance != nil && instance != nil {
+			queryCondition = fmt.Sprintf("instance_id = %d AND type = '%s'", instance.ID, PublicSite)
+		} else {
+			queryCondition = fmt.Sprintf("type = '%s'", PublicSite)
+		}
+
+		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", queryCondition)
 		if err != nil {
 			logger.Errorf("Failed to list floating ips %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)
 			return
 		}
 
-		logger.Debugf("Found %d floating IPs for instance %d (ID: %d)", len(floatingIps), instance.ID, instance.ID)
+		logger.Debugf("Found %d floating IPs for subnet %d", len(floatingIps), subnet.ID)
 
 		// Detach floating IPs that are associated with the specified site subnet
 		for _, fip := range floatingIps {
@@ -708,6 +735,11 @@ func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 		}
 	}
 
-	logger.Debugf("Batch detached %d floating ips from instance %s", detachedCount, instance.UUID)
+	logger.Debugf("Batch detached %d floating ips from instance %s", detachedCount, func() string {
+		if instance != nil {
+			return instance.UUID
+		}
+		return "unknown"
+	}())
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Batch detach completed successfully. Detached %d floating IPs.", detachedCount)})
 }
