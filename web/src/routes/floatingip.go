@@ -261,6 +261,13 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 		logger.Error("DB failed to update floating ip", err)
 		return
 	}
+
+	err = a.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return
+	}
+
 	pubSubnet := floatingIp.Interface.Address.Subnet
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", router.ID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
@@ -309,6 +316,13 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 			return
 		}
 	}
+
+	err = a.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return
+	}
+
 	return
 }
 
@@ -344,6 +358,13 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 			return
 		}
 	}
+
+	err = a.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return
+	}
+
 	return
 }
 
@@ -1055,4 +1076,18 @@ func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID
 		return
 	}
 	return
+}
+
+func (a *FloatingIpAdmin) EnsureSubnetID(ctx context.Context, floatingIp *model.FloatingIp) error {
+	if floatingIp.SubnetID == 0 && floatingIp.Interface != nil && floatingIp.Interface.Address != nil && floatingIp.Interface.Address.Subnet != nil {
+		_, db := GetContextDB(ctx)
+		floatingIp.SubnetID = floatingIp.Interface.Address.Subnet.ID
+		err := db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("subnet_id", floatingIp.SubnetID).Error
+		if err != nil {
+			logger.Errorf("Failed to update floating ip subnet_id: %v", err)
+			return err
+		}
+		logger.Debugf("Updated floating ip %d subnet_id to %d", floatingIp.ID, floatingIp.SubnetID)
+	}
+	return nil
 }
