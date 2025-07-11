@@ -328,6 +328,12 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 }
 
 func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *model.FloatingIp) (floatingIpResp *FloatingIpResponse, err error) {
+	err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return nil, err
+	}
+
 	owner := orgAdmin.GetOrgName(ctx, floatingIp.Owner)
 	floatingIpResp = &FloatingIpResponse{
 		ResourceReference: &ResourceReference{

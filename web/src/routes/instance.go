@@ -834,7 +834,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			}
 		}
 	}
-	if err = db.Preload("Group").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+	if err = db.Preload("Group").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
@@ -911,7 +911,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		logger.Errorf("Failed to query instance, %v", err)
 		return
 	}
-	if err = db.Preload("Group").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
@@ -948,7 +948,7 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 		logger.Errorf("Failed to query instance, %v", err)
 		return
 	}
-	if err = db.Preload("Group").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
@@ -1058,7 +1058,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			logger.Errorf("Failed to query interfaces %v", err)
 			return
 		}
-		if err = db.Preload("Group").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+		if err = db.Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
 			return
 		}
@@ -1327,7 +1327,7 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 		logger.Error("Instance query failed", err)
 		return
 	}
-	if err = db.Where("instance_id = ?", instanceID).Find(&instance.FloatingIps).Error; err != nil {
+	if err = db.Where("instance_id = ?", instanceID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
 	}
@@ -1783,6 +1783,15 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
+
+		err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+		if err != nil {
+			logger.Error("Failed to ensure subnet_id", err)
+			c.Data["ErrorMsg"] = "Failed to ensure subnet_id"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+
 		if vlan == 0 {
 			vlan = floatingIp.Interface.Address.Subnet.Vlan
 		} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {

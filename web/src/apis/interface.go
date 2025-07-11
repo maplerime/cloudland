@@ -135,6 +135,12 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 		if len(instance.FloatingIps) > 0 {
 			floatingIps := make([]*FloatingIpInfo, len(instance.FloatingIps))
 			for i, floatingip := range instance.FloatingIps {
+				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
+				if err != nil {
+					logger.Error("Failed to ensure subnet_id", err)
+					continue
+				}
+
 				floatingIps[i] = &FloatingIpInfo{
 					ResourceReference: &ResourceReference{
 						ID:   floatingip.UUID,
