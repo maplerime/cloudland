@@ -640,7 +640,7 @@ func (a *SubnetAdmin) AddressList(ctx context.Context, offset, limit int64, orde
 	}
 
 	if order == "" {
-		order = "created_at"
+		order = "address::inet"
 	}
 
 	// deal condition
