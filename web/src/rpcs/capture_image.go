@@ -78,7 +78,7 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 			return
 		}
 		storage.VolumeID = args[5]
-		if state == "success" {
+		if state == "available" {
 			storage.Status = model.StorageStatusSynced
 		} else {
 			storage.Status = model.StorageStatusError
