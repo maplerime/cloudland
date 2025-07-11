@@ -140,7 +140,9 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 						ID:   floatingip.UUID,
 						Name: floatingip.Name,
 					},
-					IpAddress: floatingip.FipAddress,
+					IpAddress:  floatingip.IPAddress,
+					FipAddress: floatingip.FipAddress,
+					Vlan:       floatingip.Subnet.Vlan,
 				}
 				if floatingip.Group != nil {
 					floatingIps[i].Group = &BaseReference{
@@ -160,6 +162,9 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					},
 					Network: site.Network,
 					Gateway: site.Gateway,
+					Netmask: site.Netmask,
+					Start:   site.Start,
+					End:     site.End,
 				}
 				if site.Group != nil {
 					siteInfo.Group = &BaseReference{
@@ -167,6 +172,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 						Name: site.Group.Name,
 					}
 				}
+				siteInfo.Vlan = site.Vlan
 				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, siteInfo)
 			}
 		}
