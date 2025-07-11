@@ -450,6 +450,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		instNetworks = append(instNetworks, instNetwork)
 	}
 	osCode := GetImageOSCode(ctx, instance)
+	moreAddresses = []string{}
 	for _, addr := range iface.SecondAddresses {
 		if osCode == "linux" {
 			subnet := addr.Subnet
