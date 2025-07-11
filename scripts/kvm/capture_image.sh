@@ -58,7 +58,7 @@ else
 	    sleep 5
     done
     # 3. delete the snapshot
-    delete_ret=$(wds_curl DELETE "api/v2/sync/block/snaps/${snapshot_id}?force=false")
+    delete_ret=$(wds_curl DELETE "api/v2/sync/block/snaps/${snapshot_id}?force=true")
     read -d'\n' -r ret_code message < <(jq -r ".ret_code, .message" <<<$delete_ret)
     log_debug $vm_ID "delete snapshot $snapshot_id: $message"
 
