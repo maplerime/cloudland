@@ -60,7 +60,7 @@ else
     # 3. delete the snapshot
     delete_ret=$(wds_curl DELETE "api/v2/sync/block/snaps/${snapshot_id}?force=false")
     read -d'\n' -r ret_code message < <(jq -r ".ret_code, .message" <<<$delete_ret)
-    log_debug $vm_ID"delete snapshot $snapshot_id: $message"
+    log_debug $vm_ID "delete snapshot $snapshot_id: $message"
 
     # 4. get the volume id from the image name
     volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$image_name" | jq -r '.volumes[0].id')
