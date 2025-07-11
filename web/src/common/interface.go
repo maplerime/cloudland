@@ -205,11 +205,12 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 	cnt := floatingIpsLength - 1 - secondIpsLength
 	if cnt >= 0 {
 		for i, fip := range floatingIps {
+			fip.Instance = instance
 			iface := fip.Interface
+			if iface.Instance > 0 {
+				continue
+			}
 			if i == 0 {
-				if primaryIface.Instance > 0 {
-					continue
-				}
 				primaryIface.Instance = instance.ID
 				primaryIface.Name = "eth0"
 				primaryIface.PrimaryIf = true
@@ -247,7 +248,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 					return
 				}
 			}
-			fip.Instance = instance
 		}
 	} else if cnt < 0 {
 		for i := secondIpsLength - 1; i > floatingIpsLength-2; i-- {
@@ -450,6 +450,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		instNetworks = append(instNetworks, instNetwork)
 	}
 	osCode := GetImageOSCode(ctx, instance)
+	moreAddresses = []string{}
 	for _, addr := range iface.SecondAddresses {
 		if osCode == "linux" {
 			subnet := addr.Subnet

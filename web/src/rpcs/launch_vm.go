@@ -14,9 +14,12 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 
 	"github.com/jinzhu/gorm"
 )
+
+var floatingIpAdmin = &routes.FloatingIpAdmin{}
 
 func init() {
 	Add("launch_vm", LaunchVM)
@@ -270,6 +273,12 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 			return
 		}
 		for _, floatingIp := range floatingIps {
+			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+			if err != nil {
+				logger.Error("Failed to ensure subnet_id", err)
+				continue
+			}
+
 			pubSubnet := floatingIp.Interface.Address.Subnet
 			control := fmt.Sprintf("inter=%d", instance.Hyper)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)

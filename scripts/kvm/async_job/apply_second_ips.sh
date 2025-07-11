@@ -12,7 +12,6 @@ os_code=$3
 update_meta=$4
 more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
-[ $naddrs -eq 0 ] && exit 0 
 
 i=0
 while [ $i -lt $naddrs ]; do
