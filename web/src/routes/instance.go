@@ -411,7 +411,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		}
 	} else {
 		if poolID != defaultPoolID {
-			err = db.Where("image_id = ? AND status = ?", image.ID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
+			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
 			if err != nil {
 				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
 				err = fmt.Errorf("Image storage not found")
