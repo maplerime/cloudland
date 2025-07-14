@@ -38,13 +38,18 @@ type SubnetResponse struct {
 	Group      *ResourceReference `json:"group,omitempty"`
 	Type       SubnetType         `json:"type"`
 	IdleCount  int64              `json:"idle_count"`
+	Vlan       int                `json:"vlan"`
 }
 
 type SiteSubnetInfo struct {
 	*ResourceReference
 	Network string         `json:"network"`
+	Netmask string         `json:"netmask"`
 	Gateway string         `json:"gateway"`
+	Start   string         `json:"start"`
+	End     string         `json:"end"`
 	Group   *BaseReference `json:"group,omitempty"`
+	Vlan    int64          `json:"vlan"`
 }
 
 type SubnetListResponse struct {
@@ -223,6 +228,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		End:        subnet.End,
 		NameServer: subnet.NameServer,
 		Type:       SubnetType(subnet.Type),
+		Vlan:       int(subnet.Vlan),
 	}
 	if subnet.Router != nil {
 		router := subnet.Router

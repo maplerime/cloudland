@@ -261,6 +261,13 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 		logger.Error("DB failed to update floating ip", err)
 		return
 	}
+
+	err = a.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return
+	}
+
 	pubSubnet := floatingIp.Interface.Address.Subnet
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", router.ID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
@@ -282,7 +289,7 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 	ctx, db := GetContextDB(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{Model: model.Model{ID: id}}
-	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("DB failed to query floatingIp ", err)
 		return
@@ -309,6 +316,13 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 			return
 		}
 	}
+
+	err = a.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return
+	}
+
 	return
 }
 
@@ -317,7 +331,7 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	floatingIp = &model.FloatingIp{}
-	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
+	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to query floatingIp, %v", err)
 		return
@@ -344,6 +358,13 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 			return
 		}
 	}
+
+	err = a.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return
+	}
+
 	return
 }
 
@@ -496,7 +517,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return
 	}
@@ -1055,4 +1076,30 @@ func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID
 		return
 	}
 	return
+}
+
+func (a *FloatingIpAdmin) EnsureSubnetID(ctx context.Context, floatingIp *model.FloatingIp) error {
+	_, db := GetContextDB(ctx)
+	if floatingIp.SubnetID == 0 && floatingIp.Interface != nil && floatingIp.Interface.Address != nil && floatingIp.Interface.Address.Subnet != nil {
+		floatingIp.SubnetID = floatingIp.Interface.Address.Subnet.ID
+		err := db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("subnet_id", floatingIp.SubnetID).Error
+		if err != nil {
+			logger.Errorf("Failed to update floating ip subnet_id: %v", err)
+			return err
+		}
+		logger.Debugf("Updated floating ip %d subnet_id to %d", floatingIp.ID, floatingIp.SubnetID)
+	}
+
+	if floatingIp.Subnet == nil && floatingIp.SubnetID > 0 {
+		subnet := &model.Subnet{Model: model.Model{ID: floatingIp.SubnetID}}
+		err := db.Take(subnet).Error
+		if err != nil {
+			logger.Errorf("Failed to load subnet for floating ip %d: %v", floatingIp.ID, err)
+			return err
+		}
+		floatingIp.Subnet = subnet
+		logger.Debugf("Loaded subnet for floating ip %d", floatingIp.ID)
+	}
+
+	return nil
 }

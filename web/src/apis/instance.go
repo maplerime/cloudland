@@ -473,7 +473,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 	}
 	ifaceInfo = &routes.InterfaceInfo{
 		AllowSpoofing: ifacePayload.AllowSpoofing,
-		Count: ifacePayload.Count,
+		Count:         ifacePayload.Count,
 	}
 	vlan := int64(0)
 	if len(ifacePayload.PublicAddresses) > 0 {
@@ -483,6 +483,13 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 			if err != nil {
 				return
 			}
+
+			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+			if err != nil {
+				logger.Error("Failed to ensure subnet_id", err)
+				return
+			}
+
 			if vlan == 0 {
 				vlan = floatingIp.Interface.Address.Subnet.Vlan
 			} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {

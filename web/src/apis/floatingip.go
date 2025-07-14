@@ -28,8 +28,10 @@ type FloatingIpAPI struct{}
 
 type FloatingIpInfo struct {
 	*ResourceReference
-	IpAddress string         `json:"ip_address"`
-	Group     *BaseReference `json:"group,omitempty"`
+	IpAddress  string         `json:"ip_address"`
+	FipAddress string         `json:"fip_address"`
+	Group      *BaseReference `json:"group,omitempty"`
+	Vlan       int64          `json:"vlan,omitempty"`
 }
 
 type TargetInterface struct {
@@ -51,6 +53,8 @@ type FloatingIpResponse struct {
 	Inbound         int32            `json:"inbound"`
 	Outbound        int32            `json:"outbound"`
 	Group           *BaseReference   `json:"group,omitempty"`
+	Subnet          *BaseReference   `json:"subnet,omitempty"`
+	Vlan            int64            `json:"vlan,omitempty"`
 }
 
 type FloatingIpListResponse struct {
@@ -328,6 +332,12 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 }
 
 func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *model.FloatingIp) (floatingIpResp *FloatingIpResponse, err error) {
+	err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+	if err != nil {
+		logger.Error("Failed to ensure subnet_id", err)
+		return nil, err
+	}
+
 	owner := orgAdmin.GetOrgName(ctx, floatingIp.Owner)
 	floatingIpResp = &FloatingIpResponse{
 		ResourceReference: &ResourceReference{
@@ -346,6 +356,19 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 			ID:   floatingIp.Router.UUID,
 			Name: floatingIp.Router.Name,
 		}
+	}
+	if floatingIp.Group != nil {
+		floatingIpResp.Group = &BaseReference{
+			ID:   floatingIp.Group.UUID,
+			Name: floatingIp.Group.Name,
+		}
+	}
+	if floatingIp.Subnet != nil {
+		floatingIpResp.Subnet = &BaseReference{
+			ID:   floatingIp.Subnet.UUID,
+			Name: floatingIp.Subnet.Name,
+		}
+		floatingIpResp.Vlan = floatingIp.Subnet.Vlan
 	}
 	if floatingIp.Instance != nil && len(floatingIp.Instance.Interfaces) > 0 {
 		instance := floatingIp.Instance

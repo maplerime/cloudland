@@ -135,12 +135,22 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 		if len(instance.FloatingIps) > 0 {
 			floatingIps := make([]*FloatingIpInfo, len(instance.FloatingIps))
 			for i, floatingip := range instance.FloatingIps {
+				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
+				if err != nil {
+					logger.Error("Failed to ensure subnet_id", err)
+					continue
+				}
+
 				floatingIps[i] = &FloatingIpInfo{
 					ResourceReference: &ResourceReference{
 						ID:   floatingip.UUID,
 						Name: floatingip.Name,
 					},
-					IpAddress: floatingip.FipAddress,
+					IpAddress:  floatingip.IPAddress,
+					FipAddress: floatingip.FipAddress,
+				}
+				if floatingip.Subnet != nil {
+					floatingIps[i].Vlan = floatingip.Subnet.Vlan
 				}
 				if floatingip.Group != nil {
 					floatingIps[i].Group = &BaseReference{
@@ -160,6 +170,9 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					},
 					Network: site.Network,
 					Gateway: site.Gateway,
+					Netmask: site.Netmask,
+					Start:   site.Start,
+					End:     site.End,
 				}
 				if site.Group != nil {
 					siteInfo.Group = &BaseReference{
@@ -167,6 +180,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 						Name: site.Group.Name,
 					}
 				}
+				siteInfo.Vlan = site.Vlan
 				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, siteInfo)
 			}
 		}

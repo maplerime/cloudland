@@ -205,11 +205,12 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 	cnt := floatingIpsLength - 1 - secondIpsLength
 	if cnt >= 0 {
 		for i, fip := range floatingIps {
+			if fip.InstanceID > 0 {
+				continue
+			}
+			fip.Instance = instance
 			iface := fip.Interface
 			if i == 0 {
-				if primaryIface.Instance > 0 {
-					continue
-				}
 				primaryIface.Instance = instance.ID
 				primaryIface.Name = "eth0"
 				primaryIface.PrimaryIf = true
@@ -231,7 +232,10 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				secondAddr := fip.Interface.Address
 				secondAddr.Type = "second"
 				secondAddr.SecondInterface = primaryIface.ID
-				err = db.Model(secondAddr).Updates(secondAddr).Error
+				err = db.Model(&model.Address{Model: model.Model{ID: secondAddr.ID}}).Updates(map[string]interface{}{
+                                        "second_interface": primaryIface.ID,
+                                        "type": "second",
+                                }).Error
 				if err != nil {
 					logger.Errorf("Failed to update public ip, %v", err)
 					return
@@ -241,13 +245,16 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				fip.IntAddress = iface.Address.Address
 				fip.Type = string(PublicReserved)
 				fip.Instance = nil
-				err = db.Model(fip).Updates(fip).Error
+				err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
+					"instance_id": instance.ID,
+					"int_address": iface.Address.Address,
+					"type": string(PublicReserved),
+				}).Error
 				if err != nil {
 					logger.Errorf("Failed to update public ip, %v", err)
 					return
 				}
 			}
-			fip.Instance = instance
 		}
 	} else if cnt < 0 {
 		for i := secondIpsLength - 1; i > floatingIpsLength-2; i-- {
@@ -450,6 +457,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		instNetworks = append(instNetworks, instNetwork)
 	}
 	osCode := GetImageOSCode(ctx, instance)
+	moreAddresses = []string{}
 	for _, addr := range iface.SecondAddresses {
 		if osCode == "linux" {
 			subnet := addr.Subnet

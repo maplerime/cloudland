@@ -14,9 +14,12 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 
 	"github.com/jinzhu/gorm"
 )
+
+var floatingIpAdmin = &routes.FloatingIpAdmin{}
 
 func init() {
 	Add("launch_vm", LaunchVM)
@@ -57,7 +60,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 	}
 	if instance.Status != "deleted" {
 		for _, iface := range allIfaces {
-			if iface.Address.Subnet.Type == "public" {
+			if iface.Address == nil || iface.Address.Subnet == nil || iface.Address.Subnet.Type == "public" {
 				continue
 			}
 			if iface.Hyper == -1 {
@@ -164,7 +167,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	instance.ZoneID = hyper.ZoneID
 	if instance.Status != "migrating" {
-		err = db.Model(&instance).Updates(map[string]interface{}{
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),
 			"zoneID": hyper.ZoneID,
@@ -270,6 +273,12 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 			return
 		}
 		for _, floatingIp := range floatingIps {
+			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+			if err != nil {
+				logger.Error("Failed to ensure subnet_id", err)
+				continue
+			}
+
 			pubSubnet := floatingIp.Interface.Address.Subnet
 			control := fmt.Sprintf("inter=%d", instance.Hyper)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)
