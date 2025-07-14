@@ -1079,8 +1079,8 @@ func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID
 }
 
 func (a *FloatingIpAdmin) EnsureSubnetID(ctx context.Context, floatingIp *model.FloatingIp) error {
+	_, db := GetContextDB(ctx)
 	if floatingIp.SubnetID == 0 && floatingIp.Interface != nil && floatingIp.Interface.Address != nil && floatingIp.Interface.Address.Subnet != nil {
-		_, db := GetContextDB(ctx)
 		floatingIp.SubnetID = floatingIp.Interface.Address.Subnet.ID
 		err := db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("subnet_id", floatingIp.SubnetID).Error
 		if err != nil {
@@ -1089,5 +1089,17 @@ func (a *FloatingIpAdmin) EnsureSubnetID(ctx context.Context, floatingIp *model.
 		}
 		logger.Debugf("Updated floating ip %d subnet_id to %d", floatingIp.ID, floatingIp.SubnetID)
 	}
+
+	if floatingIp.Subnet == nil && floatingIp.SubnetID > 0 {
+		subnet := &model.Subnet{Model: model.Model{ID: floatingIp.SubnetID}}
+		err := db.Take(subnet).Error
+		if err != nil {
+			logger.Errorf("Failed to load subnet for floating ip %d: %v", floatingIp.ID, err)
+			return err
+		}
+		floatingIp.Subnet = subnet
+		logger.Debugf("Loaded subnet for floating ip %d", floatingIp.ID)
+	}
+
 	return nil
 }
