@@ -46,6 +46,7 @@ type InstanceReinstallPayload struct {
 
 type InstanceRescuePayload struct {
 	RescueImage     *BaseReference   `json:"rescue_image" binding:"omitempty"`
+	Password  string           `json:"password" binging:"required,min=8,max=64"`
 }
 
 type InstancePayload struct {
@@ -348,7 +349,7 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 		}
 	}
 
-	err = instanceAdmin.Rescue(ctx, instance, rescueImage)
+	err = instanceAdmin.Rescue(ctx, instance, rescueImage, payload.Password)
 	if err != nil {
 		logger.Error("Rescue failed", err)
 		ErrorResponse(c, http.StatusBadRequest, "Rescue failed", err)

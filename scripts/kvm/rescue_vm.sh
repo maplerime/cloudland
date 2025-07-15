@@ -3,16 +3,17 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 7 ] && die "$0 <vm_ID> <image> <cpu> <memory> <disk_size> <disk_id> <boot_loader>"
+[ $# -lt 8 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader>"
 
 ID=$1
 vm_ID=inst-$ID
 img_name=$2
-vm_cpu=$3
-vm_mem=$4
-disk_size=$5
-disk_ID=$6
-boot_loader=$7
+vm_name=$3
+vm_cpu=$4
+vm_mem=$5
+disk_size=$6
+disk_ID=$7
+boot_loader=$8
 state=error
 vm_vnc=""
 vol_state=error
@@ -23,12 +24,13 @@ vm_rescue=$vm_ID-rescue
 ./action_vm.sh $ID hard_stop
 md=$(cat)
 metadata=$(echo $md | base64 -d)
+./build_meta.sh "$vm_ID" rescue-"$vm_name" <<< $md >/dev/null 2>&1
 
 if [ $disk_size -gt 30 ]; then
     disk_size=30
 fi
 let fsize=$disk_size*1024*1024*1024
-vm_meta=$cache_dir/meta/$vm_ID.iso
+vm_meta=$cache_dir/meta/$vm_ID-rescue.iso
 template=$template_dir/template_with_qa.xml
 if [ "$boot_loader" = "uefi" ]; then
     template=$template_dir/template_uefi_with_qa.xml

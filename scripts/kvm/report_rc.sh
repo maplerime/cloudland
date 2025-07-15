@@ -37,7 +37,13 @@ function probe_arp()
 function inst_status()
 {
     old_inst_list=$(cat $image_dir/old_inst_list 2>/dev/null)
-    inst_list=$(sudo virsh list --all | tail -n +3 | cut -d' ' -f3- | xargs | sed 's/inst-//g;s/shut off/shut_off/g')
+    all_inst_list=$(sudo virsh list --all | tail -n +3 | cut -d' ' -f3-)
+    shutoff_list=$(sudo virsh list --all | grep 'shut off' | awk '{print $2}')
+    for inst in $shutoff_list; do
+        echo "$all_inst_list" | grep -q $inst-rescue
+	[ $? -eq 0 ] && all_inst_list=$(echo "$all_inst_list" | grep -v $inst )
+    done
+    inst_list=$(echo "$all_inst_list" | cut -d' ' -f3- | xargs | sed 's/inst-//g;s/shut off/shut_off/g')
     [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
 }
 

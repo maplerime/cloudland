@@ -13,6 +13,7 @@ virsh undefine $vm_rescue
 cmd="virsh destroy $vm_rescue"
 result=$(eval "$cmd")
 rm -f $xml_dir/$vm_ID/*rescue*
+rm -f ${cache_dir}/meta/${vm_ID}-rescue.iso
 
 virsh start $vm_ID
 

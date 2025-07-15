@@ -232,7 +232,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	return
 }
 
-func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, rescueImage *model.Image) (err error) {
+func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, rescueImage *model.Image, rootPasswd string) (err error) {
 	logger.Debugf("Rescue instance %d", instance.ID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -268,13 +268,13 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		return
 	}
 	metadata := ""
-	metadata, err = a.GetMetadata(ctx, instance, "")
+	metadata, err = a.GetMetadata(ctx, instance, rootPasswd)
 	if err != nil {
 		logger.Error("Build instance metadata failed", err)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%d' '%d' '%d' '%d' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed", err)
@@ -1705,7 +1705,8 @@ func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
 				return
 			}
 		}
-		err = instanceAdmin.Rescue(ctx, instance, rescueImage)
+		rootPasswd := c.QueryTrim("rootpasswd")
+		err = instanceAdmin.Rescue(ctx, instance, rescueImage, rootPasswd)
 		if err != nil {
 			logger.Error("Rescue failed", err)
 			c.Data["ErrorMsg"] = err.Error()
