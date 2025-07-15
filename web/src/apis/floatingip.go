@@ -32,6 +32,7 @@ type FloatingIpInfo struct {
 	FipAddress string         `json:"fip_address"`
 	Group      *BaseReference `json:"group,omitempty"`
 	Vlan       int64          `json:"vlan,omitempty"`
+	Type       string         `json:"type,omitempty"`
 }
 
 type TargetInterface struct {

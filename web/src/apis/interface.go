@@ -148,6 +148,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 					},
 					IpAddress:  floatingip.IPAddress,
 					FipAddress: floatingip.FipAddress,
+					Type:       floatingip.Type,
 				}
 				if floatingip.Subnet != nil {
 					floatingIps[i].Vlan = floatingip.Subnet.Vlan
