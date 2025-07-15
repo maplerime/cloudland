@@ -23,6 +23,21 @@
 									<input id="size"  name="size" autocomplete="off" required>
 								</div>
 								<div class="inline field">
+                                    <label for="pool">{{.i18n.Tr "StoragePool"}}</label>
+                                    <div class="ui selection dropdown">
+                                      <input id="pool" name="pool" type="hidden">
+                                      <i class="dropdown icon"></i>
+                                      <div class="default text">{{.i18n.Tr "StoragePool"}}</div>
+                                      <div class="menu">
+                                        {{ range .Pools }}
+                                           <div class="item" data-value={{.Value}} data-text={{.Name}}>
+                                           {{.Name}}
+                                           </div>
+                                        {{ end }}
+                                      </div>
+                                    </div>
+                                </div>
+								<div class="inline field">
 									<label></label>
 									<button class="ui green button">{{.i18n.Tr "Create New Volume"}}</button>
 								</div>
