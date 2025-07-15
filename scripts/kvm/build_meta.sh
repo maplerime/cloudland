@@ -119,8 +119,8 @@ EOF
     if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
         cloud_config_txt+=$(cat <<EOF
 
-    sed -i \"s/^#Port .*/Port '${login_port}'/\" /etc/ssh/sshd_config
-    sed -i \"s/^Port .*/Port '${login_port}'/\" /etc/ssh/sshd_config
+    sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
     systemctl daemon-reload
     systemctl restart ssh.socket
     systemctl restart sshd || systemctl restart ssh
