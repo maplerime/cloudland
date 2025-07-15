@@ -60,7 +60,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 	}
 	if instance.Status != "deleted" {
 		for _, iface := range allIfaces {
-			if iface.Address.Subnet.Type == "public" {
+			if iface.Address == nil || iface.Address.Subnet == nil || iface.Address.Subnet.Type == "public" {
 				continue
 			}
 			if iface.Hyper == -1 {
@@ -167,7 +167,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	instance.ZoneID = hyper.ZoneID
 	if instance.Status != "migrating" {
-		err = db.Model(&instance).Updates(map[string]interface{}{
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),
 			"zoneID": hyper.ZoneID,

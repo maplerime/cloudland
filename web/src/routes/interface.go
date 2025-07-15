@@ -312,6 +312,12 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		err = fmt.Errorf("At least one security group is needed")
 		return
 	}
+	if needUpdate || needRemoteUpdate {
+		if err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(iface).Error; err != nil {
+			logger.Debug("Failed to save interface", err)
+			return
+		}
+	}
 	changed := false
 	if iface.PrimaryIf {
 		valid := false
@@ -350,12 +356,6 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 					return
 				}
 			}
-		}
-	}
-	if needUpdate || needRemoteUpdate {
-		if err = db.Model(iface).Save(iface).Error; err != nil {
-			logger.Debug("Failed to save interface", err)
-			return
 		}
 	}
 	if needRemoteUpdate {

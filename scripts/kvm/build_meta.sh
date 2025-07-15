@@ -98,20 +98,6 @@ if [ -n "${root_passwd}" ] && [ "${os_code}" != "windows" ]; then
     )
 fi
 
-# use runcmd to change the port value of /etc/ssh/sshd_config
-# and restart the ssh service
-if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ] && [ "${os_code}" != "windows" ]; then
-    cloud_config_txt+=$(
-        echo \
-'runcmd:\n'\
-'    - sed -i \"s/^#Port .*/Port '${login_port}'/\" /etc/ssh/sshd_config\n'\
-'    - sed -i \"s/^Port .*/Port '${login_port}'/\" /etc/ssh/sshd_config\n'\
-'    - systemctl daemon-reload\n'\
-'    - systemctl restart ssh.socket\n'\
-'    - systemctl restart sshd || systemctl restart ssh\n'
-    )
-fi
-
 # change qemu-guest-agent config
 if [ "${os_code}" = "linux" ]; then
         cloud_config_txt+=$(cat <<EOF
@@ -125,8 +111,22 @@ runcmd:
       systemctl daemon-reload
     fi
     systemctl restart qemu-guest-agent.service
+
 EOF
     )
+# use runcmd to change the port value of /etc/ssh/sshd_config
+# and restart the ssh service
+    if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
+        cloud_config_txt+=$(cat <<EOF
+
+    sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    systemctl daemon-reload
+    systemctl restart ssh.socket
+    systemctl restart sshd || systemctl restart ssh
+EOF
+        )
+    fi
 fi
 
 vendor_data_end='\n--//--"'
