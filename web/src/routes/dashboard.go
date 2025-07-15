@@ -50,7 +50,7 @@ func (a *Dashboard) GetData(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(ctx)
 	var rcData *ResourceData
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if memberShip.OrgName == "admin" {
 		resource := &model.Resource{}
 		err := db.Where("hostid = ?", -1).Take(resource).Error
@@ -112,7 +112,7 @@ func (a *Dashboard) GetData(c *macaron.Context, store session.Store) {
 }
 
 func (a *Dashboard) getSystemIpUsage(ctx context.Context, ntype string) (ipTotal, ipUsed int, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", ntype).Find(&subnets).Error
 	if err != nil {
@@ -143,7 +143,7 @@ func (a *Dashboard) getSystemIpUsage(ctx context.Context, ntype string) (ipTotal
 
 func (a *Dashboard) getOrgIpUsage(ctx context.Context, ntype string) (ipUsed int, err error) {
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", ntype).Find(&subnets).Error
 	if err != nil {

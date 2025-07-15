@@ -151,7 +151,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 }
 
 func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (migration *model.Migration, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{}
 	err = db.Preload("Instance").Preload("Phases").Where("uuid = ?", uuID).Take(migration).Error
 	if err != nil {
@@ -169,7 +169,7 @@ func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (m
 }
 
 func (a *MigrationAdmin) GetMigrationByName(ctx context.Context, name string) (migration *model.Migration, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{}
 	err = db.Where("name = ?", name).Take(migration).Error
 	if err != nil {
@@ -192,7 +192,7 @@ func (a *MigrationAdmin) Get(ctx context.Context, id int64) (migration *model.Mi
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	migration = &model.Migration{Model: model.Model{ID: id}}
 	err = db.Take(migration).Error
 	if err != nil {
@@ -225,8 +225,8 @@ func (a *MigrationAdmin) GetMigration(ctx context.Context, reference *BaseRefere
 	return
 }
 
-func (a *MigrationAdmin) List(offset, limit int64, order, query string) (total int64, migrations []*model.Migration, err error) {
-	db := DB()
+func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, migrations []*model.Migration, err error) {
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -269,7 +269,7 @@ func (v *MigrationView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, migrations, err := migrationAdmin.List(offset, limit, order, query)
+	total, migrations, err := migrationAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)

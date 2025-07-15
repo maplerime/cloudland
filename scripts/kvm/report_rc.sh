@@ -34,6 +34,19 @@ function probe_arp()
     cd -
 }
 
+function daily_job()
+{
+    daily_state_file=$run_dir/daily_state_file
+    current_date=$(date +%Y%m%d)
+    if [ -f "$daily_state_file" ]; then
+        last_run_date=$(cat $daily_state_file)
+    fi
+    if [ "$last_run_date" != "$current_date" ]; then
+        ./operation/cleanup_outdated_iptables.sh
+        echo "$current_date" >$daily_state_file
+    fi
+}
+
 function inst_status()
 {
     old_inst_list=$(cat $image_dir/old_inst_list 2>/dev/null)
@@ -41,7 +54,7 @@ function inst_status()
     shutoff_list=$(sudo virsh list --all | grep 'shut off' | awk '{print $2}')
     for inst in $shutoff_list; do
         echo "$all_inst_list" | grep -q $inst-rescue
-	[ $? -eq 0 ] && all_inst_list=$(echo "$all_inst_list" | grep -v $inst )
+	[ $? -eq 0 ] && all_inst_list=$(echo "$all_inst_list" | grep -v $inst-rescue | sed "s/$inst.*shut off/$inst rescuing/")
     done
     inst_list=$(echo "$all_inst_list" | cut -d' ' -f3- | xargs | sed 's/inst-//g;s/shut off/shut_off/g')
     [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
@@ -182,5 +195,6 @@ sync_instance
 sync_delayed_job
 #probe_arp >/dev/null 2>&1
 inst_status
+daily_job
 #vlan_status
 #router_status

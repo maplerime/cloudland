@@ -202,7 +202,7 @@ func (v *SecgroupAPI) Create(c *gin.Context) {
 }
 
 func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.SecurityGroup) (secgroupResp *SecurityGroupResponse, err error) {
-	owner := orgAdmin.GetOrgName(secgroup.Owner)
+	owner := orgAdmin.GetOrgName(ctx, secgroup.Owner)
 	secgroupResp = &SecurityGroupResponse{
 		ResourceReference: &ResourceReference{
 			ID:        secgroup.UUID,
@@ -239,7 +239,7 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 				err = nil
 				continue
 			}
-			owner := orgAdmin.GetOrgName(instance.Owner)
+			owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 			targetIface.FromInstance = &InstanceInfo{
 				ResourceReference: &ResourceReference{
 					ID:    instance.UUID,

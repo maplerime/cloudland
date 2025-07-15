@@ -25,6 +25,8 @@ if [ -f ${image_dir}/${vm_ID}_VARS.fd ]; then
 fi
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
+
+./end_rescue.sh $ID
 if [ -z "$wds_address" ]; then	
     rm -f ${image_dir}/${vm_ID}.*
 else
