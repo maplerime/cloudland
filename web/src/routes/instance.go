@@ -1907,7 +1907,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 				return
 			}
 		} else {
-			secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			_, secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 			if err != nil {
 				logger.Error("Get default security group failed", err)
 				c.Data["ErrorMsg"] = "Get security group failed"

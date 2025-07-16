@@ -575,7 +575,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 				return
 			}
 		} else {
-			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			_, secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 			if err != nil {
 				logger.Error("Get default security group failed", err)
 				return

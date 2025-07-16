@@ -287,7 +287,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				return
 			}
 		} else {
-			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			_, secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 			if err != nil {
 				logger.Error("Get default security group failed", err)
 				return
