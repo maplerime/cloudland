@@ -348,7 +348,7 @@
             smtp_hello: '{{ smtp_hello }}'
 
           route:
-            group_by: ['node_type', 'alertname', 'instance', 'domain']
+            group_by: ['node_type', 'alertname', 'instance', 'domain', 'alert_type']
             group_wait: 30s
             group_interval: 5m
             repeat_interval: 3h
@@ -664,8 +664,8 @@
   file:
     path: /opt/cloudland/web/bin
     state: directory
-    owner: cland
-    group: cland
+    owner: prometheus
+    group: prometheus
     mode: 0755
   tags: [monitor]
 
