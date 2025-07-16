@@ -60,7 +60,7 @@ type SubnetListResponse struct {
 }
 
 type SubnetPayload struct {
-	Name        string         `json:"name" binding:"required,min=2,max=32"`
+	Name        string         `json:"name" binding:"required,min=2,max=64"`
 	NetworkCIDR string         `json:"network_cidr" binding:"required,cidrv4"`
 	Gateway     string         `json:"gateway" binding:"omitempty,ipv4"`
 	StartIP     string         `json:"start_ip" binding:"omitempty,ipv4"`
