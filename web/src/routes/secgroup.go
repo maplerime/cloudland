@@ -29,11 +29,6 @@ type SecgroupAdmin struct{}
 type SecgroupView struct{}
 
 func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, router *model.Router) (err error) {
-	if router == nil {
-		logger.Error("Not authorized to change system default security group")
-		err = fmt.Errorf("Not authorized")
-		return
-	}
 	ctx, db := GetContextDB(ctx)
 	oldSg := &model.SecurityGroup{}
 	if router != nil {
@@ -59,7 +54,7 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 		org.DefaultSG = newSg.ID
 		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
 		if err != nil {
-			logger.Error("DB failed to update user owner", err)
+			logger.Error("DB failed to update org default sg", err)
 			return
 		}
 	}
@@ -73,6 +68,7 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 	err = db.Model(newSg).Update("is_default", newSg.IsDefault).Error
 	if err != nil {
 		logger.Error("Failed to save new security group", err)
+		return
 	}
 	return
 }
@@ -179,7 +175,7 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (org *model.Orga
 		org.DefaultSG = secgroup.ID
 		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
 		if err != nil {
-			logger.Error("DB failed to update user owner", err)
+			logger.Error("DB failed to update org default sg", err)
 			return
 		}
 	} else {
@@ -657,12 +653,16 @@ func (v *SecgroupView) Create(c *macaron.Context, store session.Store) {
 	} else if isdefStr == "yes" {
 		isDef = true
 	}
+	var router *model.Router
+	var err error
 	routerID := c.QueryInt64("router")
-	router, err := routerAdmin.Get(ctx, routerID)
-	if err != nil {
-		logger.Error("Failed to get vpc", err)
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(404, "404")
+	if routerID > 0 {
+		router, err = routerAdmin.Get(ctx, routerID)
+		if err != nil {
+			logger.Error("Failed to get vpc", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(404, "404")
+		}
 	}
 	_, err = secgroupAdmin.Create(ctx, name, isDef, router)
 	if err != nil {
