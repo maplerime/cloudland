@@ -14,7 +14,12 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
+
+	"github.com/jinzhu/gorm"
 )
+
+var floatingIpAdmin = &routes.FloatingIpAdmin{}
 
 func init() {
 	Add("launch_vm", LaunchVM)
@@ -55,7 +60,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 	}
 	if instance.Status != "deleted" {
 		for _, iface := range allIfaces {
-			if iface.Address.Subnet.Type == "public" {
+			if iface.Address == nil || iface.Address.Subnet == nil || iface.Address.Subnet.Type == "public" {
 				continue
 			}
 			if iface.Hyper == -1 {
@@ -137,7 +142,9 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		reason = err.Error()
 		return
 	}
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+		return db.Order("addresses.updated_at")
+	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 	if err != nil {
 		logger.Error("Failed to get interfaces", err)
 		reason = err.Error()
@@ -160,7 +167,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	instance.ZoneID = hyper.ZoneID
 	if instance.Status != "migrating" {
-		err = db.Model(&instance).Updates(map[string]interface{}{
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),
 			"zoneID": hyper.ZoneID,
@@ -225,21 +232,14 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 
 func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 	vlans := []*VlanInfo{}
-	var securityData []*SecurityData
-	db := DB()
 	for _, iface := range instance.Interfaces {
-		err = db.Model(iface).Related(&iface.SecurityGroups, "SecurityGroups").Error
+		var vlanInfo *VlanInfo
+		vlanInfo, err = GetInterfaceInfo(ctx, instance, iface)
 		if err != nil {
-			logger.Error("Get security groups for interface failed", err)
+			logger.Error("Failed to get interface info", err)
 			return
 		}
-		securityData, err = GetSecurityData(ctx, iface.SecurityGroups)
-		if err != nil {
-			logger.Error("Get security data for interface failed", err)
-			return
-		}
-		subnet := iface.Address.Subnet
-		vlans = append(vlans, &VlanInfo{Device: iface.Name, Vlan: subnet.Vlan, Inbound: iface.Inbound, Outbound: iface.Outbound, AllowSpoofing: iface.AllowSpoofing, Gateway: subnet.Gateway, Router: subnet.RouterID, IpAddr: iface.Address.Address, MacAddr: iface.MacAddr, SecRules: securityData})
+		vlans = append(vlans, vlanInfo)
 	}
 	jsonData, err := json.Marshal(vlans)
 	if err != nil {
@@ -273,6 +273,12 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 			return
 		}
 		for _, floatingIp := range floatingIps {
+			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+			if err != nil {
+				logger.Error("Failed to ensure subnet_id", err)
+				continue
+			}
+
 			pubSubnet := floatingIp.Interface.Address.Subnet
 			control := fmt.Sprintf("inter=%d", instance.Hyper)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_floating.sh '%d' '%s' '%s' '%d' '%s' '%d' '%d' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, pubSubnet.Gateway, pubSubnet.Vlan, primaryIface.Address.Address, primaryIface.Address.Subnet.Vlan, floatingIp.ID, floatingIp.Inbound, floatingIp.Outbound)

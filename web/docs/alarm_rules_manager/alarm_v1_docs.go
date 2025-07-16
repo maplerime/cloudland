@@ -494,6 +494,98 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/floating_ips/batch_attach": {
+            "post": {
+                "description": "batch attach existing floating ips from site subnets to an instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "batch attach floating ips",
+                "parameters": [
+                    {
+                        "description": "Site attach payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.SiteAttachPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/apis.FloatingIpResponse"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/floating_ips/batch_detach": {
+            "post": {
+                "description": "batch detach floating ips from site subnets from an instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "batch detach floating ips",
+                "parameters": [
+                    {
+                        "description": "Site detach payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.SiteDetachPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/floating_ips/{id}": {
             "get": {
                 "description": "get a floating ip",
@@ -1077,85 +1169,6 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/instances/id/interfaces/{interface_id}": {
-            "get": {
-                "description": "get a interface",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Network"
-                ],
-                "summary": "get a interface",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.InterfaceResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            },
-            "patch": {
-                "description": "patch a interface",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Network"
-                ],
-                "summary": "patch a interface",
-                "parameters": [
-                    {
-                        "description": "Interface patch payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.InterfacePatchPayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/apis.InterfaceResponse"
-                        }
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/instances/{id}": {
             "get": {
                 "description": "get a instance",
@@ -1266,6 +1279,85 @@ const docTemplatealarm_v1 = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/interfaces/{interface_id}": {
+            "get": {
+                "description": "get a interface",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "get a interface",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.InterfaceResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "patch a interface",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "patch a interface",
+                "parameters": [
+                    {
+                        "description": "Interface patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InterfacePatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.InterfaceResponse"
                         }
                     },
                     "400": {
@@ -3400,6 +3492,12 @@ const docTemplatealarm_v1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "fip_address": {
+                    "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -3414,6 +3512,9 @@ const docTemplatealarm_v1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -3440,6 +3541,9 @@ const docTemplatealarm_v1 = `{
         "apis.FloatingIpPatchPayload": {
             "type": "object",
             "properties": {
+                "group": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
                 "inbound": {
                     "type": "integer",
                     "maximum": 20000,
@@ -3465,6 +3569,9 @@ const docTemplatealarm_v1 = `{
                     "type": "integer",
                     "maximum": 64,
                     "minimum": 0
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseID"
                 },
                 "inbound": {
                     "type": "integer",
@@ -3510,6 +3617,9 @@ const docTemplatealarm_v1 = `{
                 "created_at": {
                     "type": "string"
                 },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "id": {
                     "type": "string"
                 },
@@ -3528,14 +3638,45 @@ const docTemplatealarm_v1 = `{
                 "public_ip": {
                     "type": "string"
                 },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "target_interface": {
                     "$ref": "#/definitions/apis.TargetInterface"
                 },
                 "updated_at": {
                     "type": "string"
                 },
+                "vlan": {
+                    "type": "integer"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
+        "apis.FloatingIpWithInfo": {
+            "type": "object",
+            "properties": {
+                "fip_address": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "ip_address": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "type": {
+                    "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -4003,6 +4144,12 @@ const docTemplatealarm_v1 = `{
                     "maximum": 20000,
                     "minimum": 0
                 },
+                "public_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
                 "security_groups": {
                     "type": "array",
                     "items": {
@@ -4056,6 +4203,12 @@ const docTemplatealarm_v1 = `{
                     "type": "integer",
                     "maximum": 20000,
                     "minimum": 0
+                },
+                "public_addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
                 },
                 "security_groups": {
                     "type": "array",
@@ -4169,14 +4322,21 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "resource"
+                    ]
                 }
             }
         },
         "apis.IpGroupPayload": {
             "type": "object",
             "required": [
-                "dictionaries",
-                "name"
+                "name",
+                "type"
             ],
             "properties": {
                 "dictionaries": {
@@ -4186,6 +4346,13 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "system",
+                        "resource"
+                    ]
                 }
             }
         },
@@ -4198,6 +4365,12 @@ const docTemplatealarm_v1 = `{
                 "dictionaries": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
+                "floating_ips": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.FloatingIpWithInfo"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -4208,6 +4381,15 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "subnet_names": {
+                    "type": "string"
+                },
+                "subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.SubnetWithInfo"
+                    }
+                },
+                "type": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -4629,19 +4811,63 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.SiteAttachPayload": {
+            "type": "object",
+            "required": [
+                "instance",
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
+        "apis.SiteDetachPayload": {
+            "type": "object",
+            "required": [
+                "site_subnets"
+            ],
+            "properties": {
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
+                "site_subnets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                }
+            }
+        },
         "apis.SiteSubnetInfo": {
             "type": "object",
             "properties": {
                 "created_at": {
                     "type": "string"
                 },
+                "end": {
+                    "type": "string"
+                },
                 "gateway": {
                     "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "id": {
                     "type": "string"
                 },
                 "name": {
+                    "type": "string"
+                },
+                "netmask": {
                     "type": "string"
                 },
                 "network": {
@@ -4650,8 +4876,14 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "start": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -4715,15 +4947,7 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "type": {
-                    "enum": [
-                        "public",
-                        "internal"
-                    ],
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/common.SubnetType"
-                        }
-                    ]
+                    "$ref": "#/definitions/common.SubnetType"
                 },
                 "vlan": {
                     "type": "integer",
@@ -4742,6 +4966,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "dns": {
+                    "type": "string"
+                },
+                "end": {
                     "type": "string"
                 },
                 "gateway": {
@@ -4768,14 +4995,54 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "start": {
+                    "type": "string"
+                },
                 "type": {
                     "$ref": "#/definitions/common.SubnetType"
                 },
                 "updated_at": {
                     "type": "string"
                 },
+                "vlan": {
+                    "type": "integer"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.ResourceReference"
+                }
+            }
+        },
+        "apis.SubnetWithInfo": {
+            "type": "object",
+            "properties": {
+                "end": {
+                    "type": "string"
+                },
+                "gateway": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "netmask": {
+                    "type": "string"
+                },
+                "network": {
+                    "type": "string"
+                },
+                "start": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "vlan": {
+                    "type": "integer"
                 }
             }
         },
@@ -5256,11 +5523,13 @@ const docTemplatealarm_v1 = `{
             "type": "string",
             "enum": [
                 "public",
-                "internal"
+                "internal",
+                "site"
             ],
             "x-enum-varnames": [
                 "Public",
-                "Internal"
+                "Internal",
+                "Site"
             ]
         },
         "main.RuleFileRequest": {

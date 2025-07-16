@@ -150,7 +150,7 @@ func (v *KeyAPI) Create(c *gin.Context) {
 }
 
 func (v *KeyAPI) getKeyResponse(ctx context.Context, key *model.Key) (keyResp *KeyResponse, err error) {
-	owner := orgAdmin.GetOrgName(key.Owner)
+	owner := orgAdmin.GetOrgName(ctx, key.Owner)
 	keyResp = &KeyResponse{
 		ResourceReference: &ResourceReference{
 			ID:        key.UUID,

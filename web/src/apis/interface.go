@@ -34,8 +34,8 @@ type InterfaceListResponse struct {
 }
 
 type AddressInfo struct {
-	IPAddress string `json:"ip_address"`
-	Subnet    *ResourceReference   `json:"subnet"`
+	IPAddress string             `json:"ip_address"`
+	Subnet    *ResourceReference `json:"subnet"`
 }
 
 type InterfaceResponse struct {
@@ -52,28 +52,30 @@ type InterfaceResponse struct {
 }
 
 type InterfacePayload struct {
-	Subnet         *BaseReference   `json:"subnet" binding:"omitempty"`
-	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=16"`
-	IpAddress      string           `json:"ip_address", binding:"omitempty,ipv4"`
-	MacAddress     string           `json:"mac_address" binding:"omitempty,mac"`
-	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
-	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty,gte=1,lte=32"`
-	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
-	Inbound        int32            `json:"inbound" binding:"omitempty,min=0,max=20000"`
-	Outbound       int32            `json:"outbound" binding:"omitempty,min=0,max=20000"`
-	AllowSpoofing  bool             `json:"allow_spoofing" binding:"omitempty"`
-	SecurityGroups []*BaseReference `json:"security_groups" binding:"omitempty"`
+	Subnet          *BaseReference   `json:"subnet" binding:"omitempty"`
+	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=16"`
+	IpAddress       string           `json:"ip_address", binding:"omitempty,ipv4"`
+	MacAddress      string           `json:"mac_address" binding:"omitempty,mac"`
+	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
+	Count           int              `json:"count" binding:"omitempty,gte=1,lte=512"`
+	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty,gte=1,lte=32"`
+	Name            string           `json:"name" binding:"omitempty,min=2,max=32"`
+	Inbound         int32            `json:"inbound" binding:"omitempty,min=0,max=20000"`
+	Outbound        int32            `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	AllowSpoofing   bool             `json:"allow_spoofing" binding:"omitempty"`
+	SecurityGroups  []*BaseReference `json:"security_groups" binding:"omitempty"`
 }
 
 type InterfacePatchPayload struct {
-	Name           string           `json:"name" binding:"omitempty,min=2,max=32"`
-	Inbound        *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
-	Outbound       *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
-	Subnets        []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
-	Count          int              `json:"count" binding:"omitempty,gte=1,lte=512"`
-	AllowSpoofing  *bool            `json:"allow_spoofing" binding:"omitempty"`
-	SiteSubnets    []*BaseReference `json:"site_subnets" binding:"omitempty"`
-	SecurityGroups []*BaseReference `json:"security_groups" binding:"omitempty"`
+	Name            string           `json:"name" binding:"omitempty,min=2,max=32"`
+	Inbound         *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
+	Outbound        *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
+	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
+	Count           *int             `json:"count" binding:"omitempty,gte=1,lte=512"`
+	AllowSpoofing   *bool            `json:"allow_spoofing" binding:"omitempty"`
+	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty"`
+	SecurityGroups  []*BaseReference `json:"security_groups" binding:"omitempty"`
 }
 
 // @Summary get a interface
@@ -84,7 +86,7 @@ type InterfacePatchPayload struct {
 // @Success 200 {object} InterfaceResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instances/id/interfaces/{interface_id} [get]
+// @Router /instances/{id}/interfaces/{interface_id} [get]
 func (v *InterfaceAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
@@ -118,7 +120,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 			Name: iface.Name,
 		},
 		AddressInfo: &AddressInfo{
-			IPAddress:  iface.Address.Address,
+			IPAddress: iface.Address.Address,
 			Subnet: &ResourceReference{
 				ID:   iface.Address.Subnet.UUID,
 				Name: iface.Address.Subnet.Name,
@@ -133,32 +135,60 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 		if len(instance.FloatingIps) > 0 {
 			floatingIps := make([]*FloatingIpInfo, len(instance.FloatingIps))
 			for i, floatingip := range instance.FloatingIps {
+				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
+				if err != nil {
+					logger.Error("Failed to ensure subnet_id", err)
+					continue
+				}
+
 				floatingIps[i] = &FloatingIpInfo{
 					ResourceReference: &ResourceReference{
 						ID:   floatingip.UUID,
 						Name: floatingip.Name,
 					},
-					IpAddress: floatingip.FipAddress,
+					IpAddress:  floatingip.IPAddress,
+					FipAddress: floatingip.FipAddress,
+					Type:       floatingip.Type,
+				}
+				if floatingip.Subnet != nil {
+					floatingIps[i].Vlan = floatingip.Subnet.Vlan
+				}
+				if floatingip.Group != nil {
+					floatingIps[i].Group = &BaseReference{
+						ID:   floatingip.Group.UUID,
+						Name: floatingip.Group.Name,
+					}
 				}
 			}
 			interfaceResp.FloatingIps = floatingIps
 		}
 		if len(iface.SiteSubnets) > 0 {
 			for _, site := range iface.SiteSubnets {
-				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, &SiteSubnetInfo{
+				siteInfo := &SiteSubnetInfo{
 					ResourceReference: &ResourceReference{
 						ID:   site.UUID,
 						Name: site.Name,
 					},
 					Network: site.Network,
 					Gateway: site.Gateway,
-				})
+					Netmask: site.Netmask,
+					Start:   site.Start,
+					End:     site.End,
+				}
+				if site.Group != nil {
+					siteInfo.Group = &BaseReference{
+						ID:   site.Group.UUID,
+						Name: site.Group.Name,
+					}
+				}
+				siteInfo.Vlan = site.Vlan
+				interfaceResp.SiteSubnets = append(interfaceResp.SiteSubnets, siteInfo)
 			}
 		}
 		if len(iface.SecondAddresses) > 0 {
 			for _, secondAddr := range iface.SecondAddresses {
 				interfaceResp.SecondaryAddresses = append(interfaceResp.SecondaryAddresses, &AddressInfo{
-					IPAddress:  secondAddr.Address,
+					IPAddress: secondAddr.Address,
 					Subnet: &ResourceReference{
 						ID:   secondAddr.Subnet.UUID,
 						Name: secondAddr.Subnet.Name,
@@ -185,7 +215,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 // @Success 200 {object} InterfaceResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instances/id/interfaces/{interface_id} [patch]
+// @Router /instances/{id}/interfaces/{interface_id} [patch]
 func (v *InterfaceAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
@@ -223,7 +253,10 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if payload.Outbound != nil {
 		outbound = *payload.Outbound
 	}
-	count := payload.Count - 1
+	count := len(iface.SecondAddresses)
+	if payload.Count != nil {
+		count = *payload.Count - 1
+	}
 	allowSpoofing := iface.AllowSpoofing
 	if payload.AllowSpoofing != nil {
 		allowSpoofing = *payload.AllowSpoofing
@@ -247,32 +280,52 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 	} else {
 		var secgroup *model.SecurityGroup
-		secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
-		if err != nil {
-			logger.Errorf("Get security group failed, %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
-			return
+		if instance.Router != nil {
+			secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
+			if err != nil {
+				logger.Errorf("Get security group failed, %+v", err)
+				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
+				return
+			}
+		} else {
+			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			if err != nil {
+				logger.Error("Get default security group failed", err)
+				return
+			}
 		}
 		secgroups = append(secgroups, secgroup)
 	}
 	var ifaceSubnets []*model.Subnet
-	for _, subnet := range payload.Subnets {
-		var ifaceSubnet *model.Subnet
-		ifaceSubnet, err = subnetAdmin.GetSubnet(ctx, subnet)
-		if err != nil {
-			logger.Errorf("Failed to get interface subnet")
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get interface subnet", err)
-			return
+	var publicIps []*model.FloatingIp
+	if len(payload.PublicAddresses) > 0 {
+		for _, pubAddr := range payload.PublicAddresses {
+			var floatingIp *model.FloatingIp
+			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
+			if err != nil {
+				return
+			}
+			publicIps = append(publicIps, floatingIp)
 		}
-		if ifaceSubnet.Vlan != iface.Address.Subnet.Vlan {
-			logger.Errorf("Invalid subnet vlan for interface")
-			ErrorResponse(c, http.StatusBadRequest, "Invalid subnet vlan for interface", err)
-			return
+	} else {
+		for _, subnet := range payload.Subnets {
+			var ifaceSubnet *model.Subnet
+			ifaceSubnet, err = subnetAdmin.GetSubnet(ctx, subnet)
+			if err != nil {
+				logger.Errorf("Failed to get interface subnet")
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get interface subnet", err)
+				return
+			}
+			if ifaceSubnet.Vlan != iface.Address.Subnet.Vlan {
+				logger.Errorf("Invalid subnet vlan for interface")
+				ErrorResponse(c, http.StatusBadRequest, "Invalid subnet vlan for interface", err)
+				return
+			}
+			ifaceSubnets = append(ifaceSubnets, ifaceSubnet)
 		}
-		ifaceSubnets = append(ifaceSubnets, ifaceSubnet)
 	}
 	var siteSubnets []*model.Subnet
-	if iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
+	if !iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
 		logger.Errorf("Only primary interface can have site subnets")
 		ErrorResponse(c, http.StatusBadRequest, "Only primary interface can have site subnets", err)
 		return
@@ -287,7 +340,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count)
+	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)

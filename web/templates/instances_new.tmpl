@@ -148,7 +148,37 @@
 
                                 </div>
 
-                                <div class="required inline field">
+                                <div class="inline field">
+
+                                    <label for="public_ips">{{.i18n.Tr "Public IPs"}}</label>
+
+                                    <div class="ui multiple selection dropdown">
+
+                                      <input name="public_ips" id="public_ips" type="hidden">
+
+                                      <i class="dropdown icon"></i>
+
+                                      <div class="default text">{{.i18n.Tr "Public IPs"}}</div>
+
+                                      <div class="menu">
+
+                                        {{ range .PublicIps }}
+
+                                          <div class="item" data-value={{.ID}} data-text={{.FipAddress}}>
+
+                                            {{.FipAddress}}
+
+                                          </div>
+
+                                        {{ end }}
+
+                                      </div>
+
+                                    </div>
+
+                                </div>
+
+                                <div class="inline field">
 
                                     <label for="primary">{{.i18n.Tr "Primary Interfaces"}}</label>
 

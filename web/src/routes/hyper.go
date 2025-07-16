@@ -28,8 +28,8 @@ var (
 type HyperAdmin struct{}
 type HyperView struct{}
 
-func (a *HyperAdmin) List(offset, limit int64, order, query string) (total int64, hypers []*model.Hyper, err error) {
-	db := DB()
+func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, hypers []*model.Hyper, err error) {
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -66,7 +66,7 @@ func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper 
 		logger.Error("Not authorized for this operation", err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	hyper = &model.Hyper{}
 	if err = db.Where("hostid = ?", hostid).Take(hyper).Error; err != nil {
 		logger.Error("Failed to query hypervisor", err)
@@ -83,7 +83,7 @@ func (a *HyperAdmin) GetHyperByHostname(ctx context.Context, hostname string) (h
 		logger.Error("Not authorized for this operation", err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	hyper = &model.Hyper{}
 	if err = db.Where("hostname = ?", hostname).Take(hyper).Error; err != nil {
 		logger.Error("Failed to query hypervisor", err)
@@ -111,7 +111,7 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 		order = "hostid"
 	}
 	query := c.QueryTrim("q")
-	total, hypers, err := hyperAdmin.List(offset, limit, order, query)
+	total, hypers, err := hyperAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

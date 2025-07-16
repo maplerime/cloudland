@@ -139,7 +139,7 @@ func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	key = &model.Key{Model: model.Model{ID: id}}
@@ -152,7 +152,7 @@ func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error
 }
 
 func (a *KeyAdmin) GetKeyByUUID(ctx context.Context, uuID string) (key *model.Key, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	key = &model.Key{}
@@ -165,7 +165,7 @@ func (a *KeyAdmin) GetKeyByUUID(ctx context.Context, uuID string) (key *model.Ke
 }
 
 func (a *KeyAdmin) GetKeyByName(ctx context.Context, name string) (key *model.Key, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	key = &model.Key{}
@@ -195,7 +195,7 @@ func (a *KeyAdmin) GetKey(ctx context.Context, reference *BaseReference) (key *m
 
 func (a *KeyAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, keys []*model.Key, err error) {
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}

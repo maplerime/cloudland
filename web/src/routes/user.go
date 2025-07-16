@@ -80,7 +80,7 @@ func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err er
 		logger.Error("%v", err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	user = &model.User{Model: model.Model{ID: id}}
@@ -99,7 +99,7 @@ func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err er
 }
 
 func (a *UserAdmin) GetUserByUUID(ctx context.Context, uuID string) (user *model.User, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	user = &model.User{}
@@ -159,7 +159,7 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 }
 
 func (a *UserAdmin) Update(ctx context.Context, id int64, password string, members []string) (user *model.User, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	user = &model.User{Model: model.Model{ID: id}}
 	err = db.Set("gorm:auto_preload", true).Take(user).Error
 	if err != nil {
@@ -200,7 +200,7 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 	memberShip := GetMemberShip(ctx)
 	logger.Debug("memberShip in users is ", memberShip)
 	logger.Debug("start to connect to DB useradmin.list")
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -248,7 +248,7 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 }
 
 func (a *UserAdmin) Validate(ctx context.Context, username, password string) (user *model.User, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	user = &model.User{}
 	err = db.Take(user, "username = ?", username).Error
 	if err != nil {
@@ -258,8 +258,8 @@ func (a *UserAdmin) Validate(ctx context.Context, username, password string) (us
 	return
 }
 
-func (a *UserAdmin) AccessToken(uid int64, username, organization string) (oid int64, role model.Role, token string, issueAt, expiresAt int64, err error) {
-	db := DB()
+func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, username, organization string) (oid int64, role model.Role, token string, issueAt, expiresAt int64, err error) {
+	ctx, db := GetContextDB(ctx)
 	member := &model.Member{}
 	err = db.Take(member, "user_name = ? and org_name = ?", username, organization).Error
 	if err != nil {
@@ -323,7 +323,7 @@ func (v *UserView) LoginPost(c *macaron.Context, store session.Store) {
 	}
 	organization := username
 	uid := user.ID
-	oid, role, token, _, _, err := userAdmin.AccessToken(uid, username, organization)
+	oid, role, token, _, _, err := userAdmin.AccessToken(c.Req.Context(), uid, username, organization)
 	if err != nil {
 		logger.Error("Failed to get token", err)
 		c.Data["ErrorMsg"] = err.Error()

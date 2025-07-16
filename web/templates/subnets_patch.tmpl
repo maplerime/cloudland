@@ -14,6 +14,7 @@
                      <div class="inline field">
                        <label for="group">{{.i18n.Tr "Group"}}</label>
                        <select name="group" id="group" class="ui selection dropdown">
+                            <option value="0" {{if not $.Subnet.GroupID}}selected{{end}}>-- Please select --</option>
                                {{range  .Groups}}
                                    <option value="{{.ID}}" {{if eq .ID $.Subnet.GroupID}}selected{{end}}>{{.Name}}</option>
                                {{end}}

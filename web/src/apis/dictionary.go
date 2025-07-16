@@ -138,7 +138,7 @@ func (v *DictionaryAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, dictionaryResp)
 }
 func (v *DictionaryAPI) getDictionaryResponse(ctx context.Context, dictionary *model.Dictionary) (dictionaryResp *DictionaryResponse, err error) {
-	owner := orgAdmin.GetOrgName(dictionary.Owner)
+	owner := orgAdmin.GetOrgName(ctx, dictionary.Owner)
 	dictionaryResp = &DictionaryResponse{
 		ResourceReference: &ResourceReference{
 			ID:        dictionary.UUID,

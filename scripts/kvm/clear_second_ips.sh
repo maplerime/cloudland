@@ -3,4 +3,4 @@
 cd `dirname $0`
 source ../cloudrc
 
-./async_job/$(basename $0) $*
+async_exec ./async_job/$(basename $0) $*
