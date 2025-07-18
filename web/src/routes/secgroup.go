@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -167,7 +168,9 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (org *model.Orga
 		return
 	}
 	if org.DefaultSG == 0 {
-		secgroup, err = a.Create(ctx, org.Name + "-default", true, nil)
+		timestamp := time.Now().UnixNano()
+		secgroupName := fmt.Sprintf("default-%d", timestamp)
+		secgroup, err = a.Create(ctx, secgroupName, true, nil)
 		if err != nil {
 			logger.Error("Failed to create account secgroup ", err)
 			return
