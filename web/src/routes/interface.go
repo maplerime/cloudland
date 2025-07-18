@@ -319,7 +319,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 	}
 	changed := false
-	if iface.PrimaryIf {
+	if iface.PrimaryIf && instance.RouterID == 0 {
 		valid := false
 		valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if !valid {
