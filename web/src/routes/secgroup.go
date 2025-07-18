@@ -46,11 +46,20 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			return
 		}
 	} else {
+		memberShip := GetMemberShip(ctx)
 		var org *model.Organization
-		org, oldSg, err = a.GetDefaultSecgroup(ctx)
+		org, err = orgAdmin.Get(ctx, memberShip.OrgID)
 		if err != nil {
-			logger.Error("Failed to get default security group", err)
+			logger.Error("Failed to query organization ", err)
 			return
+		}
+		if org.DefaultSG > 0 {
+			oldSg.ID = org.DefaultSG
+			err = db.Take(oldSg).Error
+			if err != nil {
+				logger.Error("Failed to query default security group", err)
+				return
+			}
 		}
 		org.DefaultSG = newSg.ID
 		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
@@ -59,11 +68,13 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			return
 		}
 	}
-	oldSg.IsDefault = false
-	err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
-	if err != nil {
-		logger.Error("Failed to save new security group", err)
-		return
+	if oldSg.ID > 0 {
+		oldSg.IsDefault = false
+		err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
+		if err != nil {
+			logger.Error("Failed to save new security group", err)
+			return
+		}
 	}
 	newSg.IsDefault = true
 	err = db.Model(newSg).Update("is_default", newSg.IsDefault).Error
@@ -159,10 +170,10 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 	return
 }
 
-func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (org *model.Organization, secgroup *model.SecurityGroup, err error) {
+func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model.SecurityGroup, err error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	org, err = orgAdmin.Get(ctx, memberShip.OrgID)
+	org, err := orgAdmin.Get(ctx, memberShip.OrgID)
 	if err != nil {
 		logger.Error("Failed to query organization ", err)
 		return
