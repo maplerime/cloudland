@@ -472,25 +472,27 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 		}
 		moreAddresses = append(moreAddresses, addr.Address)
 	}
-	for _, site := range iface.SiteSubnets {
-		siteAddrs := []*model.Address{}
-		err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
-		if err != nil {
-			logger.Errorf("Failed to query site ip(s), %v", err)
-			return
-		}
-		for _, addr := range siteAddrs {
-			if osCode == "linux" {
-				address := strings.Split(addr.Address, "/")[0]
-				instNetworks = append(instNetworks, &InstanceNetwork{
-					Address: address,
-					Netmask: site.Netmask,
-					Type:    "ipv4",
-					Link:    iface.Name,
-					ID:      fmt.Sprintf("network%d", netID),
-				})
+	if instance.RouterID == 0 {
+		for _, site := range iface.SiteSubnets {
+			siteAddrs := []*model.Address{}
+			err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
+			if err != nil {
+				logger.Errorf("Failed to query site ip(s), %v", err)
+				return
 			}
-			moreAddresses = append(moreAddresses, addr.Address)
+			for _, addr := range siteAddrs {
+				if osCode == "linux" {
+					address := strings.Split(addr.Address, "/")[0]
+					instNetworks = append(instNetworks, &InstanceNetwork{
+						Address: address,
+						Netmask: site.Netmask,
+						Type:    "ipv4",
+						Link:    iface.Name,
+						ID:      fmt.Sprintf("network%d", netID),
+					})
+				}
+				moreAddresses = append(moreAddresses, addr.Address)
+			}
 		}
 	}
 	return
