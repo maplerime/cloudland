@@ -266,6 +266,14 @@
 
                                 </div>
 
+                    <div class="inline field">
+                        <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>
+                        <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">
+            		    {{ range .SecurityGroups }}
+                                  <option value="{{ .ID }}">{{ .ID }}-{{ .Name }}</option>
+                            {{ end }}
+                        </select>
+		    </div>
                                 <div class="inline field">
 
                                     <label for="secondary">{{.i18n.Tr "Secondary Interfaces"}}</label>

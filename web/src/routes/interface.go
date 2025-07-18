@@ -319,7 +319,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 	}
 	changed := false
-	if iface.PrimaryIf {
+	if iface.PrimaryIf && instance.RouterID == 0 {
 		valid := false
 		valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if !valid {
@@ -419,7 +419,7 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, secgroups, err := secgroupAdmin.List(c.Req.Context(), 0, -1, "", fmt.Sprintf("router_id = %d", iface.SecurityGroups[0].RouterID))
+	_, secgroups, err := secgroupAdmin.List(c.Req.Context(), 0, -1, "", fmt.Sprintf("router_id = %d and owner = %d", iface.SecurityGroups[0].RouterID, memberShip.OrgID))
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
