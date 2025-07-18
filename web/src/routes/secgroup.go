@@ -29,31 +29,46 @@ type SecgroupAdmin struct{}
 type SecgroupView struct{}
 
 func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, router *model.Router) (err error) {
-	if router == nil {
-		logger.Error("Not authorized to change system default security group")
-		err = fmt.Errorf("Not authorized")
-		return
-	}
 	ctx, db := GetContextDB(ctx)
-	oldSg := &model.SecurityGroup{Model: model.Model{ID: router.DefaultSG}}
-	err = db.Take(oldSg).Error
-	if err != nil {
-		logger.Error("Failed to query default security group", err)
+	oldSg := &model.SecurityGroup{}
+	if router != nil {
+		oldSg.ID = router.DefaultSG
+		err = db.Take(oldSg).Error
+		if err != nil {
+			logger.Error("Failed to query default security group", err)
+			return
+		}
+		router.DefaultSG = newSg.ID
+		err = db.Model(router).Update("default_sg", router.DefaultSG).Error
+		if err != nil {
+			logger.Error("Failed to save router", err)
+			return
+		}
+	} else {
+		var org *model.Organization
+		org, oldSg, err = a.GetDefaultSecgroup(ctx)
+		if err != nil {
+			logger.Error("Failed to get default security group", err)
+			return
+		}
+		org.DefaultSG = newSg.ID
+		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
+		if err != nil {
+			logger.Error("DB failed to update org default sg", err)
+			return
+		}
 	}
 	oldSg.IsDefault = false
 	err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
 	if err != nil {
 		logger.Error("Failed to save new security group", err)
-	}
-	router.DefaultSG = newSg.ID
-	err = db.Model(router).Update("default_sg", router.DefaultSG).Error
-	if err != nil {
-		logger.Error("Failed to save router", err)
+		return
 	}
 	newSg.IsDefault = true
 	err = db.Model(newSg).Update("is_default", newSg.IsDefault).Error
 	if err != nil {
 		logger.Error("Failed to save new security group", err)
+		return
 	}
 	return
 }
@@ -143,10 +158,10 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 	return
 }
 
-func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model.SecurityGroup, err error) {
+func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (org *model.Organization, secgroup *model.SecurityGroup, err error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	org, err := orgAdmin.Get(ctx, memberShip.OrgID)
+	org, err = orgAdmin.Get(ctx, memberShip.OrgID)
 	if err != nil {
 		logger.Error("Failed to query organization ", err)
 		return
@@ -158,9 +173,9 @@ func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model
 			return
 		}
 		org.DefaultSG = secgroup.ID
-		err = db.Model(org).Updates(org).Error
+		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
 		if err != nil {
-			logger.Error("DB failed to update user owner", err)
+			logger.Error("DB failed to update org default sg", err)
 			return
 		}
 	} else {
@@ -350,12 +365,12 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 				return
 			}
 		}
-		if isDefault {
-			err = a.Switch(ctx, secgroup, router)
-			if err != nil {
-				logger.Error("Failed to set default security group", err)
-				return
-			}
+	}
+	if isDefault {
+		err = a.Switch(ctx, secgroup, router)
+		if err != nil {
+			logger.Error("Failed to set default security group", err)
+			return
 		}
 	}
 	return
@@ -638,12 +653,16 @@ func (v *SecgroupView) Create(c *macaron.Context, store session.Store) {
 	} else if isdefStr == "yes" {
 		isDef = true
 	}
+	var router *model.Router
+	var err error
 	routerID := c.QueryInt64("router")
-	router, err := routerAdmin.Get(ctx, routerID)
-	if err != nil {
-		logger.Error("Failed to get vpc", err)
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(404, "404")
+	if routerID > 0 {
+		router, err = routerAdmin.Get(ctx, routerID)
+		if err != nil {
+			logger.Error("Failed to get vpc", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(404, "404")
+		}
 	}
 	_, err = secgroupAdmin.Create(ctx, name, isDef, router)
 	if err != nil {

@@ -1050,7 +1050,7 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	name := "fip"
 	logger.Debugf("Available subnets: %v", subnets)
 	var secGroup *model.SecurityGroup
-	secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+	_, secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
 	if err != nil {
 		logger.Error("Get security groups failed", err)
 		return
