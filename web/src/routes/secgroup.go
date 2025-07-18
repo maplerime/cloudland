@@ -52,13 +52,19 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			logger.Error("Failed to query organization ", err)
 			return
 		}
-		if org.DefaultSG == 0 {
-			org.DefaultSG = newSg.ID
-			err = db.Model(org).Update("default_sg", org.DefaultSG).Error
+		if org.DefaultSG > 0 {
+			oldSg.ID = org.DefaultSG
+			err = db.Take(oldSg).Error
 			if err != nil {
-				logger.Error("DB failed to update org default sg", err)
+				logger.Error("Failed to query default security group", err)
 				return
 			}
+		}
+		org.DefaultSG = newSg.ID
+		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
+		if err != nil {
+			logger.Error("DB failed to update org default sg", err)
+			return
 		}
 	}
 	if oldSg.ID > 0 {
