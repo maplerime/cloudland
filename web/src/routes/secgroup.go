@@ -61,11 +61,13 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			}
 		}
 	}
-	oldSg.IsDefault = false
-	err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
-	if err != nil {
-		logger.Error("Failed to save new security group", err)
-		return
+	if oldSg.ID > 0 {
+		oldSg.IsDefault = false
+		err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
+		if err != nil {
+			logger.Error("Failed to save new security group", err)
+			return
+		}
 	}
 	newSg.IsDefault = true
 	err = db.Model(newSg).Update("is_default", newSg.IsDefault).Error
