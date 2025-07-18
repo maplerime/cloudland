@@ -13,7 +13,7 @@ import (
 
 type Volume struct {
 	Model
-	Owner int64  `gorm:"default:1","index"` /* The organization ID of the resource */
+	Owner int64  `gorm:"default:1;index"` /* The organization ID of the resource */
 	Name  string `gorm:"type:varchar(128)"`
 	/*
 		The path of the volume, format is:
@@ -39,9 +39,57 @@ type Volume struct {
 	BpsBurst   int32
 }
 
-func (v *Volume) ParsePath() []string {
-	if v.Path != "" {
-		parts := strings.SplitN(v.Path, "://", 2)
+func (v *Volume) GetVolumeDriver() string {
+	return parseDriver(v.Path)
+}
+
+func (v *Volume) GetVolumePath() string {
+	return parsePath(v.Path)
+}
+
+func (v *Volume) GetVolumePoolID() string {
+	return parsePoolID(v.Path)
+}
+
+func (v *Volume) GetOriginVolumeID() string {
+	return parseOriginID(v.Path, v.UUID)
+}
+
+type VolumeBackup struct {
+	Model
+	Owner      int64  `gorm:"default:1;index"` /* The organization ID of the resource */
+	Name       string `gorm:"type:varchar(128)"`
+	VolumeID   int64
+	Volume     *Volume `gorm:"foreignkey:VolumeID"`
+	BackupType string  `gorm:"type:varchar(32)"` // snapshot or backup
+	Status     string  `gorm:"type:varchar(32)"`
+	Size       int32
+	Path       string `gorm:"type:varchar(256)"`
+}
+
+func (v *VolumeBackup) GetBackupDriver() string {
+	return parseDriver(v.Path)
+}
+
+func (v *VolumeBackup) GetBackupPath() string {
+	return parsePath(v.Path)
+}
+
+func (v *VolumeBackup) GetBackupPoolID() string {
+	return parsePoolID(v.Path)
+}
+
+func (v *VolumeBackup) GetOriginBackupID() string {
+	return parseOriginID(v.Path, v.UUID)
+}
+
+func init() {
+	dbs.AutoMigrate(&Volume{}, &VolumeBackup{})
+}
+
+func parse(path string) []string {
+	if path != "" {
+		parts := strings.SplitN(path, "://", 2)
 		if len(parts) == 2 {
 			driver := parts[0]
 			if driver == "local" {
@@ -56,38 +104,44 @@ func (v *Volume) ParsePath() []string {
 	return nil
 }
 
-func (v *Volume) GetVolumeDriver() string {
-	parts := v.ParsePath()
+func parseDriver(path string) string {
+	parts := parse(path)
 	if parts != nil {
 		return parts[0]
 	}
 	return ""
 }
 
-func (v *Volume) GetVolumePath() string {
-	parts := v.ParsePath()
+func parsePath(path string) string {
+	parts := parse(path)
 	if (parts != nil) && (parts[0] == "local") {
 		return parts[1]
 	}
-	return v.Path
+	return path
 }
 
-func (v *Volume) GetVolumePoolID() string {
-	parts := v.ParsePath()
+func parsePoolID(path string) string {
+	parts := parse(path)
 	if (parts != nil) && (len(parts) == 3) {
 		return parts[1]
 	}
 	return ""
 }
 
-func (v *Volume) GetOriginVolumeID() string {
-	parts := v.ParsePath()
+func parseOriginID(path string, id string) string {
+	parts := parse(path)
 	if (parts != nil) && (len(parts) == 3) {
 		return parts[2]
 	}
-	return v.UUID
+	return id
 }
 
-func init() {
-	dbs.AutoMigrate(&Volume{})
+type ScheduledVolumeBackup struct {
+	Model
+	Owner      int64 `gorm:"default:1;index"` /* The organization ID of the resource */
+	VolumeID   int64
+	Volume     *Volume `gorm:"foreignkey:VolumeID; index"`
+	BackupType string  `gorm:"type:varchar(32)"` // snapshot or backup
+	Status     string  `gorm:"type:varchar(32)"` // disabled, active
+	WDSTaskID  string  `gorm:"type:varchar(64)"`
 }

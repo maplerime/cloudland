@@ -133,6 +133,12 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/volumes/:id", volumeAPI.Delete)
 		authGroup.PATCH("/api/v1/volumes/:id", volumeAPI.Patch)
 
+		authGroup.GET("/api/v1/volumes/:id/:backup_type", volBackupAPI.List)
+		authGroup.POST("/api/v1/vol_backup", volBackupAPI.Create)
+		authGroup.GET("/api/v1/vol_backup/:id", volBackupAPI.Get)
+		authGroup.DELETE("/api/v1/vol_backup/:id", volBackupAPI.Delete)
+		authGroup.POST("/api/v1/vol_backup/:id/restore", volBackupAPI.Restore)
+
 		authGroup.GET("/api/v1/instances", instanceAPI.List)
 		authGroup.POST("/api/v1/instances", instanceAPI.Create)
 		authGroup.GET("/api/v1/instances/:id", instanceAPI.Get)
@@ -150,6 +156,13 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Get)
 		authGroup.DELETE("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Patch)
+
+		authGroup.GET("/api/v1/scheduled_tasks", scheduledTaskAPI.List)
+		authGroup.POST("/api/v1/scheduled_tasks", scheduledTaskAPI.Create)
+		authGroup.GET("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Get)
+		authGroup.DELETE("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Delete)
+		authGroup.PATCH("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Patch)
+		authGroup.GET("/api/v1/scheduled_tasks/:id/history", scheduledTaskAPI.ListHistory)
 
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{

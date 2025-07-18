@@ -22,6 +22,7 @@ import (
 
 var volumeAPI = &VolumeAPI{}
 var volumeAdmin = &routes.VolumeAdmin{}
+var backupAdmin = &routes.BackupAdmin{}
 
 type VolumeAPI struct{}
 
@@ -304,3 +305,5 @@ func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume)
 	}
 	return volumeResp, nil
 }
+
+

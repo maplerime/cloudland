@@ -9,6 +9,7 @@ package common
 
 type PowerAction string
 type SubnetType string
+type STaskAction string
 
 const (
 	Stop        PowerAction = "stop"
@@ -24,6 +25,14 @@ const (
 
 	SystemDefaultSGName = "system-default"
 	TimeStringForMat    = "2006-01-02 15:04:05.000000"
+
+	STaskActionStop        STaskAction = "stop"
+	STaskActionHardStop    STaskAction = "hard_stop"
+	STaskActionStart       STaskAction = "start"
+	STaskActionRestart     STaskAction = "restart"
+	STaskActionHardRestart STaskAction = "hard_restart"
+	STaskActionSnapshot    STaskAction = "snapshot"
+	STaskActionBackup      STaskAction = "backup"
 )
 
 var SignedSeret = []byte("Red B")

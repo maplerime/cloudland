@@ -72,3 +72,6 @@ cloudrc.local
 /scripts/backend
 /commitID
 **/.DS_Store
+CLAUDE.md
+GEMINI.md
+docs/wds_api_swagger_zh_CN.yaml

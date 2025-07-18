@@ -40,7 +40,7 @@ func GetVolumeDriver() (driver string) {
 
 func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid subnet ID: %d", id)
+		err = fmt.Errorf("Invalid volume ID: %d", id)
 		logger.Error(err)
 		return
 	}
@@ -292,14 +292,41 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	return
 }
 
-func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
-	db := DB()
-	volume := &model.Volume{}
-	if err = db.Where("uuid = ?", uuID).Take(volume).Error; err != nil {
-		logger.Error("DB: query volume failed", err)
+func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuid string) (err error) {
+	volume, err := a.GetVolumeByUUID(ctx, uuid)
+	if err != nil {
+		logger.Error("Failed to get volume by uuid", err)
 		return
 	}
 	return a.Delete(ctx, volume)
+}
+
+func (a *VolumeAdmin) Restore(ctx context.Context, volume *model.Volume, backup *model.VolumeBackup) (err error) {
+	logger.Debugf("Restore volume %s from backup %s", volume.UUID, backup.UUID)
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	if !permit {
+		logger.Errorf("Not authorized to restore volume(%s)", volume.UUID)
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	control := fmt.Sprintf("inter=")
+	vol_driver := volume.GetVolumeDriver()
+	if vol_driver != "local" {
+		volume_wds_uuid := volume.GetOriginVolumeID()
+		snapshot_wds_uuid := backup.GetOriginBackupID()
+		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/vol_restore_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, volume_wds_uuid, snapshot_wds_uuid)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Restore volume execution failed", err)
+			return
+		}
+	} else {
+		logger.Error("Restore not supported for local volume")
+		err = fmt.Errorf("Restore not supported for local volume")
+		return
+	}
+	return
 }
 
 // list data volumes
@@ -363,6 +390,7 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	return
 }
 
+// volume view functions
 func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
