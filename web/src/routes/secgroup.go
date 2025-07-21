@@ -246,7 +246,7 @@ func (a *SecgroupAdmin) GetSecurityGroup(ctx context.Context, reference *BaseRef
 
 func (a *SecgroupAdmin) GetSecgroupInterfaces(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Related(&secgroup.Interfaces, "Interfaces").Error
+	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Where("instance > 0").Related(&secgroup.Interfaces, "Interfaces").Error
 	if err != nil {
 		logger.Error("Failed to query secgroup, %v", err)
 		return
