@@ -86,7 +86,9 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 	}
 	image.QAEnabled = true
 	image.IsRescue = isRescue
-	image.RescueImage = rescueImage.ID
+	if rescueImage != nil {
+		image.RescueImage = rescueImage.ID
+	}
 	logger.Debugf("Creating image %+v", image)
 	err = db.Create(image).Error
 	if err != nil {
