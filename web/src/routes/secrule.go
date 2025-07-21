@@ -38,19 +38,21 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 	}
 	for _, iface := range secgroup.Interfaces {
 		logger.Debugf("iface: %+v", iface)
-		instance := &model.Instance{Model: model.Model{ID: iface.Instance}}
-		err = db.Take(instance).Error
-		if err != nil {
-			logger.Error("DB failed to get instance, %v", err)
-			err = nil
-			continue
-		}
-		if iface.Address != nil {
-			err = ApplyInterface(ctx, instance, iface, false)
+		if iface.Instance > 0 {
+			instance := &model.Instance{Model: model.Model{ID: iface.Instance}}
+			err = db.Take(instance).Error
 			if err != nil {
-				logger.Error("DB failed to apply interface, %v", err)
+				logger.Error("DB failed to get instance, %v", err)
 				err = nil
 				continue
+			}
+			if iface.Address != nil {
+				err = ApplyInterface(ctx, instance, iface, false)
+				if err != nil {
+					logger.Error("DB failed to apply interface, %v", err)
+					err = nil
+					continue
+				}
 			}
 		}
 	}
