@@ -249,7 +249,7 @@ func (a *SecgroupAdmin) GetSecurityGroup(ctx context.Context, reference *BaseRef
 
 func (a *SecgroupAdmin) GetSecgroupInterfaces(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Related(&secgroup.Interfaces, "Interfaces").Error
+	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Where("instance > 0").Related(&secgroup.Interfaces, "Interfaces").Error
 	if err != nil {
 		logger.Error("Failed to query secgroup, %v", err)
 		return
@@ -405,13 +405,9 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 		return
 	}
 	if secgroup.IsDefault == true && secgroup.Name != SystemDefaultSGName {
-		router := &model.Router{}
-		err = db.Where("default_sg = ?", secgroup.ID).Take(&router).Error
-		if err == nil {
-			logger.Error("Default security group can not be deleted", err)
-			err = fmt.Errorf("Default security group can not be deleted")
-			return
-		}
+		logger.Error("Default security group can not be deleted", err)
+		err = fmt.Errorf("Default security group can not be deleted")
+		return
 	}
 	err = db.Model(secgroup).Related(&secgroup.Interfaces, "Interfaces").Error
 	if err != nil {
