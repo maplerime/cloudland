@@ -3,18 +3,19 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 9 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname>"
+[ $# -lt 10 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname>"
 
 ID=$1
 vm_ID=inst-$ID
 img_name=$2
 snapshot=$3
 vol_ID=$4
-old_volume_id=$5
-vm_cpu=$6
-vm_mem=$7
-disk_size=$8
-vm_name=$9
+pool_ID=$5
+old_volume_id=$6
+vm_cpu=$7
+vm_mem=$8
+disk_size=$9
+vm_name=${10}
 state=error
 vol_state=error
 
@@ -61,7 +62,13 @@ else
     wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}"
     wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id"
     wds_curl DELETE "api/v2/sync/block/volumes/$old_volume_id?force=true"
-
+    if [ -z "$pool_ID" ]; then
+        pool_ID=$wds_pool_id
+    fi
+    if [ "$pool_ID" != "$wds_pool_id" ]; then
+        pool_prefix=$(get_uuid_prefix "$pool_ID")
+        image=${image}-${pool_prefix}
+    fi
     snapshot_name=${image}-${snapshot}
     read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
     if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
@@ -89,7 +96,7 @@ else
         expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
         ret_code=$(echo $expand_ret | jq -r .ret_code)
         if [ "$ret_code" != "0" ]; then
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
+            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
             exit -1
         fi
     fi
@@ -98,11 +105,11 @@ else
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
+        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
         exit -1
     fi
     vol_state=attached
-    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'success'"
+    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'success'"
 fi
 
 [ -z "$vm_mem" ] && vm_mem='1024m'

@@ -33,6 +33,11 @@ func (a *DictionaryAdmin) Create(ctx context.Context, category string, name stri
 		}
 		logger.Debugf("Exit DictionaryAdmin.Create, dictionary=%+v, err=%v", dictionary, err)
 	}()
+	if value == "" {
+		logger.Errorf("Value cannot be empty")
+		err = fmt.Errorf("value cannot be empty")
+		return
+	}
 	dictionary = &model.Dictionary{
 		Category: category,
 		Name:     name,
@@ -131,6 +136,17 @@ func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictio
 	}
 	dictionary = dictionaries
 	logger.Debugf("DictionaryAdmin.Update: success, uuid=%s, dictionary=%+v", dictionary.UUID, dictionary)
+	return
+}
+
+func (a *DictionaryAdmin) Find(ctx context.Context, category, value string) (dictionary *model.Dictionary, err error) {
+	db := DB()
+	dictionary = &model.Dictionary{}
+	err = db.Where("category = ? AND value = ?", category, value).Take(dictionary).Error
+	if err != nil {
+		logger.Error("DictionaryAdmin.Find: failed to get dictionary", err)
+		return
+	}
 	return
 }
 

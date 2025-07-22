@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/spf13/viper"
 	"net"
 	"net/http"
 	"strconv"
@@ -101,9 +102,9 @@ func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyp
 
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool) (instances []*model.Instance, err error) {
-	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t",
-		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, nestedEnable)
+	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
+	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t, poolID %s",
+		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, nestedEnable, poolID)
 	if count > 1 && len(primaryIface.PublicIps) > 0 {
 		err = fmt.Errorf("Public addresses are not allowed to set when count > 1")
 		return
@@ -156,6 +157,24 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		passwdLogin = true
 		logger.Debug("Root password login enabled")
 	}
+
+	driver := GetVolumeDriver()
+	if driver != "local" {
+		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+		if poolID == "" {
+			poolID = defaultPoolID
+		}
+		if poolID != defaultPoolID {
+			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
+			if err != nil {
+				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
+				err = fmt.Errorf("Image storage not found")
+				return
+			}
+		}
+		logger.Debugf("Using volume driver %s with pool ID %s", driver, poolID)
+	}
+
 	execCommands := []*ExecutionCommand{}
 	i := 0
 	hostname := prefix
@@ -164,9 +183,21 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			hostname = fmt.Sprintf("%s-%d", prefix, i+1)
 		}
 		total := 0
-		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-			logger.Error("Failed to query total instances with the image", err)
-			return
+
+		if driver == "local" {
+			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+				logger.Error("Failed to query total instances with the image", err)
+				return
+			}
+		} else {
+			if err = db.Model(&model.Instance{}).
+				Unscoped().
+				Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
+				Where(fmt.Sprintf("b.path like '%%%s%%'", poolID)).
+				Where("instances.image_id = ?", image.ID).
+				Count(&total).Error; err != nil {
+				logger.Error("Failed to count instances with volumes matching pool_id", err)
+			}
 		}
 		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
@@ -224,7 +255,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -369,10 +400,32 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
+	driver := GetVolumeDriver()
+	poolID := bootVolume.GetVolumePoolID()
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 	total := 0
-	if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-		logger.Error("Failed to query total instances with the image", err)
-		return
+	if driver == "local" {
+		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
+			logger.Error("Failed to query total instances with the image", err)
+			return
+		}
+	} else {
+		if poolID != defaultPoolID {
+			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
+			if err != nil {
+				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
+				err = fmt.Errorf("Image storage not found")
+				return
+			}
+		}
+		if err = db.Model(&model.Instance{}).
+			Unscoped().
+			Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
+			Where(fmt.Sprintf("b.path like '%%%s%%'", poolID)).
+			Where("instances.image_id = ?", image.ID).
+			Count(&total).Error; err != nil {
+			logger.Error("Failed to count instances with volumes matching pool_id", err)
+		}
 	}
 	if image.Size > int64(disk)*1024*1024*1024 {
 		err = fmt.Errorf("Flavor disk size is not enough for the image")
@@ -465,7 +518,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%d' '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)
@@ -1294,6 +1347,13 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+	pools := []*model.Dictionary{}
+	err = db.Where("category = ?", "storage_pool").Find(&pools).Error
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
 	c.Data["HostName"] = c.QueryTrim("hostname")
 	c.Data["Images"] = images
 	c.Data["Flavors"] = flavors
@@ -1303,6 +1363,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 	c.Data["Keys"] = keys
 	c.Data["Hypers"] = hypers
 	c.Data["Zones"] = zones
+	c.Data["Pools"] = pools
 	c.HTML(200, "instances_new")
 }
 
@@ -1990,7 +2051,8 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	}
 	nestedEnable := c.QueryBool("nested_enable")
 	userdata := c.QueryTrim("userdata")
-	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable)
+	poolID := c.QueryTrim("pool")
+	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable, poolID)
 	if err != nil {
 		logger.Error("Create instance failed", err)
 		c.Data["ErrorMsg"] = err.Error()
