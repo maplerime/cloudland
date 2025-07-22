@@ -7,8 +7,8 @@ from scapy.sendrecv import sendp
 
 def send_spoofed_arp(iface, src_ip, src_mac):
     try:
-        arp_packet = ARP(op=1, pdst=src_ip, psrc=src_ip, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=src_mac)
-        sendp(Ether(dst="ff:ff:ff:ff:ff:ff", src=src_mac)/arp_packet, iface=iface, verbose=False)  # sendp for specifying interface
+        #arp_packet = ARP(op=1, pdst=src_ip, psrc=src_ip, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=src_mac)
+        #sendp(Ether(dst="ff:ff:ff:ff:ff:ff", src=src_mac)/arp_packet, iface=iface, verbose=False)  # sendp for specifying interface
         arp_packet = ARP(op=2, pdst=src_ip, psrc=src_ip, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=src_mac)
         sendp(Ether(dst="ff:ff:ff:ff:ff:ff", src=src_mac)/arp_packet, iface=iface, verbose=False)  # sendp for specifying interface
 
