@@ -129,6 +129,7 @@ func New() (m *macaron.Macaron) {
 	m.Post("/instances/:id/reinstall", instanceView.Reinstall)
 	m.Get("/instances/:id/rescue", instanceView.Rescue)
 	m.Post("/instances/:id/rescue", instanceView.Rescue)
+	m.Get("/instances/:id/end_rescue", instanceView.EndRescue)
 	m.Post("/instances/:id/end_rescue", instanceView.EndRescue)
 	m.Post("/instances/:id/console", consoleView.ConsoleURL)
 	m.Get("/interfaces/:id", interfaceView.Edit)

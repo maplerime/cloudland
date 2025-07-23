@@ -1753,7 +1753,6 @@ func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
 
 func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
-	redirectTo := "/instances"
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
@@ -1774,7 +1773,12 @@ func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	if c.Req.Method == "POST" {
+	if c.Req.Method == "GET" {
+		c.Data["Instance"] = instance
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/end_rescue", instanceID)
+		c.HTML(200, "instances_end_rescue")
+	} else if c.Req.Method == "POST" {
+		redirectTo := "/instances"
 		err = instanceAdmin.EndRescue(ctx, instance)
 		if err != nil {
 			logger.Error("Rescue failed", err)

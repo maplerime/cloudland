@@ -350,7 +350,7 @@
 															</div>
 						{{ if eq .Status "rescuing" }}
 															<div class="item" data-value="8" data-text="EndRescue        ">
-                                                                                                                        <a href="javascript:document.submitForm{{.ID}}.submit()">End Rescue</a>
+                                                                                                                        <a href="{{$Link}}/{{.ID}}/end_rescue">End Rescue                   </a>
 															</div>
 						{{ else }}
 															<div class="item" data-value="8" data-text="RescueInstance        ">
