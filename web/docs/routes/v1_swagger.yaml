@@ -121,6 +121,8 @@ definitions:
         type: string
       owner:
         type: string
+      type:
+        type: string
       updated_at:
         type: string
       vlan:
@@ -1105,7 +1107,7 @@ definitions:
       group:
         $ref: '#/definitions/common.BaseReference'
       name:
-        maxLength: 32
+        maxLength: 64
         minLength: 2
         type: string
       network_cidr:

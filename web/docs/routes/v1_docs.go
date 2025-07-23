@@ -3540,6 +3540,9 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "type": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -4984,7 +4987,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 64,
                     "minLength": 2
                 },
                 "network_cidr": {

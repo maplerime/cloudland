@@ -350,10 +350,7 @@
 															</div>
 						{{ if eq .Status "rescuing" }}
 															<div class="item" data-value="8" data-text="EndRescue        ">
-                                                                                                                        <form class="ui form" name="submitForm{{.ID}}" method="post" action="{{$Link}}/{{.ID}}/end_rescue">
-												<button type="submit" class="btn-link">End Rescue</button>
                                                                                                                         <a href="javascript:document.submitForm{{.ID}}.submit()">End Rescue</a>
-                                                                                                                        </form>
 															</div>
 						{{ else }}
 															<div class="item" data-value="8" data-text="RescueInstance        ">
