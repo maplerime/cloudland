@@ -58,7 +58,7 @@ var (
 	WDSVolumeDetailURL string
 	// query range metrics
 	rangeQueries = map[string]string{
-		"cpu":              `100 * rate(libvirt_domain_info_cpu_time_seconds_total{domain=~"%s"}[2m]) / (2 * 5 * 60)`,
+		"cpu":              `100 * rate(libvirt_domain_info_cpu_time_seconds_total{domain=~"%s"}[2m]) / on(domain) libvirt_domain_info_virtual_cpus{domain=~"%s"}`,
 		"memory_unused":    `libvirt_domain_memory_stats_unused_bytes{domain=~"%s"} / 1024`,
 		"memory_total":     `libvirt_domain_info_maximum_memory_bytes{domain=~"%s"} / 1024`,
 		"disk_read":        `rate(libvirt_domain_block_stats_read_bytes_total{domain=~"%s",target_device=~"%s"}[2m]) / 1024`,
@@ -326,12 +326,17 @@ func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, de
 
 	var finalQuery string
 	if metricType == "disk_read" || metricType == "disk_write" ||
-		metricType == "network_receive" || metricType == "network_transmit" || metricType == "traffic" {
-		if len(deviceIDs) == 0 {
+		metricType == "network_receive" || metricType == "network_transmit" || metricType == "traffic" || metricType == "cpu" {
+		if (metricType != "cpu") && len(deviceIDs) == 0 {
 			logger.Warning("No device IDs provided for %s metrics", metricType)
 			return ""
 		}
-		deviceFilter := strings.Join(deviceIDs, "|")
+		var deviceFilter string
+		if metricType == "cpu" {
+			deviceFilter = uuidFilter
+		} else {
+			deviceFilter = strings.Join(deviceIDs, "|")
+		}
 		logger.Info("Device filter: %s", deviceFilter)
 		finalQuery = fmt.Sprintf(query, uuidFilter, deviceFilter)
 	} else {
@@ -340,7 +345,6 @@ func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, de
 
 	logger.Info("Generated query: %s", finalQuery)
 	return finalQuery
-
 }
 
 func (api *MonitorAPI) GetTraffic(c *gin.Context) {
