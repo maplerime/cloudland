@@ -11,6 +11,9 @@ router=$2
 boot_volume=$3
 vm_xml=$(virsh dumpxml $vm_ID)
 virsh undefine $vm_ID
+if [ $? -ne 0 ]; then
+    virsh undefine --nvram $vm_ID
+fi
 cmd="virsh destroy $vm_ID"
 result=$(eval "$cmd")
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
