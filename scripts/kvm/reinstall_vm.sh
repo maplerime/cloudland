@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 10 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname>"
+[ $# -lt 10 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> [<nvram_flag>]"
 
 ID=$1
 vm_ID=inst-$ID
@@ -16,6 +16,13 @@ vm_cpu=$7
 vm_mem=$8
 disk_size=$9
 vm_name=${10}
+# PET-762: check if the old image is uefi, if so, set nvram flag
+if [ $# -lt 11 ]; then
+    nvram_flag=""
+else
+    nvram_flag=${11}
+fi
+# end PET-762
 state=error
 vol_state=error
 
@@ -25,7 +32,7 @@ metadata=$(echo $md | base64 -d)
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
-virsh undefine $vm_ID
+virsh undefine $nvram_flag $vm_ID
 virsh destroy $vm_ID
 let fsize=$disk_size*1024*1024*1024
 

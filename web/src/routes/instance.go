@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/viper"
 	"net"
 	"net/http"
 	"strconv"
@@ -22,6 +21,8 @@ import (
 	"web/src/dbs"
 	"web/src/model"
 	"web/src/utils/encrpt"
+
+	"github.com/spf13/viper"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-macaron/session"
@@ -399,6 +400,19 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		err = fmt.Errorf("Corrupted instance")
 		return
 	}
+	// PET-762 check if the old image is uefi, if so, set nvram flag
+	oldImage := instance.Image
+	nvramFlag := ""
+	if oldImage == nil {
+		oldImage, err = imageAdmin.Get(ctx, instance.ImageID)
+		if err != nil {
+			logger.Errorf("Failed to get image %d, %v", instance.ImageID, err)
+		}
+	}
+	if oldImage != nil && oldImage.BootLoader == "uefi" {
+		nvramFlag = "--nvram"
+	}
+	// end PET-762
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 	driver := GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
@@ -518,7 +532,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, nvramFlag, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)
@@ -940,7 +954,20 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Errorf("Failed to marshal sites info, %v", err)
 		return
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, moreAddrsJson)
+	// PET-762 check if the old image is uefi, if so, set nvram flag
+	image := instance.Image
+	if image == nil {
+		image, err = imageAdmin.Get(ctx, instance.ImageID)
+		if err != nil {
+			logger.Errorf("Failed to get image %d, %v", instance.ImageID, err)
+		}
+	}
+	nvramFlag := ""
+	if image != nil && image.BootLoader == "uefi" {
+		nvramFlag = "--nvram"
+	}
+	// end PET-762
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, nvramFlag, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)

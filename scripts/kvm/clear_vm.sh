@@ -3,14 +3,23 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 3 ] && die "$0 <vm_ID> <router> <boot_volume>"
+[ $# -lt 3 ] && die "$0 <vm_ID> <router> <boot_volume> [<nvram_flag>]"
 
 ID=$1
 vm_ID=inst-$ID
 router=$2
 boot_volume=$3
+# PET-762: check if the old image is uefi, if so, set nvram flag
+if [ $# -lt 4 ]; then
+    nvram_flag=""
+else
+    nvram_flag=${4}
+fi
+# end PET-762
+
 vm_xml=$(virsh dumpxml $vm_ID)
-virsh undefine $vm_ID
+virsh undefine $nvram_flag $vm_ID
+
 cmd="virsh destroy $vm_ID"
 result=$(eval "$cmd")
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
