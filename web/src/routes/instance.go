@@ -417,6 +417,11 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, fl
 
 func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, rootPasswd string, keys []*model.Key, cpu int32, memory int32, disk int32, loginPort int) (err error) {
 	logger.Debugf("Reinstall instance %d with image %d, cpu %d, memory %d, disk %d", instance.ID, image.ID, cpu, memory, disk)
+	if instance.Status == "rescuing" {
+		err = fmt.Errorf("Instance is not in the right state")
+		logger.Error("Instance is not in the right state")
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
