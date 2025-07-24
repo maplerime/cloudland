@@ -24,7 +24,7 @@ vm_rescue=$vm_ID-rescue
 ./action_vm.sh $ID hard_stop
 md=$(cat)
 metadata=$(echo $md | base64 -d)
-./build_meta.sh "$vm_ID" rescue-"$vm_name" <<< $md >/dev/null 2>&1
+./build_meta.sh "$vm_ID" "$vm_name" "true" <<< $md >/dev/null 2>&1
 
 if [ $disk_size -gt 30 ]; then
     disk_size=30
