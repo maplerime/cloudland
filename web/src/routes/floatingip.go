@@ -308,7 +308,7 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 	return
 }
 
-func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, query string, instanceID int64) (total int64, floatingIps []*model.FloatingIp, err error) {
+func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, query string, instanceID int64, uuids []string) (total int64, floatingIps []*model.FloatingIp, err error) {
 	memberShip := GetMemberShip(ctx)
 	if limit == 0 {
 		limit = 16
@@ -327,6 +327,15 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 			query = fmt.Sprintf("(%s) and (%s)", query, instanceQuery)
 		} else {
 			query = instanceQuery
+		}
+	}
+
+	if len(uuids) > 0 {
+		idQuery := fmt.Sprintf("uuid in ('%s')", strings.Join(uuids, "','"))
+		if query != "" {
+			query = fmt.Sprintf("%s and %s", query, idQuery)
+		} else {
+			query = idQuery
 		}
 	}
 
@@ -403,7 +412,7 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, 0)
+	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, 0, nil)
 	if err != nil {
 		logger.Error("Failed to list floating ip(s), %v", err)
 		c.Data["ErrorMsg"] = err.Error()

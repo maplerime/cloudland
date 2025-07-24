@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -383,10 +384,10 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 
 // list data volumes
 func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, volumes []*model.Volume, err error) {
-	return a.ListVolume(ctx, offset, limit, order, query, "all", "", 0)
+	return a.ListVolume(ctx, offset, limit, order, query, "all", "", 0, nil)
 }
 
-func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query, volume_type, status string, instanceID int64) (total int64, volumes []*model.Volume, err error) {
+func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query, volume_type, status string, instanceID int64, uuids []string) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	db := DB()
 	if limit == 0 {
@@ -428,6 +429,15 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 			query = fmt.Sprintf("%s and %s", query, statusQuery)
 		} else {
 			query = statusQuery
+		}
+	}
+
+	if len(uuids) > 0 {
+		idQuery := fmt.Sprintf("uuid in ('%s')", strings.Join(uuids, "','"))
+		if query != "" {
+			query = fmt.Sprintf("%s and %s", query, idQuery)
+		} else {
+			query = idQuery
 		}
 	}
 
@@ -479,7 +489,7 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, volumes, err := volumeAdmin.ListVolume(c.Req.Context(), offset, limit, order, query, "all", "", 0)
+	total, volumes, err := volumeAdmin.ListVolume(c.Req.Context(), offset, limit, order, query, "all", "", 0, nil)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

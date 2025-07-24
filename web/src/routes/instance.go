@@ -952,7 +952,6 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 	return int(instance.ID), nil
 }
 
-
 func joinSecgroup(db *gorm.DB, secgroupID string) *gorm.DB {
 	if secgroupID != "" {
 		db = db.Joins("JOIN interfaces ON interfaces.instance = instances.id").
@@ -1220,7 +1219,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, secgroups, err := secgroupAdmin.List(ctx, 0, -1, "", "")
+	_, secgroups, err := secgroupAdmin.List(ctx, 0, -1, "", "", nil)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

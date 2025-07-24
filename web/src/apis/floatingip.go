@@ -59,6 +59,10 @@ type FloatingIpListResponse struct {
 	FloatingIps []*FloatingIpResponse `json:"floating_ips"`
 }
 
+type FloatingIpPostFilterPayload struct {
+	IDs []string `json:"ids"`
+}
+
 type FloatingIpPayload struct {
 	PublicSubnet *BaseReference `json:"public_subnet" binding:"omitempty"`
 	PublicIp     string         `json:"public_ip" binding:"omitempty,ipv4"`
@@ -299,6 +303,28 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /floating_ips [get]
 func (v *FloatingIpAPI) List(c *gin.Context) {
+	v.listFloatingIPs(c, nil)
+}
+
+// @Summary list floating ips by post filter
+// @Description list floating ips by post filter
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Success 200 {object} FloatingIpListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /floating_ips/filter [post]
+func (v *FloatingIpAPI) PostFilter(c *gin.Context) {
+	payload := &FloatingIpPostFilterPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Failed to bind postFilter floating ip payload JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	v.listFloatingIPs(c, payload.IDs)
+}
+
+func (v *FloatingIpAPI) listFloatingIPs(c *gin.Context, ids []string) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
@@ -334,7 +360,7 @@ func (v *FloatingIpAPI) List(c *gin.Context) {
 		}
 		instanceID = instance.ID
 	}
-	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, instanceID)
+	total, floatingIps, err := floatingIpAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, instanceID, ids)
 	if err != nil {
 		logger.Errorf("Failed to list floatingIps %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list floatingIps", err)

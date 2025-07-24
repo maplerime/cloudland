@@ -75,6 +75,10 @@ type VolumeListResponse struct {
 	Volumes []*VolumeResponse `json:"volumes"`
 }
 
+type VolumePostFilterPayload struct {
+	IDs []string `json:"ids"`
+}
+
 type VolumeResizePayload struct {
 	Size int32 `json:"size" binding:"required,gte=1"`
 }
@@ -224,6 +228,28 @@ func (v *VolumeAPI) Create(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /volumes [get]
 func (v *VolumeAPI) List(c *gin.Context) {
+	v.listVolumes(c, nil)
+}
+
+// @Summary list volumes by post filter
+// @Description list volumes by post filter
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 200 {object} VolumeListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /volumes/filter [post]
+func (v *VolumeAPI) PostFilter(c *gin.Context) {
+	payload := &VolumePostFilterPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Failed to bind postFilter volume payload JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	v.listVolumes(c, payload.IDs)
+}
+
+func (v *VolumeAPI) listVolumes(c *gin.Context, ids []string) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
@@ -265,7 +291,7 @@ func (v *VolumeAPI) List(c *gin.Context) {
 		}
 		instanceID = instance.ID
 	}
-	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), orderStr, nameStr, typeStr, statusStr, instanceID)
+	total, volumes, err := volumeAdmin.ListVolume(ctx, int64(offset), int64(limit), orderStr, nameStr, typeStr, statusStr, instanceID, ids)
 	if err != nil {
 		logger.Errorf("Failed to list volumes, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list volumes", err)

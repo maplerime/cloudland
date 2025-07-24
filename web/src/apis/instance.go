@@ -95,6 +95,10 @@ type InstanceListResponse struct {
 	Instances []*InstanceResponse `json:"instances"`
 }
 
+type InstancePostFilterPayload struct {
+	IDs []string `json:"ids"`
+}
+
 // @Summary get a instance
 // @Description get a instance
 // @tags Compute
@@ -664,15 +668,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	return
 }
 
-// @Summary list instances
-// @Description list instances
-// @tags Compute
-// @Accept  json
-// @Produce json
-// @Success 200 {object} InstanceListResponse
-// @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instances [get]
-func (v *InstanceAPI) List(c *gin.Context) {
+func (v *InstanceAPI) listInstances(c *gin.Context, ids []string) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
@@ -732,6 +728,9 @@ func (v *InstanceAPI) List(c *gin.Context) {
 		queryStr = fmt.Sprintf("status = '%s'", statusStr)
 		conditions = append(conditions, queryStr)
 	}
+	if len(ids) > 0 {
+		conditions = append(conditions, fmt.Sprintf("uuid in ('%s')", strings.Join(ids, "','")))
+	}
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
@@ -773,5 +772,34 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	instanceListResp.Instances = instanceList
 	logger.Debugf("List instances success, %+v", instanceListResp)
 	c.JSON(http.StatusOK, instanceListResp)
-	return
+}
+
+// @Summary list instances
+// @Description list instances
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 200 {object} InstanceListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances [get]
+func (v *InstanceAPI) List(c *gin.Context) {
+	v.listInstances(c, nil)
+}
+
+// @Summary list instances by post filter
+// @Description list instances by post filter
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 200 {object} InstanceListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/filter [post]
+func (v *InstanceAPI) PostFilter(c *gin.Context) {
+	payload := &InstancePostFilterPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Failed to bind postFilter instance payload JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	v.listInstances(c, payload.IDs)
 }

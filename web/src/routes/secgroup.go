@@ -375,7 +375,7 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 	return
 }
 
-func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, secgroups []*model.SecurityGroup, err error) {
+func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, query string, uuids []string) (total int64, secgroups []*model.SecurityGroup, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
@@ -395,12 +395,19 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 
 	where := memberShip.GetWhere()
 	secgroups = []*model.SecurityGroup{}
-	if err = db.Model(&model.SecurityGroup{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	db = db.Model(&model.SecurityGroup{}).Where(where)
+	if query != "" {
+		db = db.Where(query)
+	}
+	if len(uuids) > 0 {
+		db = db.Where("uuid in (?)", uuids)
+	}
+	if err = db.Count(&total).Error; err != nil {
 		logger.Error("DB failed to count security group(s), %v", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Where(where).Where(query).Find(&secgroups).Error; err != nil {
+	if err = db.Find(&secgroups).Error; err != nil {
 		logger.Error("DB failed to query security group(s), %v", err)
 		return
 	}
@@ -454,7 +461,7 @@ func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
 		query = fmt.Sprintf("router_id = %d", routerID)
 	}
 
-	total, secgroups, err := secgroupAdmin.List(c.Req.Context(), offset, limit, order, query)
+	total, secgroups, err := secgroupAdmin.List(c.Req.Context(), offset, limit, order, query, nil)
 	if err != nil {
 		logger.Error("Failed to list security group(s), %v", err)
 		c.Data["ErrorMsg"] = err.Error()

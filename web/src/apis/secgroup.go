@@ -41,6 +41,10 @@ type SecurityGroupListResponse struct {
 	SecurityGroups []*SecurityGroupResponse `json:"security_groups"`
 }
 
+type SecurityGroupPostFilterPayload struct {
+	IDs []string `json:"ids"`
+}
+
 type SecurityGroupPayload struct {
 	Name      string         `json:"name" binding:"required,min=2,max=32"`
 	VPC       *BaseReference `json:"vpc" binding:"omitempty"`
@@ -264,6 +268,28 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /security_groups [get]
 func (v *SecgroupAPI) List(c *gin.Context) {
+	v.listSecurityGroups(c, nil)
+}
+
+// @Summary list secgroups
+// @Description list secgroups
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Success 200 {object} SecurityGroupListResponse
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /security_groups/filter [post]
+func (v *SecgroupAPI) PostFilter(c *gin.Context) {
+	payload := &SecurityGroupPostFilterPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Failed to bind postFilter security group payload JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	v.listSecurityGroups(c, payload.IDs)
+}
+
+func (v *SecgroupAPI) listSecurityGroups(c *gin.Context, ids []string) {
 	ctx := c.Request.Context()
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
@@ -305,7 +331,7 @@ func (v *SecgroupAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
 		return
 	}
-	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr)
+	total, secgroups, err := secgroupAdmin.List(ctx, int64(offset), int64(limit), orderStr, queryStr, ids)
 	if err != nil {
 		logger.Errorf("Failed to list secgroups, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list secgroups", err)

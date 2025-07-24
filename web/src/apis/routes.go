@@ -97,6 +97,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/security_groups", secgroupAPI.List)
 		authGroup.POST("/api/v1/security_groups", secgroupAPI.Create)
+		authGroup.POST("/api/v1/security_groups/filter", secgroupAPI.PostFilter)
 		authGroup.GET("/api/v1/security_groups/:id", secgroupAPI.Get)
 		authGroup.DELETE("/api/v1/security_groups/:id", secgroupAPI.Delete)
 		authGroup.PATCH("/api/v1/security_groups/:id", secgroupAPI.Patch)
@@ -108,6 +109,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/floating_ips", floatingIpAPI.List)
 		authGroup.POST("/api/v1/floating_ips", floatingIpAPI.Create)
+		authGroup.POST("/api/v1/floating_ips/filter", floatingIpAPI.PostFilter)
 		authGroup.GET("/api/v1/floating_ips/:id", floatingIpAPI.Get)
 		authGroup.DELETE("/api/v1/floating_ips/:id", floatingIpAPI.Delete)
 		authGroup.PATCH("/api/v1/floating_ips/:id", floatingIpAPI.Patch)
@@ -131,6 +133,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/volumes", volumeAPI.List)
 		authGroup.POST("/api/v1/volumes", volumeAPI.Create)
+		authGroup.POST("/api/v1/volumes/filter", volumeAPI.PostFilter)
 		authGroup.GET("/api/v1/volumes/:id", volumeAPI.Get)
 		authGroup.DELETE("/api/v1/volumes/:id", volumeAPI.Delete)
 		authGroup.PATCH("/api/v1/volumes/:id", volumeAPI.Patch)
@@ -138,6 +141,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/instances", instanceAPI.List)
 		authGroup.POST("/api/v1/instances", instanceAPI.Create)
+		authGroup.POST("/api/v1/instances/filter", instanceAPI.PostFilter)
 		authGroup.GET("/api/v1/instances/:id", instanceAPI.Get)
 		authGroup.DELETE("/api/v1/instances/:id", instanceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id", instanceAPI.Patch)
