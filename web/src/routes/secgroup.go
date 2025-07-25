@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -45,11 +46,20 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			return
 		}
 	} else {
+		memberShip := GetMemberShip(ctx)
 		var org *model.Organization
-		org, oldSg, err = a.GetDefaultSecgroup(ctx)
+		org, err = orgAdmin.Get(ctx, memberShip.OrgID)
 		if err != nil {
-			logger.Error("Failed to get default security group", err)
+			logger.Error("Failed to query organization ", err)
 			return
+		}
+		if org.DefaultSG > 0 {
+			oldSg.ID = org.DefaultSG
+			err = db.Take(oldSg).Error
+			if err != nil {
+				logger.Error("Failed to query default security group", err)
+				return
+			}
 		}
 		org.DefaultSG = newSg.ID
 		err = db.Model(org).Update("default_sg", org.DefaultSG).Error
@@ -58,11 +68,13 @@ func (a *SecgroupAdmin) Switch(ctx context.Context, newSg *model.SecurityGroup, 
 			return
 		}
 	}
-	oldSg.IsDefault = false
-	err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
-	if err != nil {
-		logger.Error("Failed to save new security group", err)
-		return
+	if oldSg.ID > 0 {
+		oldSg.IsDefault = false
+		err = db.Model(oldSg).Update("is_default", oldSg.IsDefault).Error
+		if err != nil {
+			logger.Error("Failed to save new security group", err)
+			return
+		}
 	}
 	newSg.IsDefault = true
 	err = db.Model(newSg).Update("is_default", newSg.IsDefault).Error
@@ -158,16 +170,18 @@ func (a *SecgroupAdmin) GetSecgroupByUUID(ctx context.Context, uuID string) (sec
 	return
 }
 
-func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (org *model.Organization, secgroup *model.SecurityGroup, err error) {
+func (a *SecgroupAdmin) GetDefaultSecgroup(ctx context.Context) (secgroup *model.SecurityGroup, err error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
-	org, err = orgAdmin.Get(ctx, memberShip.OrgID)
+	org, err := orgAdmin.Get(ctx, memberShip.OrgID)
 	if err != nil {
 		logger.Error("Failed to query organization ", err)
 		return
 	}
 	if org.DefaultSG == 0 {
-		secgroup, err = a.Create(ctx, org.Name + "-default", true, nil)
+		timestamp := time.Now().UnixNano()
+		secgroupName := fmt.Sprintf("default-%d", timestamp)
+		secgroup, err = a.Create(ctx, secgroupName, true, nil)
 		if err != nil {
 			logger.Error("Failed to create account secgroup ", err)
 			return
@@ -235,7 +249,7 @@ func (a *SecgroupAdmin) GetSecurityGroup(ctx context.Context, reference *BaseRef
 
 func (a *SecgroupAdmin) GetSecgroupInterfaces(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Related(&secgroup.Interfaces, "Interfaces").Error
+	err = db.Model(secgroup).Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Where("instance > 0").Related(&secgroup.Interfaces, "Interfaces").Error
 	if err != nil {
 		logger.Error("Failed to query secgroup, %v", err)
 		return
@@ -391,13 +405,9 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 		return
 	}
 	if secgroup.IsDefault == true && secgroup.Name != SystemDefaultSGName {
-		router := &model.Router{}
-		err = db.Where("default_sg = ?", secgroup.ID).Take(&router).Error
-		if err == nil {
-			logger.Error("Default security group can not be deleted", err)
-			err = fmt.Errorf("Default security group can not be deleted")
-			return
-		}
+		logger.Error("Default security group can not be deleted", err)
+		err = fmt.Errorf("Default security group can not be deleted")
+		return
 	}
 	err = db.Model(secgroup).Related(&secgroup.Interfaces, "Interfaces").Error
 	if err != nil {

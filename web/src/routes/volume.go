@@ -437,6 +437,15 @@ func (v *VolumeView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	db := DB()
+	pools := []*model.Dictionary{}
+	err := db.Where("category = ?", "storage_pool").Find(&pools).Error
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	c.Data["Pools"] = pools
 	c.HTML(200, "volumes_new")
 }
 
@@ -559,7 +568,8 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, "")
+	poolID := c.QueryTrim("pool")
+	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, poolID)
 	if err != nil {
 		logger.Error("Create volume failed", err)
 		c.Data["ErrorMsg"] = err.Error()

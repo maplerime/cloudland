@@ -1049,14 +1049,8 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	}
 	name := "fip"
 	logger.Debugf("Available subnets: %v", subnets)
-	var secGroup *model.SecurityGroup
-	_, secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
-	if err != nil {
-		logger.Error("Get security groups failed", err)
-		return
-	}
 	for _, subnet := range subnets {
-		fipIface, err = CreateInterface(ctx, subnet, floatingIpID, owner, -1, 0, 0, address, "", name, "floating", []*model.SecurityGroup{secGroup}, false)
+		fipIface, err = CreateInterface(ctx, subnet, floatingIpID, owner, -1, 0, 0, address, "", name, "floating", nil, false)
 		if err == nil {
 			logger.Debugf("Successfully created floating IP interface: %v", fipIface)
 			break

@@ -880,6 +880,35 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/images/{id}/storages": {
+            "get": {
+                "description": "list image storages",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "list image storages",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ImageStorageResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instance/{id}/interfaces": {
             "get": {
                 "description": "list interfaces",
@@ -3776,7 +3805,44 @@ const docTemplatev1 = `{
             }
         },
         "apis.ImagePatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name",
+                "os_code",
+                "os_version",
+                "user"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "os_code": {
+                    "type": "string",
+                    "enum": [
+                        "linux",
+                        "windows",
+                        "other"
+                    ]
+                },
+                "os_version": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "pools": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "user": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.ImagePayload": {
             "type": "object",
@@ -3873,6 +3939,35 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "user": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ImageStorageResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "pool_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "volume_id": {
                     "type": "string"
                 }
             }
@@ -4006,6 +4101,9 @@ const docTemplatev1 = `{
                 },
                 "nested_enable": {
                     "type": "boolean"
+                },
+                "pool_id": {
+                    "type": "string"
                 },
                 "primary_interface": {
                     "$ref": "#/definitions/apis.InterfacePayload"
