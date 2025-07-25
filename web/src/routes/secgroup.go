@@ -405,9 +405,22 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 		return
 	}
 	if secgroup.IsDefault == true && secgroup.Name != SystemDefaultSGName {
-		logger.Error("Default security group can not be deleted", err)
-		err = fmt.Errorf("Default security group can not be deleted")
-		return
+		if secgroup.RouterID > 0 {
+			router := &model.Router{Model: model.Model{ID: secgroup.RouterID}}
+			err = db.Where("default_sg = ?", secgroup.ID).Take(&router).Error
+			if err == nil {
+				logger.Error("Default security group can not be deleted", err)
+				err = fmt.Errorf("Default security group can not be deleted")
+				return
+			}
+		} else {
+			_, err = orgAdmin.Get(ctx, secgroup.Owner)
+			if err == nil {
+				logger.Error("Default security group can not be deleted", err)
+				err = fmt.Errorf("Default security group can not be deleted")
+				return
+			}
+		}
 	}
 	err = db.Model(secgroup).Related(&secgroup.Interfaces, "Interfaces").Error
 	if err != nil {
