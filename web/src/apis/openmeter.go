@@ -449,7 +449,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 
 	if meteringHost == "" || meteringPort == "" {
 		log.Printf("OpenMeter configuration not found, using default values")
-		meteringHost = "104.192.86.49"
+		meteringHost = "199.188.106.244"
 		meteringPort = "8123"
 	}
 
