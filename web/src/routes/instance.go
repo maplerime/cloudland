@@ -267,6 +267,84 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	return
 }
 
+func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, rescueImage *model.Image, rootPasswd string) (err error) {
+	logger.Debugf("Rescue instance %d", instance.ID)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if instance.Status == "rescuing" {
+		err = fmt.Errorf("Instance is already in rescue status")
+		return
+	}
+	image := instance.Image
+	if rescueImage == nil {
+		if image.RescueImage <= 0 {
+			err = fmt.Errorf("No rescue image specified for the instance image")
+			return
+		}
+		rescueImage, err = imageAdmin.Get(ctx, image.RescueImage)
+		if err != nil {
+			return
+		}
+	}
+	err = db.Model(instance).Update("status", "rescuing").Error
+	if err != nil {
+		logger.Error("Update instance status to rescuing failed", err)
+		return
+	}
+	logger.Debugf("Rescue image is %s", rescueImage.Name)
+	imagePrefix := fmt.Sprintf("image-%d-%s", rescueImage.ID, strings.Split(rescueImage.UUID, "-")[0])
+	bootVolume := &model.Volume{}
+	if err = db.Where("instance_id = ? and booting = true", instance.ID).Take(bootVolume).Error; err != nil {
+		logger.Error("Failed to query boot volume, %v", err)
+		return
+	}
+	metadata := ""
+	metadata, err = a.GetMetadata(ctx, instance, rootPasswd)
+	if err != nil {
+		logger.Error("Build instance metadata failed", err)
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Delete vm command execution failed", err)
+		return
+	}
+	return
+}
+
+func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance) (err error) {
+	logger.Debugf("End rescuing instance %d", instance.ID)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if instance.Status != "rescuing" {
+		err = fmt.Errorf("Instance is not in rescue status")
+		return
+	}
+	err = db.Model(instance).Update("status", "shut_off").Error
+	if err != nil {
+		logger.Error("Update instance status to rescuing failed", err)
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/end_rescue.sh '%d'", instance.ID)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Delete vm command execution failed", err)
+		return
+	}
+	return
+}
+
 func (a *InstanceAdmin) executeCommandList(ctx context.Context, cmdList []*ExecutionCommand) {
 	var err error
 	for _, cmd := range cmdList {
@@ -370,6 +448,11 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, fl
 
 func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, rootPasswd string, keys []*model.Key, cpu int32, memory int32, disk int32, loginPort int) (err error) {
 	logger.Debugf("Reinstall instance %d with image %d, cpu %d, memory %d, disk %d", instance.ID, image.ID, cpu, memory, disk)
+	if instance.Status == "rescuing" {
+		err = fmt.Errorf("Instance is not in the right state")
+		logger.Error("Instance is not in the right state")
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -1297,7 +1380,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 	}
 	db := DB()
 	images := []*model.Image{}
-	if err := db.Find(&images).Error; err != nil {
+	if err := db.Where("").Find(&images).Error; err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return
@@ -1668,6 +1751,103 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		err = instanceAdmin.Reinstall(ctx, instance, image, rootPasswd, instKeys, cpu, memory, disk, loginPort)
 		if err != nil {
 			logger.Error("Reinstall failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
+}
+
+func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	redirectTo := "/instances"
+	db := DB()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		rescueImages := []*model.Image{}
+		if err := db.Where("is_rescue = true").Find(&rescueImages).Error; err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(500, "500")
+			return
+		}
+		c.Data["RescueImages"] = rescueImages
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/rescue", instanceID)
+		c.HTML(200, "instances_rescue")
+		return
+	} else if c.Req.Method == "POST" {
+		rescueImageID := c.QueryInt64("rescue_image")
+		var rescueImage *model.Image
+		if rescueImageID > 0 {
+			rescueImage, err = imageAdmin.Get(ctx, rescueImageID)
+			if err != nil {
+				c.Data["ErrorMsg"] = "No valid image"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+		}
+		rootPasswd := c.QueryTrim("rootpasswd")
+		err = instanceAdmin.Rescue(ctx, instance, rescueImage, rootPasswd)
+		if err != nil {
+			logger.Error("Rescue failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
+}
+
+func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		c.Data["Instance"] = instance
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/end_rescue", instanceID)
+		c.HTML(200, "instances_end_rescue")
+	} else if c.Req.Method == "POST" {
+		redirectTo := "/instances"
+		err = instanceAdmin.EndRescue(ctx, instance)
+		if err != nil {
+			logger.Error("Rescue failed", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return

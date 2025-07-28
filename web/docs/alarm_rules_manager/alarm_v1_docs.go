@@ -1325,6 +1325,47 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/instances/{id}/end_rescue": {
+            "post": {
+                "description": "end rescue a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "end rescue a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/interfaces/{interface_id}": {
             "get": {
                 "description": "get a interface",
@@ -1432,6 +1473,56 @@ const docTemplatealarm_v1 = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceReinstallPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/rescue": {
+            "post": {
+                "description": "rescue a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "rescue a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance rescue payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceRescuePayload"
                         }
                     }
                 ],
@@ -3539,6 +3630,9 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "type": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -3835,6 +3929,9 @@ const docTemplatealarm_v1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
+                "is_resque": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -3852,6 +3949,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "user": {
                     "type": "string",
@@ -4117,6 +4217,17 @@ const docTemplatealarm_v1 = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.InstanceRescuePayload": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },
@@ -5035,7 +5146,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 64,
                     "minLength": 2
                 },
                 "network_cidr": {
