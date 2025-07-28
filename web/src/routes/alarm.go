@@ -43,6 +43,8 @@ const (
 	RulesSpecial      = "/etc/prometheus/special_rules"
 	RulesNode         = "/etc/prometheus/node_rules"
 	RuleTemplate      = "/etc/prometheus/node_templates"
+	CPU_relabelPath   = "/etc/prometheus/cpu_mapping_dir"
+	BW_relabelPath    = "/etc/prometheus/bw_mapping_dir"
 )
 
 var (

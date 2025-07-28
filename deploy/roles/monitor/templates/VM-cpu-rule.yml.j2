@@ -1,0 +1,39 @@
+groups:
+- name: cpu_{{ owner }}_{{ rule_group }}
+  rules:
+  - alert: HighCPUUsage_{{ owner }}_{{ rule_group }}
+    expr: |
+      (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
+        / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 
+      > {{ over }}
+      OR ON (domain) group_left(__meta_rule_id) (vm_in_matched_list{__meta_rule_id=~".*-{{ rule_group }}"} == 1)
+    for: {{ duration }}s
+    labels:
+      severity: '{{ "{{ if $labels.__meta_rule_id }}critical{{ else }}warning{{ end }}" }}'
+      matched: '{{ "{{ if $labels.__meta_rule_id }}true{{ else }}false{{ end }}" }}'
+      rule_group: "{{ rule_group }}"
+      alert_type: cpu
+      owner: "{{ owner }}"
+      email: "{{ email | default('') }}"
+      action: "{{ action | default('false') }}"
+    annotations:
+      summary: "High VM Usage ({{ "{{ $value }}" }})"
+      description: "VM {{ "{{ $labels.domain }}" }} has high CPU usage for {{ duration }} seconds"
+  - alert: CPUUsageRecovered_{{ owner }}_{{ rule_group }}
+    expr: |
+      (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
+        / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 
+      < {{ down_to }}
+      OR ON (domain) group_left(__meta_rule_id) (vm_in_matched_list{__meta_rule_id=~".*-{{ rule_group }}"} == 1)
+    for: {{ down_duration }}s
+    labels:
+      severity: '{{ "{{ if $labels.__meta_rule_id }}info{{ else }}info{{ end }}" }}'
+      matched: '{{ "{{ if $labels.__meta_rule_id }}true{{ else }}false{{ end }}" }}'
+      rule_group: "{{ rule_group }}"
+      alert_type: cpu
+      owner: "{{ owner }}"
+      email: "{{ email | default('') }}"
+      action: "{{ action | default('false') }}"
+    annotations:
+      summary: "VM CPU Usage Recovered ({{ "{{ $value }}" }})"
+      description: "VM {{ "{{ $labels.domain }}" }} CPU usage has recovered below threshold for {{ down_duration }} seconds" 

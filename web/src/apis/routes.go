@@ -179,7 +179,6 @@ func Register() (r *gin.Engine) {
 			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
 			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
 			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
-			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)

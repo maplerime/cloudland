@@ -1,0 +1,39 @@
+groups:
+- name: bw_in_{{ owner }}_{{ rule_group }}
+  rules:
+  - alert: HighBWInUsage_{{ owner }}_{{ rule_group }}
+    expr: |
+      (sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])))
+      > {{ in_threshold }}
+      OR ON (domain) group_left(__meta_rule_id) (vm_in_matched_list{__meta_rule_id=~".*-{{ rule_group }}"} == 1)
+    for: {{ in_duration }}s
+    labels:
+      severity: '{{ "{{ if $labels.__meta_rule_id }}critical{{ else }}warning{{ end }}" }}'
+      matched: '{{ "{{ if $labels.__meta_rule_id }}true{{ else }}false{{ end }}" }}'
+      rule_group: "{{ rule_group }}"
+      alert_type: bw
+      owner: "{{ owner }}"
+      email: "{{ email | default('') }}"
+      action: "{{ action | default('false') }}"
+      target_device: "{{ target_device | default('') }}"
+    annotations:
+      summary: "High Network In Usage ({{ "{{ $value }}" }})"
+      description: "VM {{ "{{ $labels.domain }}" }} has high network in usage for {{ in_duration }} seconds"
+  - alert: BWInUsageRecovered_{{ owner }}_{{ rule_group }}
+    expr: |
+      (sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])))
+      < {{ in_down_to }}
+      OR ON (domain) group_left(__meta_rule_id) (vm_in_matched_list{__meta_rule_id=~".*-{{ rule_group }}"} == 1)
+    for: {{ in_down_duration }}s
+    labels:
+      severity: '{{ "{{ if $labels.__meta_rule_id }}info{{ else }}info{{ end }}" }}'
+      matched: '{{ "{{ if $labels.__meta_rule_id }}true{{ else }}false{{ end }}" }}'
+      rule_group: "{{ rule_group }}"
+      alert_type: bw
+      owner: "{{ owner }}"
+      email: "{{ email | default('') }}"
+      action: "{{ action | default('false') }}"
+      target_device: "{{ target_device | default('') }}"
+    annotations:
+      summary: "Network In Usage Recovered ({{ "{{ $value }}" }})"
+      description: "VM {{ "{{ $labels.domain }}" }} network in usage has recovered below threshold for {{ in_down_duration }} seconds"
