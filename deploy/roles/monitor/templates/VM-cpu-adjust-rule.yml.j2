@@ -1,0 +1,42 @@
+groups:
+- name: vm_cpu_adjustment_{{ rule_group }}
+  interval: 15s
+  rules:
+  # Raw CPU usage percentage
+  - record: vm_cpu_usage_percent_raw_{{ rule_group }}
+    expr: |
+      sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
+      / on (domain) group_left() libvirt_domain_info_virtual_cpus * 100
+
+  # Smoothed CPU usage percentage (5-minute moving average)
+  - record: vm_cpu_usage_percent_{{ rule_group }}
+    expr: |
+      avg_over_time(vm_cpu_usage_percent_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
+
+  # CPU usage for VMs associated with the rule group
+  - record: vm_cpu_usage_by_rule_{{ rule_group }}
+    expr: |
+      vm_cpu_usage_percent_{{ rule_group }} * on(domain) group_right()
+      max by (domain, rule_id, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} == 1
+      )
+
+  # VMs that require CPU limit (high CPU usage and not yet limited)
+  - record: vm_requires_cpu_limit_{{ rule_group }}
+    expr: |
+      (vm_cpu_usage_by_rule_{{ rule_group }} > {{ high_threshold }})
+      unless on(domain, rule_id)
+      (vm_cpu_adjustment_status{rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} == 1)
+
+  # Calculate elapsed time since CPU limit started (in seconds)
+  - record: vm_cpu_limit_elapsed_seconds_{{ rule_group }}
+    expr: |
+      (
+        (time() - vm_cpu_limit_start_timestamp{rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} / 1000)
+        * on(domain, rule_id)
+        (vm_cpu_adjustment_status{rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} == 1)
+      )
+      * on(domain, rule_id) group_left(instance_id)
+      max by (domain, rule_id, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} == 1
+      )
