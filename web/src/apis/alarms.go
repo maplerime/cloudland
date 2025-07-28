@@ -14,10 +14,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unsafe"
 
 	"web/src/model"
 	"web/src/routes"
+
+	"context"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/gorm"
@@ -33,20 +34,202 @@ var alarmAPI = &AlarmAPI{
 	alarmAdmin: &routes.AlarmAdmin{},
 }
 
+// updateMatchedVMsJSON updates the matched_vms.json file, supporting one VM matching multiple rule groups
+// Parameters:
+//   - ctx: context
+//   - vmUUIDs: list of VM UUIDs
+//   - groupUUID: rule group UUID
+//   - operation: operation type, "add" for add/update, "remove" for delete
+//   - ruleType: rule type ("cpu" or "bw") for generating typed rule_id
+func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) error {
+	// Path to matched_vms.json file
+	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+
+	// Read existing matched_vms.json
+	var matchedVMs []map[string]interface{}
+	existingData, err := routes.ReadFile(matchedVMsFile)
+	if err == nil && len(existingData) > 0 {
+		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
+			log.Printf("Failed to parse existing matched_vms.json: %v", err)
+			// Even if parsing fails, initialize an empty array to avoid losing operations
+			matchedVMs = []map[string]interface{}{}
+		}
+	} else {
+		// File doesn't exist or is empty, create new array
+		matchedVMs = []map[string]interface{}{}
+		log.Printf("Creating new matched_vms.json file")
+	}
+
+	// Process based on operation type
+	if operation == "add" {
+		log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
+		// Add or update VM entries
+		for _, instanceid := range vmUUIDs {
+			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceid)
+			if err != nil {
+				log.Printf("Failed to get domain for instanceid=%s: %v", instanceid, err)
+				continue
+			}
+
+			// Create new entry with instance_id field and typed rule_id
+			ruleID := fmt.Sprintf("%s-%s-%s", ruleType, domain, groupUUID)
+
+			// Extract target_device value from variadic parameter
+			var targetDeviceValue string
+			if len(targetDevice) > 0 {
+				targetDeviceValue = targetDevice[0]
+			}
+
+			newEntry := map[string]interface{}{
+				"targets": []string{"localhost:9090"},
+				"labels": map[string]interface{}{
+					"domain":        domain,
+					"rule_id":       ruleID,
+					"instance_id":   instanceid,
+					"target_device": targetDeviceValue, // Add target_device field
+				},
+			}
+
+			// Check if the same domain+group combination already exists
+			entryExists := false
+			for i, vm := range matchedVMs {
+				labels, ok := vm["labels"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				domainVal, hasDomain := labels["domain"].(string)
+				existingRuleID, hasRuleID := labels["rule_id"].(string)
+				expectedRuleID := ruleID
+
+				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == expectedRuleID {
+					// Update existing entry
+					entryExists = true
+					matchedVMs[i] = newEntry
+					log.Printf("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
+					break
+				}
+			}
+
+			// If it doesn't exist, add a new entry
+			if !entryExists {
+				matchedVMs = append(matchedVMs, newEntry)
+				log.Printf("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
+			}
+		}
+	} else if operation == "remove" {
+		log.Printf("Removing VM mappings for rule group %s", groupUUID)
+		// 如果传入了 targetDevice（可选变参非空），则按三元组精确删除；
+		// 否则沿用原有“按 groupUUID 全量删除”的逻辑（保持不变）。
+		hasDeviceFilter := len(targetDevice) > 0
+
+		filteredVMs := []map[string]interface{}{}
+		removedCount := 0
+
+		for _, vm := range matchedVMs {
+			labels, ok := vm["labels"].(map[string]interface{})
+			if !ok {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			ruleID, ok := labels["rule_id"].(string)
+			if !ok {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// 未带设备过滤：保持原逻辑，按 group 全量删除
+			if !hasDeviceFilter {
+				if strings.HasSuffix(ruleID, "-"+groupUUID) {
+					domain, _ := labels["domain"].(string)
+					instanceID, _ := labels["instance_id"].(string)
+					log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+					removedCount++
+					continue
+				}
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// 带设备过滤：要求同时命中
+			// 1) 属于该 group
+			// 2) instance_id 在 vmUUIDs 中
+			// 3) target_device 在 targetDevice 中
+			if !strings.HasSuffix(ruleID, "-"+groupUUID) {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			instanceID, _ := labels["instance_id"].(string)
+			devStr, _ := labels["target_device"].(string)
+
+			inVM := false
+			for _, id := range vmUUIDs {
+				if id == instanceID {
+					inVM = true
+					break
+				}
+			}
+			inDev := false
+			for _, d := range targetDevice {
+				if d == devStr {
+					inDev = true
+					break
+				}
+			}
+
+			if inVM && inDev {
+				domain, _ := labels["domain"].(string)
+				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
+					domain, ruleID, instanceID, devStr)
+				removedCount++
+				continue
+			}
+
+			// 未命中三元组条件，则保留
+			filteredVMs = append(filteredVMs, vm)
+		}
+
+		matchedVMs = filteredVMs
+		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
+	}
+
+	// Save updated matched_vms.json
+	matchedVMsData, err := json.MarshalIndent(matchedVMs, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		return err
+	}
+
+	err = routes.WriteFile(matchedVMsFile, matchedVMsData, 0644)
+	if err != nil {
+		log.Printf("Failed to write matched_vms.json: %v", err)
+		return err
+	}
+
+	// Force reload Prometheus configuration
+	if err := routes.ReloadPrometheus(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
+		// Don't return error as the file update was successful
+	} else {
+		log.Printf("Successfully reloaded Prometheus configuration after updating matched_vms.json")
+	}
+
+	return nil
+}
+
 func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	var req struct {
-		GroupUUID string `json:"group_uuid" binding:"required"`
-		VMUUID    string `json:"vm_uuid" binding:"required"`
-		Interface string `json:"interface"`
+		GroupUUID string   `json:"group_uuid" binding:"required"`
+		VMUUIDs   []string `json:"vm_uuids" binding:"required"`
+		Interface string   `json:"interface"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
 	groupUUID := req.GroupUUID
-	vmUUID := req.VMUUID
-	Interface := req.Interface
-	// Retrieve rule group using operator method
 	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
@@ -56,7 +239,6 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 		return
 	}
-
 	if !group.Enabled {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      "Rule group is not enabled, please enable the rule group before linking it to a virtual machine",
@@ -65,375 +247,49 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		})
 		return
 	}
+	// Full overwrite of VMRuleLink
+	_, _ = a.operator.DeleteVMLink(c.Request.Context(), groupUUID, "", req.Interface)
+	_ = a.operator.BatchLinkVMs(c.Request.Context(), groupUUID, req.VMUUIDs, req.Interface)
 
-	vmName, err := routes.GetDBIndexByInstanceUUID(c, vmUUID)
-	log.Printf("[LinkRuleToVM] vmName: %d with vmUUID: %s)\n", vmName, vmUUID)
-	if err != nil {
-		log.Printf("VM UUID convert failed: %v", err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid vm uuid"})
-		return
-	}
-	existingLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err == nil {
-		for _, link := range existingLinks {
-			if link.VMUUID == vmUUID && link.Interface == Interface {
-				log.Printf("[LinkRuleToVM] same link.VMUUID: %s\n", link.VMUUID)
-				c.JSON(http.StatusOK, gin.H{
-					"status": "success",
-					"data": gin.H{
-						"exists":     true,
-						"group_uuid": groupUUID,
-						"vm_uuid":    vmUUID,
-						"vm_name":    vmName,
-						"interface":  Interface,
-					},
-				})
-				return
-			}
-		}
-	}
-
-	// Use operator instead of direct DB operations
-	if err = a.operator.BatchLinkVMs(c.Request.Context(), groupUUID, []string{vmUUID}, req.Interface); err != nil {
-		log.Printf("Failed to link VM to rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create VM association"})
-		return
-	}
-
-	// Get associated VMs using operator
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err != nil {
-		log.Printf("Error getting linked VMs: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get VM list"})
-		return
-	}
-
-	// Build exclusion list
-	var vmList []string
-	for _, l := range vmLinks {
-		log.Printf("convert VMUUID: %s\n", l.VMUUID)
-		instanceid, err := routes.GetDBIndexByInstanceUUID(c, l.VMUUID)
-		vmName := "inst-" + strconv.Itoa(instanceid)
-		if err != nil {
-			log.Printf("VM UUID convert failed uuid=%s error=%v", l.VMUUID, err)
-			continue
-		}
-		if group.Type == routes.RuleTypeBW && l.Interface != "" {
-			vmName = fmt.Sprintf("%s:%s", vmName, l.Interface)
-		}
-		vmList = append(vmList, vmName)
-	}
-
-	var generalContent, specialContent string
-
-	// 根据规则类型生成不同的规则内容
-	if group.Type == routes.RuleTypeCPU {
-		type ExtendedGroup struct {
-			model.RuleGroupV2
-			Details []model.CPURuleDetail
-		}
-		details := (*ExtendedGroup)(unsafe.Pointer(group)).Details
-		rules := make([]routes.CPURule, 0, len(details))
-		for _, d := range details {
-			rules = append(rules, routes.CPURule{
-				Name:         d.Name,
-				Duration:     d.Duration,
-				Over:         d.Over,
-				DownDuration: d.DownDuration,
-				DownTo:       d.DownTo,
-			})
-		}
-
-		// Generate CPU rule content
-		generalContent, err = generateCPURuleContentV2(rules, group.Name, groupUUID, vmList, true)
-		if err != nil {
-			log.Printf("Rule content generation failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Rule content generation failed"})
-			return
-		}
-		specialContent, err = generateCPURuleContentV2(rules, group.Name, groupUUID, vmList, false)
-		if err != nil {
-			log.Printf("Special rule generation failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate special rules"})
-			return
-		}
-	} else if group.Type == routes.RuleTypeBW {
-		type ExtendedGroup struct {
-			model.RuleGroupV2
-			Details []model.BWRuleDetail
-		}
-		details := (*ExtendedGroup)(unsafe.Pointer(group)).Details
-		rules := make([]routes.BWRule, 0, len(details))
-		for _, d := range details {
-			inEnabled := d.InThreshold >= 0 && d.InDuration >= 0
-			outEnabled := d.OutThreshold >= 0 && d.OutDuration >= 0
-
-			rules = append(rules, routes.BWRule{
-				Name:            d.Name,
-				InEnabled:       inEnabled,
-				InThreshold:     d.InThreshold,
-				InDuration:      d.InDuration,
-				InOverType:      d.InOverType,
-				InDownTo:        d.InDownTo,
-				InDownDuration:  d.InDownDuration,
-				OutEnabled:      outEnabled,
-				OutThreshold:    d.OutThreshold,
-				OutDuration:     d.OutDuration,
-				OutOverType:     d.OutOverType,
-				OutDownTo:       d.OutDownTo,
-				OutDownDuration: d.OutDownDuration,
-			})
-		}
-		var linkedVMInterfaces []string
-		for _, l := range vmLinks {
-			instanceid, err := routes.GetDBIndexByInstanceUUID(c, l.VMUUID)
-			if err != nil {
-				log.Printf("VM UUID convert failed uuid=%s error=%v", l.VMUUID, err)
-				continue
-			}
-			vmName := "inst-" + strconv.Itoa(instanceid)
-			if l.Interface != "" {
-				vmName = fmt.Sprintf("%s:%s", vmName, l.Interface)
-			}
-			linkedVMInterfaces = append(linkedVMInterfaces, vmName)
-		}
-		specialContent, err = generateBWRuleContent(rules, group.Name, groupUUID, linkedVMInterfaces, true, "")
-		if err != nil {
-			log.Printf("Special rule generation failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate special rules"})
-			return
-		}
+	// Update VM matching information
+	if len(req.VMUUIDs) > 0 {
+		// Update matched_vms.json with VM information
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.VMUUIDs, group.UUID, "add", "alarm-"+group.Type)
 	} else {
-		log.Printf("Unsupported rule type: %s", group.Type)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported rule type"})
-		return
+		// If no VMs, remove related entries from matched_vms.json
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", "alarm-"+group.Type)
 	}
 
-	// Generate rule content
-	generalPath, specialPath := routes.RulePaths(group.Type, groupUUID)
-
-	// Write rule files
-	if err = routes.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
-		log.Printf("Failed to write general rules: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "General rule file reflash failed"})
-		return
+	// Query latest linked VMs
+	vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+	linkedVMs := []string{}
+	for _, link := range vmLinks {
+		linkedVMs = append(linkedVMs, link.VMUUID)
 	}
 
-	if err := routes.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
-		log.Printf("Failed to write special rules: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Special rule file reflash failed"})
-		return
-	}
-
-	// Activate rules
-	enabledPath := filepath.Join(routes.RulesEnabled, fmt.Sprintf("%s-special-%s.yml", group.Type, groupUUID))
-	if err := routes.CreateSymlink(specialPath, enabledPath); err != nil && !os.IsExist(err) {
-		log.Printf("Failed to create symlink: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symlink"})
-		return
-	}
-
-	// Reload Prometheus configuration
+	// 强制重新加载Prometheus配置，确保规则和匹配列表同时生效
 	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload Prometheus"})
-		return
+		log.Printf("Warning: Failed to reload Prometheus after linking VMs: %v", err)
+		// 不返回错误，因为VM链接操作已经成功
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
 			"group_uuid": groupUUID,
-			"linked_vm":  vmName,
-		},
-	})
-}
-
-func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
-	var req struct {
-		GroupUUID string `json:"group_uuid" binding:"required"`
-		VMUUID    string `json:"vm_uuid" binding:"required"`
-		Interface string `json:"interface"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-	groupUUID := req.GroupUUID
-	vmUUID := req.VMUUID
-
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Error retrieving rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
-		return
-	}
-	deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
-	if err != nil {
-		log.Printf("VM unlinking failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to operate vm link db: " + err.Error()})
-		return
-	}
-	if deletedCount == 0 {
-		log.Printf("VM unlinking failed: no matching record")
-		c.JSON(http.StatusNotFound, gin.H{"error": "vm association not found"})
-		return
-	}
-
-	// Get updated VM list
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err != nil {
-		log.Printf("Failed to get updated VM list: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve VM associations"})
-		return
-	}
-
-	ruleType := group.Type
-	// Build inclusion list for special rules
-	vmList := make([]string, 0, len(vmLinks))
-	for _, link := range vmLinks {
-		instanceid, err := routes.GetDBIndexByInstanceUUID(c, link.VMUUID)
-		vmName := "inst-" + strconv.Itoa(instanceid)
-		if err != nil {
-			log.Printf("VM UUID convert failed uuid=%s error=%v", link.VMUUID, err)
-			continue
-		}
-		if ruleType == routes.RuleTypeBW && link.Interface != "" {
-			vmName = fmt.Sprintf("%s:%s", vmName, link.Interface)
-		}
-		vmList = append(vmList, vmName)
-	}
-
-	var generalContent, specialContent string
-	generalPath, specialPath := routes.RulePaths(ruleType, groupUUID)
-
-	if ruleType == routes.RuleTypeCPU {
-		type ExtendedGroup struct {
-			model.RuleGroupV2
-			Details []model.CPURuleDetail
-		}
-		details := (*ExtendedGroup)(unsafe.Pointer(group)).Details
-		rules := make([]routes.CPURule, 0, len(details))
-		for _, d := range details {
-			rules = append(rules, routes.CPURule{
-				Name:         d.Name,
-				Duration:     d.Duration,
-				Over:         d.Over,
-				DownDuration: d.DownDuration,
-				DownTo:       d.DownTo,
-			})
-		}
-
-		generalContent, err = generateCPURuleContentV2(rules, group.Name, groupUUID, vmList, true)
-		if err != nil {
-			log.Printf("Rule generation failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Rule content generation failed"})
-			return
-		}
-
-		if len(vmList) > 0 {
-			specialContent, err = generateCPURuleContentV2(rules, group.Name, groupUUID, vmList, false)
-			if err != nil {
-				log.Printf("Special rule generation failed: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate special rules"})
-				return
-			}
-		}
-	} else if ruleType == routes.RuleTypeBW {
-		type ExtendedGroup struct {
-			model.RuleGroupV2
-			Details []model.BWRuleDetail
-		}
-		details := (*ExtendedGroup)(unsafe.Pointer(group)).Details
-		rules := make([]routes.BWRule, 0, len(details))
-		for _, d := range details {
-			inEnabled := d.InThreshold >= 0 && d.InDuration >= 0
-			outEnabled := d.OutThreshold >= 0 && d.OutDuration >= 0
-
-			rules = append(rules, routes.BWRule{
-				Name:            d.Name,
-				InEnabled:       inEnabled,
-				InThreshold:     d.InThreshold,
-				InDuration:      d.InDuration,
-				InOverType:      d.InOverType,
-				InDownTo:        d.InDownTo,
-				InDownDuration:  d.InDownDuration,
-				OutEnabled:      outEnabled,
-				OutThreshold:    d.OutThreshold,
-				OutDuration:     d.OutDuration,
-				OutOverType:     d.OutOverType,
-				OutDownTo:       d.OutDownTo,
-				OutDownDuration: d.OutDownDuration,
-			})
-		}
-
-		generalContent, err = generateBWRuleContent(rules, group.Name, groupUUID, vmList, true, "")
-		if err != nil {
-			log.Printf("BW rule generation failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "BW rule content generation failed"})
-			return
-		}
-
-		if len(vmList) > 0 {
-			specialContent, err = generateBWRuleContent(rules, group.Name, groupUUID, vmList, false, "")
-			if err != nil {
-				log.Printf("Special BW rule generation failed: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate special BW rules"})
-				return
-			}
-		}
-	} else {
-		log.Printf("Unsupported rule type: %s", ruleType)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported rule type"})
-		return
-	}
-
-	if err = routes.WriteFile(generalPath, []byte(generalContent), 0640); err != nil {
-		log.Printf("Failed to write general rule file: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write rule file"})
-		return
-	}
-
-	enabledPath := filepath.Join(routes.RulesEnabled, fmt.Sprintf("%s-special-%s.yml", ruleType, groupUUID))
-	if len(vmList) > 0 {
-		if err := routes.WriteFile(specialPath, []byte(specialContent), 0640); err != nil {
-			log.Printf("Failed to write special rule file: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write rule file"})
-			return
-		}
-	} else {
-		if err := routes.RemoveFile(specialPath); err != nil && !os.IsNotExist(err) {
-			log.Printf("Failed to remove empty special rule file: %v", err)
-		}
-		if err := routes.RemoveFile(enabledPath); err != nil && !os.IsNotExist(err) {
-			log.Printf("Failed to remove enabled rule file: %v", err)
-		}
-	}
-
-	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload Prometheus"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"unlinked_group": groupUUID,
-			"unlinked_vm":    vmUUID,
-			"remaining_vms":  vmList,
+			"linked_vms": linkedVMs,
 		},
 	})
 }
 
 func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	var req struct {
-		Name  string           `json:"name" binding:"required"`
-		Owner string           `json:"owner" binding:"required"`
-		Rules []routes.CPURule `json:"rules" binding:"required,min=1"`
+		Name      string           `json:"name" binding:"required"`
+		Owner     string           `json:"owner" binding:"required"`
+		Email     string           `json:"email"`
+		Action    bool             `json:"action"`
+		Rules     []routes.CPURule `json:"rules" binding:"required,min=1"`
+		LinkedVMs []string         `json:"linkedvms"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -444,12 +300,11 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		Type:    routes.RuleTypeCPU,
 		Owner:   req.Owner,
 		Enabled: true,
+		Email:   req.Email,
+		Action:  req.Action,
 	}
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
-		c.JSON(
-			http.StatusInternalServerError,
-			gin.H{"error": "operator failed: " + err.Error()},
-		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
 		return
 	}
 	for _, rule := range req.Rules {
@@ -466,47 +321,49 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 			return
 		}
 	}
-	groupUUID := group.UUID
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"call get link vm error": err.Error()})
+	if len(req.LinkedVMs) > 0 {
+		// Full overwrite of VMRuleLink
+		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
+		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
+
+		// Update matched_vms.json with VM information
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-cpu")
+	}
+	// 校验：一次只能创建一个规则
+	if len(req.Rules) != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only one rule can be created at a time."})
 		return
 	}
-	var excludeVMs []string
-	if len(vmLinks) > 0 {
-		for _, link := range vmLinks {
-			vmName, err := routes.GetInstanceUUIDByDomain(c.Request.Context(), link.VMUUID)
-			if err != nil {
-				log.Printf("VM UUID convert failed uuid=%s error=%v", link.VMUUID, err)
-				continue
-			}
-			excludeVMs = append(excludeVMs, vmName)
-		}
+
+	// 只处理第一个规则
+	rule := req.Rules[0]
+	ruleData := map[string]interface{}{
+		"owner":         req.Owner,
+		"rule_group":    group.UUID,
+		"email":         req.Email,
+		"action":        req.Action,
+		"name":          rule.Name,
+		"over":          rule.Over,
+		"duration":      rule.Duration,
+		"down_to":       rule.DownTo,
+		"down_duration": rule.DownDuration,
 	}
-	//generalRaw, err := generateCPURuleContent(req.Rules, group.Name, groupUUID, excludeVMs...)
-	generalRaw, err := generateCPURuleContentV2(req.Rules, group.Name, groupUUID, excludeVMs, true)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"generate general rules failed": err.Error()})
+
+	templateFile := "VM-cpu-rule.yml.j2"
+	outputFile := fmt.Sprintf("cpu-%s-%s.yml", req.Owner, group.UUID) // 只传文件名
+	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
+		log.Printf("Failed to render cpu rule template: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render cpu rule template"})
 		return
 	}
-	generalPath, _ := routes.RulePaths(routes.RuleTypeCPU, groupUUID)
-	if err := routes.WriteFile(generalPath, []byte(generalRaw), 0640); err != nil {
-		log.Printf("Failed to write rule file: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write rule file"})
-		return
-	}
-	enabledPath := filepath.Join(routes.RulesEnabled, fmt.Sprintf("cpu-general-%s.yml", groupUUID))
-	if err := routes.CreateSymlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
-		log.Printf("Failed to create symlink: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symlink"})
-		return
-	}
+
 	routes.ReloadPrometheus()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": groupUUID,
+			"group_uuid": group.UUID,
 			"enabled":    true,
+			"linkedvms":  req.LinkedVMs,
 		},
 	})
 }
@@ -574,6 +431,8 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 			"create_time": group.CreatedAt.Format(time.RFC3339),
 			"rules":       ruleDetails,
 			"enabled":     group.Enabled,
+			"email":       group.Email,
+			"action":      group.Action,
 			"linked_vms":  linkedVMs,
 		})
 	}
@@ -595,16 +454,17 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
 		return
 	}
-	if _, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, routes.RuleTypeCPU); err != nil {
+	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "rules not existed",
-				"code":  "RESOURCE_NOT_FOUND",
+				"error": "Rule not found: The specified rule does not exist",
+				"code":  "NOT_FOUND",
 				"uuid":  groupUUID,
 			})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "UUID wrong type mismatch failure",
+				"error": "Failed to retrieve rule information",
 				"code":  "INTERNAL_ERROR",
 				"uuid":  groupUUID,
 			})
@@ -612,55 +472,63 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		return
 	}
 
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	var excludeVMs []string
-	if err == nil {
-		for _, link := range vmLinks {
-			_, err := routes.GetDBIndexByInstanceUUID(c, link.VMUUID)
-			if err != nil {
-				log.Printf("convert UUID to vm name failed uuid=%s error=%v", link.VMUUID, err)
-				continue
-			}
-			//vmName := "inst-" + strconv.Itoa(instanceid)
-			excludeVMs = append(excludeVMs, link.VMUUID)
-		}
-	}
-	//generalPath, specialPath := routes.RulePaths(routes.RuleTypeCPU, groupUUID)
-	if len(excludeVMs) > 0 {
-		log.Printf("Cannot delete CPU rule group %s: still linked to VMs: %v", groupUUID, excludeVMs)
+	// 确认规则类型是否正确
+	if group.Type != routes.RuleTypeCPU {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "CPU rule group is still bound to active VMs. Please unlink them first.",
-			"code":       "RULE_GROUP_LINKED",
-			"linked_vms": excludeVMs,
-			"uuid":       groupUUID,
+			"error": "Rule type mismatch: Expected CPU rule but found " + group.Type,
+			"code":  "INVALID_RULE_TYPE",
+			"uuid":  groupUUID,
 		})
 		return
 	}
+	owner := group.Owner
 
+	// Delete all associated VMRuleLink
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+	linkedVMs := []string{}
+	if err == nil {
+		for _, link := range vmLinks {
+			linkedVMs = append(linkedVMs, link.VMUUID)
+		}
+		_, _ = a.operator.DeleteVMLink(c.Request.Context(), groupUUID, "", "")
+	}
+
+	// Remove related entries from matched_vms.json
+	mappingFile := ""
+	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-cpu")
+
+	// 删除软链和规则文件（路径与创建时一致）
+	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
+	linkPath := filepath.Join(routes.RulesEnabled, fileName)
+
+	// 根据owner决定规则文件位置
+	var rulePath string
+	if owner == "admin" {
+		rulePath = filepath.Join(routes.RulesGeneral, fileName)
+	} else {
+		rulePath = filepath.Join(routes.RulesSpecial, fileName)
+	}
+
+	// 记录删除的文件路径
+	deletedFiles := []string{}
+
+	// 删除软链
+	if err := routes.RemoveFile(linkPath); err == nil {
+		deletedFiles = append(deletedFiles, linkPath)
+	}
+
+	// 删除规则文件
+	if err := routes.RemoveFile(rulePath); err == nil {
+		deletedFiles = append(deletedFiles, rulePath)
+	}
+
+	// Delete rule-related table data
 	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeCPU); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "DB operation failed: " + err.Error(),
 			"code":  "DB_DELETE_FAILED",
 		})
 		return
-	}
-	patterns := []string{
-		fmt.Sprintf("%s/cpu-general-%s.yml", routes.RulesGeneral, groupUUID),
-		fmt.Sprintf("%s/cpu-general-%s.yml", routes.RulesEnabled, groupUUID),
-	}
-
-	for _, pattern := range patterns {
-		status, err := routes.CheckFileExists(pattern)
-		if err != nil {
-			log.Printf("Failed to check file existence: %v", err)
-			continue
-		}
-
-		if status {
-			if err := routes.RemoveFile(pattern); err != nil {
-				log.Printf("Failed to remove file: %v", err)
-			}
-		}
 	}
 
 	if err := routes.ReloadPrometheus(); err != nil {
@@ -669,84 +537,19 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		return
 	}
 
+	// 如果有映射文件，也添加到删除列表
+	if mappingFile != "" {
+		deletedFiles = append(deletedFiles, mappingFile)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
 			"deleted_group": groupUUID,
-			"deleted_files": patterns,
+			"deleted_files": deletedFiles,
+			"linked_vms":    linkedVMs,
 		},
 	})
-}
-
-func generateCPURuleContentV2(rules []routes.CPURule, groupName string, groupUUID string, vmList []string, isExclude bool) (string, error) {
-	var sb strings.Builder
-
-	ruleTypePrefix := "general"
-	if !isExclude {
-		ruleTypePrefix = "special"
-	}
-
-	fullGroupName := fmt.Sprintf("cpu_%s_%s", ruleTypePrefix, groupUUID)
-	sb.WriteString(fmt.Sprintf("groups:\n- name: %s\n  rules:", fullGroupName))
-
-	filter := ""
-	if len(vmList) > 0 && len(vmList[0]) > 0 {
-		if isExclude {
-			filter = fmt.Sprintf(`{domain!~"%s"}`, strings.Join(vmList, "|"))
-		} else {
-			filter = fmt.Sprintf(`{domain=~"%s"}`, strings.Join(vmList, "|"))
-		}
-	}
-
-	log.Printf("[generateCPURuleContentV2] filter: %s (isExclude: %v)\n", filter, isExclude)
-
-	for i, rule := range rules {
-		if rule.Over <= 0 || rule.DownTo <= 0 {
-			return "", fmt.Errorf("rule #%d verify failed：must be greater than 0", i)
-		}
-		if rule.Over <= rule.DownTo {
-			return "", fmt.Errorf("rule #%d verify failed：trigger (%d%%) must be greater than(%d%%)",
-				i, rule.Over, rule.DownTo)
-		}
-
-		sb.WriteString(fmt.Sprintf(`
-  - alert: HighCPUUsage_%s_%d
-    expr: |-
-      (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total%s[1m]))
-        / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 > %d
-    for: %ds
-    labels:
-      severity: warning
-      rule_group: "%s" 
-      alert_type: cpu
-    annotations:
-      summary: "High VM Usage ({{ $value }})"
-      description: "VM {{ $labels.domain }} has high CPU usage for %d seconds"
-  - alert: CPUUsageRecovered_%s_%d
-    expr: |-
-      (sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total%s[1m]))
-        / on (domain) group_left() libvirt_domain_info_virtual_cpus) * 100 < %d
-    for: %ds
-    labels:
-      severity: info
-      rule_group: "%s"
-      alert_type: cpu
-    annotations:
-      summary: "VM CPU Usage Recovered ({{ $value }})"
-      description: "VM {{ $labels.domain }} CPU usage has recovered below threshold for %d seconds"`,
-			rule.Name, i, filter,
-			rule.Over,
-			rule.Duration,
-			groupUUID,
-			rule.Duration,
-			rule.Name, i, filter,
-			rule.DownTo,
-			rule.DownDuration,
-			groupUUID,
-			rule.DownDuration))
-	}
-
-	return sb.String() + "\n", nil
 }
 
 func (a *AlarmAPI) EnableRules(c *gin.Context) {
@@ -812,11 +615,22 @@ func (a *AlarmAPI) EnableRules(c *gin.Context) {
 		return
 	}
 
+	// Query latest group information and linked VMs
+	group, _ = a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
+	vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+	linkedVMs := []string{}
+	for _, link := range vmLinks {
+		linkedVMs = append(linkedVMs, link.VMUUID)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid":    groupUUID,
-			"enabled_links": enabledLinks,
+			"group_uuid": groupUUID,
+			"enabled":    group.Enabled,
+			"email":      group.Email,
+			"action":     group.Action,
+			"linked_vms": linkedVMs,
 		},
 	})
 }
@@ -947,7 +761,7 @@ func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 							uuid, err := routes.GetInstanceUUIDByDomain(c.Request.Context(), domain)
 							if err != nil {
 								log.Printf("Domain conversion failed domain=%s error=%v", domain, err)
-								labels["instance_uuid"] = "" // 确保空值
+								labels["instance_uuid"] = "" // Ensure empty value
 							} else {
 								labels["instance_uuid"] = uuid
 							}
@@ -1115,21 +929,33 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	status := notification.Status
 	log.Printf("ProcessAlertWebhook Processing alert: status=%s \n", status)
 	for _, alert := range notification.Alerts {
+		// 打印所有标签信息
+		log.Printf("ProcessAlertWebhook All labels for alert: %v", alert.Labels)
+
 		alert_type := alert.Labels["alert_type"]
 		alertName := alert.Labels["alertname"]
 		severity := alert.Labels["severity"]
-
+		owner := alert.Labels["owner"]
+		actionFlag := alert.Labels["action"] == "true"
+		email := alert.Labels["email"]
 		domain := alert.Labels["domain"]
 		rule_group_uuid := alert.Labels["rule_group"]
-		log.Printf("ProcessAlertWebhook Processing alert: alert_type=%s alertName=%s severity=%s\n", alert_type, alertName, severity)
-		log.Printf("ProcessAlertWebhook Processing alert: domain=%s rule_group_uuid=%s\n", domain, rule_group_uuid)
+		matched := alert.Labels["matched"]
+
+		log.Printf("ProcessAlertWebhook Processing alert: alert_type=%s alertName=%s severity=%s", alert_type, alertName, severity)
+		log.Printf("ProcessAlertWebhook Processing alert: domain=%s rule_group_uuid=%s", domain, rule_group_uuid)
+		log.Printf("ProcessAlertWebhook Processing alert: owner=%s email=%s action=%v matched=%s", owner, email, actionFlag, matched)
+
 		description := alert.Annotations["description"]
 		summary := alert.Annotations["summary"]
-		log.Printf("ProcessAlertWebhook Processing alert: summary=%s description=%s \n", summary, description)
+		log.Printf("ProcessAlertWebhook Processing alert: summary=%s description=%s", summary, description)
+
 		target_device := ""
 		if alert_type == "bw" {
 			target_device = alert.Labels["target_device"]
+			log.Printf("ProcessAlertWebhook Processing alert: target_device=%s", target_device)
 		}
+
 		alertRecord := &routes.Alert{
 			Name:          alertName,
 			RuleGroupUUID: rule_group_uuid,
@@ -1140,12 +966,37 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 			AlertType:     alert_type,
 			TargetDevice:  target_device,
 		}
+
 		if status == "firing" {
+			log.Printf("ProcessAlertWebhook Alert FIRING: domain=%s matched=%s action=%v", domain, matched, actionFlag)
+			if email != "" {
+				// Email notification logic (existing email logic unchanged)
+				log.Printf("[Webhook] Send email to: %s", email)
+			}
+			if actionFlag {
+				log.Printf("ProcessAlertWebhook Action enabled for domain=%s matched=%s", domain, matched)
+				if owner == "admin" {
+					log.Printf("ProcessAlertWebhook Admin action: adjusting resource for domain=%s", domain)
+					a.notifyAdminConsole(alertRecord)
+					a.adjustResource(alertRecord, domain, true)
+				} else {
+					log.Printf("ProcessAlertWebhook User action: notifying user console for owner=%s", owner)
+					a.notifyUserConsole(alertRecord, owner)
+				}
+			} else {
+				log.Printf("ProcessAlertWebhook Action disabled for domain=%s", domain)
+			}
 			if err := a.notifyRealtimeAlert(alertRecord); err != nil {
 				log.Printf("Failed to notify realtime alert: %v", err)
 			}
 		} else {
-			log.Printf("ProcessAlertWebhook alert resolved alert: summary=%s alertRecord=%v \n", summary, alertRecord)
+			// Resolved: recover resources
+			log.Printf("ProcessAlertWebhook Alert RESOLVED: domain=%s matched=%s action=%v", domain, matched, actionFlag)
+			if actionFlag && owner == "admin" {
+				log.Printf("ProcessAlertWebhook Admin recovery: recovering resource for domain=%s", domain)
+				a.recoverResource(alertRecord, domain)
+			}
+			log.Printf("ProcessAlertWebhook alert resolved alert: summary=%s alertRecord=%v", summary, alertRecord)
 		}
 	}
 
@@ -1154,6 +1005,30 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 		"alerts":  len(notification.Alerts),
 		"message": "alarm process completed",
 	})
+}
+
+// Empty implementation: resource adjustment
+func (a *AlarmAPI) adjustResource(alert *routes.Alert, domain string, limit bool) {
+	log.Printf("[ResourceAdjust] domain=%s alert=%s limit=%v", domain, alert.Name, limit)
+	// TODO: Implement resource limit adjustment logic
+}
+
+// Empty implementation: resource recovery
+func (a *AlarmAPI) recoverResource(alert *routes.Alert, domain string) {
+	log.Printf("[ResourceRecover] domain=%s alert=%s", domain, alert.Name)
+	// TODO: Implement resource recovery logic
+}
+
+// Empty implementation: notify admin console
+func (a *AlarmAPI) notifyAdminConsole(alert *routes.Alert) {
+	log.Printf("[AdminConsoleNotify] alert=%s", alert.Name)
+	// TODO: Implement admin console notification logic
+}
+
+// Empty implementation: notify user console
+func (a *AlarmAPI) notifyUserConsole(alert *routes.Alert, owner string) {
+	log.Printf("[UserConsoleNotify] owner=%s alert=%s", owner, alert.Name)
+	// TODO: Implement user console notification logic
 }
 
 func (a *AlarmAPI) notifyRealtimeAlert(alert *routes.Alert) error {
@@ -1221,235 +1096,47 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	})
 }
 
-func generateBWRuleContent(rules []routes.BWRule, groupName string, groupUUID string, vms []string, isSpecial bool, targetDevice string) (string, error) {
-	var sb strings.Builder
-
-	ruleTypePrefix := "general"
-	if isSpecial {
-		ruleTypePrefix = "special"
-	}
-
-	fullGroupName := fmt.Sprintf("bw_%s_%s", ruleTypePrefix, groupUUID)
-	sb.WriteString(fmt.Sprintf("groups:\n- name: %s\n  rules:", fullGroupName))
-
-	processedVMs := make([]string, 0, len(vms))
-	vmInterfaces := make(map[string]string)
-
-	for _, vm := range vms {
-		parts := strings.Split(vm, ":")
-		instanceName := parts[0]
-		processedVMs = append(processedVMs, instanceName)
-		if len(parts) > 1 {
-			vmInterfaces[instanceName] = parts[1]
-		}
-	}
-
-	for i, rule := range rules {
-		var inExpr string
-		if isSpecial {
-			var expressions []string
-			for _, vm := range processedVMs {
-				iface := targetDevice
-				if v, ok := vmInterfaces[vm]; ok && v != "" {
-					iface = v
-				}
-				if iface != "" {
-					expressions = append(expressions,
-						fmt.Sprintf("rate(libvirt_domain_interface_stats_receive_bytes_total{domain=\"%s\",device=\"%s\"}[1m])", vm, iface))
-				}
-			}
-			if len(expressions) > 0 {
-				inExpr = strings.Join(expressions, " + ")
-			} else {
-				inExpr = "rate(libvirt_domain_interface_stats_receive_bytes_total[1m])"
-			}
-		} else if len(processedVMs) > 0 {
-			var exclusionExprs []string
-			for _, vm := range processedVMs {
-				iface := targetDevice
-				if v, ok := vmInterfaces[vm]; ok && v != "" {
-					iface = v
-				}
-				expr := fmt.Sprintf("rate(libvirt_domain_interface_stats_receive_bytes_total{domain=\"%s\",device!=\"%s\"}[1m])", vm, iface)
-				exclusionExprs = append(exclusionExprs, expr)
-			}
-			inExprBase := fmt.Sprintf("rate(libvirt_domain_interface_stats_receive_bytes_total{domain!~\"%s\"}[1m])", strings.Join(processedVMs, "|"))
-			if len(exclusionExprs) > 0 {
-				inExpr = fmt.Sprintf("%s + %s", inExprBase, strings.Join(exclusionExprs, " + "))
-			} else {
-				inExpr = inExprBase
-			}
-		} else {
-			inExpr = "rate(libvirt_domain_interface_stats_receive_bytes_total[1m])"
-		}
-
-		if rule.InOverType == "percent" {
-			inExpr = fmt.Sprintf("(%s) / on (domain) group_left() node_network_speed_bytes * 100 > %d", inExpr, rule.InThreshold)
-		} else {
-			inExpr = fmt.Sprintf("(%s) > %d", inExpr, rule.InThreshold)
-		}
-
-		sb.WriteString(fmt.Sprintf(`
-  - alert: HighBWInUsage_%s_%d
-    expr: |-
-      %s
-    for: %ds
-    labels:
-      severity: warning
-      rule_group: "%s"
-      alert_type: bw
-    annotations:
-      summary: "High Network In Usage ({{ $value }})"
-      description: "VM {{ $labels.domain }} has high network in usage for %d seconds"`,
-			rule.Name, i, inExpr, rule.InDuration, groupUUID, rule.InDuration))
-
-		if rule.InDownTo > 0 {
-			downExpr := strings.Replace(inExpr, ">", "<", 1)
-			sb.WriteString(fmt.Sprintf(`
-  - alert: BWInUsageRecovered_%s_%d
-    expr: |-
-      %s
-    for: %ds
-    labels:
-      severity: info
-      rule_group: "%s"
-      alert_type: bw
-    annotations:
-      summary: "Network In Usage Recovered ({{ $value }})"
-      description: "VM {{ $labels.domain }} network in usage has recovered below threshold for %d seconds"`,
-				rule.Name, i, downExpr, rule.InDownDuration, groupUUID, rule.InDownDuration))
-		}
-
-		var outExpr string
-		if isSpecial {
-			var expressions []string
-			for _, vm := range processedVMs {
-				iface := targetDevice
-				if v, ok := vmInterfaces[vm]; ok && v != "" {
-					iface = v
-				}
-				if iface != "" {
-					expressions = append(expressions,
-						fmt.Sprintf("rate(libvirt_domain_interface_stats_transmit_bytes_total{domain=\"%s\",device=\"%s\"}[1m])", vm, iface))
-				}
-			}
-			if len(expressions) > 0 {
-				outExpr = strings.Join(expressions, " + ")
-			} else {
-				outExpr = "rate(libvirt_domain_interface_stats_transmit_bytes_total[1m])"
-			}
-		} else if len(processedVMs) > 0 {
-			var exclusionExprs []string
-			for _, vm := range processedVMs {
-				iface := targetDevice
-				if v, ok := vmInterfaces[vm]; ok && v != "" {
-					iface = v
-				}
-				expr := fmt.Sprintf("rate(libvirt_domain_interface_stats_transmit_bytes_total{domain=\"%s\",device!=\"%s\"}[1m])", vm, iface)
-				exclusionExprs = append(exclusionExprs, expr)
-			}
-			outExprBase := fmt.Sprintf("rate(libvirt_domain_interface_stats_transmit_bytes_total{domain!~\"%s\"}[1m])", strings.Join(processedVMs, "|"))
-			if len(exclusionExprs) > 0 {
-				outExpr = fmt.Sprintf("%s + %s", outExprBase, strings.Join(exclusionExprs, " + "))
-			} else {
-				outExpr = outExprBase
-			}
-		} else {
-			outExpr = "rate(libvirt_domain_interface_stats_transmit_bytes_total[1m])"
-		}
-
-		if rule.OutOverType == "percent" {
-			outExpr = fmt.Sprintf("(%s) / on (domain) group_left() node_network_speed_bytes * 100 > %d", outExpr, rule.OutThreshold)
-		} else {
-			outExpr = fmt.Sprintf("(%s) > %d", outExpr, rule.OutThreshold)
-		}
-
-		sb.WriteString(fmt.Sprintf(`
-  - alert: HighBWOutUsage_%s_%d
-    expr: |-
-      %s
-    for: %ds
-    labels:
-      severity: warning
-      rule_group: "%s"
-      alert_type: bw
-    annotations:
-      summary: "High Network Out Usage ({{ $value }})"
-      description: "VM {{ $labels.domain }} has high network out usage for %d seconds"`,
-			rule.Name, i, outExpr, rule.OutDuration, groupUUID, rule.OutDuration))
-
-		if rule.OutDownTo > 0 {
-			downExpr := strings.Replace(outExpr, ">", "<", 1)
-			sb.WriteString(fmt.Sprintf(`
-  - alert: BWOutUsageRecovered_%s_%d
-    expr: |-
-      %s
-    for: %ds
-    labels:
-      severity: info
-      rule_group: "%s"
-      alert_type: bw
-    annotations:
-      summary: "Network Out Usage Recovered ({{ $value }})"
-      description: "VM {{ $labels.domain }} network out usage has recovered below threshold for %d seconds"`,
-				rule.Name, i, downExpr, rule.OutDownDuration, groupUUID, rule.OutDownDuration))
-		}
-	}
-
-	return sb.String() + "\n", nil
-}
-
 func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	var req struct {
 		Name         string          `json:"name" binding:"required"`
 		Owner        string          `json:"owner" binding:"required"`
+		Email        string          `json:"email"`
+		Action       bool            `json:"action"`
 		Rules        []routes.BWRule `json:"rules" binding:"required,min=1"`
+		LinkedVMs    []string        `json:"linkedvms"`
 		TargetDevice string          `json:"target_device"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	// Create rule group
 	group := &model.RuleGroupV2{
 		Name:    req.Name,
 		Type:    routes.RuleTypeBW,
 		Owner:   req.Owner,
 		Enabled: true,
+		Email:   req.Email,
+		Action:  req.Action,
 	}
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
-		c.JSON(
-			http.StatusInternalServerError,
-			gin.H{"error": "operator failed: " + err.Error()},
-		)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
 		return
 	}
-
-	groupUUID := group.UUID
-
-	// Create rule details
 	for _, rule := range req.Rules {
 		detail := &model.BWRuleDetail{
-			GroupUUID: groupUUID,
-			Name:      rule.Name,
-
-			// Inbound parameters - default to -1 (disabled)
-			InThreshold:    -1,
-			InDuration:     -1,
-			InOverType:     "absolute",
-			InDownTo:       -1,
-			InDownDuration: -1,
-
-			// Outbound parameters - default to -1 (disabled)
+			GroupUUID:       group.UUID,
+			Name:            rule.Name,
+			InThreshold:     -1,
+			InDuration:      -1,
+			InOverType:      "absolute",
+			InDownTo:        -1,
+			InDownDuration:  -1,
 			OutThreshold:    -1,
 			OutDuration:     -1,
 			OutOverType:     "absolute",
 			OutDownTo:       -1,
 			OutDownDuration: -1,
 		}
-
-		// Set inbound parameters if enabled
 		if rule.InEnabled {
 			detail.InThreshold = rule.InThreshold
 			detail.InDuration = rule.InDuration
@@ -1457,8 +1144,6 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			detail.InDownTo = rule.InDownTo
 			detail.InDownDuration = rule.InDownDuration
 		}
-
-		// Set outbound parameters if enabled
 		if rule.OutEnabled {
 			detail.OutThreshold = rule.OutThreshold
 			detail.OutDuration = rule.OutDuration
@@ -1466,65 +1151,66 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			detail.OutDownTo = rule.OutDownTo
 			detail.OutDownDuration = rule.OutDownDuration
 		}
-
 		if err := a.operator.CreateBWRuleDetail(c.Request.Context(), detail); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
 			return
 		}
 	}
-
-	// Get linked VMs
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"call get link vm error": err.Error()})
-		return
+	if len(req.LinkedVMs) > 0 {
+		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
+		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-bw")
 	}
-
-	// Process VM list
-	var vmList []string
-	if len(vmLinks) > 0 {
-		for _, link := range vmLinks {
-			vmName, err := routes.GetInstanceUUIDByDomain(c.Request.Context(), link.VMUUID)
-			if err != nil {
-				log.Printf("VM UUID convert failed uuid=%s error=%v", link.VMUUID, err)
-				continue
+	// Render templates for in/out directions
+	for _, rule := range req.Rules {
+		if rule.InEnabled {
+			data := map[string]interface{}{
+				"owner":            req.Owner,
+				"rule_group":       group.UUID,
+				"email":            req.Email,
+				"action":           req.Action,
+				"in_threshold":     rule.InThreshold,
+				"in_duration":      rule.InDuration,
+				"in_down_to":       rule.InDownTo,
+				"in_down_duration": rule.InDownDuration,
+				"target_device":    req.TargetDevice,
 			}
-			vmList = append(vmList, vmName)
+			templateFile := "VM-in-bw-rule.yml.j2"
+			outputFile := fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
+			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
+				log.Printf("Failed to render in-bw rule template: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render in-bw rule template"})
+				return
+			}
+		}
+		if rule.OutEnabled {
+			data := map[string]interface{}{
+				"owner":             req.Owner,
+				"rule_group":        group.UUID,
+				"email":             req.Email,
+				"action":            req.Action,
+				"out_threshold":     rule.OutThreshold,
+				"out_duration":      rule.OutDuration,
+				"out_down_to":       rule.OutDownTo,
+				"out_down_duration": rule.OutDownDuration,
+				"target_device":     req.TargetDevice,
+			}
+			templateFile := "VM-out-bw-rule.yml.j2"
+			outputFile := fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
+			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
+				log.Printf("Failed to render out-bw rule template: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render out-bw rule template"})
+				return
+			}
 		}
 	}
-
-	// Generate rule content
-	generalRaw, err := generateBWRuleContent(req.Rules, group.Name, groupUUID, vmList, false, req.TargetDevice)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"generate general rules failed": err.Error()})
-		return
-	}
-
-	// Write rule file
-	generalPath := fmt.Sprintf("%s/bw-general-%s.yml", routes.RulesGeneral, groupUUID)
-	if err := routes.WriteFile(generalPath, []byte(generalRaw), 0640); err != nil {
-		log.Printf("Failed to write rule file: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to write rule file"})
-		return
-	}
-
-	// Create symlink
-	enabledPath := filepath.Join(routes.RulesEnabled, fmt.Sprintf("bw-general-%s.yml", groupUUID))
-	if err := routes.CreateSymlink(generalPath, enabledPath); err != nil && !os.IsExist(err) {
-		log.Printf("Failed to create symlink: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symlink"})
-		return
-	}
-
-	// Reload Prometheus
 	routes.ReloadPrometheus()
-
-	// Return success response
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": groupUUID,
+			"group_uuid": group.UUID,
 			"enabled":    true,
+			"linkedvms":  req.LinkedVMs,
 		},
 	})
 }
@@ -1598,6 +1284,8 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 			"create_time": group.CreatedAt.Format(time.RFC3339),
 			"rules":       ruleDetails,
 			"enabled":     group.Enabled,
+			"email":       group.Email,
+			"action":      group.Action,
 			"linked_vms":  linkedVMs,
 		})
 	}
@@ -1619,16 +1307,17 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
 		return
 	}
-	if _, err := a.operator.GetBWRulesByGroupUUID(c.Request.Context(), groupUUID, routes.RuleTypeBW); err != nil {
+	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": " target rules not fould",
-				"code":  "RESOURCE_NOT_FOUND",
+				"error": "Rule not found: The specified rule does not exist",
+				"code":  "NOT_FOUND",
 				"uuid":  groupUUID,
 			})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "server internal error",
+				"error": "Failed to retrieve rule information",
 				"code":  "INTERNAL_ERROR",
 				"uuid":  groupUUID,
 			})
@@ -1636,55 +1325,77 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		return
 	}
 
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	var excludeVMs []string
-	if err == nil {
-		for _, link := range vmLinks {
-			_, err := routes.GetDBIndexByInstanceUUID(c, link.VMUUID)
-			if err != nil {
-				log.Printf("convert UUID to vm name failed uuid=%s error=%v", link.VMUUID, err)
-				continue
-			}
-			//vmName := "inst-" + strconv.Itoa(instanceid)
-			excludeVMs = append(excludeVMs, link.VMUUID)
-		}
-	}
-	log.Printf("existing excludeVMs: %v", excludeVMs)
-	if len(excludeVMs) > 0 {
-		log.Printf("Cannot delete BW rule group %s: still linked to VMs: %v", groupUUID, excludeVMs)
+	// 确认规则类型是否正确
+	if group.Type != routes.RuleTypeBW {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "BW rule group is still bound to active VMs. Please unlink them first.",
-			"code":       "RULE_GROUP_LINKED",
-			"linked_vms": excludeVMs,
-			"uuid":       groupUUID,
+			"error": "Rule type mismatch: Expected BW rule but found " + group.Type,
+			"code":  "INVALID_RULE_TYPE",
+			"uuid":  groupUUID,
 		})
 		return
 	}
+	owner := group.Owner
 
+	// Delete all associated VMRuleLink
+	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+	linkedVMs := []string{}
+	if err == nil {
+		for _, link := range vmLinks {
+			linkedVMs = append(linkedVMs, link.VMUUID)
+		}
+		_, _ = a.operator.DeleteVMLink(c.Request.Context(), groupUUID, "", "")
+	}
+
+	// Remove related entries from matched_vms.json
+	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-bw")
+
+	// 删除软链和规则文件（路径与创建时一致）
+	// 记录删除的文件路径
+	deletedFiles := []string{}
+
+	// 不再需要遍历规则名，直接使用固定格式的文件名
+	inFile := fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
+	outFile := fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
+	linkIn := filepath.Join(routes.RulesEnabled, inFile)
+	linkOut := filepath.Join(routes.RulesEnabled, outFile)
+
+	// 根据owner决定规则文件位置
+	var ruleIn, ruleOut string
+	if owner == "admin" {
+		ruleIn = filepath.Join(routes.RulesGeneral, inFile)
+		ruleOut = filepath.Join(routes.RulesGeneral, outFile)
+	} else {
+		ruleIn = filepath.Join(routes.RulesSpecial, inFile)
+		ruleOut = filepath.Join(routes.RulesSpecial, outFile)
+	}
+
+	// 删除软链和规则文件，记录成功删除的文件路径
+	if err := routes.RemoveFile(linkIn); err == nil {
+		deletedFiles = append(deletedFiles, linkIn)
+	}
+	if err := routes.RemoveFile(ruleIn); err == nil {
+		deletedFiles = append(deletedFiles, ruleIn)
+	}
+	if err := routes.RemoveFile(linkOut); err == nil {
+		deletedFiles = append(deletedFiles, linkOut)
+	}
+	if err := routes.RemoveFile(ruleOut); err == nil {
+		deletedFiles = append(deletedFiles, ruleOut)
+	}
+
+	// 记录映射文件路径（如果有）
+	mappingFile := ""
+	if mappingFile != "" {
+		deletedFiles = append(deletedFiles, mappingFile)
+	}
+
+	// Delete rule-related table data
 	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeBW); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "DB operation failed: " + err.Error(),
 			"code":  "DB_DELETE_FAILED",
 		})
 		return
-	}
-	patterns := []string{
-		fmt.Sprintf("%s/bw-general-%s.yml", routes.RulesGeneral, groupUUID),
-		fmt.Sprintf("%s/bw-general-%s.yml", routes.RulesEnabled, groupUUID),
-	}
-
-	for _, pattern := range patterns {
-		status, err := routes.CheckFileExists(pattern)
-		if err != nil {
-			log.Printf("Failed to check file existence: %v", err)
-			continue
-		}
-
-		if status {
-			if err := routes.RemoveFile(pattern); err != nil {
-				log.Printf("Failed to remove file: %v", err)
-			}
-		}
 	}
 
 	if err := routes.ReloadPrometheus(); err != nil {
@@ -1697,7 +1408,8 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"deleted_group": groupUUID,
-			"deleted_files": patterns,
+			"deleted_files": deletedFiles,
+			"linked_vms":    linkedVMs,
 		},
 	})
 }
@@ -1786,4 +1498,137 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 		"uuid":          uuid,
 		"deleted_files": deletedFiles,
 	})
+}
+
+// SyncAllVMRuleMappings synchronizes all VM-rule mappings to matched_vms.json
+// This ensures consistency between database and the mapping file
+// @Summary Synchronize all VM rule mappings
+// @Description Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database
+// @Tags alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Synchronization successful"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/metrics/alarm/sync-mappings [post]
+func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
+	log.Printf("Starting full synchronization of VM rule mappings")
+
+	ctx := c.Request.Context()
+	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+
+	// Get all rule groups (both alarm and adjust rules)
+	var allRuleGroups []string
+
+	// Get CPU rule groups
+	cpuParams := routes.ListRuleGroupsParams{
+		RuleType: routes.RuleTypeCPU,
+		Page:     1,
+		PageSize: 1000,
+	}
+	cpuGroups, _, err := a.operator.ListRuleGroups(ctx, cpuParams)
+	if err != nil {
+		log.Printf("Failed to get CPU rule groups: %v", err)
+	} else {
+		for _, group := range cpuGroups {
+			allRuleGroups = append(allRuleGroups, group.UUID)
+		}
+	}
+
+	// Get BW rule groups
+	bwParams := routes.ListRuleGroupsParams{
+		RuleType: routes.RuleTypeBW,
+		Page:     1,
+		PageSize: 1000,
+	}
+	bwGroups, _, err := a.operator.ListRuleGroups(ctx, bwParams)
+	if err != nil {
+		log.Printf("Failed to get BW rule groups: %v", err)
+	} else {
+		for _, group := range bwGroups {
+			allRuleGroups = append(allRuleGroups, group.UUID)
+		}
+	}
+
+	// Get adjust rule groups if AdjustOperator is available
+	// This would need to be implemented based on your adjust rule structure
+
+	// Build complete mapping data
+	var allMappings []map[string]interface{}
+
+	for _, groupUUID := range allRuleGroups {
+		// Get all VMs linked to this rule group
+		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
+		if err != nil {
+			log.Printf("Failed to get linked VMs for group %s: %v", groupUUID, err)
+			continue
+		}
+
+		for _, link := range vmLinks {
+			instanceID := link.VMUUID
+			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
+			if err != nil {
+				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
+				continue
+			}
+
+			// Create mapping entry
+			mapping := map[string]interface{}{
+				"targets": []string{"localhost:9090"},
+				"labels": map[string]interface{}{
+					"domain":      domain,
+					"rule_id":     fmt.Sprintf("%s-%s", domain, groupUUID),
+					"instance_id": instanceID,
+				},
+			}
+
+			allMappings = append(allMappings, mapping)
+			log.Printf("Added mapping: domain=%s, rule_id=%s-%s, instance_id=%s",
+				domain, domain, groupUUID, instanceID)
+		}
+	}
+
+	// Save complete mapping data
+	mappingData, err := json.MarshalIndent(allMappings, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"error":  "Failed to marshal mapping data",
+		})
+		return
+	}
+
+	err = routes.WriteFile(matchedVMsFile, mappingData, 0644)
+	if err != nil {
+		log.Printf("Failed to write matched_vms.json: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"error":  "Failed to write mapping file",
+		})
+		return
+	}
+
+	// Force reload Prometheus configuration
+	if err := routes.ReloadPrometheus(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after full sync: %v", err)
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "partial_success",
+			"message": "Mappings synchronized but failed to reload Prometheus",
+			"count":   len(allMappings),
+		})
+		return
+	}
+
+	log.Printf("Successfully synchronized all VM rule mappings, total entries: %d", len(allMappings))
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "VM rule mappings synchronized successfully",
+		"count":   len(allMappings),
+	})
+}
+
+// VMAlarmMapping is used for serialization to vm_alarm_mapping.yml
+type VMAlarmMapping struct {
+	Targets []string          `yaml:"targets"`
+	Labels  map[string]string `yaml:"labels"`
 }

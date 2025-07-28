@@ -52,5 +52,18 @@ echo "Updating vm_instance_map metrics: removing VM $vm_ID from source hyperviso
 
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
+
+# Clean up all custom metrics for migrated VM
+echo "=== Starting VM custom metrics cleanup ==="
+if [ -f "/opt/cloudland/scripts/kvm/cleanup_vm_custom_metrics.sh" ]; then
+    echo "Cleaning up all custom metrics for migrated VM: $vm_ID (ID: $ID)"
+    /opt/cloudland/scripts/kvm/cleanup_vm_custom_metrics.sh $ID || {
+        echo "Warning: VM custom metrics cleanup failed, but migration completed successfully"
+    }
+else
+    echo "Warning: VM custom metrics cleanup script not found, skipping metrics cleanup"
+fi
+echo "=== VM custom metrics cleanup completed ==="
+
 state="source_prepared"
 echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
