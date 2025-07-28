@@ -34,13 +34,13 @@ import (
 
 const (
 	RuleTypeCPU       = "cpu"
+	RuleTypeMemory    = "memory"
 	RuleTypeBW        = "bw"
 	RuleTypeCompute   = "compute_node"
 	RuleTypeControl   = "control_node"
 	RuleTypeAvailable = "node_available"
 	RulesEnabled      = "/etc/prometheus/rules_enabled"
 	RulesGeneral      = "/etc/prometheus/general_rules"
-	RulesSpecial      = "/etc/prometheus/special_rules"
 	RulesNode         = "/etc/prometheus/node_rules"
 	RuleTemplate      = "/etc/prometheus/node_templates"
 )
@@ -82,6 +82,15 @@ type ListRuleGroupsParams struct {
 	Page      int
 	PageSize  int
 	GroupUUID string
+	RuleID    string // Added: Support query by rule_id
+}
+
+// AdaptiveQueryParams Adaptive query parameters
+type AdaptiveQueryParams struct {
+	ID       string // Can be GroupUUID or RuleID
+	RuleType string
+	Page     int
+	PageSize int
 }
 
 type (
@@ -95,7 +104,7 @@ type (
 	RuleGroupV2 struct {
 		ID         string    `gorm:"primaryKey;type:varchar(36)"`
 		Name       string    `gorm:"index;size:255"`
-		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw
+		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw/memory/disk/network-in/network-out
 		Enabled    bool      `gorm:"default:true"`
 		Owner      string    `gorm:"type:varchar(255);index"`
 		CreatedAt  time.Time `gorm:"autoCreateTime"`
@@ -106,8 +115,23 @@ type (
 	CPURule struct {
 		ID           int       `gorm:"primaryKey;autoIncrement"`
 		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `gorm:"size:255"`
-		Duration     int       `gorm:"check:duration >= 1"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
+		Over         int       `json:"over" gorm:"check:over >= 1"`
+		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
+		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
+		CreatedAt    time.Time `gorm:"autoCreateTime"`
+	}
+
+	MemoryRule struct {
+		ID           int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
@@ -140,6 +164,7 @@ type (
 		Name          string `gorm:"size:255"`
 		Status        string `gorm:"type:varchar(20)"`
 		RuleGroupUUID string `json:"rule_group"`
+		GlobalRuleID  string `gorm:"type:varchar(255)" json:"global_rule_id"` // Added: Global rule ID
 		Severity      string `gorm:"type:varchar(20)"`
 		Summary       string `gorm:"type:text"`
 		Description   string `gorm:"type:text"`
@@ -148,59 +173,61 @@ type (
 		CreatedAt     time.Time `gorm:"autoCreateTime"`
 		AlertType     string    `gorm:"type:varchar(20)" json:"alert_type"`
 		TargetDevice  string    `gorm:"type:varchar(255)" json:"target_device"`
+		RegionID      string    `gorm:"type:varchar(255)" json:"region_id"`   // Added: Region ID
+		InstanceID    string    `gorm:"type:varchar(255)" json:"instance_id"` // Added: Instance ID
 	}
 )
 
-// 完善的配置结构
+// NodeAvailabilityConfig Complete configuration structure
 type NodeAvailabilityConfig struct {
 	NodeDownDuration     string `json:"node_down_duration"`
 	AlertDurationMinutes int    `json:"alert_duration_minutes"`
 }
 
 type ManagementConfig struct {
-	// CPU监控
+	// CPU monitoring
 	CPUUsageThreshold int    `json:"cpu_usage_threshold"`
 	CPUAlertDuration  string `json:"cpu_alert_duration"`
 	CPUAlertMinutes   int    `json:"cpu_alert_minutes"`
 
-	// 内存监控
+	// Memory monitoring
 	MemoryUsageThreshold int    `json:"memory_usage_threshold"`
 	MemoryAlertDuration  string `json:"memory_alert_duration"`
 	MemoryAlertMinutes   int    `json:"memory_alert_minutes"`
 
-	// 磁盘监控
+	// Disk monitoring
 	DiskSpaceThreshold int    `json:"disk_space_threshold"`
 	DiskAlertDuration  string `json:"disk_alert_duration"`
 	DiskAlertMinutes   int    `json:"disk_alert_minutes"`
 
-	// 网络监控 - 新增
+	// Network monitoring - Added
 	NetworkTrafficThresholdGB float64 `json:"network_traffic_threshold_gb"`
 	NetworkAlertDuration      string  `json:"network_alert_duration"`
 	NetworkAlertMinutes       int     `json:"network_alert_minutes"`
 }
 
 type ComputeConfig struct {
-	// CPU监控
+	// CPU monitoring
 	CPUUsageThreshold int    `json:"cpu_usage_threshold"`
 	CPUAlertDuration  string `json:"cpu_alert_duration"`
 	CPUAlertMinutes   int    `json:"cpu_alert_minutes"`
 
-	// 内存监控 - 新增
+	// Memory monitoring - Added
 	MemoryUsageThreshold int    `json:"memory_usage_threshold"`
 	MemoryAlertDuration  string `json:"memory_alert_duration"`
 	MemoryAlertMinutes   int    `json:"memory_alert_minutes"`
 
-	// 磁盘监控
+	// Disk monitoring
 	DiskSpaceThreshold int    `json:"disk_space_threshold"`
 	DiskAlertDuration  string `json:"disk_alert_duration"`
 	DiskAlertMinutes   int    `json:"disk_alert_minutes"`
 
-	// 核心网络监控
+	// Core network monitoring
 	NetworkTrafficThresholdGB float64 `json:"network_traffic_threshold_gb"`
 	NetworkAlertDuration      string  `json:"network_alert_duration"`
 	NetworkAlertMinutes       int     `json:"network_alert_minutes"`
 
-	// 多业务类型网络监控
+	// Multiple business type network monitoring
 	NetworkTypes map[string]NetworkTypeConfig `json:"network_types"`
 }
 
@@ -280,9 +307,14 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		GroupUUID: groupUUID,
 		PageSize:  1,
 	})
-	if err != nil || len(groups) == 0 {
+	if err != nil {
 		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
-		return nil, fmt.Errorf("rules query failed: %w", err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("rule not found: groupID=%s", groupUUID)
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	ruleType := groups[0].Type
@@ -319,6 +351,76 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	} else {
 		log.Printf("unsupported rule type groupID %s type %s", groupUUID, ruleType)
+		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
+	}
+}
+
+// GetRulesByRuleID 通过 rule_id 获取规则组（支持告警规则）
+func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*model.RuleGroupV2, error) {
+	ctx, _ = common.GetContextDB(ctx)
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+	if err != nil {
+		log.Printf("rules query failed: ruleID=%s, error=%v", ruleID, err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("rule not found: ruleID=%s", ruleID)
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	ruleType := groups[0].Type
+
+	if ruleType == "cpu" {
+		details, err := a.GetCPURuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.CPURuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "bw" {
+		details, err := a.GetBWRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.BWRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "memory" {
+		details, err := a.GetMemoryRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.MemoryRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else {
+		log.Printf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
 		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
@@ -392,6 +494,37 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 		}
 		return nil
 	})
+}
+
+// CheckVMLinkExists checks if a VM link already exists
+func (a *AlarmOperator) CheckVMLinkExists(ctx context.Context, groupUUID, vmUUID, iface string) bool {
+	ctx, db := common.GetContextDB(ctx)
+	var count int64
+	query := db.Model(&model.VMRuleLink{}).
+		Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID)
+
+	if iface != "" {
+		query = query.Where("interface = ?", iface)
+	}
+
+	query.Count(&count)
+	return count > 0
+}
+
+// CreateVMLink creates a single VM link
+func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, iface string) error {
+	ctx, db := common.GetContextDB(ctx)
+	link := &model.VMRuleLink{
+		GroupUUID: groupUUID,
+		VMUUID:    vmUUID,
+		Interface: iface,
+	}
+	if err := db.Create(link).Error; err != nil {
+		log.Printf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+			groupUUID, vmUUID, iface, err)
+		return fmt.Errorf("create link failed: %w", err)
+	}
+	return nil
 }
 
 func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUUIDs []string, iface string) error {
@@ -478,6 +611,12 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 				log.Printf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("CPU rules delete failed: %w", err)
 			}
+		case "memory":
+			if err := tx.Where("group_uuid = ?", groupUUID).
+				Delete(&model.MemoryRuleDetail{}).Error; err != nil {
+				log.Printf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("Memory rules delete failed: %w", err)
+			}
 		case "bw":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.BWRuleDetail{}).Error; err != nil {
@@ -533,6 +672,10 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
 	}
+	// Added: Support query by rule_id
+	if params.RuleID != "" {
+		query = query.Where("rule_id = ?", params.RuleID)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		log.Printf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
@@ -553,6 +696,15 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 	var details []model.CPURuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		log.Printf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+	}
+	return details, nil
+}
+
+func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID string) ([]model.MemoryRuleDetail, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var details []model.MemoryRuleDetail
+	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+		log.Printf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
@@ -624,6 +776,16 @@ func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.C
 	return nil
 }
 
+func (a *AlarmOperator) CreateMemoryRuleDetail(ctx context.Context, detail *model.MemoryRuleDetail) error {
+	ctx, db := common.GetContextDB(ctx)
+	detail.UUID = uuid.NewString()
+	if err := db.Create(detail).Error; err != nil {
+		log.Printf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		return fmt.Errorf("create memory rule detail failed: %w", err)
+	}
+	return nil
+}
+
 func isLocalIP(ip string) bool {
 	if ip == "localhost" || ip == "127.0.0.1" {
 		return true
@@ -682,7 +844,7 @@ func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, erro
 		if _, err := os.Stat(caCertPath); err == nil {
 			caCert, err := os.ReadFile(caCertPath)
 			if err != nil {
-				return nil, fmt.Errorf("读取CA证书失败: %v", err)
+				return nil, fmt.Errorf("failed to read CA certificate: %v", err)
 			}
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
@@ -759,7 +921,7 @@ func (c *PrometheusClient) ClientReadRuleFile(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	// 解析响应
+	// Parse response
 	var response RuleFileResponse
 	if err := json.Unmarshal(respBody, &response); err != nil {
 		log.Printf("parse response failed: %v", err)
@@ -891,11 +1053,11 @@ func (c *PrometheusClient) ClientGetUser(username string) (int, int, error) {
 	}
 
 	if err := json.Unmarshal(resp, &response); err != nil {
-		return 0, 0, fmt.Errorf("解析响应失败: %v", err)
+		return 0, 0, fmt.Errorf("failed to parse response: %v", err)
 	}
 
 	if !response.Success {
-		return 0, 0, fmt.Errorf("获取用户信息失败: %s", response.Message)
+		return 0, 0, fmt.Errorf("failed to get user information: %s", response.Message)
 	}
 
 	return response.UID, response.GID, nil
@@ -931,13 +1093,16 @@ func GetUser(username string) (uid, gid int, err error) {
 }
 
 func ReadFile(path string) ([]byte, error) {
+	fmt.Printf("wngzhe ReadFile isRemotePrometheus: %t,  prometheusClient: %p", isRemotePrometheus, prometheusClient)
 	if isRemotePrometheus {
+		fmt.Printf("wngzhe ReadFile remote")
 		if prometheusClient == nil {
 			log.Printf("The Prometheus client has not been initialized.")
 			return nil, fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 		return prometheusClient.ClientReadRuleFile(path)
 	} else {
+		fmt.Printf("wngzhe ReadFile local")
 		return os.ReadFile(path)
 	}
 }
@@ -1044,15 +1209,6 @@ func ReloadPrometheus() error {
 		}
 		return nil
 	}
-}
-
-func RulePaths(ruleType, groupID string) (generalPath string, specialPath string) {
-	const (
-		RulesGeneral = "/etc/prometheus/general_rules"
-		RulesSpecial = "/etc/prometheus/special_rules"
-	)
-	return fmt.Sprintf("%s/%s-general-%s.yml", RulesGeneral, ruleType, groupID),
-		fmt.Sprintf("%s/%s-special-%s.yml", RulesSpecial, ruleType, groupID)
 }
 
 func RemoveFile(path string) error {
@@ -1198,7 +1354,9 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
-	outputPath := filepath.Join(RulesNode, outputFile)
+
+	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
+	outputPath := filepath.Join(RulesGeneral, outputFile)
 
 	// Read template content
 	templateContent, err := ReadFile(templatePath)
@@ -1206,6 +1364,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 		log.Printf("Failed to read template file: path=%s, error=%v", templatePath, err)
 		return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
 	}
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
 
 	var renderedContent string
 	if strings.Contains(string(templateContent), "name: compute-network-resources") {
@@ -1213,11 +1372,12 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	} else {
 		renderedContent, err = renderTemplateContent(string(templateContent), data, templateFile)
 	}
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
 	if err != nil {
 		log.Printf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
-
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
 		log.Printf("Failed to write output file: path=%s, error=%v", outputPath, err)
@@ -1225,7 +1385,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	}
 
 	// Create symlink to RulesEnabled directory
-	enabledPath := filepath.Join(RulesEnabled, outputFile)
+	enabledPath := filepath.Join(RulesEnabled, filepath.Base(outputPath))
 	if err := CreateSymlink(outputPath, enabledPath); err != nil {
 		log.Printf("Failed to create symlink: source=%s, target=%s, error=%v",
 			outputPath, enabledPath, err)
@@ -1313,29 +1473,26 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 
 	result := templateContent
 
-	// Replace all variables with data values first
+	// 1. Replace all variables in data (excluding $labels.)
 	for key, value := range data {
-		// Skip Prometheus labels (e.g., {{ $labels.xxx }})
 		if strings.HasPrefix(key, "$labels.") {
 			continue
 		}
-
-		// Replace simple variables: {{ variable }}
 		placeholder := fmt.Sprintf("{{ %s }}", key)
 		strValue := fmt.Sprintf("%v", value)
 		result = strings.ReplaceAll(result, placeholder, strValue)
 
-		// Handle variables with default values: {{ variable | default("value") }} with data value
+		// 1.1 Replace {{ key | default("xxx") }} format
 		defaultPattern := regexp.MustCompile(fmt.Sprintf(`{{ %s \| default\("([^"]*)"\) }}`, key))
 		result = defaultPattern.ReplaceAllString(result, strValue)
 
-		// Handle variables with unquoted default values: {{ variable | default(value) }} or {{ (variable | default(value)) }}
+		// 1.2 Replace {{ key | default(xxx) }} format without quotes
 		noQuotesPattern := regexp.MustCompile(fmt.Sprintf(`{{ *(?:\(?%s\)? *\| *default\(([^"\)]+)\)) *}}`, key))
 		result = noQuotesPattern.ReplaceAllString(result, strValue)
 	}
 
-	// Handle remaining default value variables (use template defaults for missing keys)
-	// For quoted defaults: {{ variable | default("value") }}
+	// 2. Replace remaining default syntax variables (if no value provided in data)
+	// 2.1 Default with quotes
 	defaultPattern := regexp.MustCompile(`{{ ([a-zA-Z0-9_]+) \| default\("([^"]*)"\) }}`)
 	result = defaultPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := defaultPattern.FindStringSubmatch(match)
@@ -1343,18 +1500,16 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 			return match
 		}
 		key := matches[1]
-		// Skip Prometheus labels
 		if strings.HasPrefix(key, "$labels.") {
 			return match
 		}
-		// Use data value if available, otherwise use default from template
-		if _, ok := data[key]; ok {
-			return fmt.Sprintf("%v", data[key])
+		if val, ok := data[key]; ok {
+			return fmt.Sprintf("%v", val)
 		}
-		return matches[2] // Use the default value from template
+		return matches[2]
 	})
 
-	// For unquoted defaults: {{ variable | default(value) }} or {{ (variable | default(value)) }}
+	// 2.2 Default without quotes
 	noQuotesPattern := regexp.MustCompile(`{{ *(?:\(?([a-zA-Z0-9_]+)\)? *\| *default\(([^"\)]+)\)) *}}`)
 	result = noQuotesPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := noQuotesPattern.FindStringSubmatch(match)
@@ -1362,29 +1517,19 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 			return match
 		}
 		key := matches[1]
-		// Skip Prometheus labels
 		if strings.HasPrefix(key, "$labels.") {
 			return match
 		}
-		// Use data value if available, otherwise use default from template
-		if _, ok := data[key]; ok {
-			return fmt.Sprintf("%v", data[key])
+		if val, ok := data[key]; ok {
+			return fmt.Sprintf("%v", val)
 		}
-		return matches[2] // Use the default value from template
+		return matches[2]
 	})
 
-	// Validate the result: ensure no unresolved templates remain (except Prometheus labels)
-	remainingPattern := regexp.MustCompile(`{{ ([^}]+) }}`)
-	remainingMatches := remainingPattern.FindAllStringSubmatch(result, -1)
-	for _, match := range remainingMatches {
-		if len(match) > 1 {
-			key := match[1]
-			// Allow Prometheus labels to remain
-			if !strings.HasPrefix(key, "$labels.") {
-				return "", fmt.Errorf("unresolved template variable: %s", key)
-			}
-		}
-	}
+	// 3. Unpack Prometheus template expressions, for example:
+	// {{ "{{ if $labels.xxx }}a{{ else }}b{{ end }}" }} -> {{ if $labels.xxx }}a{{ else }}b{{ end }}
+	promExprPattern := regexp.MustCompile(`{{ "{{ ([^{}]+) }}" }}`)
+	result = promExprPattern.ReplaceAllString(result, "{{ $1 }}")
 
 	return result, nil
 }
@@ -1403,7 +1548,7 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 		return fmt.Errorf("config is required")
 	}
 
-	// 验证 config 是否为有效的 JSON
+	// Validate if config is valid JSON
 	var temp interface{}
 	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
 		return fmt.Errorf("config must be valid JSON")
@@ -1614,21 +1759,21 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 		rulesForTemplate = append(rulesForTemplate, ruleMap)
 	}
 
-	// 添加模板所需的数据
+	// Add data required for template
 	c.Data["Rules"] = rulesForTemplate
 	c.Data["Total"] = len(rules)
 	c.Data["Query"] = c.Query("q")
 	c.Data["Link"] = "/alarms/node"
 
-	// 确保 i18n 对象被正确设置
+	// Ensure i18n object is properly set
 	if c.Locale != nil {
 		c.Data["i18n"] = c.Locale
 	} else {
 		log.Printf("Warning: i18n object is nil")
-		c.Data["i18n"] = &i18n.Locale{} // 提供一个空的 i18n 对象作为后备
+		c.Data["i18n"] = &i18n.Locale{} // Provide an empty i18n object as fallback
 	}
 
-	// 复制其他必要的上下文数据
+	// Copy other necessary context data
 	if isAdmin, ok := c.Data["IsAdmin"].(bool); ok {
 		c.Data["IsAdmin"] = isAdmin
 	}
@@ -1726,4 +1871,252 @@ func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
 
 func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
 	c.HTML(200, "alarms_new")
+}
+
+// RemoteNotifyConfig related operation functions
+
+// CreateRemoteNotifyConfig creates remote notify configuration
+func (a *AlarmOperator) CreateRemoteNotifyConfig(ctx context.Context, config *model.RemoteNotifyConfig) error {
+	ctx, db := common.GetContextDB(ctx)
+	config.UUID = uuid.NewString()
+	if err := db.Create(config).Error; err != nil {
+		log.Printf("create remote notify config failed: name=%s, error=%v", config.Name, err)
+		return fmt.Errorf("create remote notify config failed: %w", err)
+	}
+	return nil
+}
+
+// GetRemoteNotifyConfigs gets remote notify configuration list
+func (a *AlarmOperator) GetRemoteNotifyConfigs(ctx context.Context) ([]model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var configs []model.RemoteNotifyConfig
+	if err := db.Find(&configs).Error; err != nil {
+		log.Printf("get remote notify configs failed: error=%v", err)
+		return nil, fmt.Errorf("get remote notify configs failed: %w", err)
+	}
+	return configs, nil
+}
+
+// GetRemoteNotifyConfigByName gets remote notify configuration by name
+func (a *AlarmOperator) GetRemoteNotifyConfigByName(ctx context.Context, name string) (*model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var config model.RemoteNotifyConfig
+	if err := db.Where("name = ?", name).First(&config).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		log.Printf("get remote notify config by name failed: name=%s, error=%v", name, err)
+		return nil, fmt.Errorf("get remote notify config by name failed: %w", err)
+	}
+	return &config, nil
+}
+
+// GetRemoteNotifyConfigsByType gets remote notify configuration list by type
+func (a *AlarmOperator) GetRemoteNotifyConfigsByType(ctx context.Context, configType string) ([]model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var configs []model.RemoteNotifyConfig
+	if err := db.Where("type = ?", configType).Find(&configs).Error; err != nil {
+		log.Printf("get remote notify configs by type failed: type=%s, error=%v", configType, err)
+		return nil, fmt.Errorf("get remote notify configs by type failed: %w", err)
+	}
+	return configs, nil
+}
+
+// DeleteRemoteNotifyConfig deletes remote notify configuration
+func (a *AlarmOperator) DeleteRemoteNotifyConfig(ctx context.Context, name string) error {
+	ctx, db := common.GetContextDB(ctx)
+	result := db.Where("name = ?", name).Delete(&model.RemoteNotifyConfig{})
+	if result.Error != nil {
+		log.Printf("delete remote notify config failed: name=%s, error=%v", name, result.Error)
+		return fmt.Errorf("delete remote notify config failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("remote notify config not found: %s", name)
+	}
+	return nil
+}
+
+// Remote notification related functions
+
+// NotifyParams notification parameters
+type NotifyParams struct {
+	Alerts []struct {
+		State       string            `json:"state"`
+		Labels      map[string]string `json:"labels"`
+		Annotations map[string]string `json:"annotations"`
+		StartsAt    time.Time         `json:"startsAt"`
+		EndsAt      time.Time         `json:"endsAt"`
+	} `json:"alerts"`
+}
+
+// GetToken gets Token (re-fetch each time, no caching)
+func (a *AlarmOperator) GetToken(config model.RemoteNotifyConfig) (string, error) {
+	log.Printf("[GetToken] Starting token request for config: %s, TokenURL: %s", config.Name, config.TokenURL)
+
+	// Get token directly without any caching
+	loginData := map[string]string{
+		"username": config.Username,
+		"password": config.Password,
+	}
+
+	jsonData, err := json.Marshal(loginData)
+	if err != nil {
+		log.Printf("[GetToken] Failed to marshal login data: %v", err)
+		return "", fmt.Errorf("failed to marshal login data: %w", err)
+	}
+	log.Printf("[GetToken] Login data prepared: %s", string(jsonData))
+
+	log.Printf("[GetToken] Sending POST request to: %s", config.TokenURL)
+	resp, err := http.Post(config.TokenURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[GetToken] HTTP request failed: %v", err)
+		return "", fmt.Errorf("failed to request token: %w", err)
+	}
+	defer resp.Body.Close()
+	log.Printf("[GetToken] Received response with status: %d", resp.StatusCode)
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[GetToken] Token request failed with status %d, response body: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("token request failed with status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int `json:"code"`
+		Data struct {
+			User struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"user"`
+			Team struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"team"`
+			Token string `json:"token"`
+			Role  string `json:"role"`
+		} `json:"data"`
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[GetToken] Failed to read response body: %v", err)
+		return "", fmt.Errorf("failed to read token response: %w", err)
+	}
+	log.Printf("[GetToken] Raw response body: %s", string(body))
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[GetToken] Failed to parse JSON response: %v", err)
+		return "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if result.Code != 0 {
+		log.Printf("[GetToken] Token request returned error code: %d", result.Code)
+		return "", fmt.Errorf("token request returned error code: %d", result.Code)
+	}
+
+	log.Printf("[GetToken] Successfully obtained token (length: %d chars)", len(result.Data.Token))
+	return result.Data.Token, nil
+}
+
+// SendNotificationToService sends notification to a single remote service
+func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config model.RemoteNotifyConfig, params NotifyParams) error {
+	log.Printf("[SendNotification] Starting notification to service: %s, URL: %s", config.Name, config.NotifyURL)
+
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		log.Printf("[SendNotification] Failed to marshal params: %v", err)
+		return fmt.Errorf("failed to marshal params: %w", err)
+	}
+	log.Printf("[SendNotification] Notification payload: %s", string(jsonData))
+
+	req, err := http.NewRequestWithContext(ctx, "POST", config.NotifyURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[SendNotification] Failed to create request: %v", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// Set X-Region-Id header (get from alert labels, use default if not found)
+	regionID := "1" // Default value
+	if len(params.Alerts) > 0 {
+		if alertRegion, exists := params.Alerts[0].Labels["region_id"]; exists && alertRegion != "" {
+			regionID = alertRegion
+		}
+	}
+	req.Header.Set("X-Region-Id", regionID)
+	log.Printf("[SendNotification] Set X-Region-Id header: %s", regionID)
+
+	log.Printf("[SendNotification] Request created for URL: %s", config.NotifyURL)
+
+	if config.TokenURL != "" {
+		log.Printf("[SendNotification] Using token authentication, TokenURL: %s", config.TokenURL)
+		// Token authentication: use stored username and password to get token
+		token, err := a.GetToken(config)
+		if err != nil {
+			log.Printf("[SendNotification] Failed to get token: %v", err)
+			return fmt.Errorf("failed to get token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		log.Printf("[SendNotification] Token authentication header set")
+	} else if config.Username != "" {
+		log.Printf("[SendNotification] Using basic authentication for user: %s", config.Username)
+		// Basic authentication: use stored username and password directly
+		req.SetBasicAuth(config.Username, config.Password)
+	} else {
+		log.Printf("[SendNotification] No authentication configured")
+	}
+	// No authentication: add nothing
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	log.Printf("[SendNotification] Sending notification request...")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[SendNotification] HTTP request failed: %v", err)
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+	log.Printf("[SendNotification] Received response with status: %d", resp.StatusCode)
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[SendNotification] Request failed with status %d, response body: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("remote service returned status %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("[SendNotification] Notification sent successfully, response: %s", string(body))
+	return nil
+}
+
+// SendNotificationToAllServices sends notification to all NOTIFY type remote services
+func (a *AlarmOperator) SendNotificationToAllServices(ctx context.Context, params NotifyParams) error {
+	log.Printf("[SendNotificationToAllServices] Starting notification process")
+
+	// Only get NOTIFY type configurations
+	configs, err := a.GetRemoteNotifyConfigsByType(ctx, model.RemoteConfigTypeNotify)
+	if err != nil {
+		log.Printf("[SendNotificationToAllServices] Failed to get NOTIFY type remote configs: %v", err)
+		return fmt.Errorf("failed to get NOTIFY type remote configs: %w", err)
+	}
+
+	log.Printf("[SendNotificationToAllServices] Found %d NOTIFY type remote configs", len(configs))
+
+	if len(configs) == 0 {
+		log.Printf("[SendNotificationToAllServices] No NOTIFY type remote configs found, skipping notification")
+		return nil
+	}
+
+	for i, config := range configs {
+		log.Printf("[SendNotificationToAllServices] Processing NOTIFY config %d/%d: %s (type: %s)", i+1, len(configs), config.Name, config.Type)
+		if err := a.SendNotificationToService(ctx, config, params); err != nil {
+			// Log error but don't interrupt other notifications
+			log.Printf("[SendNotificationToAllServices] Failed to send notification to %s: %v", config.Name, err)
+		} else {
+			log.Printf("[SendNotificationToAllServices] Successfully sent notification to %s", config.Name)
+		}
+	}
+
+	log.Printf("[SendNotificationToAllServices] NOTIFY notification process completed")
+	return nil
 }

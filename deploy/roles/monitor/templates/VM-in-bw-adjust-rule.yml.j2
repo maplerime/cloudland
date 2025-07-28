@@ -1,0 +1,38 @@
+groups:
+- name: vm_in_bw_adjustment_{{ rule_group }}
+  interval: 15s
+  rules:
+  # Raw inbound bandwidth speed (per interface, unit: kB/s)
+  - record: vm_in_bw_speed_raw_{{ rule_group }}
+    expr: |
+      rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024
+
+  # Smoothed inbound bandwidth speed (5-minute moving average, unit: kB/s)
+  - record: vm_in_bw_speed_{{ rule_group }}
+    expr: |
+      avg_over_time(vm_in_bw_speed_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
+
+  # Inbound bandwidth speed for VM interfaces associated with the rule group
+  - record: vm_in_bw_speed_by_rule_{{ rule_group }}
+    expr: |
+      vm_in_bw_speed_{{ rule_group }} * on(domain, target_device) group_right()
+      max by (domain, target_device, rule_id, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
+      )
+
+  # VM interfaces that require inbound bandwidth limit (only when status is normal)
+  - record: vm_requires_in_bw_limit_{{ rule_group }}
+    expr: |
+      (vm_in_bw_speed_by_rule_{{ rule_group }} > {{ in_high_threshold }})
+      and on(domain, rule_id, target_device)
+      (
+        (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"} == 0) or
+        (max by (domain, target_device, rule_id, instance_id) (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1) unless vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"})
+      )
+
+  # VM interfaces ready for inbound bandwidth restore (only when status is limited)
+  - record: vm_ready_for_in_bw_restore_{{ rule_group }}
+    expr: |
+      (vm_in_bw_speed_by_rule_{{ rule_group }} < {{ in_low_threshold }})
+      and on(domain, rule_id, target_device)
+      (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"} == 1)
