@@ -565,7 +565,10 @@ func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	}
 
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
+	where := ""
+	if memberShip.OrgName != "admin" || memberShip.Role != model.Admin {
+		where = fmt.Sprintf("owner = %d", memberShip.OrgID)
+	}
 	if len(subnetTypes) > 0 {
 		var conds []string
 		var quoted []string
