@@ -1,0 +1,42 @@
+groups:
+- name: bw_out_{{ owner }}_{{ rule_group }}
+  rules:
+  - alert: HighBWOutUsage_{{ owner }}_{{ rule_group }}
+    expr: |
+      (
+        rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) / 1024 > {{ out_threshold }}
+      ) and on(domain, target_device) group_left(rule_id, instance_id, target_device)
+      up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}
+    for: {{ out_duration }}s
+    labels:
+      severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
+      matched: '{{ if $labels.rule_id }}true{{ else }}false{{ end }}'
+      rule_group: "{{ rule_group }}"
+      alert_type: bw
+      owner: "{{ owner }}"
+      email: "{{ email | default('') }}"
+      action: "{{ action | default('false') }}"
+      target_device: "{{ $labels.target_device }}"
+    annotations:
+      summary: "High Network Out Speed ({{ $value }} kB/s)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} has high network out speed or is matched for {{ out_duration }} seconds"
+
+  - alert: BWOutUsageRecovered_{{ owner }}_{{ rule_group }}
+    expr: |
+      (
+        rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) / 1024 < {{ out_down_to }}
+      ) and on(domain, target_device) group_left(rule_id, instance_id, target_device)
+      up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}
+    for: {{ out_down_duration }}s
+    labels:
+      severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'
+      matched: '{{ if $labels.rule_id }}true{{ else }}false{{ end }}'
+      rule_group: "{{ rule_group }}"
+      alert_type: bw
+      owner: "{{ owner }}"
+      email: "{{ email | default('') }}"
+      action: "{{ action | default('false') }}"
+      target_device: "{{ $labels.target_device }}"
+    annotations:
+      summary: "Network Out Speed Recovered ({{ $value }} kB/s)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} network out speed has dropped below threshold for {{ out_down_duration }} seconds"

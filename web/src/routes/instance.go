@@ -1205,6 +1205,23 @@ func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error)
 	return instance.UUID, nil
 }
 
+func GetDomainByInstanceUUID(ctx context.Context, uuid string) (string, error) {
+	var instance model.Instance
+	db := DB()
+	if err := db.Where("uuid = ?", uuid).First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Error("Instance not found uuid=%s", uuid)
+			return "", fmt.Errorf("instance not found")
+		}
+		logger.Error("Database query failed uuid=%s error=%v", uuid, err)
+		return "", fmt.Errorf("database error")
+	}
+
+	// Convert instance ID to domain format: inst-{ID}
+	domain := fmt.Sprintf("inst-%d", instance.ID)
+	return domain, nil
+}
+
 func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, instances []*model.Instance, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)

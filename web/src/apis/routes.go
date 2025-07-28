@@ -19,6 +19,9 @@ import (
 
 var logger = log.MustGetLogger("apis")
 
+// 删除在此处重复定义的alarmAPI变量
+// alarmAPI在alarms.go中已经声明
+
 func Run() (err error) {
 	logger.Info("Start to run cloudland api service")
 	r := Register()
@@ -48,6 +51,8 @@ func Register() (r *gin.Engine) {
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
+	// 添加资源调整webhook端点
+	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
@@ -188,12 +193,14 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
 
+			// Add new endpoint for synchronizing VM rule mappings
+			metricsGroup.POST("/alarm/sync-mappings", alarmAPI.SyncAllVMRuleMappings)
+
 			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
 			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
 			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
 			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
 			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
-			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
@@ -204,6 +211,26 @@ func Register() (r *gin.Engine) {
 			authGroup.GET("/api/v1/openmeter/metrics/:instance_id/:subject", openMeterAPI.QueryInstanceMetricsBySubject)
 			authGroup.GET("/api/v1/openmeter/subjects", openMeterAPI.GetAvailableSubjects)
 
+			// Resource auto adjustment route
+			metricsGroup.POST("/adjust/cpu/rules", adjustAPI.CreateCPUAdjustRule)
+			metricsGroup.GET("/adjust/cpu/rules", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.GET("/adjust/cpu/rule/:uuid", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.DELETE("/adjust/cpu/rule/:uuid", adjustAPI.DeleteCPUAdjustRule)
+
+			// Bandwidth auto adjustment route
+			metricsGroup.POST("/adjust/bw/rules", adjustAPI.CreateBWAdjustRule)
+			metricsGroup.GET("/adjust/bw/rules", adjustAPI.GetBWAdjustRules)
+			metricsGroup.GET("/adjust/bw/rule/:uuid", adjustAPI.GetBWAdjustRules)
+			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
+
+			// Enable/disable resource adjustment rules
+			authGroup.POST("/api/v1/adjust/:uuid/enable", adjustAPI.EnableAdjustRule)
+			authGroup.POST("/api/v1/adjust/:uuid/disable", adjustAPI.DisableAdjustRule)
+
+			// VM adjust rule link management
+			metricsGroup.POST("/adjust/link", adjustAPI.LinkAdjustRule)
+			metricsGroup.DELETE("/adjust/unlink", adjustAPI.UnlinkAdjustRule)
+			metricsGroup.GET("/adjust/links", adjustAPI.GetLinkAdjustRule)
 		}
 
 	}
