@@ -356,8 +356,7 @@ func (v *InstanceAPI) Rescue(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, nil)
-
+	c.JSON(http.StatusNoContent, nil)
 }
 
 // @Summary end rescue a instance
@@ -388,8 +387,7 @@ func (v *InstanceAPI) EndRescue(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, nil)
-
+	c.JSON(http.StatusNoContent, nil)
 }
 
 // @Summary delete a instance
