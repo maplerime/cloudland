@@ -256,7 +256,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	return
 }
 
-func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
+func (a *ImageAdmin) List(offset, limit int64, order, query, status string) (total int64, images []*model.Image, err error) {
 	db := DB()
 	if limit == 0 {
 		limit = 16
@@ -269,6 +269,15 @@ func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64
 	if query != "" {
 		query = fmt.Sprintf("name like '%%%s%%'", query)
 	}
+
+	if status != "" {
+		if query != "" {
+			query = fmt.Sprintf("status = '%s' AND (%s)", status, query)
+		} else {
+			query = fmt.Sprintf("status = '%s'", status)
+		}
+	}
+
 	images = []*model.Image{}
 	if err = db.Model(&model.Image{}).Where(query).Count(&total).Error; err != nil {
 		return
@@ -300,7 +309,7 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, images, err := imageAdmin.List(offset, limit, order, query)
+	total, images, err := imageAdmin.List(offset, limit, order, query, "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)
