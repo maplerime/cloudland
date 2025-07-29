@@ -617,6 +617,9 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			return
 		}
 		iface.SecurityGroups = ifaceInfo.SecurityGroups
+		iface.Inbound = ifaceInfo.Inbound
+		iface.Outbound = ifaceInfo.Outbound
+		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
 	} else {
 		subnets := ifaceInfo.Subnets
 		address := ifaceInfo.IpAddress
