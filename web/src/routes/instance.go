@@ -626,7 +626,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			"inbound": iface.Inbound,
 			"outbound": iface.Outbound,
 			"allow_spoofing": iface.AllowSpoofing,
-			"name": iface.Name}).Error
+			}).Error
 		if err != nil {
 			logger.Debug("Failed to update interface", err)
 			return
