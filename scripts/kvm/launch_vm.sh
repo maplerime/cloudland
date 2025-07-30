@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 11 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader>"
+[ $# -lt 11 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <pool_ID>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -17,6 +17,7 @@ disk_size=$8
 vol_ID=$9
 nested_enable=${10}
 boot_loader=${11}
+pool_ID=${12}
 state=error
 vm_vnc=""
 vol_state=error
@@ -54,7 +55,14 @@ if [ -z "$wds_address" ]; then
     fi
 else
     get_wds_token
+    if [ -z "$pool_ID" ]; then
+        pool_ID=$wds_pool_id
+    fi
     image=$(basename $img_name .raw)
+    if [ "$pool_ID" != "$wds_pool_id" ]; then
+        pool_prefix=$(get_uuid_prefix "$pool_ID")
+        image=${image}-${pool_prefix}
+    fi
     vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
     snapshot_name=${image}-${snapshot}
     read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
@@ -78,7 +86,7 @@ else
         expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
         ret_code=$(echo $expand_ret | jq -r .ret_code)
         if [ "$ret_code" != "0" ]; then
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
+            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
             exit -1
         fi
     fi
@@ -88,11 +96,11 @@ else
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
+        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
         exit -1
     fi
     vol_state=attached
-    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'success'"
+    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'success'"
     ux_sock=/var/run/wds/$vhost_name
     template=$template_dir/wds_template_with_qa.xml
     if [ "$boot_loader" = "uefi" ]; then

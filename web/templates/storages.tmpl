@@ -1,0 +1,53 @@
+{{template "_head" .}}
+    <div class="admin user">
+	    <div class="ui container">
+		    <div class="ui grid">
+                {{template "_left" .}}
+          	    <div class="twelve wide column content">
+		            <h4 class="ui top attached header">
+			            {{.i18n.Tr "Storage_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
+		            </h4>
+		            <div class="ui unstackable attached table segment">
+                        <table class="ui unstackable very basic striped table">
+	                        <thead>
+		                        <tr>
+									{{ if $.IsAdmin }}
+			                        <th>{{.i18n.Tr "ID"}}</th>
+									{{ end }}
+									<th>{{.i18n.Tr "Remote Pool ID"}}</th>
+			                        <th>{{.i18n.Tr "Remote Volume ID"}}</th>
+			                        <th>{{.i18n.Tr "Status"}}</th>
+			                        <th>{{.i18n.Tr "Updated_At"}}</th>
+		                        </tr>
+	                        </thead>
+	                        <tbody>
+                                {{ range .Storages }}
+		                        <tr>
+									{{ if $.IsAdmin }}
+			                        <td>{{.ID}}</td>
+									{{ end }}
+									<td>{{.PoolID}}</td>
+			                        <td>{{.VolumeID}}</td>
+			                        <td>{{.Status}}</td>
+			                        <td><span title="Tue, 18 Dec 2018 14:24:59 &#43;0800">{{.UpdatedAt}}</span></td>
+		                        </tr>
+                                {{ end }}
+	                        </tbody>
+                        </table>
+		            </div>
+		            <div class="ui attached segment">
+                                 {{ if .Pages}}
+                                 <div class="ui pagination menu">
+                                     {{ range  $index, $element := .Pages }}
+                                         <a class="active item">
+                                             <a href="/images/{{.ImageID}}/storages?offset={{$element.Offset}}">{{ $element.Number }}</a>
+                                         </a>
+                                     {{ end }}
+                                 </div>
+                                 {{ end }}
+	                    </div>
+	            </div>
+            </div>
+        </div>
+    </div>
+{{template "_footer" .}}
