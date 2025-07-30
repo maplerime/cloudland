@@ -612,14 +612,25 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			logger.Error("Failed to derive primary interface", err)
 			return
 		}
-		if err = db.Model(iface).Association("Security_Groups").Replace(ifaceInfo.SecurityGroups).Error; err != nil {
-			logger.Debug("Failed to save interface", err)
-			return
+		if len(ifaceInfo.SecurityGroups) > 0 {
+			if err = db.Model(iface).Association("Security_Groups").Replace(ifaceInfo.SecurityGroups).Error; err != nil {
+				logger.Debug("Failed to save interface", err)
+				return
+			}
+			iface.SecurityGroups = ifaceInfo.SecurityGroups
 		}
-		iface.SecurityGroups = ifaceInfo.SecurityGroups
 		iface.Inbound = ifaceInfo.Inbound
 		iface.Outbound = ifaceInfo.Outbound
 		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
+		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
+			"inbound": iface.Inbound,
+			"outbound": iface.Outbound,
+			"allow_spoofing": iface.AllowSpoofing,
+			"name": iface.Name}).Error
+		if err != nil {
+			logger.Debug("Failed to update interface", err)
+			return
+		}
 	} else {
 		subnets := ifaceInfo.Subnets
 		address := ifaceInfo.IpAddress
@@ -665,7 +676,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	for _, site := range siteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 		if err != nil {
-			logger.Error("Failed to update interface", err)
+			logger.Error("Failed to update site subnet", err)
 			return
 		}
 		iface.SiteSubnets = append(iface.SiteSubnets, site)
