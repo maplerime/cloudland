@@ -51,8 +51,14 @@ func Register() (r *gin.Engine) {
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
+		authGroup.GET("/api/v1/zones", zoneAPI.List)
+		authGroup.POST("/api/v1/zones", zoneAPI.Create)
+		authGroup.GET("/api/v1/zones/:name", zoneAPI.Get)
+		authGroup.DELETE("/api/v1/zones/:name", zoneAPI.Delete)
+
 		authGroup.GET("/api/v1/hypers", hyperAPI.List)
-		authGroup.GET("/api/v1/hypers/:name", hyperAPI.Get)
+		authGroup.GET("/api/v1/hypers/:hostid", hyperAPI.Get)
+		authGroup.PATCH("/api/v1/hypers/:hostid", hyperAPI.Patch)
 
 		authGroup.GET("/api/v1/migrations", migrationAPI.List)
 		authGroup.POST("/api/v1/migrations", migrationAPI.Create)

@@ -27,8 +27,11 @@
 			                        <th>{{.i18n.Tr "Status"}}</th>
 			                        <th>{{.i18n.Tr "Zone"}}</th>
 			                        <th>{{.i18n.Tr "Cpu"}}</th>
-			                        <th>{{.i18n.Tr "Memory"}}(K)</th>
-			                        <th>{{.i18n.Tr "Disk"}}(B)</th>
+			                        <th>{{.i18n.Tr "Memory"}}(MB)</th>
+			                        <th>{{.i18n.Tr "Disk"}}(GB)</th>
+			                        <th>{{.i18n.Tr "Over Commit Rates"}}</th>
+			                        <th>{{.i18n.Tr "Remark"}}</th>
+			                        <th>{{.i18n.Tr "Operations"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -36,34 +39,44 @@
                                 {{ range .Hypers }}
                                 {{ $HyperID := .ID }}
 		                        <tr>
-			                        <td>{{.Hostid}}</td>
-			                        <td>{{.Hostname}}</td>
+			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostid}}</a></td>
+			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostname}}</a></td>
 			                        <td>{{.Parentid}}</td>
 			                        <td>{{.Children}}</td>
 			                        <td>{{.HostIP}}</td>
-			                        <td>{{.Status}}</td>
+			                        <td>{{.GetStatus}}</td>
 			                        <td>{{ if .Zone}}{{.Zone.Name}}{{end}}</td>
 			                        <td>{{.Resource.Cpu}}/<br>{{.Resource.CpuTotal}}</td>
 			                        <td>{{.Resource.Memory}}/<br>{{.Resource.MemoryTotal}}</td>
 			                        <td>{{.Resource.Disk}}/<br>{{.Resource.DiskTotal}}</td>
+			                        <td>CPU: {{.CpuOverRate}}<br>MEM: {{.MemOverRate}}<br>DISK: {{.DiskOverRate}}</td>
+			                        <td>{{.Remark}}</td>
+			                        <td>
+										{{ if eq .Status 1 }}
+			                        <div class="ui green basic button disable-hyper-button" data-url="{{$Link}}/set_status?host_id={{.Hostid}}&status=0" data-hostname="{{.Hostname}}"><a href="{{$Link}}/set_status?host_id={{.Hostid}}&status=0">{{$.i18n.Tr "Disable"}}</a></div>
+										{{ else }}
+			                        <div class="ui red basic button enable-hyper-button" data-url="{{$Link}}/set_status?host_id={{.Hostid}}&status=1" data-hostname="{{.Hostname}}"><a href="{{$Link}}/set_status?host_id={{.Hostid}}&status=0">{{$.i18n.Tr "Enable"}}</a></div>
+										{{ end }}
+			                        </td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>
                         </table>
 		            </div>
 		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu">
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
-	                    </div>
+								{{ if .Pages}}
+								<div class="ui pagination menu">
+									{{ range  $index, $element := .Pages }}
+										<a class="active item">
+											<a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
+										</a>
+									{{ end }}
+								</div>
+								{{ end }}
+					</div>
 	            </div>
             </div>
         </div>
     </div>
+    
 {{template "_footer" .}}

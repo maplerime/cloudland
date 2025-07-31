@@ -73,3 +73,6 @@ cloudrc.local
 /scripts/backend
 /commitID
 **/.DS_Store
+.github/
+CLAUDE.md
+GEMINI.md

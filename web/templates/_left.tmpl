@@ -44,6 +44,9 @@
         </a>
 		{{ if $.IsAdmin }}
         <div class="header item">{{.i18n.Tr "Administration"}}</div>
+        <a {{ if eq .Link "/zones" }} class="active item" {{ else }} class="item" {{ end }} href="/zones">
+            {{.i18n.Tr "Zones"}}
+        </a>
         <a {{ if eq .Link "/hypers" }} class="active item" {{ else }} class="item" {{ end }} href="/hypers">
             {{.i18n.Tr "Hypers"}}
         </a>

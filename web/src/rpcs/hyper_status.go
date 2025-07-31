@@ -20,10 +20,10 @@ func init() {
 }
 
 func HyperStatus(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| hyper_status.sh '127' 'hyper-0' '0' '64' '26684376' '263662552' '1561731870272' '3086445260864' '1'
+	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate'"
 	db := DB()
 	argn := len(args)
-	if argn < 11 {
+	if argn < 14 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -89,6 +89,27 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 			return
 		}
 	}
+	// PET-769 should maintain the hypervisor's over commit rates in admin console and admin API
+	// args 12 cpu_over_rate, args 13 mem_over_rate, args 14 disk_over_rate are float values
+	cpuOverRate, err := strconv.ParseFloat(args[12], 32)
+	if err != nil {
+		logger.Error("Invalid cpu over rate", err)
+	} else {
+		hyper.CpuOverRate = float32(cpuOverRate)
+	}
+	memOverRate, err := strconv.ParseFloat(args[13], 32)
+	if err != nil {
+		logger.Error("Invalid memory over rate", err)
+	} else {
+		hyper.MemOverRate = float32(memOverRate)
+	}
+	diskOverRate, err := strconv.ParseFloat(args[14], 32)
+	if err != nil {
+		logger.Error("Invalid disk over rate", err)
+	} else {
+		hyper.DiskOverRate = float32(diskOverRate)
+	}
+	// end PET-769
 	hyper.Hostname = hyperName
 	hyper.Status = int32(hyperStatus)
 	hyper.VirtType = "kvm-x86_64"
