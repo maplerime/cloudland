@@ -1,0 +1,29 @@
+groups:
+- name: vm_in_bw_adjustment_{{ rule_group }}
+  interval: 15s
+  rules:
+  # 原始入站带宽使用率
+  - record: vm_in_bw_usage_raw_{{ rule_group }}
+    expr: |
+      sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m]))
+      
+  # 平滑入站带宽使用率
+  - record: vm_in_bw_usage_{{ rule_group }}
+    expr: |
+      avg_over_time(vm_in_bw_usage_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
+      
+  # 与规则组关联的VM的入站带宽
+  - record: vm_in_bw_usage_by_rule_{{ rule_group }}
+    expr: |
+      vm_in_bw_usage_{{ rule_group }} * on(domain) group_right() 
+      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+  
+  # 需要限制入站带宽的VM
+  - record: vm_requires_in_bw_limit_{{ rule_group }}
+    expr: |
+      vm_in_bw_usage_by_rule_{{ rule_group }} > {{ in_high_threshold }}
+  
+  # 可以恢复入站带宽的VM
+  - record: vm_ready_for_in_bw_restore_{{ rule_group }}
+    expr: |
+      vm_in_bw_usage_by_rule_{{ rule_group }} < {{ in_low_threshold }} 

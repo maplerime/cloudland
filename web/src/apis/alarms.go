@@ -60,7 +60,7 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 	if operation == "add" {
 		// Add or update VM entries
 		for _, instanceid := range vmUUIDs {
-			domain, err := routes.GetInstanceUUIDByDomain(ctx, instanceid)
+			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceid)
 			if err != nil {
 				log.Printf("Failed to get domain for instanceid=%s: %v", instanceid, err)
 				continue
@@ -68,9 +68,10 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 
 			// Create new entry - simplified version with only necessary fields
 			newEntry := map[string]interface{}{
+				"targets": []string{"localhost:9090"},
 				"labels": map[string]interface{}{
-					"domain":         domain,
-					"__meta_rule_id": fmt.Sprintf("%s-%s", domain, groupUUID),
+					"domain":  domain,
+					"rule_id": fmt.Sprintf("%s-%s", domain, groupUUID),
 				},
 			}
 
@@ -83,7 +84,7 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 				}
 
 				domainVal, hasDomain := labels["domain"].(string)
-				ruleID, hasRuleID := labels["__meta_rule_id"].(string)
+				ruleID, hasRuleID := labels["rule_id"].(string)
 				expectedRuleID := fmt.Sprintf("%s-%s", domain, groupUUID)
 
 				if hasDomain && hasRuleID && domainVal == domain && ruleID == expectedRuleID {
@@ -109,7 +110,7 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 				continue
 			}
 
-			ruleID, ok := labels["__meta_rule_id"].(string)
+			ruleID, ok := labels["rule_id"].(string)
 			if !ok || !strings.HasSuffix(ruleID, "-"+groupUUID) {
 				filteredVMs = append(filteredVMs, vm)
 			}
@@ -181,6 +182,12 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		linkedVMs = append(linkedVMs, link.VMUUID)
 	}
 
+	// 强制重新加载Prometheus配置，确保规则和匹配列表同时生效
+	if err := routes.ReloadPrometheus(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after linking VMs: %v", err)
+		// 不返回错误，因为VM链接操作已经成功
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
@@ -237,27 +244,34 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		// Update matched_vms.json with VM information
 		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add")
 	}
-	data := map[string]interface{}{
-		"owner":      req.Owner,
-		"rule_group": group.UUID,
-		"email":      req.Email,
-		"action":     req.Action,
-		"rules":      req.Rules,
+	// 校验：一次只能创建一个规则
+	if len(req.Rules) != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Only one rule can be created at a time."})
+		return
 	}
-	for i, rule := range req.Rules {
-		data[fmt.Sprintf("name_%d", i)] = rule.Name
-		data[fmt.Sprintf("over_%d", i)] = rule.Over
-		data[fmt.Sprintf("duration_%d", i)] = rule.Duration
-		data[fmt.Sprintf("down_to_%d", i)] = rule.DownTo
-		data[fmt.Sprintf("down_duration_%d", i)] = rule.DownDuration
+
+	// 只处理第一个规则
+	rule := req.Rules[0]
+	ruleData := map[string]interface{}{
+		"owner":         req.Owner,
+		"rule_group":    group.UUID,
+		"email":         req.Email,
+		"action":        req.Action,
+		"name":          rule.Name,
+		"over":          rule.Over,
+		"duration":      rule.Duration,
+		"down_to":       rule.DownTo,
+		"down_duration": rule.DownDuration,
 	}
-	templateFile := "user-cpu-rule.yml.j2"
-	outputFile := filepath.Join(routes.RulesGeneral, fmt.Sprintf("cpu-%s-%s.yml", req.Owner, group.UUID))
-	if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
+
+	templateFile := "VM-cpu-rule.yml.j2"
+	outputFile := fmt.Sprintf("cpu-%s-%s.yml", req.Owner, group.UUID) // 只传文件名
+	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
 		log.Printf("Failed to render cpu rule template: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render cpu rule template"})
 		return
 	}
+
 	routes.ReloadPrometheus()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
@@ -355,22 +369,34 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
 		return
 	}
-	if _, err := a.operator.GetCPURulesByGroupUUID(c.Request.Context(), groupUUID, routes.RuleTypeCPU); err != nil {
+	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "rules not existed",
-				"code":  "RESOURCE_NOT_FOUND",
+				"error": "Rule not found: The specified rule does not exist",
+				"code":  "NOT_FOUND",
 				"uuid":  groupUUID,
 			})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "UUID wrong type mismatch failure",
+				"error": "Failed to retrieve rule information",
 				"code":  "INTERNAL_ERROR",
 				"uuid":  groupUUID,
 			})
 		}
 		return
 	}
+	
+	// 确认规则类型是否正确
+	if group.Type != routes.RuleTypeCPU {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Rule type mismatch: Expected CPU rule but found " + group.Type,
+			"code":  "INVALID_RULE_TYPE",
+			"uuid":  groupUUID,
+		})
+		return
+	}
+	owner := group.Owner
 
 	// Delete all associated VMRuleLink
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
@@ -383,9 +409,33 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	}
 
 	// Remove related entries from matched_vms.json
-	// Define empty mapping file path for backward compatibility
 	mappingFile := ""
 	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove")
+
+	// 删除软链和规则文件（路径与创建时一致）
+	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
+	linkPath := filepath.Join(routes.RulesEnabled, fileName)
+	
+	// 根据owner决定规则文件位置
+	var rulePath string
+	if owner == "admin" {
+		rulePath = filepath.Join(routes.RulesGeneral, fileName)
+	} else {
+		rulePath = filepath.Join(routes.RulesSpecial, fileName)
+	}
+	
+	// 记录删除的文件路径
+	deletedFiles := []string{}
+	
+	// 删除软链
+	if err := routes.RemoveFile(linkPath); err == nil {
+		deletedFiles = append(deletedFiles, linkPath)
+	}
+	
+	// 删除规则文件
+	if err := routes.RemoveFile(rulePath); err == nil {
+		deletedFiles = append(deletedFiles, rulePath)
+	}
 
 	// Delete rule-related table data
 	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeCPU); err != nil {
@@ -402,11 +452,16 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		return
 	}
 
+	// 如果有映射文件，也添加到删除列表
+	if mappingFile != "" {
+		deletedFiles = append(deletedFiles, mappingFile)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
 			"deleted_group": groupUUID,
-			"deleted_files": []string{mappingFile},
+			"deleted_files": deletedFiles,
 			"linked_vms":    linkedVMs,
 		},
 	})
@@ -789,6 +844,9 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	status := notification.Status
 	log.Printf("ProcessAlertWebhook Processing alert: status=%s \n", status)
 	for _, alert := range notification.Alerts {
+		// 打印所有标签信息
+		log.Printf("ProcessAlertWebhook All labels for alert: %v", alert.Labels)
+		
 		alert_type := alert.Labels["alert_type"]
 		alertName := alert.Labels["alertname"]
 		severity := alert.Labels["severity"]
@@ -797,15 +855,22 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 		email := alert.Labels["email"]
 		domain := alert.Labels["domain"]
 		rule_group_uuid := alert.Labels["rule_group"]
-		log.Printf("ProcessAlertWebhook Processing alert: alert_type=%s alertName=%s severity=%s\n", alert_type, alertName, severity)
-		log.Printf("ProcessAlertWebhook Processing alert: domain=%s rule_group_uuid=%s\n", domain, rule_group_uuid)
+		matched := alert.Labels["matched"]
+		
+		log.Printf("ProcessAlertWebhook Processing alert: alert_type=%s alertName=%s severity=%s", alert_type, alertName, severity)
+		log.Printf("ProcessAlertWebhook Processing alert: domain=%s rule_group_uuid=%s", domain, rule_group_uuid)
+		log.Printf("ProcessAlertWebhook Processing alert: owner=%s email=%s action=%v matched=%s", owner, email, actionFlag, matched)
+		
 		description := alert.Annotations["description"]
 		summary := alert.Annotations["summary"]
-		log.Printf("ProcessAlertWebhook Processing alert: summary=%s description=%s \n", summary, description)
+		log.Printf("ProcessAlertWebhook Processing alert: summary=%s description=%s", summary, description)
+		
 		target_device := ""
 		if alert_type == "bw" {
 			target_device = alert.Labels["target_device"]
+			log.Printf("ProcessAlertWebhook Processing alert: target_device=%s", target_device)
 		}
+		
 		alertRecord := &routes.Alert{
 			Name:          alertName,
 			RuleGroupUUID: rule_group_uuid,
@@ -816,28 +881,37 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 			AlertType:     alert_type,
 			TargetDevice:  target_device,
 		}
+		
 		if status == "firing" {
+			log.Printf("ProcessAlertWebhook Alert FIRING: domain=%s matched=%s action=%v", domain, matched, actionFlag)
 			if email != "" {
 				// Email notification logic (existing email logic unchanged)
 				log.Printf("[Webhook] Send email to: %s", email)
 			}
 			if actionFlag {
+				log.Printf("ProcessAlertWebhook Action enabled for domain=%s matched=%s", domain, matched)
 				if owner == "admin" {
+					log.Printf("ProcessAlertWebhook Admin action: adjusting resource for domain=%s", domain)
 					a.notifyAdminConsole(alertRecord)
 					a.adjustResource(alertRecord, domain, true)
 				} else {
+					log.Printf("ProcessAlertWebhook User action: notifying user console for owner=%s", owner)
 					a.notifyUserConsole(alertRecord, owner)
 				}
+			} else {
+				log.Printf("ProcessAlertWebhook Action disabled for domain=%s", domain)
 			}
 			if err := a.notifyRealtimeAlert(alertRecord); err != nil {
 				log.Printf("Failed to notify realtime alert: %v", err)
 			}
 		} else {
 			// Resolved: recover resources
+			log.Printf("ProcessAlertWebhook Alert RESOLVED: domain=%s matched=%s action=%v", domain, matched, actionFlag)
 			if actionFlag && owner == "admin" {
+				log.Printf("ProcessAlertWebhook Admin recovery: recovering resource for domain=%s", domain)
 				a.recoverResource(alertRecord, domain)
 			}
-			log.Printf("ProcessAlertWebhook alert resolved alert: summary=%s alertRecord=%v \n", summary, alertRecord)
+			log.Printf("ProcessAlertWebhook alert resolved alert: summary=%s alertRecord=%v", summary, alertRecord)
 		}
 	}
 
@@ -1000,8 +1074,6 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	if len(req.LinkedVMs) > 0 {
 		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
 		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
-
-		// Update matched_vms.json with VM information
 		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add")
 	}
 	// Render templates for in/out directions
@@ -1019,7 +1091,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 				"target_device":    req.TargetDevice,
 			}
 			templateFile := "VM-in-bw-rule.yml.j2"
-			outputFile := filepath.Join(routes.RulesGeneral, fmt.Sprintf("bw-in-%s-%s-%s.yml", req.Owner, group.UUID, rule.Name))
+			outputFile := fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
 			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
 				log.Printf("Failed to render in-bw rule template: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render in-bw rule template"})
@@ -1039,7 +1111,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 				"target_device":     req.TargetDevice,
 			}
 			templateFile := "VM-out-bw-rule.yml.j2"
-			outputFile := filepath.Join(routes.RulesGeneral, fmt.Sprintf("bw-out-%s-%s-%s.yml", req.Owner, group.UUID, rule.Name))
+			outputFile := fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
 			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
 				log.Printf("Failed to render out-bw rule template: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render out-bw rule template"})
@@ -1150,22 +1222,34 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
 		return
 	}
-	if _, err := a.operator.GetBWRulesByGroupUUID(c.Request.Context(), groupUUID, routes.RuleTypeBW); err != nil {
+	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": " target rules not fould",
-				"code":  "RESOURCE_NOT_FOUND",
+				"error": "Rule not found: The specified rule does not exist",
+				"code":  "NOT_FOUND",
 				"uuid":  groupUUID,
 			})
 		} else {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "server internal error",
+				"error": "Failed to retrieve rule information",
 				"code":  "INTERNAL_ERROR",
 				"uuid":  groupUUID,
 			})
 		}
 		return
 	}
+	
+	// 确认规则类型是否正确
+	if group.Type != routes.RuleTypeBW {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "Rule type mismatch: Expected BW rule but found " + group.Type,
+			"code":  "INVALID_RULE_TYPE",
+			"uuid":  groupUUID,
+		})
+		return
+	}
+	owner := group.Owner
 
 	// Delete all associated VMRuleLink
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
@@ -1180,8 +1264,45 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	// Remove related entries from matched_vms.json
 	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove")
 
-	// Define empty mapping file path for backward compatibility
+	// 删除软链和规则文件（路径与创建时一致）
+	// 记录删除的文件路径
+	deletedFiles := []string{}
+	
+	// 不再需要遍历规则名，直接使用固定格式的文件名
+	inFile := fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
+	outFile := fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
+	linkIn := filepath.Join(routes.RulesEnabled, inFile)
+	linkOut := filepath.Join(routes.RulesEnabled, outFile)
+		
+	// 根据owner决定规则文件位置
+	var ruleIn, ruleOut string
+	if owner == "admin" {
+		ruleIn = filepath.Join(routes.RulesGeneral, inFile)
+		ruleOut = filepath.Join(routes.RulesGeneral, outFile)
+	} else {
+		ruleIn = filepath.Join(routes.RulesSpecial, inFile)
+		ruleOut = filepath.Join(routes.RulesSpecial, outFile)
+	}
+		
+	// 删除软链和规则文件，记录成功删除的文件路径
+	if err := routes.RemoveFile(linkIn); err == nil {
+		deletedFiles = append(deletedFiles, linkIn)
+	}
+	if err := routes.RemoveFile(ruleIn); err == nil {
+		deletedFiles = append(deletedFiles, ruleIn)
+	}
+	if err := routes.RemoveFile(linkOut); err == nil {
+		deletedFiles = append(deletedFiles, linkOut)
+	}
+	if err := routes.RemoveFile(ruleOut); err == nil {
+		deletedFiles = append(deletedFiles, ruleOut)
+	}
+
+	// 记录映射文件路径（如果有）
 	mappingFile := ""
+	if mappingFile != "" {
+		deletedFiles = append(deletedFiles, mappingFile)
+	}
 
 	// Delete rule-related table data
 	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeBW); err != nil {
@@ -1202,7 +1323,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"deleted_group": groupUUID,
-			"deleted_files": []string{mappingFile},
+			"deleted_files": deletedFiles,
 			"linked_vms":    linkedVMs,
 		},
 	})

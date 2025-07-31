@@ -19,6 +19,11 @@ import (
 
 var logger = log.MustGetLogger("apis")
 
+var alarmAPI = &AlarmAPI{
+	operator:   &routes.AlarmOperator{},
+	alarmAdmin: &routes.AlarmAdmin{},
+}
+
 func Run() (err error) {
 	logger.Info("Start to run cloudland api service")
 	r := Register()
@@ -48,6 +53,8 @@ func Register() (r *gin.Engine) {
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
+	// 添加资源调整webhook端点
+	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
@@ -184,6 +191,15 @@ func Register() (r *gin.Engine) {
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
 			authGroup.DELETE("/api/v1/node-alarm-rules/:uuid", alarmAPI.DeleteNodeAlarmRule)
 
+			// 资源自动调整路由
+			metricsGroup.POST("/adjust/cpu/rules", adjustAPI.CreateCPUAdjustRule)
+			metricsGroup.GET("/adjust/cpu/rules", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.GET("/adjust/cpu/rule/:uuid", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.DELETE("/adjust/cpu/rule/:uuid", adjustAPI.DeleteCPUAdjustRule)
+			
+			// 启用/禁用资源调整规则
+			authGroup.POST("/api/v1/adjust/:uuid/enable", adjustAPI.EnableAdjustRule)
+			authGroup.POST("/api/v1/adjust/:uuid/disable", adjustAPI.DisableAdjustRule)
 		}
 
 	}

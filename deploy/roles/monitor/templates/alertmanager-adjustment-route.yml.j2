@@ -1,0 +1,21 @@
+# 资源调整的特殊路由配置
+# 将此配置添加到Alertmanager的route部分
+routes:
+  # 为资源调整告警配置特殊路由
+  - match:
+      alert_type: resource_adjustment
+    group_wait: 0s
+    group_interval: 30s  # 每30秒分组一次
+    repeat_interval: 30s  # 每30秒重复一次
+    receiver: 'resource-adjustment-webhook'
+
+# 资源调整专用接收器配置
+# 将此配置添加到Alertmanager的receivers部分
+receivers:
+  - name: 'resource-adjustment-webhook'
+    webhook_configs:
+    - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/resource-adjustment'
+      send_resolved: true
+      http_config:
+        tls_config:
+          insecure_skip_verify: true 

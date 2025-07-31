@@ -1,0 +1,30 @@
+groups:
+- name: vm_cpu_adjustment_{{ rule_group }}
+  interval: 15s
+  rules:
+  # 原始CPU使用率
+  - record: vm_cpu_usage_percent_raw_{{ rule_group }}
+    expr: |
+      sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m])) 
+      / on (domain) group_left() libvirt_domain_info_virtual_cpus * 100
+      
+  # 平滑CPU使用率(5分钟移动平均)
+  - record: vm_cpu_usage_percent_{{ rule_group }}
+    expr: |
+      avg_over_time(vm_cpu_usage_percent_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
+      
+  # 与规则组关联的VM的CPU使用率
+  - record: vm_cpu_usage_by_rule_{{ rule_group }}
+    expr: |
+      vm_cpu_usage_percent_{{ rule_group }} * on(domain) group_right() 
+      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+  
+  # 需要限制CPU的VM
+  - record: vm_requires_cpu_limit_{{ rule_group }}
+    expr: |
+      vm_cpu_usage_by_rule_{{ rule_group }} > {{ high_threshold }}
+  
+  # 可以恢复CPU的VM
+  - record: vm_ready_for_cpu_restore_{{ rule_group }}
+    expr: |
+      vm_cpu_usage_by_rule_{{ rule_group }} < {{ low_threshold }} 

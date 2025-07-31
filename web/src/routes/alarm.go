@@ -282,9 +282,14 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		GroupUUID: groupUUID,
 		PageSize:  1,
 	})
-	if err != nil || len(groups) == 0 {
+	if err != nil {
 		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
-		return nil, fmt.Errorf("rules query failed: %w", err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+	
+	if len(groups) == 0 {
+		log.Printf("rule not found: groupID=%s", groupUUID)
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	ruleType := groups[0].Type
@@ -933,13 +938,16 @@ func GetUser(username string) (uid, gid int, err error) {
 }
 
 func ReadFile(path string) ([]byte, error) {
+	fmt.Printf("wngzhe ReadFile isRemotePrometheus: %t,  prometheusClient: %p", isRemotePrometheus, prometheusClient)
 	if isRemotePrometheus {
+		fmt.Printf("wngzhe ReadFile remote")
 		if prometheusClient == nil {
 			log.Printf("The Prometheus client has not been initialized.")
 			return nil, fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 		return prometheusClient.ClientReadRuleFile(path)
 	} else {
+		fmt.Printf("wngzhe ReadFile local")
 		return os.ReadFile(path)
 	}
 }
@@ -1200,7 +1208,20 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
-	outputPath := filepath.Join(RulesNode, outputFile)
+	
+	// 根据所有者确定规则文件路径
+	var outputPath string
+	owner, ok := data["owner"].(string)
+	if !ok {
+		owner = ""
+	}
+	
+	// 根据owner决定规则文件位置
+	if owner == "admin" {
+		outputPath = filepath.Join(RulesGeneral, outputFile)
+	} else {
+		outputPath = filepath.Join(RulesSpecial, outputFile)
+	}
 
 	// Read template content
 	templateContent, err := ReadFile(templatePath)
@@ -1208,6 +1229,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 		log.Printf("Failed to read template file: path=%s, error=%v", templatePath, err)
 		return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
 	}
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
 
 	var renderedContent string
 	if strings.Contains(string(templateContent), "name: compute-network-resources") {
@@ -1215,11 +1237,12 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	} else {
 		renderedContent, err = renderTemplateContent(string(templateContent), data, templateFile)
 	}
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
 	if err != nil {
 		log.Printf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
-
+        fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
 		log.Printf("Failed to write output file: path=%s, error=%v", outputPath, err)
@@ -1227,7 +1250,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	}
 
 	// Create symlink to RulesEnabled directory
-	enabledPath := filepath.Join(RulesEnabled, outputFile)
+	enabledPath := filepath.Join(RulesEnabled, filepath.Base(outputPath))
 	if err := CreateSymlink(outputPath, enabledPath); err != nil {
 		log.Printf("Failed to create symlink: source=%s, target=%s, error=%v",
 			outputPath, enabledPath, err)
@@ -1315,29 +1338,26 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 
 	result := templateContent
 
-	// Replace all variables with data values first
+	// 1. 替换所有 data 中的变量（非 $labels.）
 	for key, value := range data {
-		// Skip Prometheus labels (e.g., {{ $labels.xxx }})
 		if strings.HasPrefix(key, "$labels.") {
 			continue
 		}
-
-		// Replace simple variables: {{ variable }}
 		placeholder := fmt.Sprintf("{{ %s }}", key)
 		strValue := fmt.Sprintf("%v", value)
 		result = strings.ReplaceAll(result, placeholder, strValue)
 
-		// Handle variables with default values: {{ variable | default("value") }} with data value
+		// 1.1 替换 {{ key | default("xxx") }} 形式
 		defaultPattern := regexp.MustCompile(fmt.Sprintf(`{{ %s \| default\("([^"]*)"\) }}`, key))
 		result = defaultPattern.ReplaceAllString(result, strValue)
 
-		// Handle variables with unquoted default values: {{ variable | default(value) }} or {{ (variable | default(value)) }}
+		// 1.2 替换 {{ key | default(xxx) }} 无引号形式
 		noQuotesPattern := regexp.MustCompile(fmt.Sprintf(`{{ *(?:\(?%s\)? *\| *default\(([^"\)]+)\)) *}}`, key))
 		result = noQuotesPattern.ReplaceAllString(result, strValue)
 	}
 
-	// Handle remaining default value variables (use template defaults for missing keys)
-	// For quoted defaults: {{ variable | default("value") }}
+	// 2. 替换剩余变量中 default 语法（如果 data 中没给值）
+	// 2.1 带引号 default
 	defaultPattern := regexp.MustCompile(`{{ ([a-zA-Z0-9_]+) \| default\("([^"]*)"\) }}`)
 	result = defaultPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := defaultPattern.FindStringSubmatch(match)
@@ -1345,18 +1365,16 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 			return match
 		}
 		key := matches[1]
-		// Skip Prometheus labels
 		if strings.HasPrefix(key, "$labels.") {
 			return match
 		}
-		// Use data value if available, otherwise use default from template
-		if _, ok := data[key]; ok {
-			return fmt.Sprintf("%v", data[key])
+		if val, ok := data[key]; ok {
+			return fmt.Sprintf("%v", val)
 		}
-		return matches[2] // Use the default value from template
+		return matches[2]
 	})
 
-	// For unquoted defaults: {{ variable | default(value) }} or {{ (variable | default(value)) }}
+	// 2.2 无引号 default
 	noQuotesPattern := regexp.MustCompile(`{{ *(?:\(?([a-zA-Z0-9_]+)\)? *\| *default\(([^"\)]+)\)) *}}`)
 	result = noQuotesPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := noQuotesPattern.FindStringSubmatch(match)
@@ -1364,29 +1382,19 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 			return match
 		}
 		key := matches[1]
-		// Skip Prometheus labels
 		if strings.HasPrefix(key, "$labels.") {
 			return match
 		}
-		// Use data value if available, otherwise use default from template
-		if _, ok := data[key]; ok {
-			return fmt.Sprintf("%v", data[key])
+		if val, ok := data[key]; ok {
+			return fmt.Sprintf("%v", val)
 		}
-		return matches[2] // Use the default value from template
+		return matches[2]
 	})
 
-	// Validate the result: ensure no unresolved templates remain (except Prometheus labels)
-	remainingPattern := regexp.MustCompile(`{{ ([^}]+) }}`)
-	remainingMatches := remainingPattern.FindAllStringSubmatch(result, -1)
-	for _, match := range remainingMatches {
-		if len(match) > 1 {
-			key := match[1]
-			// Allow Prometheus labels to remain
-			if !strings.HasPrefix(key, "$labels.") {
-				return "", fmt.Errorf("unresolved template variable: %s", key)
-			}
-		}
-	}
+	// 3. 解包 Prometheus 模板表达式，例如：
+	// {{ "{{ if $labels.xxx }}a{{ else }}b{{ end }}" }} -> {{ if $labels.xxx }}a{{ else }}b{{ end }}
+	promExprPattern := regexp.MustCompile(`{{ "{{ ([^{}]+) }}" }}`)
+	result = promExprPattern.ReplaceAllString(result, "{{ $1 }}")
 
 	return result, nil
 }

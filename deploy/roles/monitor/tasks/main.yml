@@ -945,17 +945,21 @@
         file_sd_configs:
           - files:
               - '/etc/prometheus/lists/matched_vms.json'
-            refresh_interval: 2m
+            refresh_interval: 30s
         relabel_configs:
-          - source_labels: [__meta_rule_id]
-            target_label: __meta_rule_id
-            action: replace
-          - source_labels: []
-            target_label: '__name__'
-            replacement: 'vm_in_matched_list'
-            action: replace
+          # 1. 保留 domain 标签
           - source_labels: [domain]
             target_label: domain
+            action: replace
+
+          # 2. 保留 rule_id 标签
+          - source_labels: [rule_id]
+            target_label: rule_id
+            action: replace
+
+          # 3. 设置 instance 为 domain 值
+          - source_labels: [domain]
+            target_label: instance
             action: replace
     marker: "# {mark} ANSIBLE MANAGED BLOCK - VM Group Metadata"
     insertafter: '^scrape_configs:'
@@ -999,3 +1003,7 @@
   delegate_to: "{{ item }}"
   with_items: "{{ groups['cland'] }}"
   tags: [monitor]
+
+- name: Import resource adjustment tasks
+  import_tasks: resource-adjustment.yml
+  tags: [monitor, resource_adjustment]
