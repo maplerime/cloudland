@@ -37,6 +37,7 @@ type Volume struct {
 	IopsBurst  int32
 	BpsLimit   int32
 	BpsBurst   int32
+	PoolID     string `gorm:"type:varchar(128)"`
 }
 
 func (v *Volume) ParsePath() []string {
