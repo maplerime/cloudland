@@ -192,8 +192,8 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		} else {
 			if err = db.Model(&model.Instance{}).
 				Unscoped().
-				Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
-				Where(fmt.Sprintf("b.path like '%%%s%%'", poolID)).
+				Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
+				Where("v.pool_id = ?", poolID).
 				Where("instances.image_id = ?", image.ID).
 				Count(&total).Error; err != nil {
 				logger.Error("Failed to count instances with volumes matching pool_id", err)
@@ -227,7 +227,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, 0, 0, 0, 0, "")
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, 0, 0, 0, 0, poolID)
 		if err != nil {
 			logger.Error("Failed to create boot volume", err)
 			return
@@ -695,11 +695,25 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			logger.Error("Failed to derive primary interface", err)
 			return
 		}
-		if err = db.Model(iface).Association("Security_Groups").Replace(ifaceInfo.SecurityGroups).Error; err != nil {
-			logger.Debug("Failed to save interface", err)
+		if len(ifaceInfo.SecurityGroups) > 0 {
+			if err = db.Model(iface).Association("Security_Groups").Replace(ifaceInfo.SecurityGroups).Error; err != nil {
+				logger.Debug("Failed to save interface", err)
+				return
+			}
+			iface.SecurityGroups = ifaceInfo.SecurityGroups
+		}
+		iface.Inbound = ifaceInfo.Inbound
+		iface.Outbound = ifaceInfo.Outbound
+		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
+		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
+			"inbound":        iface.Inbound,
+			"outbound":       iface.Outbound,
+			"allow_spoofing": iface.AllowSpoofing,
+		}).Error
+		if err != nil {
+			logger.Debug("Failed to update interface", err)
 			return
 		}
-		iface.SecurityGroups = ifaceInfo.SecurityGroups
 	} else {
 		subnets := ifaceInfo.Subnets
 		address := ifaceInfo.IpAddress
@@ -745,7 +759,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	for _, site := range siteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 		if err != nil {
-			logger.Error("Failed to update interface", err)
+			logger.Error("Failed to update site subnet", err)
 			return
 		}
 		iface.SiteSubnets = append(iface.SiteSubnets, site)

@@ -271,6 +271,19 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 		logger.Error("DB failed to delete organization, %v", err)
 		return
 	}
+	secgroups := []*model.SecurityGroup{}
+	err = db.Where("owner = ?", org.ID).Find(&secgroups).Error
+	if err != nil {
+		logger.Error("DB failed to security groups", err)
+		return
+	}
+	for _, secgroup := range secgroups {
+		err = secgroupAdmin.Delete(ctx, secgroup)
+		if err != nil {
+			logger.Error("Can not delete security group", err)
+			return
+		}
+	}
 	return
 }
 
