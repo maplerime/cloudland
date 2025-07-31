@@ -4626,6 +4626,29 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.MemberInfo": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.MigrationListResponse": {
             "type": "object",
             "properties": {
@@ -4748,20 +4771,17 @@ const docTemplatev1 = `{
         "apis.OrgResponse": {
             "type": "object",
             "properties": {
-                "cpu": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
-                },
-                "disk": {
-                    "type": "integer"
                 },
                 "id": {
                     "type": "string"
                 },
-                "memory": {
-                    "type": "integer"
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.MemberInfo"
+                    }
                 },
                 "name": {
                     "type": "string"

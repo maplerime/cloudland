@@ -852,6 +852,21 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.MemberInfo:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      role:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.MigrationListResponse:
     properties:
       limit:
@@ -934,16 +949,14 @@ definitions:
     type: object
   apis.OrgResponse:
     properties:
-      cpu:
-        type: integer
       created_at:
         type: string
-      disk:
-        type: integer
       id:
         type: string
-      memory:
-        type: integer
+      members:
+        items:
+          $ref: '#/definitions/apis.MemberInfo'
+        type: array
       name:
         type: string
       owner:
