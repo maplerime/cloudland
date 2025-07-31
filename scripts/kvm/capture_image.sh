@@ -51,7 +51,7 @@ else
         exit -1
     fi
     log_debug $vm_ID "clone task $task_id created for snapshot $snapshot_id"
-    for i in {1..100}; do
+    for i in {1..150}; do
          st=$(wds_curl GET "api/v2/sync/block/volumes/tasks/$task_id" | jq -r .task.state)
 	     [ "$st" = "TASK_COMPLETE" ] && state=uploaded && break
 	     [ "$st" = "TASK_FAILED" ] && state=failed && break

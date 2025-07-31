@@ -289,6 +289,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 	}
 	if iface.Inbound != inbound {
 		iface.Inbound = inbound
+		needUpdate = true
 		needRemoteUpdate = true
 	}
 	if iface.Outbound != outbound {
@@ -313,7 +314,12 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		return
 	}
 	if needUpdate || needRemoteUpdate {
-		if err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(iface).Error; err != nil {
+		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
+			"inbound": iface.Inbound,
+			"outbound": iface.Outbound,
+			"allow_spoofing": iface.AllowSpoofing,
+			"name": iface.Name}).Error
+		if err != nil {
 			logger.Debug("Failed to save interface", err)
 			return
 		}
