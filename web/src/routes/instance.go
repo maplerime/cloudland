@@ -612,6 +612,25 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			logger.Error("Failed to derive primary interface", err)
 			return
 		}
+		if len(ifaceInfo.SecurityGroups) > 0 {
+			if err = db.Model(iface).Association("Security_Groups").Replace(ifaceInfo.SecurityGroups).Error; err != nil {
+				logger.Debug("Failed to save interface", err)
+				return
+			}
+			iface.SecurityGroups = ifaceInfo.SecurityGroups
+		}
+		iface.Inbound = ifaceInfo.Inbound
+		iface.Outbound = ifaceInfo.Outbound
+		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
+		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
+			"inbound": iface.Inbound,
+			"outbound": iface.Outbound,
+			"allow_spoofing": iface.AllowSpoofing,
+			}).Error
+		if err != nil {
+			logger.Debug("Failed to update interface", err)
+			return
+		}
 	} else {
 		subnets := ifaceInfo.Subnets
 		address := ifaceInfo.IpAddress
@@ -657,7 +676,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	for _, site := range siteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 		if err != nil {
-			logger.Error("Failed to update interface", err)
+			logger.Error("Failed to update site subnet", err)
 			return
 		}
 		iface.SiteSubnets = append(iface.SiteSubnets, site)
@@ -1921,15 +1940,16 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	if len(primarySubnets) > 0 {
 		routerID = primarySubnets[0].RouterID
 	}
-	secgroups := c.QueryTrim("secgroups")
+	sgs := c.QueryStrings("secgroups")
 	var securityGroups []*model.SecurityGroup
-	if secgroups != "" {
-		sg := strings.Split(secgroups, ",")
-		for i := 0; i < len(sg); i++ {
-			sgID, err := strconv.Atoi(sg[i])
+	if len(sgs) > 0 {
+		for _, sg := range sgs {
+			sgID, err := strconv.Atoi(sg)
 			if err != nil {
-				err = nil
-				continue
+				logger.Debug("Invalid security group ID, %v", err)
+				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
 			}
 			var secgroup *model.SecurityGroup
 			secgroup, err = secgroupAdmin.Get(ctx, int64(sgID))

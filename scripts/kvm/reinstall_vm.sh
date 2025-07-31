@@ -26,6 +26,9 @@ vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
 virsh undefine $vm_ID
+if [ $? -ne 0 ]; then
+    virsh undefine --nvram $vm_ID
+fi
 virsh destroy $vm_ID
 let fsize=$disk_size*1024*1024*1024
 

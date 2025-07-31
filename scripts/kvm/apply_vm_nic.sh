@@ -30,7 +30,7 @@ if [ $? -ne 0 ]; then
 fi
 vlan_info=$(cat)
 udevadm settle
-./send_spoof_arp.py "$vm_br" "$vm_ip" "$vm_mac" &
+async_exec ./send_spoof_arp.py "$vm_br" "${vm_ip%/*}" "$vm_mac"
 ./set_nic_speed.sh "$ID" "$nic_name" "$inbound" "$outbound"
 ./reapply_secgroup.sh "$vm_ip" "$vm_mac" "$allow_spoofing" "$nic_name" <<< $vlan_info
 ./set_subnet_gw.sh "$router" "$vlan" "$gateway" "$ext_vlan"
