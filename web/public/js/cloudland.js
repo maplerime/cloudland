@@ -1329,6 +1329,32 @@ $(document).ready(function () {
         }).modal('show');
         return false;
     });
+    
+    // Hypervisor disable button
+    $('.disable-hyper-button').click(function () {
+        var $this = $(this);
+        $('#disable-hyper-hostname').text($this.data('hostname'));
+        $('.disable-hyper.modal').modal({
+            closable: false,
+            onApprove: function () {
+                window.location.href = $this.data('url');
+            }
+        }).modal('show');
+        return false;
+    });
+    
+    // Hypervisor enable button
+    $('.enable-hyper-button').click(function () {
+        var $this = $(this);
+        $('#enable-hyper-hostname').text($this.data('hostname'));
+        $('.enable-hyper.modal').modal({
+            closable: false,
+            onApprove: function () {
+                window.location.href = $this.data('url');
+            }
+        }).modal('show');
+        return false;
+    });
     $('.show-panel.button').click(function () {
         $($(this).data('panel')).show();
     });

@@ -1,0 +1,30 @@
+{{template "_head" .}}
+<div class="user signup">
+	<div class="ui middle very relaxed page grid">
+        <div class="column" >
+            <form class="ui form" action="{{.Link}}" method="post">
+                <h3 class="ui top attached header">
+                    {{.i18n.Tr "Update Zone"}}
+                </h3>
+                <div class="ui attached segment">
+                    <div class="required inline field">
+                        <label for="name">{{.i18n.Tr "Name"}}</label>
+                        <input id="name" name="name" value="{{ .Zone.Name }}" autocomplete="off" readonly>
+                        <small>{{.i18n.Tr "Zone name cannot be modified after creation"}}</small>
+                    </div>
+                    <div class="inline field">
+                        <div class="ui checkbox">
+                            <input type="checkbox" name="default" id="default" {{ if .Zone.Default }}checked{{ end }}>
+                            <label for="default">{{.i18n.Tr "Default Zone"}}</label>
+                        </div>
+                    </div>
+                    <div class="inline field">
+                        <label></label>
+                        <button class="ui green button">{{.i18n.Tr "Update Zone"}}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+	</div>
+</div>
+{{template "_footer" .}}
