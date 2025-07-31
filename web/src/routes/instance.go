@@ -192,8 +192,8 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		} else {
 			if err = db.Model(&model.Instance{}).
 				Unscoped().
-				Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
-				Where(fmt.Sprintf("b.path like '%%%s%%'", poolID)).
+				Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
+				Where("v.pool_id = ?", poolID).
 				Where("instances.image_id = ?", image.ID).
 				Count(&total).Error; err != nil {
 				logger.Error("Failed to count instances with volumes matching pool_id", err)
@@ -227,7 +227,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, 0, 0, 0, 0, "")
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, 0, 0, 0, 0, poolID)
 		if err != nil {
 			logger.Error("Failed to create boot volume", err)
 			return
@@ -623,10 +623,10 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		iface.Outbound = ifaceInfo.Outbound
 		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
 		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
-			"inbound": iface.Inbound,
-			"outbound": iface.Outbound,
+			"inbound":        iface.Inbound,
+			"outbound":       iface.Outbound,
 			"allow_spoofing": iface.AllowSpoofing,
-			}).Error
+		}).Error
 		if err != nil {
 			logger.Debug("Failed to update interface", err)
 			return

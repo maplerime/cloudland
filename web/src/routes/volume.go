@@ -122,6 +122,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 		BpsLimit:   bpsLimit,
 		BpsBurst:   bpsBurst,
 		Status:     "pending",
+		PoolID:     poolID,
 	}
 	err = db.Create(volume).Error
 	if err != nil {
