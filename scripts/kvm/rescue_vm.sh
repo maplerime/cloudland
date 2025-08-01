@@ -26,10 +26,6 @@ md=$(cat)
 metadata=$(echo $md | base64 -d)
 ./build_meta.sh "$vm_ID" "$vm_name" "true" <<< $md >/dev/null 2>&1
 
-if [ $disk_size -gt 30 ]; then
-    disk_size=30
-fi
-let fsize=$disk_size*1024*1024*1024
 vm_meta=$cache_dir/meta/$vm_ID-rescue.iso
 template=$template_dir/template_with_qa.xml
 if [ "$boot_loader" = "uefi" ]; then
@@ -47,12 +43,6 @@ if [ -z "$wds_address" ]; then
         format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
         cmd="qemu-img convert -f $format -O qcow2 $image_cache/$img_name $vm_img"
         result=$(eval "$cmd")
-        vsize=$(qemu-img info $vm_img | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
-        if [ "$vsize" -gt "$fsize" ]; then
-            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
-            exit -1
-        fi
-        qemu-img resize -q $vm_img "${disk_size}G" &> /dev/null
         vol_state=attached
     fi
     disk_template=$template_dir/volume.xml
@@ -77,14 +67,6 @@ else
     if [ -z "$volume_id" -o "$volume_id" = null ]; then
         echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
         exit -1
-    fi
-    if [ "$fsize" -gt "$volume_size" ]; then
-        expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
-        ret_code=$(echo $expand_ret | jq -r .ret_code)
-        if [ "$ret_code" != "0" ]; then
-            echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'failed'"
-            exit -1
-        fi
     fi
     uss_id=$(get_uss_gateway)
     vhost_ret=$(wds_curl POST "api/v2/sync/block/vhost" "{\"name\": \"$vhost_name\"}")
