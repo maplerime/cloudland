@@ -10,6 +10,7 @@ package routes
 import (
 	"context"
 	"fmt"
+	"github.com/spf13/viper"
 	"net/http"
 	"os"
 	"strconv"
@@ -37,8 +38,8 @@ func FileExist(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture string, qaEnabled bool, instID int64, uuid string) (image *model.Image, err error) {
-	logger.Debugf("Creating image %s %s %s %s %s %s %s %t %d", osCode, name, osVersion, virtType, userName, url, architecture, qaEnabled, instID)
+func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, qaEnabled bool, instID int64, uuid string) (image *model.Image, err error) {
+	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instID, uuid)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -77,6 +78,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			OSCode:       osCode,
 			Status:       "creating",
 			Architecture: architecture,
+			BootLoader:   bootLoader,
 			QAEnabled:    qaEnabled,
 		}
 		if uuid != "" {
@@ -84,14 +86,34 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			image.UUID = uuid
 		}
 	}
+	image.StorageType = GetVolumeDriver()
 	logger.Debugf("Creating image %+v", image)
 	err = db.Create(image).Error
 	if err != nil {
 		logger.Error("DB create image failed, %v", err)
 	}
+
+	// create default storage
+	defaultPool := viper.GetString("volume.default_wds_pool_id")
+	storageID := int64(0)
+	if defaultPool != "" {
+		storage := &model.ImageStorage{
+			ImageID: image.ID,
+			Image:   image,
+			PoolID:  defaultPool,
+			Status:  model.StorageStatusUnknown,
+		}
+		if err = db.Create(storage).Error; err != nil {
+			logger.Error("Failed to create default image storage", err)
+			return
+		}
+		storageID = storage.ID
+	}
+
+	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
 	control := "inter="
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s'", image.ID, prefix, url)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
 		if instance.Volumes != nil {
@@ -103,7 +125,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			}
 		}
 		control = fmt.Sprintf("inter=%d", instance.Hyper)
-		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s'", image.ID, prefix, instance.ID, bootVolumeUUID)
+		command = fmt.Sprintf("/opt/cloudland/scripts/backend/capture_image.sh '%d' '%s' '%d' '%s' '%d'", image.ID, prefix, instance.ID, bootVolumeUUID, storageID)
 	}
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -114,7 +136,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 }
 
 func (a *ImageAdmin) GetImageByUUID(ctx context.Context, uuID string) (image *model.Image, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	image = &model.Image{}
 	err = db.Where("uuid = ?", uuID).Take(image).Error
 	if err != nil {
@@ -132,7 +154,7 @@ func (a *ImageAdmin) GetImageByUUID(ctx context.Context, uuID string) (image *mo
 }
 
 func (a *ImageAdmin) GetImageByName(ctx context.Context, name string) (image *model.Image, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	image = &model.Image{}
 	err = db.Where("name = ?", name).Take(image).Error
 	if err != nil {
@@ -155,7 +177,7 @@ func (a *ImageAdmin) Get(ctx context.Context, id int64) (image *model.Image, err
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	image = &model.Image{Model: model.Model{ID: id}}
 	err = db.Take(image).Error
 	if err != nil {
@@ -213,24 +235,42 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 		err = fmt.Errorf("The image can not be deleted if there are instances using it")
 		return
 	}
+	prefix := strings.Split(image.UUID, "-")[0]
+	control := "inter=0"
+	total, storages, _ := imageStorageAdmin.List(0, -1, "", image, "")
 	if image.Status == "available" {
-		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s'", image.ID, prefix, image.Format)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Clear image command execution failed", err)
-			return
+		if total > 0 {
+			for _, storage := range storages {
+				if storage.Status != model.StorageStatusSynced {
+					continue
+				}
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' '%s'", image.ID, prefix, image.Format, storage.VolumeID)
+				err = HyperExecute(ctx, control, command)
+				if err != nil {
+					logger.Error("Clear image storage command execution failed", err)
+					return
+				}
+			}
+		} else {
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_image.sh '%d' '%s' '%s' %s'", image.ID, prefix, image.Format, "")
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Clear image command execution failed", err)
+				return
+			}
 		}
 	}
 	if err = db.Delete(image).Error; err != nil {
 		return
 	}
+	if err = db.Where("image_id = ?", image.ID).Delete(&model.ImageStorage{}).Error; err != nil {
+		return
+	}
 	return
 }
 
-func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
-	db := DB()
+func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, images []*model.Image, err error) {
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -254,6 +294,83 @@ func (a *ImageAdmin) List(offset, limit int64, order, query string) (total int64
 	return
 }
 
+func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string) (err error) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		logger.Error("Not authorized to update image")
+		err = fmt.Errorf("Not Authorized")
+		return
+	}
+	if osCode != "" {
+		image.OSCode = osCode
+	}
+	if name != "" {
+		image.Name = name
+	}
+	if osVersion != "" {
+		image.OsVersion = osVersion
+	}
+	if userName != "" {
+		image.UserName = userName
+	}
+
+	if image.Status != "available" {
+		logger.Error("Image status is not available, cannot update")
+		err = fmt.Errorf("Image status is not available, cannot update")
+		return
+	}
+
+	err = db.Model(image).Updates(image).Error
+	if err != nil {
+		logger.Error("Failed to save image", err)
+		return
+	}
+
+	driver := GetVolumeDriver()
+	if driver == "local" {
+		return
+	}
+
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	storages, err := imageStorageAdmin.InitStorages(ctx, image, pools)
+	if err != nil {
+		logger.Error("Failed to initialize image storages", err)
+		return
+	}
+
+	logger.Debugf("Image %s storages: %+v", image.UUID, storages)
+	for _, storage := range storages {
+		// ignore already synced or syncing storages
+		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
+			logger.Debugf("Image %s storage %s is already synced or syncing, skipping", image.UUID, storage.PoolID)
+			continue
+		}
+		prefix := strings.Split(image.UUID, "-")[0]
+		control := "inter="
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+		if storage.PoolID == defaultPoolID {
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+		}
+		storage.Status = model.StorageStatusSyncing
+		if err = db.Model(storage).Updates(storage).Error; err != nil {
+			logger.Error("Failed to update image storage status", err)
+			return
+		}
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Sync remote info command execution failed", err)
+		}
+	}
+	return
+}
+
 func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
@@ -273,7 +390,7 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, images, err := imageAdmin.List(offset, limit, order, query)
+	total, images, err := imageAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)
@@ -328,6 +445,12 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	err := imageStorageAdmin.CheckDefaultPool()
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -363,7 +486,8 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	userName := c.QueryTrim("userName")
 	qaEnabled := true
 	architecture := "x86_64"
-	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, qaEnabled, instance, uuid)
+	bootLoader := c.QueryTrim("bootLoader")
+	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid)
 	if err != nil {
 		logger.Error("Create image failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -371,4 +495,117 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
+}
+
+func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	db := DB()
+	id := c.Params(":id")
+	imageID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	permit, err := memberShip.CheckOwner(model.Writer, "images", int64(imageID))
+	if err != nil {
+		logger.Error("Failed to check permission", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	err = imageStorageAdmin.CheckDefaultPool()
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	image := &model.Image{Model: model.Model{ID: int64(imageID)}}
+	if err = db.Take(image).Error; err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	query := fmt.Sprintf("category='%s'", "storage_pool")
+	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, -1, "", query)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	_, storages, err := imageStorageAdmin.List(0, -1, "", image, "")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	selectedPools := make(map[string]bool)
+	for _, s := range storages {
+		if s.Status == model.StorageStatusSynced {
+			selectedPools[s.PoolID] = true
+		}
+	}
+	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	if defaultPoolID != "" {
+		selectedPools[defaultPoolID] = true
+	}
+	c.Data["Image"] = image
+	c.Data["Pools"] = pools
+	c.Data["Storages"] = selectedPools
+	c.HTML(200, "images_patch")
+}
+
+func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
+	db := DB()
+	memberShip := GetMemberShip(c.Req.Context())
+	redirectTo := "../images"
+	id := c.Params(":id")
+	osCode := c.QueryTrim("osCode")
+	name := c.QueryTrim("name")
+	osVersion := c.QueryTrim("osVersion")
+	userName := c.QueryTrim("userName")
+	imageID, err := strconv.Atoi(id)
+	pools := c.QueryStrings("pools")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	permit, err := memberShip.CheckOwner(model.Writer, "images", int64(imageID))
+	if err != nil {
+		logger.Error("Failed to check permission", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	image := &model.Image{Model: model.Model{ID: int64(imageID)}}
+	if err = db.Take(image).Error; err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+
+	err = imageAdmin.Update(c.Req.Context(), image, osCode, name, osVersion, userName, pools)
+	if err != nil {
+		logger.Error("Failed to update volume", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect(redirectTo)
+	return
 }

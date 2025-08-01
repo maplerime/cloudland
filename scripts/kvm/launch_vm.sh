@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 10 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable>"
+[ $# -lt 11 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <pool_ID>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -16,6 +16,8 @@ vm_mem=$7
 disk_size=$8
 vol_ID=$9
 nested_enable=${10}
+boot_loader=${11}
+pool_ID=${12}
 state=error
 vm_vnc=""
 vol_state=error
@@ -27,6 +29,9 @@ let fsize=$disk_size*1024*1024*1024
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
 vm_meta=$cache_dir/meta/$vm_ID.iso
 template=$template_dir/template_with_qa.xml
+if [ "$boot_loader" = "uefi" ]; then
+    template=$template_dir/template_uefi_with_qa.xml
+fi
 if [ -z "$wds_address" ]; then
     vm_img=$volume_dir/$vm_ID.disk
     if [ ! -f "$vm_img" ]; then
@@ -50,7 +55,14 @@ if [ -z "$wds_address" ]; then
     fi
 else
     get_wds_token
+    if [ -z "$pool_ID" ]; then
+        pool_ID=$wds_pool_id
+    fi
     image=$(basename $img_name .raw)
+    if [ "$pool_ID" != "$wds_pool_id" ]; then
+        pool_prefix=$(get_uuid_prefix "$pool_ID")
+        image=${image}-${pool_prefix}
+    fi
     vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
     snapshot_name=${image}-${snapshot}
     read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
@@ -74,7 +86,7 @@ else
         expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
         ret_code=$(echo $expand_ret | jq -r .ret_code)
         if [ "$ret_code" != "0" ]; then
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
+            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
             exit -1
         fi
     fi
@@ -84,13 +96,16 @@ else
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
+        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
         exit -1
     fi
     vol_state=attached
-    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$wds_pool_id/$volume_id' 'success'"
+    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'success'"
     ux_sock=/var/run/wds/$vhost_name
     template=$template_dir/wds_template_with_qa.xml
+    if [ "$boot_loader" = "uefi" ]; then
+        template=$template_dir/wds_template_uefi_with_qa.xml
+    fi
 fi
 
 [ -z "$vm_mem" ] && vm_mem='1024m'
@@ -111,16 +126,46 @@ if [ "$cpu_vendor" = "GenuineIntel" ]; then
 else
     vm_virt_feature="svm"
 fi
+os_code=$(jq -r '.os_code' <<< $metadata)
 sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/$vm_nested/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
+vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+if [ "$boot_loader" = "uefi" ]; then
+    cp $nvram_template $vm_nvram
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s#VM_BOOT_LOADER#$uefi_boot_loader#g" \
+    -e "s#VM_NVRAM#$vm_nvram#g" \
+    $vm_xml
+else
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    $vm_xml
+fi
+
 virsh define $vm_xml
 virsh autostart $vm_ID
-jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name"
+jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init'"
 
 # check if the vm is windows and whether to change the rdp port
-os_code=$(jq -r '.os_code' <<< $metadata)
 if [ "$os_code" = "windows" ]; then
     rdp_port=$(jq -r '.login_port' <<< $metadata)
     if [ -n "$rdp_port" ] && [ "${rdp_port}" != "3389" ]  && [ ${rdp_port} -gt 0 ]; then

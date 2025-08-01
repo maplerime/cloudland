@@ -66,6 +66,7 @@ type InstancePayload struct {
 	VPC                 *BaseReference      `json:"vpc" binding:"omitempty"`
 	Userdata            string              `json:"userdata,omitempty"`
 	NestedEnable        bool                `json:"nested_enable,omitempty"`
+	PoolID              string              `json:"pool_id" binding:"omitempty"`
 }
 
 type InstanceResponse struct {
@@ -491,9 +492,9 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.Disk <= 0 {
 		payload.Disk = flavor.Disk
 	}
-	logger.Debugf("Creating %d instances with hostname %s, userdata %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v",
-		count, hostname, userdata, image.Name, flavor, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable)
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable)
+	logger.Debugf("Creating %d instances with hostname %s, userdata %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
+		count, hostname, userdata, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
 	if err != nil {
 		logger.Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
@@ -515,28 +516,95 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 
 func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, ifacePayload *InterfacePayload) (router *model.Router, ifaceInfo *routes.InterfaceInfo, err error) {
 	logger.Debugf("Get interface info with VPC %+v, ifacePayload %+v", vpc, ifacePayload)
-	if ifacePayload == nil || ifacePayload.Subnet == nil {
-		err = fmt.Errorf("Interface with subnet must be provided")
+	if ifacePayload == nil {
+		err = fmt.Errorf("Interface can not be nill")
 		return
 	}
-	subnet, err := subnetAdmin.GetSubnet(ctx, ifacePayload.Subnet)
-	if err != nil {
-		return
+	if len(ifacePayload.Subnets) == 0 && ifacePayload.Subnet != nil {
+		ifacePayload.Subnets = append(ifacePayload.Subnets, ifacePayload.Subnet)
 	}
+	routerID := int64(0)
 	router = vpc
-	if router != nil && router.ID != subnet.RouterID {
-		err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
-		return
+	if router != nil {
+		routerID = router.ID
 	}
-	if router == nil && subnet.RouterID > 0 {
-		router, err = routerAdmin.Get(ctx, subnet.RouterID)
-		if err != nil {
+	ifaceInfo = &routes.InterfaceInfo{
+		AllowSpoofing: ifacePayload.AllowSpoofing,
+		Count:         ifacePayload.Count,
+	}
+	vlan := int64(0)
+	if len(ifacePayload.PublicAddresses) > 0 {
+		for _, pubAddr := range ifacePayload.PublicAddresses {
+			var floatingIp *model.FloatingIp
+			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
+			if err != nil {
+				return
+			}
+
+			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
+			if err != nil {
+				logger.Error("Failed to ensure subnet_id", err)
+				return
+			}
+
+			if vlan == 0 {
+				vlan = floatingIp.Interface.Address.Subnet.Vlan
+			} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {
+				err = fmt.Errorf("All public IPs must be from the same vlan")
+				return
+			}
+			ifaceInfo.PublicIps = append(ifaceInfo.PublicIps, floatingIp)
+		}
+	} else {
+		if len(ifacePayload.Subnets) == 0 {
+			err = fmt.Errorf("Subnets or public addresses must be provided")
+			return
+		}
+		for _, snet := range ifacePayload.Subnets {
+			var subnet *model.Subnet
+			subnet, err = subnetAdmin.GetSubnet(ctx, snet)
+			if err != nil {
+				return
+			}
+			if vlan == 0 {
+				vlan = subnet.Vlan
+			} else if vlan != subnet.Vlan {
+				err = fmt.Errorf("All subnets must be in the same vlan")
+				return
+			}
+			if router == nil && subnet.RouterID > 0 {
+				router, err = routerAdmin.Get(ctx, subnet.RouterID)
+				if err != nil {
+					return
+				}
+				routerID = subnet.RouterID
+			}
+			if router != nil && router.ID != subnet.RouterID {
+				err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
+				return
+			}
+			ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
+		}
+		if len(ifaceInfo.Subnets) == 0 {
+			err = fmt.Errorf("No valid subnets specified")
 			return
 		}
 	}
-	ifaceInfo = &routes.InterfaceInfo{
-		Subnet:        subnet,
-		AllowSpoofing: ifacePayload.AllowSpoofing,
+	for _, ipSite := range ifacePayload.SiteSubnets {
+		var site *model.Subnet
+		site, err = subnetAdmin.GetSubnet(ctx, ipSite)
+		if err != nil {
+			return
+		}
+		if vlan != site.Vlan {
+			err = fmt.Errorf("All subnets including sites must be in the same vlan")
+			return
+		}
+		if site.Interface > 0 {
+			err = fmt.Errorf("Site subnet is not available")
+			return
+		}
+		ifaceInfo.SiteSubnets = append(ifaceInfo.SiteSubnets, site)
 	}
 	if ifacePayload.IpAddress != "" {
 		ifaceInfo.IpAddress = ifacePayload.IpAddress
@@ -552,18 +620,24 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 	}
 	if len(ifacePayload.SecurityGroups) == 0 {
 		var routerID, sgID int64
+		var secgroup *model.SecurityGroup
 		if router != nil {
 			routerID = router.ID
 			sgID = router.DefaultSG
-		}
-		var secgroup *model.SecurityGroup
-		secgroup, err = secgroupAdmin.Get(ctx, sgID)
-		if err != nil {
-			return
-		}
-		if secgroup.RouterID != routerID {
-			err = fmt.Errorf("Security group not in subnet vpc")
-			return
+			secgroup, err = secgroupAdmin.Get(ctx, sgID)
+			if err != nil {
+				return
+			}
+			if secgroup.RouterID != routerID {
+				err = fmt.Errorf("Security group not in subnet vpc")
+				return
+			}
+		} else {
+			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			if err != nil {
+				logger.Error("Get default security group failed", err)
+				return
+			}
 		}
 		ifaceInfo.SecurityGroups = append(ifaceInfo.SecurityGroups, secgroup)
 	} else {
@@ -573,7 +647,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 			if err != nil {
 				return
 			}
-			if secgroup.RouterID != subnet.RouterID {
+			if secgroup.RouterID != routerID {
 				err = fmt.Errorf("Security group not in subnet vpc")
 				return
 			}
@@ -586,7 +660,7 @@ func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, i
 
 func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance) (instanceResp *InstanceResponse, err error) {
 	logger.Debugf("Create instance response for instance %+v", instance)
-	owner := orgAdmin.GetOrgName(instance.Owner)
+	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	instanceResp = &InstanceResponse{
 		ResourceReference: &ResourceReference{
 			ID:        instance.UUID,

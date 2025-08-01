@@ -1,5 +1,12 @@
 basePath: /api/v1
 definitions:
+  apis.AddressInfo:
+    properties:
+      ip_address:
+        type: string
+      subnet:
+        $ref: '#/definitions/common.ResourceReference'
+    type: object
   apis.ConsoleResponse:
     properties:
       console_url:
@@ -102,6 +109,10 @@ definitions:
     properties:
       created_at:
         type: string
+      fip_address:
+        type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
       id:
         type: string
       ip_address:
@@ -110,8 +121,12 @@ definitions:
         type: string
       owner:
         type: string
+      type:
+        type: string
       updated_at:
         type: string
+      vlan:
+        type: integer
     type: object
   apis.FloatingIpListResponse:
     properties:
@@ -128,6 +143,8 @@ definitions:
     type: object
   apis.FloatingIpPatchPayload:
     properties:
+      group:
+        $ref: '#/definitions/common.BaseID'
       inbound:
         maximum: 20000
         minimum: 1
@@ -141,6 +158,12 @@ definitions:
     type: object
   apis.FloatingIpPayload:
     properties:
+      activation_count:
+        maximum: 64
+        minimum: 0
+        type: integer
+      group:
+        $ref: '#/definitions/common.BaseID'
       inbound:
         maximum: 20000
         minimum: 1
@@ -159,6 +182,14 @@ definitions:
         type: string
       public_subnet:
         $ref: '#/definitions/common.BaseReference'
+      public_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
     required:
     - name
     type: object
@@ -166,6 +197,8 @@ definitions:
     properties:
       created_at:
         type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
       id:
         type: string
       inbound:
@@ -178,12 +211,33 @@ definitions:
         type: string
       public_ip:
         type: string
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
       target_interface:
         $ref: '#/definitions/apis.TargetInterface'
       updated_at:
         type: string
+      vlan:
+        type: integer
       vpc:
         $ref: '#/definitions/common.BaseReference'
+    type: object
+  apis.FloatingIpWithInfo:
+    properties:
+      fip_address:
+        type: string
+      id:
+        type: string
+      ip_address:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      type:
+        type: string
+      vlan:
+        type: integer
     type: object
   apis.HyperListResponse:
     properties:
@@ -227,9 +281,42 @@ definitions:
         type: integer
     type: object
   apis.ImagePatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      os_code:
+        enum:
+        - linux
+        - windows
+        - other
+        type: string
+      os_version:
+        maxLength: 32
+        minLength: 2
+        type: string
+      pools:
+        items:
+          type: string
+        type: array
+      user:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    - os_code
+    - os_version
+    - user
     type: object
   apis.ImagePayload:
     properties:
+      boot_loader:
+        enum:
+        - bios
+        - uefi
+        type: string
       download_url:
         type: string
       instance_uuid:
@@ -255,6 +342,7 @@ definitions:
       uuid:
         type: string
     required:
+    - boot_loader
     - download_url
     - name
     - os_code
@@ -264,6 +352,8 @@ definitions:
   apis.ImageResponse:
     properties:
       architecture:
+        type: string
+      boot_loader:
         type: string
       created_at:
         type: string
@@ -284,6 +374,25 @@ definitions:
       updated_at:
         type: string
       user:
+        type: string
+    type: object
+  apis.ImageStorageResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      pool_id:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      volume_id:
         type: string
     type: object
   apis.InstanceInfo:
@@ -369,6 +478,8 @@ definitions:
         type: integer
       nested_enable:
         type: boolean
+      pool_id:
+        type: string
       primary_interface:
         $ref: '#/definitions/apis.InterfacePayload'
       root_passwd:
@@ -490,6 +601,10 @@ definitions:
     properties:
       allow_spoofing:
         type: boolean
+      count:
+        maximum: 512
+        minimum: 1
+        type: integer
       inbound:
         maximum: 20000
         minimum: 0
@@ -502,15 +617,33 @@ definitions:
         maximum: 20000
         minimum: 0
         type: integer
+      public_addresses:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.BaseReference'
+        type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 32
+        minItems: 1
         type: array
     type: object
   apis.InterfacePayload:
     properties:
       allow_spoofing:
         type: boolean
+      count:
+        maximum: 512
+        minimum: 1
+        type: integer
       inbound:
         maximum: 20000
         minimum: 0
@@ -527,14 +660,28 @@ definitions:
         maximum: 20000
         minimum: 0
         type: integer
+      public_addresses:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.BaseReference'
         type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 32
+        minItems: 1
+        type: array
       subnet:
         $ref: '#/definitions/common.BaseReference'
-    required:
-    - subnet
+      subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        minItems: 1
+        type: array
     type: object
   apis.InterfaceResponse:
     properties:
@@ -558,9 +705,17 @@ definitions:
         type: string
       outbound:
         type: integer
+      secondary_addresses:
+        items:
+          $ref: '#/definitions/apis.AddressInfo'
+        type: array
       security_groups:
         items:
           $ref: '#/definitions/common.ResourceReference'
+        type: array
+      site_subnets:
+        items:
+          $ref: '#/definitions/apis.SiteSubnetInfo'
         type: array
       subnet:
         $ref: '#/definitions/common.ResourceReference'
@@ -586,6 +741,11 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      type:
+        enum:
+        - system
+        - resource
+        type: string
     type: object
   apis.IpGroupPayload:
     properties:
@@ -595,9 +755,14 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      type:
+        enum:
+        - system
+        - resource
+        type: string
     required:
-    - dictionaries
     - name
+    - type
     type: object
   apis.IpGroupResponse:
     properties:
@@ -605,6 +770,10 @@ definitions:
         type: string
       dictionaries:
         $ref: '#/definitions/common.BaseReference'
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpWithInfo'
+        type: array
       id:
         type: string
       name:
@@ -612,6 +781,12 @@ definitions:
       owner:
         type: string
       subnet_names:
+        type: string
+      subnets:
+        items:
+          $ref: '#/definitions/apis.SubnetWithInfo'
+        type: array
+      type:
         type: string
       updated_at:
         type: string
@@ -895,6 +1070,56 @@ definitions:
     - direction
     - protocol
     type: object
+  apis.SiteAttachPayload:
+    properties:
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    required:
+    - instance
+    - site_subnets
+    type: object
+  apis.SiteDetachPayload:
+    properties:
+      instance:
+        $ref: '#/definitions/common.BaseID'
+      site_subnets:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+    required:
+    - site_subnets
+    type: object
+  apis.SiteSubnetInfo:
+    properties:
+      created_at:
+        type: string
+      end:
+        type: string
+      gateway:
+        type: string
+      group:
+        $ref: '#/definitions/common.BaseReference'
+      id:
+        type: string
+      name:
+        type: string
+      netmask:
+        type: string
+      network:
+        type: string
+      owner:
+        type: string
+      start:
+        type: string
+      updated_at:
+        type: string
+      vlan:
+        type: integer
+    type: object
   apis.SubnetListResponse:
     properties:
       limit:
@@ -925,7 +1150,7 @@ definitions:
       group:
         $ref: '#/definitions/common.BaseReference'
       name:
-        maxLength: 32
+        maxLength: 64
         minLength: 2
         type: string
       network_cidr:
@@ -933,11 +1158,7 @@ definitions:
       start_ip:
         type: string
       type:
-        allOf:
-        - $ref: '#/definitions/common.SubnetType'
-        enum:
-        - public
-        - internal
+        $ref: '#/definitions/common.SubnetType'
       vlan:
         maximum: 16777215
         minimum: 1
@@ -953,6 +1174,8 @@ definitions:
       created_at:
         type: string
       dns:
+        type: string
+      end:
         type: string
       gateway:
         type: string
@@ -970,12 +1193,39 @@ definitions:
         type: string
       owner:
         type: string
+      start:
+        type: string
       type:
         $ref: '#/definitions/common.SubnetType'
       updated_at:
         type: string
+      vlan:
+        type: integer
       vpc:
         $ref: '#/definitions/common.ResourceReference'
+    type: object
+  apis.SubnetWithInfo:
+    properties:
+      end:
+        type: string
+      gateway:
+        type: string
+      id:
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      netmask:
+        type: string
+      network:
+        type: string
+      start:
+        type: string
+      type:
+        type: string
+      vlan:
+        type: integer
     type: object
   apis.TargetInterface:
     properties:
@@ -1307,10 +1557,12 @@ definitions:
     enum:
     - public
     - internal
+    - site
     type: string
     x-enum-varnames:
     - Public
     - Internal
+    - Site
 info:
   contact: {}
   description: APIs for CloudLand Functions
@@ -1665,6 +1917,66 @@ paths:
       summary: patch a floating ip
       tags:
       - Network
+  /floating_ips/batch_attach:
+    post:
+      consumes:
+      - application/json
+      description: batch attach existing floating ips from site subnets to an instance
+      parameters:
+      - description: Site attach payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SiteAttachPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.FloatingIpResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: batch attach floating ips
+      tags:
+      - Network
+  /floating_ips/batch_detach:
+    post:
+      consumes:
+      - application/json
+      description: batch detach floating ips from site subnets from an instance
+      parameters:
+      - description: Site detach payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.SiteDetachPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: batch detach floating ips
+      tags:
+      - Network
   /hypers:
     get:
       consumes:
@@ -1825,6 +2137,25 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
+      tags:
+      - Compute
+  /images/{id}/storages:
+    get:
+      consumes:
+      - application/json
+      description: list image storages
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ImageStorageResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list image storages
       tags:
       - Compute
   /instance/{id}/interfaces:
@@ -2061,6 +2392,58 @@ paths:
       summary: patch a instance
       tags:
       - Compute
+  /instances/{id}/interfaces/{interface_id}:
+    get:
+      consumes:
+      - application/json
+      description: get a interface
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a interface
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a interface
+      parameters:
+      - description: Interface patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InterfacePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InterfaceResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a interface
+      tags:
+      - Network
   /instances/{id}/reinstall:
     post:
       consumes:
@@ -2160,58 +2543,6 @@ paths:
       summary: set user password for a instance
       tags:
       - Compute
-  /instances/id/interfaces/{interface_id}:
-    get:
-      consumes:
-      - application/json
-      description: get a interface
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.InterfaceResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: get a interface
-      tags:
-      - Network
-    patch:
-      consumes:
-      - application/json
-      description: patch a interface
-      parameters:
-      - description: Interface patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.InterfacePatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.InterfaceResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch a interface
-      tags:
-      - Network
   /ip_groups:
     get:
       consumes:

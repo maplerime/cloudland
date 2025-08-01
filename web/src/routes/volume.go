@@ -44,7 +44,7 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 		logger.Error(err)
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	volume = &model.Volume{Model: model.Model{ID: id}}
@@ -62,7 +62,7 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 }
 
 func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume *model.Volume, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	volume = &model.Volume{}
 	where := memberShip.GetWhere()
@@ -122,6 +122,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 		BpsLimit:   bpsLimit,
 		BpsBurst:   bpsBurst,
 		Status:     "pending",
+		PoolID:     poolID,
 	}
 	err = db.Create(volume).Error
 	if err != nil {
@@ -161,7 +162,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 }
 
 func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
@@ -293,7 +294,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 }
 
 func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	volume := &model.Volume{}
 	if err = db.Where("uuid = ?", uuID).Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
@@ -388,7 +389,7 @@ func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, quer
 
 func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
 	}
@@ -516,6 +517,15 @@ func (v *VolumeView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	db := DB()
+	pools := []*model.Dictionary{}
+	err := db.Where("category = ?", "storage_pool").Find(&pools).Error
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+	c.Data["Pools"] = pools
 	c.HTML(200, "volumes_new")
 }
 
@@ -638,7 +648,8 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, "")
+	poolID := c.QueryTrim("pool")
+	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, poolID)
 	if err != nil {
 		logger.Error("Create volume failed", err)
 		c.Data["ErrorMsg"] = err.Error()

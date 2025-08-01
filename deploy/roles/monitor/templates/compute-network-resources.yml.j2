@@ -1,0 +1,17 @@
+groups:
+- name: compute-network-resources
+  rules:
+{% for net_type, params in network_types.items() %}
+    - alert: Compute_{{ net_type_cap }}_HighNetworkTraffic
+      expr: rate(node_network_receive_bytes_total{device{{ params.pattern }}, node_type="compute"}[1m]) * 8 / 1024 / 1024 / 1024 > {{ params.threshold }} or
+            rate(node_network_transmit_bytes_total{device{{ params.pattern }}, node_type="compute"}[1m]) * 8 / 1024 / 1024 / 1024 > {{ params.threshold }}
+      for: {{ params.duration | default("5m") }}
+      labels:
+        severity: warning
+        node_type: compute
+        alert_type: "node-network"
+        network_type: {{ net_type }}
+      annotations:
+        summary: "Compute node ({{ net_type }}) {{ $labels.instance }} device {{ $labels.device }} high network traffic"
+        description: "Compute node ({{ net_type }}) {{ $labels.instance }} device {{ $labels.device }} in/out traffic > {{ params.threshold }} Gbps for {{ params.duration | default('5m') }}"
+{% endfor %}

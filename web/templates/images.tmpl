@@ -35,7 +35,8 @@
 			                        <th>{{.i18n.Tr "Size"}}</th>
 			                        <th>{{.i18n.Tr "Default Username"}}</th>
 			                        <th>{{.i18n.Tr "Architecture"}}</th>
-                                    <th>{{.i18n.Tr "Delete"}}</th>
+			                        <th>{{.i18n.Tr "Boot Loader"}}</th>
+                                    <th>{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -43,19 +44,34 @@
                                 {{ range .Images }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td>{{.ID}}</td>
+									<td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td>{{.UUID}}</td>
+									<td><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
 			                        <td>{{.Name}}</td>
 			                        <td>{{.Format}}</td>
 			                        <td>{{.Status}}</td>
 			                        <td><span title="Tue, 18 Dec 2018 14:24:59 &#43;0800">{{.CreatedAt}}</span></td>
 			                        <td>{{.OSCode}}</td>
 			                        <td>{{.OsVersion}}</td>
-                                                <td>{{.Size}}</td>
+                                    <td>{{.Size}}</td>
 			                        <td>{{.UserName}}</td>
 			                        <td>{{.Architecture}}</td>
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+			                        <td>{{.BootLoader}}</td>
+                                    <td>
+                                        <div class="ui selection dropdown">
+                                            <input id="action" name="action" type="hidden">
+                                                <i class="dropdown icon"></i>
+                                                <div class="default text">Action</div>
+                                                <div class="menu">
+                                                    <div class="item" data-text="StoragePool">
+                                                        <a href="/images/{{.ID}}/storages">{{$.i18n.Tr "StoragePool"}}</a>
+                                                    </div>
+                                                    <div class="item" data-text="DeleteImage">
+                                                        <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete"}}</a>
+                                                    </div>
+                                                </div>
+                                        </div>
+                                    </td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>
@@ -86,4 +102,5 @@
 	    </div>
 	    {{template "_delete_modal_actions" .}}
     </div>
+
 {{template "_footer" .}}

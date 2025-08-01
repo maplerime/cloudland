@@ -8,7 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
-	_ "web/docs"
+	_ "web/docs/routes"
 	"web/src/utils/log"
 
 	"github.com/gin-gonic/gin"
@@ -47,6 +47,7 @@ func Register() (r *gin.Engine) {
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
+	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
@@ -109,6 +110,8 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/floating_ips/:id", floatingIpAPI.Get)
 		authGroup.DELETE("/api/v1/floating_ips/:id", floatingIpAPI.Delete)
 		authGroup.PATCH("/api/v1/floating_ips/:id", floatingIpAPI.Patch)
+		authGroup.POST("/api/v1/floating_ips/site_attach", floatingIpAPI.SiteAttach)
+		authGroup.POST("/api/v1/floating_ips/site_detach", floatingIpAPI.SiteDetach)
 
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)
@@ -126,6 +129,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/images/:id", imageAPI.Get)
 		authGroup.DELETE("/api/v1/images/:id", imageAPI.Delete)
 		authGroup.PATCH("/api/v1/images/:id", imageAPI.Patch)
+		authGroup.GET("/api/v1/images/:id/storages", imageAPI.ListStorages)
 
 		authGroup.GET("/api/v1/volumes", volumeAPI.List)
 		authGroup.POST("/api/v1/volumes", volumeAPI.Create)
@@ -161,6 +165,29 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/instances/network/his_data", monitorAPI.GetNetwork)
 			metricsGroup.POST("/instances/traffic/his_data", monitorAPI.GetTraffic)
 			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
+
+			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
+			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules)
+			metricsGroup.GET("/alarm/active-rules", alarmAPI.GetActiveRules)
+			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
+			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
+
+			metricsGroup.POST("/alarm/bw/rules", alarmAPI.CreateBWRule)
+			metricsGroup.GET("/alarm/bw/rules", alarmAPI.GetBWRules)
+			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
+			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
+
+			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
+			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
+			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
+			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
+			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
+			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
+
+			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
+			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
+			authGroup.DELETE("/api/v1/node-alarm-rules/:uuid", alarmAPI.DeleteNodeAlarmRule)
+
 		}
 
 	}

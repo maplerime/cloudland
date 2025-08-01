@@ -37,7 +37,7 @@
             {{.i18n.Tr "Subnets"}}
         </a>
         <a {{ if eq .Link "/floatingips" }} class="active item" {{ else }} class="item" {{ end }} href="/floatingips">
-            {{.i18n.Tr "FloatingIps"}}
+            {{.i18n.Tr "ElasticIps"}}
         </a>
         <a {{ if eq .Link "/secgroups" }} class="active item" {{ else }} class="item" {{ end }} href="/secgroups">
             {{.i18n.Tr "SecurityGroups"}}
@@ -50,6 +50,12 @@
         <a {{ if eq .Link "/migrations" }} class="active item" {{ else }} class="item" {{ end }} href="/migrations">
             {{.i18n.Tr "Migrations"}}
         </a>
+
+		{{/* Add new link for Node Alarm Rules */}}
+		<a {{ if eq .Link "/alarms/node" }} class="active item" {{ else }} class="item" {{ end }} href="/alarms/node">
+            {{.i18n.Tr "NodeAlarmRules"}}
+        </a>
+
 		{{ end }}
     </div>
 </div>

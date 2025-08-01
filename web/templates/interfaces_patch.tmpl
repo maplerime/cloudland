@@ -15,6 +15,69 @@
                         <label for="address">{{.i18n.Tr "IP Address"}}</label>
                         <input id="address" name="address" value="{{ .Interface.Address.Address }}" disabled>
                     </div>
+                    <div class="inline field">
+                        <label for="second_addresses">{{.i18n.Tr "Secondary IP Addresses"}}</label>
+                        <input id="second_addresses" name="second_addresses" value="{{ range .Interface.SecondAddresses }} {{ .Address }} {{ end }}" disabled>
+                    </div>
+                    {{ if ne .Interface.FloatingIp 0 }}
+                    <div class="inline field">
+                        <label for="public_ips">{{.i18n.Tr "Public IPs"}}</label>
+                        <select name="public_ips" id="public_ips" multiple="" class="ui multiple selection dropdown">
+                            <option value="{{ .Interface.FloatingIp }}" selected>{{ .Interface.Address.Address }}</option>
+                            {{ $PrimaryAddress := .Interface.Address.Address }}
+                            {{ $PublicIps := .PublicIps }}
+                            {{ range .Interface.SecondAddresses }}
+                              {{ $Address := .Address }}
+                              {{ range $PublicIps }}
+                                {{ if eq $Address .FipAddress }}
+                                  <option value="{{ .ID }}" selected>{{ .FipAddress }}</option>
+                                {{ end }}
+                              {{ end }}
+                            {{ end }}
+                            {{ $SecondAddresses := .Interface.SecondAddresses }}
+                            {{ range .PublicIps }}
+                              {{ $selected := false }}
+                              {{ $FipAddress := .FipAddress }}
+                              {{ if eq $PrimaryAddress $FipAddress }}
+                                {{ $selected = true }}
+                              {{ else }}
+                                {{ range $SecondAddresses }}
+                                  {{ if eq .Address $FipAddress }}
+                                    {{ $selected = true }}
+                                  {{ end }}
+                                {{ end }}
+                              {{ end }}
+                              {{ if not $selected }}
+                                <option value="{{ .ID }}">{{ $FipAddress }}</option>
+                              {{ end }}
+                            {{ end }}
+                        </select>
+                    </div>
+                    {{ end }}
+                    <div class="inline field">
+                        <label for="subnets">{{.i18n.Tr "Subnets"}}</label>
+                        <select name="subnets" id="subnets" multiple="" class="ui multiple selection dropdown">
+                            {{ $IfaceSubnets := .IfaceSubnets }}
+                            {{ range .Subnets }}
+                              {{ $subnetID := .ID }}
+                              {{ $selected := false }}
+                              {{ range $IfaceSubnets }}
+                                {{ if eq .ID $subnetID }}
+                                  {{ $selected = true }}
+                                {{ end }}
+                              {{ end }}
+                              {{ if $selected }}
+                                  <option value="{{ .ID }}" selected>{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ else }}
+                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ end }}
+                            {{ end }}
+                        </select>
+                    </div>
+                    <div class="required inline field">
+                        <label for="ip_count">{{.i18n.Tr "IP Count"}}</label>
+                        <input id="ip_count" name="ip_count" value="{{ .IpCount }}" required>
+                    </div>
                     <div class="required inline field">
                         <label for="macaddr">{{.i18n.Tr "Mac Address"}}</label>
                         <input id="macaddr" name="macaddr" value="{{ .Interface.MacAddr }}" disabled>
@@ -42,6 +105,26 @@
                     		<div class="item" data-value="no" data-text="no">{{.i18n.Tr "no"}}</div>
                     	  </div>
                     	</div>
+                    </div>
+                    <div class="inline field">
+                        <label for="sites">{{.i18n.Tr "Site Subnets"}}</label>
+                        <select name="sites" id="sites" multiple="" class="ui multiple selection dropdown">
+                            {{ $IfaceSites := .IfaceSites }}
+                            {{ range .SiteSubnets }}
+                              {{ $siteID := .ID }}
+                              {{ $selected := false }}
+                              {{ range $IfaceSites }}
+                                {{ if eq .ID $siteID }}
+                                  {{ $selected = true }}
+                                {{ end }}
+                              {{ end }}
+                              {{ if $selected }}
+                                  <option value="{{ .ID }}" selected>{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ else }}
+                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                              {{ end }}
+                            {{ end }}
+                        </select>
                     </div>
                     <div class="inline field">
                         <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>

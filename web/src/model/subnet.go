@@ -13,7 +13,7 @@ import (
 type Subnet struct {
 	Model
 	Owner        int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Name         string `gorm:"unique_index:idx_router_subnet;type:varchar(64)"`
+	Name         string `gorm:"unique_index:idx_router_subnet;type:varchar(128)"`
 	Network      string `gorm:"type:varchar(64)"`
 	Netmask      string `gorm:"type:varchar(64)"`
 	Gateway      string `gorm:"type:varchar(64)"`
@@ -22,6 +22,8 @@ type Subnet struct {
 	NameServer   string `gorm:"type:varchar(64)"`
 	DomainSearch string `gorm:"type:varchar(256)"`
 	Dhcp         bool   `gorm:"default:false"`
+	IsSite       bool   `gorm:"default:false"`
+	Interface    int64
 	Vlan         int64
 	Type         string   `gorm:"type:varchar(20);default:'internal'"`
 	RouterID     int64    `gorm:"unique_index:idx_router_subnet"`
@@ -34,15 +36,16 @@ type Subnet struct {
 
 type Address struct {
 	Model
-	Owner     int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Address   string `gorm:"type:varchar(64)"`
-	Netmask   string `gorm:"type:varchar(64)"`
-	Type      string `gorm:"type:varchar(20);default:'native'"`
-	Allocated bool   `gorm:"default:false"`
-	Reserved  bool   `gorm:"default:false"`
-	SubnetID  int64
-	Subnet    *Subnet `gorm:"foreignkey:SubnetID"`
-	Interface int64
+	Owner           int64  `gorm:"default:1"` /* The organization ID of the resource */
+	Address         string `gorm:"type:varchar(64)"`
+	Netmask         string `gorm:"type:varchar(64)"`
+	Type            string `gorm:"type:varchar(20);default:'native'"`
+	Allocated       bool   `gorm:"default:false"`
+	Reserved        bool   `gorm:"default:false"`
+	SubnetID        int64
+	Subnet          *Subnet `gorm:"foreignkey:SubnetID"`
+	Interface       int64
+	SecondInterface int64
 }
 
 func init() {

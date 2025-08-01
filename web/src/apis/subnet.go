@@ -31,17 +31,25 @@ type SubnetResponse struct {
 	Network    string             `json:"network"`
 	Netmask    string             `json:"netmask"`
 	Gateway    string             `json:"gateway"`
+	Start      string             `json:"start"`
+	End        string             `json:"end"`
 	NameServer string             `json:"dns,omitempty"`
 	VPC        *ResourceReference `json:"vpc,omitempty"`
 	Group      *ResourceReference `json:"group,omitempty"`
 	Type       SubnetType         `json:"type"`
 	IdleCount  int64              `json:"idle_count"`
+	Vlan       int                `json:"vlan"`
 }
 
 type SiteSubnetInfo struct {
 	*ResourceReference
-	Network string `json:"network"`
-	Gateway string `json:"gateway"`
+	Network string         `json:"network"`
+	Netmask string         `json:"netmask"`
+	Gateway string         `json:"gateway"`
+	Start   string         `json:"start"`
+	End     string         `json:"end"`
+	Group   *BaseReference `json:"group,omitempty"`
+	Vlan    int64          `json:"vlan"`
 }
 
 type SubnetListResponse struct {
@@ -52,7 +60,7 @@ type SubnetListResponse struct {
 }
 
 type SubnetPayload struct {
-	Name        string         `json:"name" binding:"required,min=2,max=32"`
+	Name        string         `json:"name" binding:"required,min=2,max=64"`
 	NetworkCIDR string         `json:"network_cidr" binding:"required,cidrv4"`
 	Gateway     string         `json:"gateway" binding:"omitempty,ipv4"`
 	StartIP     string         `json:"start_ip" binding:"omitempty,ipv4"`
@@ -63,7 +71,7 @@ type SubnetPayload struct {
 	VPC         *BaseReference `json:"vpc" binding:"omitempty"`
 	Group       *BaseReference `json:"group" binding:"omitempty"`
 	Vlan        int            `json:"vlan" binding:"omitempty,gte=1,lte=16777215"`
-	Type        SubnetType     `json:"type" binding:"omitempty,oneof=public internal"`
+	Type        SubnetType     `json:"type" binding:"omitempty"`
 }
 
 type SubnetPatchPayload struct {
@@ -152,7 +160,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	if payload.VPC == nil && payload.Type != Public {
+	if payload.VPC == nil && payload.Type == Internal {
 		ErrorResponse(c, http.StatusBadRequest, "VPC must be specified if network type not public", err)
 		return
 	}
@@ -204,7 +212,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 }
 
 func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet) (subnetResp *SubnetResponse, err error) {
-	owner := orgAdmin.GetOrgName(subnet.Owner)
+	owner := orgAdmin.GetOrgName(ctx, subnet.Owner)
 	subnetResp = &SubnetResponse{
 		ResourceReference: &ResourceReference{
 			ID:        subnet.UUID,
@@ -216,8 +224,11 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		Network:    subnet.Network,
 		Netmask:    subnet.Netmask,
 		Gateway:    subnet.Gateway,
+		Start:      subnet.Start,
+		End:        subnet.End,
 		NameServer: subnet.NameServer,
 		Type:       SubnetType(subnet.Type),
+		Vlan:       int(subnet.Vlan),
 	}
 	if subnet.Router != nil {
 		router := subnet.Router
@@ -289,8 +300,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
 		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
 	}
-	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
-
+	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list subnets", err)
 		return

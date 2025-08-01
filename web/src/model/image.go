@@ -19,6 +19,16 @@ const (
 // OSCodes is a list of supported operating systems
 var OSCodes = []string{OS_LINUX, OS_WINDOWS, OS_OTHER}
 
+type StorageStatus string
+
+const (
+	StorageStatusSynced   StorageStatus = "synced"
+	StorageStatusError    StorageStatus = "error"
+	StorageStatusUnknown  StorageStatus = "unknown"
+	StorageStatusSyncing  StorageStatus = "syncing"
+	StorageStatusNotFound StorageStatus = "not_found"
+)
+
 type Image struct {
 	Model
 	Owner                 int64     `gorm:"default:1"` /* The organization ID of the resource */
@@ -26,6 +36,7 @@ type Image struct {
 	OSCode                string    `gorm:"type:varchar(128);default:'linux'"`
 	Format                string    `gorm:"type:varchar(128)"`
 	Architecture          string    `gorm:"type:varchar(256)"`
+	BootLoader            string    `gorm:"type:varchar(32);default:'bios'"`
 	Status                string    `gorm:"type:varchar(128)"`
 	Href                  string    `gorm:"type:varchar(256)"`
 	Checksum              string    `gorm:"type:varchar(36)"`
@@ -43,10 +54,20 @@ type Image struct {
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
 	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	StorageType           string    `gorm:"type:varchar(36);"`
+}
+
+type ImageStorage struct {
+	Model
+	ImageID  int64         `gorm:"default:0"`
+	Image    *Image        `gorm:"foreignkey:ImageID"`
+	VolumeID string        `gorm:"type:varchar(128)"`
+	PoolID   string        `gorm:"type:varchar(128)"`
+	Status   StorageStatus `gorm:"type:varchar(128);default:'syncing'"` // syncing, synced, error, not-found
 }
 
 func init() {
-	dbs.AutoMigrate(&Image{})
+	dbs.AutoMigrate(&Image{}, &ImageStorage{})
 }
 
 func (i *Image) Clone() *Image {
@@ -56,6 +77,7 @@ func (i *Image) Clone() *Image {
 		OSCode:                i.OSCode,
 		Format:                i.Format,
 		Architecture:          i.Architecture,
+		BootLoader:            i.BootLoader,
 		Status:                i.Status,
 		Href:                  i.Href,
 		Checksum:              i.Checksum,
@@ -73,5 +95,6 @@ func (i *Image) Clone() *Image {
 		QAEnabled:             i.QAEnabled,
 		CaptureFromInstanceID: i.CaptureFromInstanceID,
 		CaptureFromInstance:   i.CaptureFromInstance,
+		StorageType:           i.StorageType,
 	}
 }

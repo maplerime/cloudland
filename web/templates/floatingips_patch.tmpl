@@ -1,0 +1,93 @@
+{{template "_head" .}}
+<div class="admin user">
+
+    <div class="ui container">
+
+        <div class="ui grid">
+
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Edit Floating Ip"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="required inline field">
+									<label for="name">{{.i18n.Tr "Name"}}</label>
+										<input id="name" name="name" placeholder="{{.i18n.Tr "Name"}}" value="{{.FloatingIp.Name}}">
+									</div>
+								<div class="inline field">
+									<label for="group">{{.i18n.Tr "Group"}}</label>
+									<div class="ui selection dropdown">
+										<input id="group" name="group" type="hidden" value="{{.FloatingIp.GroupID}}">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "IpGroup"}}</div>
+										<div class="menu">
+											<div class="item" data-value="">{{.i18n.Tr "None"}}</div>
+											{{range .IpGroups}}
+											<div class="item" data-value="{{.ID}}">{{.Name}}</div>
+											{{end}}
+										</div>
+									</div>
+								</div>
+								<div class="inline field">
+									<label for="instance">{{.i18n.Tr "Instance Address"}}</label>
+									<div class="ui selection dropdown">
+									  <input id="instance" name="instance" type="hidden" value="{{.FloatingIp.InstanceID}}">
+									  <i class="dropdown icon"></i>
+									  <div class="default text">{{.i18n.Tr "Instance Address"}}</div>
+									  <div class="menu">
+										<div class="item" data-value="">{{.i18n.Tr "None"}}</div>
+										{{ range .Instances }}
+									{{ if ne (index .Interfaces 0).Address.Subnet.RouterID 0 }}
+										<div class="item" data-value={{.ID}} data-text={{.Hostname}}-{{(index .Interfaces 0).Address.Address}}>
+										  {{.ID}}-{{.Hostname}}-{{(index .Interfaces 0).Address.Address}}
+										</div>
+															{{ end }}
+										{{ end }}
+									  </div>
+									</div>
+								</div>
+						{{ if .IsAdmin }}
+							
+								<div class="inline field">
+									<label for="inbound">{{.i18n.Tr "Inbound Bandwidth"}}</label>
+									<input id="inbound" name="inbound" placeholder="1000" value="{{.FloatingIp.Inbound}}">
+								</div>
+								<div class="inline field">
+									<label for="outbound">{{.i18n.Tr "Outbound Bandwidth"}}</label>
+									<input id="outbound" name="outbound" placeholder="1000" value="{{.FloatingIp.Outbound}}">
+								</div>
+						{{ end }}
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "Update Floating Ip"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<script>
+$(document).ready(function() {
+    $('.ui.dropdown').dropdown();
+    
+    {{if .FloatingIp.GroupID}}
+    $('#group').dropdown('set selected', '{{.FloatingIp.GroupID}}');
+    {{else}}
+    $('#group').dropdown('set selected', '');
+    {{end}}
+    
+    {{if .FloatingIp.InstanceID}}
+    $('#instance').dropdown('set selected', '{{.FloatingIp.InstanceID}}');
+    {{end}}
+    
+});
+</script>
+

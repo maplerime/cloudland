@@ -22,6 +22,8 @@ vxlan_db=/opt/cloudland/db/cloudland.db
 cland_private_key=$deploy_dir/.ssh/cland.key
 debug_log_file=/opt/cloudland/log/script.log
 debug_flag_file=/opt/cloudland/run/debug
+uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
+nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
 #export JAEGER_SERVICE_NAME="SCI-Backend"
 function die()
 {
@@ -186,4 +188,28 @@ function inet_access()
     ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
     ip netns exec router-0 $*
     ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+}
+
+function get_uuid_prefix()
+{
+    [ $# -lt 1 ] && return
+    uuid=$1
+    prefix=${uuid%%-*}
+    echo "$prefix"
+}
+
+function wait_qemu_ping()
+{
+    vm_ID=inst-$1
+    num=$2
+    [ -z "$num" ] && num=0
+    count=0
+    for i in {1..240}; do
+        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-ping"}'
+        if [ $? -eq 0 ]; then
+            let count=$count+1
+        fi
+        [ $count -gt $num ] && break
+        sleep 5
+    done
 }

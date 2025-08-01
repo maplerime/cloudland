@@ -27,6 +27,7 @@
 									{{ end }}
 									<th>{{.i18n.Tr "UUID"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
+			                        <th>{{.i18n.Tr "Type"}}</th>
 			                        <th>{{.i18n.Tr "Group"}}</th>
 			                        <th>{{.i18n.Tr "Network"}}</th>
 			                        <th>{{.i18n.Tr "Netmask"}}</th>
@@ -48,7 +49,12 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>
+			                        <td>{{.Type}}
+										{{ if ne .Type "internal" }}
+											({{.IdleCount}})
+										{{ end }}
+									</td>
+									<td>
                         {{ if .Group }}
                         {{ .Group.Name }}
                         {{ end }}
