@@ -10,19 +10,17 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-
 	. "web/src/common"
 	"web/src/model"
 )
 
 func init() {
-	Add("detach_volume_local", DetachVolume)
-	Add("detach_volume_wds_vhost", DetachVolume)
+	Add("resize_volume", ResizeVolume)
 }
 
-func DetachVolume(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| detach_volume.sh_local 5 7
-	//|:-COMMAND-:| detach_volume.sh_wds_vhost 5 7
+func ResizeVolume(ctx context.Context, args []string) (status string, err error) {
+	//|:-COMMAND-:| resize_volume.sh 5 error
+	logger.Debug("ResizeVolumeLocal", args)
 	db := DB()
 	argn := len(args)
 	if argn < 3 {
@@ -30,12 +28,7 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Invalid args", err)
 		return
 	}
-	_, err = strconv.Atoi(args[1])
-	if err != nil {
-		logger.Error("Invalid instance ID", err)
-		return
-	}
-	volID, err := strconv.Atoi(args[2])
+	volID, err := strconv.Atoi(args[1])
 	if err != nil {
 		logger.Error("Invalid volume ID", err)
 		return
@@ -43,13 +36,18 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
-		logger.Error("Failed to query volume", err)
+		logger.Error("Invalid volume ID", err)
 		return
 	}
-	volume.InstanceID = 0
-	volume.Target = ""
-	volume.Status = model.VolumeStatusAvailable
-	err = db.Save(volume).Error
+	status = args[2]
+	if status != "error" {
+		if volume.InstanceID != 0 {
+			status = model.VolumeStatusAttached.String()
+		} else {
+			status = model.VolumeStatusAvailable.String()
+		}
+	}
+	err = db.Model(&volume).Updates(map[string]interface{}{"status": status}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return

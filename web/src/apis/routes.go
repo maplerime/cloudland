@@ -136,6 +136,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/volumes/:id", volumeAPI.Get)
 		authGroup.DELETE("/api/v1/volumes/:id", volumeAPI.Delete)
 		authGroup.PATCH("/api/v1/volumes/:id", volumeAPI.Patch)
+		authGroup.POST("/api/v1/volumes/:id/resize", volumeAPI.Resize)
 
 		authGroup.GET("/api/v1/instances", instanceAPI.List)
 		authGroup.POST("/api/v1/instances", instanceAPI.Create)
@@ -148,6 +149,7 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/api/v1/instances/:id/console", consoleAPI.Create)
 
 		authGroup.POST("/api/v1/instances/:id/reinstall", instanceAPI.Reinstall)
+		authGroup.POST("/api/v1/instances/:id/resize", instanceAPI.Resize)
 
 		authGroup.GET("/api/v1/instances/:id/interfaces", interfaceAPI.List)
 		authGroup.POST("/api/v1/instances/:id/interfaces", interfaceAPI.Create)

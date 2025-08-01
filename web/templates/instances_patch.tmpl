@@ -33,12 +33,12 @@
                                 </div>
                                 <div class="inline field">
                                     <label></label>
-                                    <span>{{ if eq .Instance.Status "migrating" }} {{.i18n.Tr "migrating"}} {{else}} {{.i18n.Tr "hyper_warning"}} {{ end }}</span>
+                                    <span>{{ if eq .Instance.Status.String "migrating" }} {{.i18n.Tr "migrating"}} {{else}} {{.i18n.Tr "hyper_warning"}} {{ end }}</span>
                                 </div>
                                 <div class="inline field">
                                     <label for="action">{{.i18n.Tr "Action"}}</label>
                                     <select name="action" id="action" class="ui selection dropdown" disabled >
-                                        <option value="">{{ .i18n.Tr .Instance.Status }}</option>
+                                        <option value="">{{ .i18n.Tr .Instance.Status.String }}</option>
                                         <option value="shutdown">{{.i18n.Tr "shutdown"}}</option>
                                         <option value="destroy">{{.i18n.Tr "destroy"}}</option>
                                         <option value="start">{{.i18n.Tr "start"}}</option>
@@ -48,7 +48,7 @@
                                 </div>
                                 <div class="inline field">
                                     <label></label>
-                                    <span>{{ if eq .Instance.Status "updating" }} {{.i18n.Tr "updating"}} {{else}} {{.i18n.Tr "action_warning"}} {{ end }}</span>
+                                    <span>{{ if eq .Instance.Status.String "updating" }} {{.i18n.Tr "updating"}} {{else}} {{.i18n.Tr "action_warning"}} {{ end }}</span>
                                 </div>
                                 <div class="inline field">
                                     <label for="flavor">{{.i18n.Tr "Flavor"}}</label>
