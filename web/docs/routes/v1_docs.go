@@ -1264,6 +1264,47 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/instances/{id}/end_rescue": {
+            "post": {
+                "description": "end rescue a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "end rescue a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/interfaces/{interface_id}": {
             "get": {
                 "description": "get a interface",
@@ -1371,6 +1412,56 @@ const docTemplatev1 = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceReinstallPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/rescue": {
+            "post": {
+                "description": "rescue a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "rescue a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance rescue payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceRescuePayload"
                         }
                     }
                 ],
@@ -3478,6 +3569,9 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "type": {
+                    "type": "string"
+                },
                 "updated_at": {
                     "type": "string"
                 },
@@ -3774,6 +3868,9 @@ const docTemplatev1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
+                "is_resque": {
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 32,
@@ -3791,6 +3888,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "user": {
                     "type": "string",
@@ -4056,6 +4156,17 @@ const docTemplatev1 = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.InstanceRescuePayload": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },
@@ -4515,6 +4626,29 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.MemberInfo": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.MigrationListResponse": {
             "type": "object",
             "properties": {
@@ -4637,20 +4771,17 @@ const docTemplatev1 = `{
         "apis.OrgResponse": {
             "type": "object",
             "properties": {
-                "cpu": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
-                },
-                "disk": {
-                    "type": "integer"
                 },
                 "id": {
                     "type": "string"
                 },
-                "memory": {
-                    "type": "integer"
+                "members": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.MemberInfo"
+                    }
                 },
                 "name": {
                     "type": "string"
@@ -4974,7 +5105,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 64,
                     "minLength": 2
                 },
                 "network_cidr": {

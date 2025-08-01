@@ -54,6 +54,8 @@ type Image struct {
 	QAEnabled             bool      `gorm:"default:false"`
 	CaptureFromInstanceID int64     `gorm:"default:0"`
 	CaptureFromInstance   *Instance `gorm:"foreignkey:InstanceID"`
+	IsRescue              bool      `gorm:"default:false"`
+	RescueImage           int64     `gorm:"default:0"`
 	StorageType           string    `gorm:"type:varchar(36);"`
 }
 

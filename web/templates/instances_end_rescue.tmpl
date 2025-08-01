@@ -1,0 +1,29 @@
+{{template "_head" .}}
+<div class="admin user">
+
+    <div class="ui container">
+
+        <div class="ui grid">
+
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<h3 class="ui top attached header">
+								{{ .Instance.ID }}-{{ .Instance.Hostname }} {{ .i18n.Tr "End OS Rescue"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "End OS Rescue"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+{{template "_footer" .}}

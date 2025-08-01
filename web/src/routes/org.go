@@ -189,7 +189,7 @@ func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, 
 func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Organization, err error) {
 	ctx, db := GetContextDB(ctx)
 	org = &model.Organization{}
-	err = db.Where("uuid = ?", uuID).Take(org).Error
+	err = db.Preload("Members").Where("uuid = ?", uuID).Take(org).Error
 	if err != nil {
 		logger.Error("Failed to query org, %v", err)
 		return
@@ -317,7 +317,7 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	err = db.Where(where).Where(query).Find(&orgs).Error
+	err = db.Preload("Members").Where(where).Where(query).Find(&orgs).Error
 	if err != nil {
 		logger.Error("DB failed to query organizations, %v", err)
 		return

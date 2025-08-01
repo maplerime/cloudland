@@ -11,10 +11,13 @@ vm_ID=inst-$ID
 vnc_xml="$vm_ID"_vnc.xml
 cp $template_dir/vnc_template.xml $xml_dir/$vm_ID/$vnc_xml
 sed -i "s/VNC_PASS/$vnc_pass/g;" $xml_dir/$vm_ID/$vnc_xml
-virsh update-device $vm_ID $xml_dir/$vm_ID/$vnc_xml --live
-virsh update-device $vm_ID $xml_dir/$vm_ID/$vnc_xml --config
+current_vm=$vm_ID
+vm_rescue=$(virsh list --all | grep "\<$vm_ID-" | awk '{print $2}')
+[ -n "$vm_rescue" ] && current_vm=$vm_rescue
+virsh update-device $current_vm $xml_dir/$vm_ID/$vnc_xml --live
+virsh update-device $current_vm $xml_dir/$vm_ID/$vnc_xml --config
 tmpxml=/tmp/${vm_ID}.xml
-virsh dumpxml $vm_ID >$tmpxml
+virsh dumpxml $current_vm >$tmpxml
 vnc_port=$(xmllint --xpath 'string(/domain/devices/graphics/@port)' $tmpxml)
 rm -f $tmpxml
 local_ip=$(ifconfig $vxlan_interface | grep 'inet ' | awk '{print $2}')

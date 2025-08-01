@@ -65,7 +65,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == "migrating" {
+		if instance.Status == "migrating" || instance.Status == "rescuing" {
 			continue
 		}
 		if instance.Status != status {

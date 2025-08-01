@@ -255,8 +255,8 @@ func (v *UserAPI) List(c *gin.Context) {
 	}
 	total, users, err := userAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
-		logger.Errorf("Failed to list vpcs, %+v", err)
-		ErrorResponse(c, http.StatusBadRequest, "Failed to list vpcs", err)
+		logger.Errorf("Failed to list users, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to list users", err)
 		return
 	}
 	userListResp := &UserListResponse{
