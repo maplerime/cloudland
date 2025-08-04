@@ -58,6 +58,28 @@
                                     </select>
 								</div>
 								<div class="required inline field">
+									<label for="isRescue">{{.i18n.Tr "Is Rescue Image"}}</label>
+									<select name="isRescue" id="isRescue" class="ui selection dropdown">
+                                         <option value="false" selected>false</option>
+                                         <option value="true">true</option>
+                                    </select>
+								</div>
+                                <div class="inline field">
+                                    <label for="image">{{.i18n.Tr "Rescue Image"}}</label>
+                                    <div class="ui selection dropdown">
+                                      <input id="rescueImage" name="rescueImage" type="hidden" required>
+                                      <i class="dropdown icon"></i>
+                                      <div class="default text">{{.i18n.Tr "Rescue Image"}}</div>
+                                      <div class="menu">
+                                        {{ range .RescueImages }}
+                                               <div class="item" data-value={{.ID}} data-text={{.Name}}>
+                                               {{.Name}}
+                                               </div>
+                                        {{ end }}
+                                      </div>
+                                    </div>
+                                </div>
+								<div class="required inline field">
                                     <label for="osVersion">{{.i18n.Tr "OS Version"}}</label>
                                     <input id="osVersion" name="osVersion" autocomplete="off">
                                 </div>
