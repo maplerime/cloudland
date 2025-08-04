@@ -747,7 +747,9 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			}
 		}
 		if iface == nil {
-			err = fmt.Errorf("Failed to create interface")
+			if err == nil {
+				err = fmt.Errorf("Failed to create interface")
+			}
 			return
 		}
 		err = interfaceAdmin.allocateSecondAddresses(ctx, instance, iface, subnets, count)

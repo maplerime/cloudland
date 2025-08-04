@@ -338,6 +338,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 			logger.Error("Failed to delete interface, ", err)
 		}
 		iface = nil
+		err = fmt.Errorf("Failed to allocate address, %v", err)
 		return
 	}
 	return
