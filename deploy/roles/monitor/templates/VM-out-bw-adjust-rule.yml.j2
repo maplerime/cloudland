@@ -16,7 +16,7 @@ groups:
   - record: vm_out_bw_usage_by_rule_{{ rule_group }}
     expr: |
       vm_out_bw_usage_{{ rule_group }} * on(domain) group_right() 
-      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group_original }}"}
   
   # 需要限制出站带宽的VM
   - record: vm_requires_out_bw_limit_{{ rule_group }}

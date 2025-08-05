@@ -19,10 +19,8 @@ import (
 
 var logger = log.MustGetLogger("apis")
 
-var alarmAPI = &AlarmAPI{
-	operator:   &routes.AlarmOperator{},
-	alarmAdmin: &routes.AlarmAdmin{},
-}
+// 删除在此处重复定义的alarmAPI变量
+// alarmAPI在alarms.go中已经声明
 
 func Run() (err error) {
 	logger.Info("Start to run cloudland api service")
@@ -181,6 +179,9 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
 
+			// Add new endpoint for synchronizing VM rule mappings
+			metricsGroup.POST("/alarm/sync-mappings", alarmAPI.SyncAllVMRuleMappings)
+
 			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
 			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
 			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
@@ -196,7 +197,7 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/adjust/cpu/rules", adjustAPI.GetCPUAdjustRules)
 			metricsGroup.GET("/adjust/cpu/rule/:uuid", adjustAPI.GetCPUAdjustRules)
 			metricsGroup.DELETE("/adjust/cpu/rule/:uuid", adjustAPI.DeleteCPUAdjustRule)
-			
+
 			// 启用/禁用资源调整规则
 			authGroup.POST("/api/v1/adjust/:uuid/enable", adjustAPI.EnableAdjustRule)
 			authGroup.POST("/api/v1/adjust/:uuid/disable", adjustAPI.DisableAdjustRule)

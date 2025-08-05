@@ -50,14 +50,18 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 	if err == nil && len(existingData) > 0 {
 		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
 			log.Printf("Failed to parse existing matched_vms.json: %v", err)
+			// Even if parsing fails, initialize an empty array to avoid losing operations
 			matchedVMs = []map[string]interface{}{}
 		}
 	} else {
+		// File doesn't exist or is empty, create new array
 		matchedVMs = []map[string]interface{}{}
+		log.Printf("Creating new matched_vms.json file")
 	}
 
 	// Process based on operation type
 	if operation == "add" {
+		log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
 		// Add or update VM entries
 		for _, instanceid := range vmUUIDs {
 			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceid)
@@ -66,12 +70,13 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 				continue
 			}
 
-			// Create new entry - simplified version with only necessary fields
+			// Create new entry with instance_id field
 			newEntry := map[string]interface{}{
 				"targets": []string{"localhost:9090"},
 				"labels": map[string]interface{}{
-					"domain":  domain,
-					"rule_id": fmt.Sprintf("%s-%s", domain, groupUUID),
+					"domain":      domain,
+					"rule_id":     fmt.Sprintf("%s-%s", domain, groupUUID),
+					"instance_id": instanceid,
 				},
 			}
 
@@ -91,6 +96,7 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 					// Update existing entry
 					entryExists = true
 					matchedVMs[i] = newEntry
+					log.Printf("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
 					break
 				}
 			}
@@ -98,11 +104,14 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 			// If it doesn't exist, add a new entry
 			if !entryExists {
 				matchedVMs = append(matchedVMs, newEntry)
+				log.Printf("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
 			}
 		}
 	} else if operation == "remove" {
+		log.Printf("Removing VM mappings for rule group %s", groupUUID)
 		// Delete entries related to the specified rule group
 		filteredVMs := []map[string]interface{}{}
+		removedCount := 0
 		for _, vm := range matchedVMs {
 			labels, ok := vm["labels"].(map[string]interface{})
 			if !ok {
@@ -113,9 +122,15 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 			ruleID, ok := labels["rule_id"].(string)
 			if !ok || !strings.HasSuffix(ruleID, "-"+groupUUID) {
 				filteredVMs = append(filteredVMs, vm)
+			} else {
+				domain := labels["domain"].(string)
+				instanceID, _ := labels["instance_id"].(string)
+				log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+				removedCount++
 			}
 		}
 		matchedVMs = filteredVMs
+		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
 	}
 
 	// Save updated matched_vms.json
@@ -129,6 +144,14 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 	if err != nil {
 		log.Printf("Failed to write matched_vms.json: %v", err)
 		return err
+	}
+
+	// Force reload Prometheus configuration
+	if err := routes.ReloadPrometheus(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
+		// Don't return error as the file update was successful
+	} else {
+		log.Printf("Successfully reloaded Prometheus configuration after updating matched_vms.json")
 	}
 
 	return nil
@@ -386,7 +409,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	// 确认规则类型是否正确
 	if group.Type != routes.RuleTypeCPU {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -415,7 +438,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	// 删除软链和规则文件（路径与创建时一致）
 	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
 	linkPath := filepath.Join(routes.RulesEnabled, fileName)
-	
+
 	// 根据owner决定规则文件位置
 	var rulePath string
 	if owner == "admin" {
@@ -423,15 +446,15 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	} else {
 		rulePath = filepath.Join(routes.RulesSpecial, fileName)
 	}
-	
+
 	// 记录删除的文件路径
 	deletedFiles := []string{}
-	
+
 	// 删除软链
 	if err := routes.RemoveFile(linkPath); err == nil {
 		deletedFiles = append(deletedFiles, linkPath)
 	}
-	
+
 	// 删除规则文件
 	if err := routes.RemoveFile(rulePath); err == nil {
 		deletedFiles = append(deletedFiles, rulePath)
@@ -846,7 +869,7 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	for _, alert := range notification.Alerts {
 		// 打印所有标签信息
 		log.Printf("ProcessAlertWebhook All labels for alert: %v", alert.Labels)
-		
+
 		alert_type := alert.Labels["alert_type"]
 		alertName := alert.Labels["alertname"]
 		severity := alert.Labels["severity"]
@@ -856,21 +879,21 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 		domain := alert.Labels["domain"]
 		rule_group_uuid := alert.Labels["rule_group"]
 		matched := alert.Labels["matched"]
-		
+
 		log.Printf("ProcessAlertWebhook Processing alert: alert_type=%s alertName=%s severity=%s", alert_type, alertName, severity)
 		log.Printf("ProcessAlertWebhook Processing alert: domain=%s rule_group_uuid=%s", domain, rule_group_uuid)
 		log.Printf("ProcessAlertWebhook Processing alert: owner=%s email=%s action=%v matched=%s", owner, email, actionFlag, matched)
-		
+
 		description := alert.Annotations["description"]
 		summary := alert.Annotations["summary"]
 		log.Printf("ProcessAlertWebhook Processing alert: summary=%s description=%s", summary, description)
-		
+
 		target_device := ""
 		if alert_type == "bw" {
 			target_device = alert.Labels["target_device"]
 			log.Printf("ProcessAlertWebhook Processing alert: target_device=%s", target_device)
 		}
-		
+
 		alertRecord := &routes.Alert{
 			Name:          alertName,
 			RuleGroupUUID: rule_group_uuid,
@@ -881,7 +904,7 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 			AlertType:     alert_type,
 			TargetDevice:  target_device,
 		}
-		
+
 		if status == "firing" {
 			log.Printf("ProcessAlertWebhook Alert FIRING: domain=%s matched=%s action=%v", domain, matched, actionFlag)
 			if email != "" {
@@ -1239,7 +1262,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		}
 		return
 	}
-	
+
 	// 确认规则类型是否正确
 	if group.Type != routes.RuleTypeBW {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -1267,13 +1290,13 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	// 删除软链和规则文件（路径与创建时一致）
 	// 记录删除的文件路径
 	deletedFiles := []string{}
-	
+
 	// 不再需要遍历规则名，直接使用固定格式的文件名
 	inFile := fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
 	outFile := fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
 	linkIn := filepath.Join(routes.RulesEnabled, inFile)
 	linkOut := filepath.Join(routes.RulesEnabled, outFile)
-		
+
 	// 根据owner决定规则文件位置
 	var ruleIn, ruleOut string
 	if owner == "admin" {
@@ -1283,7 +1306,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		ruleIn = filepath.Join(routes.RulesSpecial, inFile)
 		ruleOut = filepath.Join(routes.RulesSpecial, outFile)
 	}
-		
+
 	// 删除软链和规则文件，记录成功删除的文件路径
 	if err := routes.RemoveFile(linkIn); err == nil {
 		deletedFiles = append(deletedFiles, linkIn)
@@ -1412,6 +1435,133 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 		"message":       "node alarm rule deleted successfully",
 		"uuid":          uuid,
 		"deleted_files": deletedFiles,
+	})
+}
+
+// SyncAllVMRuleMappings synchronizes all VM-rule mappings to matched_vms.json
+// This ensures consistency between database and the mapping file
+// @Summary Synchronize all VM rule mappings
+// @Description Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database
+// @Tags alarm
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{} "Synchronization successful"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/v1/metrics/alarm/sync-mappings [post]
+func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
+	log.Printf("Starting full synchronization of VM rule mappings")
+
+	ctx := c.Request.Context()
+	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+
+	// Get all rule groups (both alarm and adjust rules)
+	var allRuleGroups []string
+
+	// Get CPU rule groups
+	cpuParams := routes.ListRuleGroupsParams{
+		RuleType: routes.RuleTypeCPU,
+		Page:     1,
+		PageSize: 1000,
+	}
+	cpuGroups, _, err := a.operator.ListRuleGroups(ctx, cpuParams)
+	if err != nil {
+		log.Printf("Failed to get CPU rule groups: %v", err)
+	} else {
+		for _, group := range cpuGroups {
+			allRuleGroups = append(allRuleGroups, group.UUID)
+		}
+	}
+
+	// Get BW rule groups
+	bwParams := routes.ListRuleGroupsParams{
+		RuleType: routes.RuleTypeBW,
+		Page:     1,
+		PageSize: 1000,
+	}
+	bwGroups, _, err := a.operator.ListRuleGroups(ctx, bwParams)
+	if err != nil {
+		log.Printf("Failed to get BW rule groups: %v", err)
+	} else {
+		for _, group := range bwGroups {
+			allRuleGroups = append(allRuleGroups, group.UUID)
+		}
+	}
+
+	// Get adjust rule groups if AdjustOperator is available
+	// This would need to be implemented based on your adjust rule structure
+
+	// Build complete mapping data
+	var allMappings []map[string]interface{}
+
+	for _, groupUUID := range allRuleGroups {
+		// Get all VMs linked to this rule group
+		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
+		if err != nil {
+			log.Printf("Failed to get linked VMs for group %s: %v", groupUUID, err)
+			continue
+		}
+
+		for _, link := range vmLinks {
+			instanceID := link.VMUUID
+			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
+			if err != nil {
+				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
+				continue
+			}
+
+			// Create mapping entry
+			mapping := map[string]interface{}{
+				"targets": []string{"localhost:9090"},
+				"labels": map[string]interface{}{
+					"domain":      domain,
+					"rule_id":     fmt.Sprintf("%s-%s", domain, groupUUID),
+					"instance_id": instanceID,
+				},
+			}
+
+			allMappings = append(allMappings, mapping)
+			log.Printf("Added mapping: domain=%s, rule_id=%s-%s, instance_id=%s",
+				domain, domain, groupUUID, instanceID)
+		}
+	}
+
+	// Save complete mapping data
+	mappingData, err := json.MarshalIndent(allMappings, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"error":  "Failed to marshal mapping data",
+		})
+		return
+	}
+
+	err = routes.WriteFile(matchedVMsFile, mappingData, 0644)
+	if err != nil {
+		log.Printf("Failed to write matched_vms.json: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status": "error",
+			"error":  "Failed to write mapping file",
+		})
+		return
+	}
+
+	// Force reload Prometheus configuration
+	if err := routes.ReloadPrometheus(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after full sync: %v", err)
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "partial_success",
+			"message": "Mappings synchronized but failed to reload Prometheus",
+			"count":   len(allMappings),
+		})
+		return
+	}
+
+	log.Printf("Successfully synchronized all VM rule mappings, total entries: %d", len(allMappings))
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "VM rule mappings synchronized successfully",
+		"count":   len(allMappings),
 	})
 }
 

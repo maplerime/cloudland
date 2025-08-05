@@ -8,10 +8,11 @@ groups:
       severity: info
       alert_type: resource_adjustment
       action_type: limit_cpu
-      rule_group: "{{ rule_group }}"
+      rule_group: "{{ rule_group_original }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
     annotations:
       summary: "VM requires CPU limitation"
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} requires CPU limitation"
@@ -23,10 +24,11 @@ groups:
       severity: info
       alert_type: resource_adjustment
       action_type: restore_cpu
-      rule_group: "{{ rule_group }}"
+      rule_group: "{{ rule_group_original }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
     annotations:
       summary: "VM ready for CPU restoration"
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} is ready for CPU restoration"
@@ -38,10 +40,11 @@ groups:
       severity: info
       alert_type: resource_adjustment
       action_type: limit_in_bw
-      rule_group: "{{ rule_group }}"
+      rule_group: "{{ rule_group_original }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
     annotations:
       summary: "VM requires inbound bandwidth limitation"
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} requires inbound bandwidth limitation"
@@ -53,10 +56,11 @@ groups:
       severity: info
       alert_type: resource_adjustment
       action_type: restore_in_bw
-      rule_group: "{{ rule_group }}"
+      rule_group: "{{ rule_group_original }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
     annotations:
       summary: "VM ready for inbound bandwidth restoration"
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} is ready for inbound bandwidth restoration"
@@ -68,10 +72,11 @@ groups:
       severity: info
       alert_type: resource_adjustment
       action_type: limit_out_bw
-      rule_group: "{{ rule_group }}"
+      rule_group: "{{ rule_group_original }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
     annotations:
       summary: "VM requires outbound bandwidth limitation"
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} requires outbound bandwidth limitation"
@@ -83,10 +88,11 @@ groups:
       severity: info
       alert_type: resource_adjustment
       action_type: restore_out_bw
-      rule_group: "{{ rule_group }}"
+      rule_group: "{{ rule_group_original }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
     annotations:
       summary: "VM ready for outbound bandwidth restoration"
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} is ready for outbound bandwidth restoration" 

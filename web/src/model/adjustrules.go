@@ -22,7 +22,7 @@ func init() {
 		&BWAdjustRuleDetail{},
 		&AdjustmentHistory{},
 	)
-	logger.Debugf("Resource adjustment system tables migrated successfully")
+	fmt.Printf("Resource adjustment system tables migrated successfully\n")
 }
 
 func (AdjustRuleGroup) TableName() string {
@@ -32,7 +32,6 @@ func (AdjustRuleGroup) TableName() string {
 // AdjustRuleGroup 资源自动调整规则组
 type AdjustRuleGroup struct {
 	Model
-	UUID          string `gorm:"type:varchar(64);uniqueIndex"`
 	Name          string `gorm:"type:varchar(128)"`
 	Type          string `gorm:"type:varchar(32)"`
 	Owner         string `gorm:"type:varchar(128)"`
@@ -51,6 +50,7 @@ type CPUAdjustRuleDetail struct {
 	SmoothWindow    int     `gorm:"default:5;check:smooth_window > 0"`
 	TriggerDuration int     `gorm:"default:30;check:trigger_duration > 0"`
 	RestoreDuration int     `gorm:"default:300;check:restore_duration > 0"`
+	LimitPercent    int     `gorm:"default:50;check:limit_percent > 0"` // CPU限制百分比
 }
 
 // BWAdjustRuleDetail 带宽调整规则详情
@@ -65,6 +65,7 @@ type BWAdjustRuleDetail struct {
 	SmoothWindow     int    `gorm:"default:5;check:smooth_window > 0"`
 	TriggerDuration  int    `gorm:"default:30;check:trigger_duration > 0"`
 	RestoreDuration  int    `gorm:"default:300;check:restore_duration > 0"`
+	LimitValue       int    `gorm:"default:1048576"` // 带宽限制值，默认1MB/s
 }
 
 // AdjustmentHistory 调整历史记录
@@ -77,4 +78,4 @@ type AdjustmentHistory struct {
 	Status     string    `gorm:"type:varchar(32)"`
 	Details    string    `gorm:"type:text"`
 	AdjustTime time.Time `gorm:"index"`
-} 
+}
