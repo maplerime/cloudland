@@ -792,12 +792,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	}
 	vlan := iface.Address.Subnet.Vlan
 	interfaces = append(interfaces, iface)
-	var moreAddresses []string
-	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
-	if err != nil {
-		logger.Errorf("Failed to get instance networks, %v", err)
-		return
-	}
 	instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 	err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
 	if err != nil {
@@ -820,7 +814,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		IpAddr:        iface.Address.Address,
 		MacAddr:       iface.MacAddr,
 		SecRules:      securityData,
-		MoreAddresses: moreAddresses,
 	})
 	for i, ifaceInfo := range secondaryIfaces {
 		var subnet *model.Subnet
@@ -833,11 +826,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			return
 		}
 		interfaces = append(interfaces, iface)
-		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, i+1)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
 		if err != nil {
@@ -860,9 +848,15 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			IpAddr:        iface.Address.Address,
 			MacAddr:       iface.MacAddr,
 			SecRules:      securityData,
-			MoreAddresses: moreAddresses,
 		})
 	}
+	var moreAddresses []string
+	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, interfaces)
+	if err != nil {
+		logger.Errorf("Failed to get instance networks, %v", err)
+		return
+	}
+	vlans[0].MoreAddresses = moreAddresses
 	var instKeys []string
 	for _, key := range keys {
 		instKeys = append(instKeys, key.PublicKey)
@@ -909,15 +903,15 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	dns := ""
-	for i, iface := range instance.Interfaces {
+	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, nil)
+	if err != nil {
+		logger.Errorf("Failed to get instance networks, %v", err)
+		return
+	}
+	for _, iface := range instance.Interfaces {
 		subnet := iface.Address.Subnet
 		if iface.PrimaryIf {
 			dns = subnet.NameServer
-		}
-		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, i)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		vlans = append(vlans, &VlanInfo{
@@ -978,7 +972,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}
 		if iface.PrimaryIf {
-			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
@@ -2208,6 +2202,9 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
+		}
+		if routerID == 0 {
+			routerID = subnet.RouterID
 		}
 		if subnet.RouterID != routerID {
 			logger.Error("All subnets must be in the same vpc", err)

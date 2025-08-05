@@ -325,7 +325,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 	}
 	changed := false
-	if iface.PrimaryIf && instance.RouterID == 0 {
+	if iface.PrimaryIf && iface.Address.Subnet.RouterID == 0 {
 		valid := false
 		valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		if !valid {
@@ -335,7 +335,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 		if changed {
 			var oldAddresses []string
-			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return

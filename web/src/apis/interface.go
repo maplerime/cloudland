@@ -272,7 +272,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
 				return
 			}
-			if secgroup.RouterID != instance.RouterID {
+			if secgroup.RouterID != iface.Address.Subnet.RouterID {
 				err = fmt.Errorf("Security group not in instance vpc")
 				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
 				return
