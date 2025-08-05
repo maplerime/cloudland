@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 9 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type>"
+[ $# -lt 10 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type> <instance_uuid>"
 
 migrate_ID=$1
 task_ID=$2
@@ -15,6 +15,7 @@ vm_mem=$6
 disk_size=$7
 source_hyper=$8
 migration_type=$9
+instance_uuid=${10:-$ID}
 state=error
 
 if [ -z "$wds_address" ]; then
@@ -70,7 +71,7 @@ vm_QA="$qemu_agent_dir/$vm_ID.agent"
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 template=$template_dir/wds_template_with_qa.xml
 cp $template $vm_xml
-sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_UNIX_SOCK#$boot_ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g" $vm_xml
+sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_UNIX_SOCK#$boot_ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/INSTANCE_UUID/$instance_uuid/g" $vm_xml
 if [ "$migration_type" = "cold" ]; then
     virsh define $vm_xml
     virsh autostart $vm_ID

@@ -10,6 +10,11 @@
     <access mode='shared'/>
   </memoryBacking>
   <vcpu placement='static'>VM_CPU</vcpu>
+  <metadata>
+    <cloudland:vm xmlns:cloudland="https://cloudland.raksmart.com/metadata">
+      <cloudland:instance_id>INSTANCE_UUID</cloudland:instance_id>
+    </cloudland:vm>
+  </metadata>
   <os>
     <type arch='x86_64'>hvm</type>
     <loader readonly='yes' type='pflash'>VM_BOOT_LOADER</loader>
