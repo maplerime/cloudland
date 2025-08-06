@@ -22,21 +22,32 @@ import (
 )
 
 type Hyper struct {
-	ID        int64 `gorm:"primary_key"`
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Hostid    int32  `gorm:"unique_index"`
-	Hostname  string `gorm:"type:varchar(64)"`
-	Status    int32
-	Parentid  int32
-	Children  int32
-	Duration  int64
-	HostIP    string
-	RouteIP   string
-	VirtType  string
-	ZoneID    int64
-	Zone      *Zone     `gorm:"foreignkey:ZoneID"`
-	Resource  *Resource `gorm:"foreignkey:Hostid;AssociationForeignKey:Hostid"`
+	ID           int64 `gorm:"primary_key"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	Hostid       int32  `gorm:"unique_index"`
+	Hostname     string `gorm:"type:varchar(64)"`
+	Status       int32
+	Parentid     int32
+	Children     int32
+	Duration     int64
+	HostIP       string
+	RouteIP      string
+	VirtType     string
+	CpuOverRate  float32 `gorm:"default:1.0"`
+	MemOverRate  float32 `gorm:"default:1.0"`
+	DiskOverRate float32 `gorm:"default:1.0"`
+	ZoneID       int64
+	Zone         *Zone     `gorm:"foreignkey:ZoneID"`
+	Resource     *Resource `gorm:"foreignkey:Hostid;AssociationForeignKey:Hostid"`
+	Remark       string    `gorm:"type:varchar(512);default:''"`
+}
+
+func (hyper *Hyper) GetStatus() string {
+	if status, ok := HyperStatusValues[hyper.Status]; ok {
+		return status
+	}
+	return HYPER_INIT
 }
 
 func init() {
@@ -44,20 +55,20 @@ func init() {
 }
 
 const (
-	HYPER_INIT    = ""
-	HYPER_CREATED = "created"
-	HYPER_ACTIVE  = "active"
+	HYPER_INIT     = ""
+	HYPER_DISABLED = "disabled"
+	HYPER_ACTIVE   = "active"
 )
 
 var (
 	HyperStatusValues = map[int32]string{
-		0: HYPER_CREATED,
+		0: HYPER_DISABLED,
 		1: HYPER_ACTIVE,
 	}
 	HyperStatusNames = map[string]int32{
-		HYPER_INIT:    0,
-		HYPER_CREATED: 0,
-		HYPER_ACTIVE:  1,
+		HYPER_INIT:     0,
+		HYPER_DISABLED: 0,
+		HYPER_ACTIVE:   1,
 	}
 )
 

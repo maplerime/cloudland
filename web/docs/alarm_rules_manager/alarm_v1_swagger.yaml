@@ -252,19 +252,64 @@ definitions:
       total:
         type: integer
     type: object
+  apis.HyperPatchPayload:
+    properties:
+      cpu_over_rate:
+        minimum: 1
+        type: number
+      disk_over_rate:
+        minimum: 1
+        type: number
+      mem_over_rate:
+        minimum: 1
+        type: number
+      remark:
+        type: string
+      status:
+        maximum: 1
+        minimum: 0
+        type: integer
+      zone_id:
+        minimum: 1
+        type: integer
+    type: object
   apis.HyperResponse:
     properties:
+      children:
+        type: integer
       cpu:
         type: integer
+      cpu_over_rate:
+        type: number
       disk:
         type: integer
-      id:
+      disk_over_rate:
+        type: number
+      host_ip:
         type: string
+      hostid:
+        type: integer
+      hostname:
+        type: string
+      mem_over_rate:
+        type: number
       memory:
         type: integer
-      name:
-        maxLength: 32
-        minLength: 2
+      parentid:
+        type: integer
+      remark:
+        type: string
+      route_ip:
+        type: string
+      status:
+        type: integer
+      status_name:
+        type: string
+      virt_type:
+        type: string
+      zone_id:
+        type: integer
+      zone_name:
         type: string
     type: object
   apis.ImageListResponse:
@@ -2068,6 +2113,23 @@ paths:
       consumes:
       - application/json
       description: list hypervisors
+      parameters:
+      - description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      - description: Limit for pagination
+        in: query
+        name: limit
+        type: integer
+      - description: Order by field
+        in: query
+        name: order
+        type: string
+      - description: Search query
+        in: query
+        name: q
+        type: string
       produces:
       - application/json
       responses:
@@ -2082,11 +2144,17 @@ paths:
       summary: list hypervisors
       tags:
       - Administration
-  /hypers/{name}:
+  /hypers/{hostid}:
     get:
       consumes:
       - application/json
       description: get a hypervisor
+      parameters:
+      - description: Hypervisor host ID
+        in: path
+        name: hostid
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -2102,7 +2170,53 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
       summary: get a hypervisor
+      tags:
+      - Administration
+    patch:
+      consumes:
+      - application/json
+      description: update hypervisor status, zone, over-commit rates, and remark
+      parameters:
+      - description: Hypervisor host ID
+        in: path
+        name: hostid
+        required: true
+        type: string
+      - description: Hypervisor update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/apis.HyperPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HyperResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update a hypervisor
       tags:
       - Administration
   /images:
