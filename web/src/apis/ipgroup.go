@@ -315,7 +315,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 		var ipGroupInfo *BaseReference
 		var dictionaryInfo *DictionaryWithInfo
 
-		// 获取 subnet 信息
+		// Get subnet information
 		if fip.Subnet != nil {
 			vlan = fip.Subnet.Vlan
 			subnetInfo = &SubnetWithInfo{
@@ -333,7 +333,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			}
 		}
 
-		// 获取 ipgroup 信息
+		// Get ipgroup information
 		if fip.Group != nil {
 			ipGroupInfo = &BaseReference{
 				ID:   fip.Group.UUID,
@@ -341,7 +341,7 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			}
 		}
 
-		// 获取 dictionary 信息（通过 ipgroup 关联）
+		// Get dictionary information (through ipgroup association)
 		if fip.Group != nil && fip.Group.DictionaryType != nil {
 			dictionaryInfo = &DictionaryWithInfo{
 				BaseReference: &BaseReference{

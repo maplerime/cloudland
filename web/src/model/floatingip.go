@@ -26,7 +26,7 @@ type FloatingIp struct {
 	IPAddress  string
 	Type       string   `gorm:"type:varchar(64)"`
 	GroupID    int64    `gorm:"index"`
-	Group      *IpGroup `gorm:"foreignkey:GroupID" json:"-" gorm:"-"`
+	Group      *IpGroup `gorm:"foreignkey:GroupID"`
 	SubnetID   int64
 	Subnet     *Subnet `gorm:"foreignkey:SubnetID"`
 }
