@@ -200,10 +200,12 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 				logger.Error("Failed to sync nic info", err)
 				return
 			}
-			err = syncFloatingIp(ctx, instance)
-			if err != nil {
-				logger.Error("Failed to sync floating ip", err)
-				return
+			if instance.RouterID > 0 {
+				err = syncFloatingIp(ctx, instance)
+				if err != nil {
+					logger.Error("Failed to sync floating ip", err)
+					return
+				}
 			}
 		}
 	}

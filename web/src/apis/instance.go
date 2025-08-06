@@ -44,6 +44,11 @@ type InstanceReinstallPayload struct {
 	LoginPort int              `json:"login_port" binding:"omitempty,min=1,max=65535"`
 }
 
+type InstanceRescuePayload struct {
+	RescueImage     *BaseReference   `json:"rescue_image" binding:"omitempty"`
+	Password  string           `json:"password" binging:"required,min=8,max=64"`
+}
+
 type InstancePayload struct {
 	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
 	Hypervisor          *int                `json:"hypervisor" binding:"omitempty,gte=0,lte=65535"`
@@ -298,8 +303,91 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, nil)
+	c.JSON(http.StatusNoContent, nil)
+}
 
+// @Summary rescue a instance
+// @Description rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceRescuePayload  true   "Instance rescue payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/rescue [post]
+func (v *InstanceAPI) Rescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind JSON
+	payload := &InstanceRescuePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Rescue instance with %+v", payload)
+
+	// check rescue image
+	var rescueImage *model.Image
+	if payload.RescueImage != nil {
+		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
+		if err != nil {
+			logger.Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid rescue image", err)
+			return
+		}
+	}
+
+	err = instanceAdmin.Rescue(ctx, instance, rescueImage, payload.Password)
+	if err != nil {
+		logger.Error("Rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "Rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary end rescue a instance
+// @Description end rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/end_rescue [post]
+func (v *InstanceAPI) EndRescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	err = instanceAdmin.EndRescue(ctx, instance)
+	if err != nil {
+		logger.Error("End rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "End rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
 }
 
 // @Summary delete a instance

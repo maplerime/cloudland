@@ -1,10 +1,11 @@
 #!/bin/bash
 cd `dirname $0`
 source ../cloudrc
-[ $# -lt 2 ] && echo "$0 <vm_ID> <vm_name>" && exit -1
+[ $# -lt 2 ] && echo "$0 <vm_ID> <vm_name> <rescue>" && exit -1
 
 vm_ID=$1
 vm_name=$2
+rescue=$3
 [ "${vm_name%%.*}" = "$vm_name" ] && vm_name=${vm_name}.$cloud_domain
 working_dir=/tmp/$vm_ID
 latest_dir=$working_dir/openstack/latest
@@ -145,5 +146,7 @@ if [ "$mtu" -lt 1450 ]; then
 fi
 echo "$net_json" > $latest_dir/network_data.json
 
-mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null
-rm -rf $latest_dir
+iso_name=$vm_ID
+[ "$rescue" = "true" ] && iso_name=$vm_ID-rescue
+mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${iso_name}.iso $working_dir &> /dev/null
+rm -rf $working_dir
