@@ -341,15 +341,15 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			}
 		}
 
-		// Get dictionary information (through ipgroup association)
-		if fip.Group != nil && fip.Group.DictionaryType != nil {
+		// Get dictionary information (through subnet group association)
+		if fip.Subnet != nil && fip.Subnet.Group != nil && fip.Subnet.Group.DictionaryType != nil {
 			dictionaryInfo = &DictionaryWithInfo{
 				BaseReference: &BaseReference{
-					ID:   fip.Group.DictionaryType.UUID,
-					Name: fip.Group.DictionaryType.Name,
+					ID:   fip.Subnet.Group.DictionaryType.UUID,
+					Name: fip.Subnet.Group.DictionaryType.Name,
 				},
-				Category: fip.Group.DictionaryType.Category,
-				Value:    fip.Group.DictionaryType.Value,
+				Category: fip.Subnet.Group.DictionaryType.Category,
+				Value:    fip.Subnet.Group.DictionaryType.Value,
 			}
 		}
 
