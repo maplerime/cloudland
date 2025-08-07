@@ -3490,7 +3490,7 @@ const docTemplatealarm_v1 = `{
         },
         "/zones": {
             "get": {
-                "description": "list zonevisors",
+                "description": "list zones",
                 "consumes": [
                     "application/json"
                 ],
@@ -3500,7 +3500,7 @@ const docTemplatealarm_v1 = `{
                 "tags": [
                     "Zone"
                 ],
-                "summary": "list zonevisors",
+                "summary": "list zones",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3515,11 +3515,9 @@ const docTemplatealarm_v1 = `{
                         }
                     }
                 }
-            }
-        },
-        "/zones/{name}": {
-            "get": {
-                "description": "get a zonevisor",
+            },
+            "post": {
+                "description": "create a zone",
                 "consumes": [
                     "application/json"
                 ],
@@ -3529,13 +3527,89 @@ const docTemplatealarm_v1 = `{
                 "tags": [
                     "Zone"
                 ],
-                "summary": "get a zonevisor",
+                "summary": "create a zone",
+                "parameters": [
+                    {
+                        "description": "Zone create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZonePayload"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.ZoneResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/zones/{name}": {
+            "get": {
+                "description": "get a zone",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Zone"
+                ],
+                "summary": "get a zone",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZoneResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a zone",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Zone"
+                ],
+                "summary": "delete a zone",
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     },
                     "400": {
                         "description": "Bad request",
@@ -3568,6 +3642,15 @@ const docTemplatealarm_v1 = `{
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
+                "console_host": {
+                    "type": "string"
+                },
+                "console_path": {
+                    "type": "string"
+                },
+                "console_port": {
+                    "type": "integer"
+                },
                 "console_url": {
                     "type": "string"
                 },
@@ -5187,6 +5270,11 @@ const docTemplatealarm_v1 = `{
                         "egress"
                     ]
                 },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
                 "port_max": {
                     "type": "integer",
                     "maximum": 65535,
@@ -5815,23 +5903,33 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.ZonePayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
         "apis.ZoneResponse": {
             "type": "object",
             "properties": {
-                "cpu": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
                 },
-                "disk": {
-                    "type": "integer"
+                "default": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"
-                },
-                "memory": {
-                    "type": "integer"
                 },
                 "name": {
                     "type": "string"

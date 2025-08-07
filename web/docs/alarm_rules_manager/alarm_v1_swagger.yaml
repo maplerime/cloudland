@@ -9,6 +9,12 @@ definitions:
     type: object
   apis.ConsoleResponse:
     properties:
+      console_host:
+        type: string
+      console_path:
+        type: string
+      console_port:
+        type: integer
       console_url:
         type: string
       instance:
@@ -1114,6 +1120,10 @@ definitions:
         - ingress
         - egress
         type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
       port_max:
         maximum: 65535
         minimum: 1
@@ -1537,18 +1547,25 @@ definitions:
           $ref: '#/definitions/apis.ZoneResponse'
         type: array
     type: object
+  apis.ZonePayload:
+    properties:
+      default:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
   apis.ZoneResponse:
     properties:
-      cpu:
-        type: integer
       created_at:
         type: string
-      disk:
-        type: integer
+      default:
+        type: boolean
       id:
         type: string
-      memory:
-        type: integer
       name:
         type: string
       owner:
@@ -3953,7 +3970,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: list zonevisors
+      description: list zones
       produces:
       - application/json
       responses:
@@ -3965,14 +3982,20 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: list zonevisors
+      summary: list zones
       tags:
       - Zone
-  /zones/{name}:
-    get:
+    post:
       consumes:
       - application/json
-      description: get a zonevisor
+      description: create a zone
+      parameters:
+      - description: Zone create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ZonePayload'
       produces:
       - application/json
       responses:
@@ -3988,7 +4011,50 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: get a zonevisor
+      summary: create a zone
+      tags:
+      - Zone
+  /zones/{name}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a zone
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a zone
+      tags:
+      - Zone
+    get:
+      consumes:
+      - application/json
+      description: get a zone
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ZoneResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a zone
       tags:
       - Zone
 swagger: "2.0"
