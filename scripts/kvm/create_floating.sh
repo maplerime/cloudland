@@ -40,14 +40,18 @@ ext_dev=te-$suffix
 
 ip netns exec $router ip addr add $ext_cidr dev $ext_dev
 ip netns exec $router ip route add default via $ext_gw table $table
-ip_net=$(ipcalc -b $int_addr | grep Network | awk '{print $2}')
-ip netns exec $router ip route add $ip_net dev ns-$int_vlan table $table
+ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | while read ns_link ns_gw; do
+    ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')
+    ip netns exec $router ip route add $ip_net dev $ns_link table $table
+done
 ip netns exec $router ip rule add from $int_ip lookup $table
 ip netns exec $router ip rule add to $int_ip lookup $table
 ip netns exec $router iptables -t nat -D PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 ip netns exec $router iptables -t nat -I PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
-ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
-ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -d $ext_ip -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -d $ext_ip -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
 async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
 
 if [ "$inbound" -gt 0 ]; then
