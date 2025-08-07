@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 8 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader>"
+[ $# -lt 9 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -14,6 +14,7 @@ vm_mem=$5
 disk_size=$6
 disk_ID=$7
 boot_loader=$8
+instance_uuid=${9:-$ID}
 state=error
 vm_vnc=""
 vol_state=error
@@ -101,7 +102,7 @@ else
     vm_virt_feature="svm"
 fi
 os_code=$(jq -r '.os_code' <<< $metadata)
-sed -i "s/VM_ID/$vm_rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
+sed -i "s/VM_ID/$vm_rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g; s/INSTANCE_UUID/$instance_uuid/g" $vm_xml
 vm_nvram="$image_dir/${vm_rescue}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
     cp $nvram_template $vm_nvram
@@ -117,6 +118,7 @@ if [ "$boot_loader" = "uefi" ]; then
     -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
     -e "s#VM_BOOT_LOADER#$uefi_boot_loader#g" \
     -e "s#VM_NVRAM#$vm_nvram#g" \
+    -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
 else
     sed -i \
@@ -129,6 +131,7 @@ else
     -e "s#VM_AGENT#$vm_QA#g" \
     -e "s/VM_NESTED/$vm_nested/g" \
     -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
 fi
 

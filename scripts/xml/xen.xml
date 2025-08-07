@@ -3,6 +3,11 @@
   <memory unit='KiB'>VM_MEM</memory>
   <currentMemory unit='KiB'>VM_MEM</currentMemory>
   <vcpu placement='static'>VM_CPU</vcpu>
+  <metadata>
+    <cloudland:vm xmlns:cloudland="https://cloudland.raksmart.com/metadata">
+      <cloudland:instance_id>INSTANCE_UUID</cloudland:instance_id>
+    </cloudland:vm>
+  </metadata>
   <bootloader>pygrub</bootloader>
   <os>
     <type arch='x86_64' machine='xenpv'>linux</type>
