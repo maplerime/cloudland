@@ -59,7 +59,7 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 	return
 }
 
-func (a *SecruleAdmin) Update(ctx context.Context, id int64, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
+func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
 	ctx, db := GetContextDB(ctx)
 	secrules := &model.SecurityRule{Model: model.Model{ID: id}}
 	err = db.Take(secrules).Error
@@ -83,6 +83,9 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, remoteIp, direction
 	}
 	if protocol != "" {
 		secrules.Protocol = protocol
+	}
+	if name != "" {
+		secrules.Name = name
 	}
 	if portMin <= portMax {
 		if portMin > 0 && portMin < 65536 {
@@ -122,7 +125,7 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, remoteIp, direction
 
 }
 
-func (a *SecruleAdmin) Create(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
 	if !permit {
@@ -150,6 +153,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, remoteIp, direction, protocol
 		Protocol:  protocol,
 		PortMin:   portMin,
 		PortMax:   portMax,
+		Name:      name,
 	}
 	err = db.Create(secrule).Error
 	if err != nil {
@@ -413,7 +417,8 @@ func (v *SecruleView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, remoteIp, direction, protocol, int32(portMin), int32(portMax), secgroup)
+	name := c.QueryTrim("name")
+	_, err = secruleAdmin.Create(ctx, name, remoteIp, direction, protocol, int32(portMin), int32(portMax), secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -504,7 +509,8 @@ func (v *SecruleView) Patch(c *macaron.Context, store session.Store) {
 	max := c.QueryTrim("portmax")
 	portMin, err := strconv.Atoi(min)
 	portMax, err := strconv.Atoi(max)
-	_, err = secruleAdmin.Update(c.Req.Context(), int64(secruleID), remoteIp, direction, protocol, portMin, portMax)
+	name := c.QueryTrim("name")
+	_, err = secruleAdmin.Update(c.Req.Context(), int64(secruleID), name, remoteIp, direction, protocol, portMin, portMax)
 	if err != nil {
 		logger.Error("Create Security Rules failed, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

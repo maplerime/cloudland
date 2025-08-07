@@ -26,6 +26,7 @@
 			                        <th>{{.i18n.Tr "ID"}}</th>
 									{{ end }}
 			                        <th>{{.i18n.Tr "SecurityGroup"}}</th>
+			                        <th>{{.i18n.Tr "Name"}}</th>
 			                        <th>{{.i18n.Tr "RemoteIp"}}</th>
 			                        <th>{{.i18n.Tr "Direction"}}</th>
 			                        <th>{{.i18n.Tr "Protocol"}}</th>
@@ -42,6 +43,7 @@
 			                        <td>{{.ID}}</td>
 									{{ end }}
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Secgroup}}</a></td>
+			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.RemoteIp}}</a></td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Direction}}</a></td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Protocol}}</a></td>
