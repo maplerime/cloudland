@@ -48,8 +48,8 @@ ip netns exec $router ip rule add from $int_ip lookup $table
 ip netns exec $router ip rule add to $int_ip lookup $table
 ip netns exec $router iptables -t nat -D PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 ip netns exec $router iptables -t nat -I PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
-ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -d $ext_ip -j SNAT --to-source $ext_ip
-ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -d $ext_ip -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -d $int_ip -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -d $int_ip -j SNAT --to-source $ext_ip
 ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
 ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
 async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
