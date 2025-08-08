@@ -2,7 +2,7 @@
 <div class="user signup">
 	<div class="ui middle very relaxed page grid">
         <div class="column" >
-            <form class="ui form" action="{{.Link}}" method="post">
+            <form class="ui form" action="{{.Link}}" method="post" onsubmit="javascript:submitForm(this);">
                 <h3 class="ui top attached header">
                     {{.i18n.Tr "Update Hypervisor"}}
                 </h3>
@@ -53,7 +53,7 @@
                     <input type="hidden" name="host_id" value="{{ .Hyper.Hostid }}">
                     <div class="inline field">
                         <label></label>
-                        <button class="ui green button" type="button" id="update-hypervisor-btn">{{.i18n.Tr "Update Hypervisor"}}</button>
+                        <button class="ui green button" type="submit" id="update-hypervisor-btn">{{.i18n.Tr "Update Hypervisor"}}</button>
                     </div>
                 </div>
             </form>
@@ -83,23 +83,24 @@
 </div>
 
 <script>
+function submitForm(form) {
     var originalZoneId = '{{ .Hyper.ZoneID }}';
     
-    $('#update-hypervisor-btn').click(function() {
-        var currentZoneId = document.getElementById('zone_id').value;
-        var form = document.querySelector('form');
-        
-        if (currentZoneId !== originalZoneId) {
-            $('.zone-change-warning.modal').modal({
-                closable: false,
-                onApprove: function () {
-                    form.submit();
-                }
-            }).modal('show');
-        } else {
-            form.submit();
-        }
-    });
+    var currentZoneId = document.getElementById('zone_id').value;
+    var form = document.querySelector('form');
+    
+    if (currentZoneId !== originalZoneId) {
+        $('.zone-change-warning.modal').modal({
+            closable: false,
+            onApprove: function () {
+                return true; // Proceed with form submission
+            }
+        }).modal('show');
+    } else {
+        return true; // Proceed with form submission
+    }
+    return false; // Prevent default form submission
+}
 </script>
 
 {{template "_footer" .}}
