@@ -72,13 +72,6 @@ func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model
 		logger.Error("Failed to query zone, %v", err)
 		return
 	}
-	memberShip := GetMemberShip(ctx)
-	permit := memberShip.CheckPermission(model.Admin)
-	if !permit {
-		logger.Error("Not authorized to get zone")
-		err = fmt.Errorf("Not authorized")
-		return
-	}
 	return
 }
 
@@ -97,7 +90,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	
+
 	if isDefault {
 		err = db.Model(&model.Zone{}).Where("default = ?", true).Update("default", false).Error
 		if err != nil {
@@ -105,18 +98,18 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 			return
 		}
 	}
-	
+
 	zone = &model.Zone{
 		Name:    name,
 		Default: isDefault,
 	}
-	
+
 	err = db.Create(zone).Error
 	if err != nil {
 		logger.Error("DB create zone failed, %v", err)
 		return
 	}
-	
+
 	logger.Debugf("Zone created successfully: %+v", zone)
 	return
 }
@@ -135,7 +128,7 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	
+
 	if isDefault && !zone.Default {
 		err = db.Model(&model.Zone{}).Where("default = ? AND id != ?", true, zone.ID).Update("default", false).Error
 		if err != nil {
@@ -143,14 +136,14 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 			return
 		}
 	}
-	
+
 	zone.Default = isDefault
 	err = db.Model(zone).Updates(zone).Error
 	if err != nil {
 		logger.Error("Failed to update zone", err)
 		return
 	}
-	
+
 	logger.Debugf("Zone updated successfully: %+v", zone)
 	return
 }
@@ -169,7 +162,7 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	
+
 	hyperCount := int64(0)
 	err = db.Model(&model.Hyper{}).Where("zone_id = ?", zone.ID).Count(&hyperCount).Error
 	if err != nil {
@@ -181,13 +174,13 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 		err = fmt.Errorf("Zone cannot be deleted while hypervisors belong to this zone")
 		return
 	}
-	
+
 	err = db.Delete(zone).Error
 	if err != nil {
 		logger.Error("Failed to delete zone", err)
 		return
 	}
-	
+
 	logger.Debugf("Zone deleted successfully: %+v", zone)
 	return
 }
