@@ -2,7 +2,7 @@
 <div class="user signup">
 	<div class="ui middle very relaxed page grid">
         <div class="column" >
-            <form class="ui form" action="{{.Link}}" method="post" onsubmit="javascript:submitForm(this);">
+            <form class="ui form" action="{{.Link}}" method="post" onsubmit="javascript:return submitForm(this);">
                 <h3 class="ui top attached header">
                     {{.i18n.Tr "Update Hypervisor"}}
                 </h3>
@@ -87,19 +87,14 @@ function submitForm(form) {
     var originalZoneId = '{{ .Hyper.ZoneID }}';
     
     var currentZoneId = document.getElementById('zone_id').value;
-    var form = document.querySelector('form');
     
     if (currentZoneId !== originalZoneId) {
-        $('.zone-change-warning.modal').modal({
-            closable: false,
-            onApprove: function () {
-                return true; // Proceed with form submission
-            }
-        }).modal('show');
-    } else {
-        return true; // Proceed with form submission
+        if (!confirm("{{.i18n.Tr "Hypervisor zone change warning"}}")) {
+            return false; // Prevent form submission if user cancels
+        }
     }
-    return false; // Prevent default form submission
+    // Proceed with form submission
+    return true; // Allow form submission
 }
 </script>
 
