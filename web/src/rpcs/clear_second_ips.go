@@ -50,7 +50,7 @@ func ClearSecondIps(ctx context.Context, args []string) (status string, err erro
 	osCode := args[3]
 	updateMeta := args[4]
 	var moreAddresses []string
-	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, primaryIface, 0)
+	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{primaryIface})
 	if err != nil {
 		logger.Errorf("Failed to get instance networks, %v", err)
 		return

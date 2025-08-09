@@ -185,7 +185,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		}
 		if len(primaryIface.SiteSubnets) > 0 || len(primaryIface.SecondAddresses) > 0 {
 			var moreAddresses []string
-			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, primaryIface, 0)
+			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{primaryIface})
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
