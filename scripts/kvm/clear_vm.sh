@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -x
 cd $(dirname $0)
 source ../cloudrc
 
@@ -10,6 +10,10 @@ vm_ID=inst-$ID
 router=$2
 boot_volume=$3
 vm_xml=$(virsh dumpxml $vm_ID)
+
+# Call generate_vm_instance_map.sh to remove mapping before VM deletion
+./generate_vm_instance_map.sh remove $vm_ID
+
 virsh undefine $vm_ID
 if [ $? -ne 0 ]; then
     virsh undefine --nvram $vm_ID

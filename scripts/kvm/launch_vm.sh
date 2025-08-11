@@ -1,5 +1,5 @@
 #!/bin/bash
-
+set -x
 cd $(dirname $0)
 source ../cloudrc
 
@@ -162,6 +162,7 @@ else
 fi
 
 virsh define $vm_xml
+./generate_vm_instance_map.sh add $vm_ID
 virsh autostart $vm_ID
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 virsh start $vm_ID

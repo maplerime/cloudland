@@ -1,3 +1,7 @@
+- name: Set prometheus_server_ip from monitor group
+  set_fact:
+    prometheus_server_ip: "{{ hostvars[groups['monitor'][0]]['ansible_host'] }}"
+
 - name: Ensure remote_write for billing metrics is present
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -7,7 +11,7 @@
     insertafter: '^evaluation_interval:'
     block: |
       remote_write:
-        - url: "{{ metering_server_url | default('http://localhost:8429/api/v1/write') }}"
+        - url: "{{ metering_server_url }}"
           tls_config:
             insecure_skip_verify: true
           queue_config:
@@ -16,9 +20,9 @@
             max_shards: 1
           write_relabel_configs:
             - source_labels: [__name__]
-              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|wds_volume_size_bytes'
+              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|wds_volume_size_bytes|vm_instance_map'
               action: keep
-  when: metering_server_ip is defined
+  when: metering_server_url is defined
 
 - name: Restart prometheus after config change
   delegate_to: "{{ prometheus_server_ip }}"
@@ -26,4 +30,4 @@
     name: prometheus
     state: restarted
   when:
-    - metering_server_ip is defined
+    - metering_server_url is defined

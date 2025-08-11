@@ -47,6 +47,20 @@ function daily_job()
     fi
 }
 
+function halfday_job()
+{
+    local state_file="$run_dir/halfday_state_file"
+    local current_halfday=$(date +"%Y%m%d-%p")  # e.g., 20250807-AM or 20250807-PM
+
+    if [[ -f "$state_file" ]]; then
+        local last_halfday=$(< "$state_file")
+        [[ "$last_halfday" == "$current_halfday" ]] && return
+    fi
+
+    ./generate_vm_instance_map.sh full
+    echo "$current_halfday" > "$state_file"
+}
+
 function inst_status()
 {
     old_inst_list=$(cat $image_dir/old_inst_list 2>/dev/null)
@@ -196,5 +210,6 @@ sync_delayed_job
 #probe_arp >/dev/null 2>&1
 inst_status
 daily_job
+halfday_job
 #vlan_status
 #router_status
