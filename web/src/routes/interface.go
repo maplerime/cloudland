@@ -135,27 +135,27 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 	publicIpsLength := len(publicIps)
 	secondIpsLength := len(iface.SecondAddresses)
 	if publicIpsLength > 0 {
-		if publicIpsLength != secondIpsLength + 1 {
+		if publicIpsLength != secondIpsLength+1 {
 			changed = true
 		}
-		for i, pubIp := range publicIps {
+		for _, pubIp := range publicIps {
 			if vlan != pubIp.Interface.Address.Subnet.Vlan {
 				return
 			}
-			if i == 0 {
-				if pubIp.FipAddress != iface.Address.Address {
-					logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, iface.Address.Address, i)
-					return
-				}
-			} else {
-				if (i - 1) < secondIpsLength {
-					secondAddr := iface.SecondAddresses[i-1].Address
-					if pubIp.FipAddress != secondAddr {
-						logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, secondAddr, i)
-						return
-					}
-				}
-			}
+			// if i == 0 {
+			// 	if pubIp.FipAddress != iface.Address.Address {
+			// 		logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, iface.Address.Address, i)
+			// 		return
+			// 	}
+			// } else {
+			// 	if (i - 1) < secondIpsLength {
+			// 		secondAddr := iface.SecondAddresses[i-1].Address
+			// 		if pubIp.FipAddress != secondAddr {
+			// 			logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, secondAddr, i)
+			// 			return
+			// 		}
+			// 	}
+			// }
 		}
 	} else {
 		if secondAddrsCount != secondIpsLength {
@@ -315,10 +315,10 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 	}
 	if needUpdate || needRemoteUpdate {
 		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
-			"inbound": iface.Inbound,
-			"outbound": iface.Outbound,
+			"inbound":        iface.Inbound,
+			"outbound":       iface.Outbound,
 			"allow_spoofing": iface.AllowSpoofing,
-			"name": iface.Name}).Error
+			"name":           iface.Name}).Error
 		if err != nil {
 			logger.Debug("Failed to save interface", err)
 			return
@@ -398,8 +398,8 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 	}
 	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
 	err = db.Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-                return db.Order("addresses.updated_at")
-        }).Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error
+		return db.Order("addresses.updated_at")
+	}).Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error
 	if err != nil {
 		logger.Error("Interface query failed", err)
 		c.Data["ErrorMsg"] = err.Error()
