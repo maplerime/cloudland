@@ -45,8 +45,8 @@ type InstanceReinstallPayload struct {
 }
 
 type InstanceRescuePayload struct {
-	RescueImage     *BaseReference   `json:"rescue_image" binding:"omitempty"`
-	Password  string           `json:"password" binging:"required,min=8,max=64"`
+	RescueImage *BaseReference `json:"rescue_image" binding:"omitempty"`
+	Password    string         `json:"password" binging:"required,min=8,max=64"`
 }
 
 type InstancePayload struct {
@@ -66,6 +66,7 @@ type InstancePayload struct {
 	Zone                string              `json:"zone" binding:"required,min=1,max=32"`
 	VPC                 *BaseReference      `json:"vpc" binding:"omitempty"`
 	Userdata            string              `json:"userdata,omitempty"`
+	UserdataType        string              `json:"userdata_type,omitempty"`
 	NestedEnable        bool                `json:"nested_enable,omitempty"`
 	PoolID              string              `json:"pool_id" binding:"omitempty"`
 }
@@ -523,9 +524,17 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.Disk <= 0 {
 		payload.Disk = flavor.Disk
 	}
-	logger.Debugf("Creating %d instances with hostname %s, userdata %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
-		count, hostname, userdata, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	userdataType := payload.UserdataType
+	if userdataType == "" {
+		userdataType = model.UserDataTypePlain
+	} else if !model.IsValidUserDataType(userdataType) {
+		logger.Errorf("Invalid userdata_type: %s", userdataType)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid userdata_type", nil)
+		return
+	}
+	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
+		count, hostname, userdata, userdataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
 	if err != nil {
 		logger.Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
