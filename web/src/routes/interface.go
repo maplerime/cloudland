@@ -324,42 +324,44 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			return
 		}
 	}
-	changed := false
+	changed := true
 	if iface.PrimaryIf && instance.RouterID == 0 {
-		// valid := false
+		valid := true
 		// valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		// if !valid {
-		// 	logger.Errorf("Failed to check addresses, %v", err)
-		// 	err = fmt.Errorf("Failed to check addresses")
-		// 	return
-		// }
+		if !valid {
+			logger.Errorf("Failed to check addresses, %v", err)
+			err = fmt.Errorf("Failed to check addresses")
+			return
+		}
 
-		var oldAddresses []string
-		_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		var oldAddrsJson []byte
-		oldAddrsJson, err = json.Marshal(oldAddresses)
-		if err != nil {
-			logger.Errorf("Failed to marshal instance json data, %v", err)
-			return
-		}
-		// 1. Get old addresses 2. Change addresses 3. Remote execute
-		err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
-		osCode := GetImageOSCode(ctx, instance)
-		if osCode == "windows" {
-			control := fmt.Sprintf("inter=%d", instance.Hyper)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
-			err = HyperExecute(ctx, control, command)
+		if changed {
+			var oldAddresses []string
+			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
 			if err != nil {
-				logger.Error("clear_second_ips command execution failed", err)
+				logger.Errorf("Failed to get instance networks, %v", err)
 				return
+			}
+			var oldAddrsJson []byte
+			oldAddrsJson, err = json.Marshal(oldAddresses)
+			if err != nil {
+				logger.Errorf("Failed to marshal instance json data, %v", err)
+				return
+			}
+			// 1. Get old addresses 2. Change addresses 3. Remote execute
+			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+			if err != nil {
+				logger.Errorf("Failed to get instance networks, %v", err)
+				return
+			}
+			osCode := GetImageOSCode(ctx, instance)
+			if osCode == "windows" {
+				control := fmt.Sprintf("inter=%d", instance.Hyper)
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+				err = HyperExecute(ctx, control, command)
+				if err != nil {
+					logger.Error("clear_second_ips command execution failed", err)
+					return
+				}
 			}
 		}
 
