@@ -324,15 +324,15 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			return
 		}
 	}
-	changed := true
+	changed := false
 	if iface.PrimaryIf && instance.RouterID == 0 {
-		valid := true
-		// valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		if !valid {
-			logger.Errorf("Failed to check addresses, %v", err)
-			err = fmt.Errorf("Failed to check addresses")
-			return
-		}
+		// valid := true
+		_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		// if !valid {
+		// 	logger.Errorf("Failed to check addresses, %v", err)
+		// 	err = fmt.Errorf("Failed to check addresses")
+		// 	return
+		// }
 
 		if changed {
 			var oldAddresses []string
