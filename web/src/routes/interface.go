@@ -92,6 +92,28 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 	return
 }
 
+func (a *InterfaceAdmin) Delete(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
+	if iface.PrimaryIf {
+		err = fmt.Errorf("Primary interface can not be deleted")
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.ValidateOwner(model.Writer, iface.Owner)
+	if !permit {
+		logger.Error("Not authorized to delete the subnet")
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_nic.sh '%d' '%d' '%d' '%s' '%s'", instance.ID, iface.ID, iface.Address.Subnet.Vlan, iface.Address.Address, iface.MacAddr)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Detach vm nic command execution failed", err)
+		return
+	}
+	return
+}
+
 func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order string, instance *model.Instance) (total int64, interfaces []*model.Interface, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
@@ -271,6 +293,44 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		return
 	}
 
+	return
+}
+
+func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, address, mac string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, subnets []*model.Subnet, secondAddrsCount int) (iface *model.Interface, err error) {
+	memberShip := GetMemberShip(ctx)
+	ifname := "eth1"
+	for _, subnet := range subnets {
+		if subnet.Type == "site" {
+			logger.Error("Not allowed to create interface in site subnet")
+			err = fmt.Errorf("Bad request")
+			return
+		}
+		if iface == nil {
+			iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups, allowSpoofing)
+			if err == nil {
+				if subnet.Type == "public" {
+					_, err = floatingIpAdmin.createDummyFloatingIp(ctx, instance, iface.Address.Address)
+					if err != nil {
+						logger.Error("DB failed to create dummy floating ip", err)
+						return
+					}
+				}
+				break
+			} else {
+				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
+			}
+		}
+	}
+	if iface == nil {
+		if err == nil {
+			err = fmt.Errorf("Failed to create interface")
+		}
+		return
+	}
+	err = ApplyInterface(ctx, instance, iface, false)
+	if err != nil {
+		return
+	}
 	return
 }
 

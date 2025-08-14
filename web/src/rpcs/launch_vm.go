@@ -35,7 +35,7 @@ type FdbRule struct {
 	Router   int64  `json:"router"`
 }
 
-func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript string) (err error) {
+func sendFdbRules(ctx context.Context, instance *model.Instance, interfaces []*model.Interface) (err error) {
 	db := DB()
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
@@ -46,7 +46,10 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 		logger.Error("Failed to query hypervisor")
 		return
 	}
-	for _, iface := range instance.Interfaces {
+	if len(interfaces) == 0 {
+		interfaces = instance.Interfaces
+	}
+	for _, iface := range interfaces {
 		if iface.Address.Subnet.Type != "public" {
 			spreadRules = append(spreadRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
 		}
@@ -88,7 +91,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 			}
 			fdbJson, _ := json.Marshal(spreadRules)
 			control := "toall=" + hyperList
-			command := fmt.Sprintf("%s <<EOF\n%s\nEOF", fdbScript, fdbJson)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Add_fwrule execution failed", err)
@@ -99,7 +102,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 	if len(localRules) > 0 {
 		fdbJson, _ := json.Marshal(localRules)
 		control := fmt.Sprintf("inter=%d", hyperNode)
-		command := fmt.Sprintf("%s <<EOF\n%s\nEOF", fdbScript, fdbJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Add_fwrule execution failed", err)
@@ -184,7 +187,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	if serverStatus == "running" {
 		if reason == "init" {
-			err = sendFdbRules(ctx, instance, "/opt/cloudland/scripts/backend/add_fwrule.sh")
+			err = sendFdbRules(ctx, instance, nil)
 			if err != nil {
 				logger.Error("Failed to send fdb rules", err)
 				return

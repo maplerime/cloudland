@@ -20,7 +20,7 @@ func init() {
 	Add("clear_vm", ClearVM)
 }
 
-func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
+func deleteInterfaces(ctx context.Context, instance *model.Instance, interfaces []*model.Interface) (err error) {
 	ctx, db := GetContextDB(ctx)
 	hyperSet := make(map[int32]struct{})
 	instances := []*model.Instance{}
@@ -51,7 +51,10 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance) (err error)
 		}
 		i++
 	}
-	for _, iface := range instance.Interfaces {
+	if len(interfaces) == 0 {
+		interfaces = instance.Interfaces
+	}
+	for _, iface := range interfaces {
 		if iface.FloatingIp == 0 {
 			err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
 			if err != nil {
@@ -136,7 +139,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		reason = err.Error()
 		return
 	}
-	err = deleteInterfaces(ctx, instance)
+	err = deleteInterfaces(ctx, instance, nil)
 	if err != nil {
 		logger.Error("Failed to delete interfaces", err)
 		return

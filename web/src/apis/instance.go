@@ -474,7 +474,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 			return
 		}
 	}
-	router, primaryIface, err := v.getInterfaceInfo(ctx, router, payload.PrimaryInterface)
+	router, primaryIface, err := interfaceAPI.getInterfaceInfo(ctx, router, payload.PrimaryInterface)
 	if err != nil {
 		logger.Errorf("Failed to get primary interface %+v, %+v", payload.PrimaryInterface, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid primary interface", err)
@@ -483,7 +483,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	var secondaryIfaces []*routes.InterfaceInfo
 	for _, ifacePayload := range payload.SecondaryInterfaces {
 		var ifaceInfo *routes.InterfaceInfo
-		_, ifaceInfo, err = v.getInterfaceInfo(ctx, router, ifacePayload)
+		_, ifaceInfo, err = interfaceAPI.getInterfaceInfo(ctx, router, ifacePayload)
 		if err != nil {
 			logger.Errorf("Failed to get secondary interface %+v, %+v", ifacePayload, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid secondary interfaces", err)
@@ -543,150 +543,6 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	}
 	logger.Debugf("Create instance success, %+v", instancesResp)
 	c.JSON(http.StatusOK, instancesResp)
-}
-
-func (v *InstanceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, ifacePayload *InterfacePayload) (router *model.Router, ifaceInfo *routes.InterfaceInfo, err error) {
-	logger.Debugf("Get interface info with VPC %+v, ifacePayload %+v", vpc, ifacePayload)
-	if ifacePayload == nil {
-		err = fmt.Errorf("Interface can not be nill")
-		return
-	}
-	if len(ifacePayload.Subnets) == 0 && ifacePayload.Subnet != nil {
-		ifacePayload.Subnets = append(ifacePayload.Subnets, ifacePayload.Subnet)
-	}
-	routerID := int64(0)
-	router = vpc
-	if router != nil {
-		routerID = router.ID
-	}
-	ifaceInfo = &routes.InterfaceInfo{
-		AllowSpoofing: ifacePayload.AllowSpoofing,
-		Count:         ifacePayload.Count,
-	}
-	vlan := int64(0)
-	if len(ifacePayload.PublicAddresses) > 0 {
-		for _, pubAddr := range ifacePayload.PublicAddresses {
-			var floatingIp *model.FloatingIp
-			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
-			if err != nil {
-				return
-			}
-
-			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
-			if err != nil {
-				logger.Error("Failed to ensure subnet_id", err)
-				return
-			}
-
-			if vlan == 0 {
-				vlan = floatingIp.Interface.Address.Subnet.Vlan
-			} else if vlan != floatingIp.Interface.Address.Subnet.Vlan {
-				err = fmt.Errorf("All public IPs must be from the same vlan")
-				return
-			}
-			ifaceInfo.PublicIps = append(ifaceInfo.PublicIps, floatingIp)
-		}
-	} else {
-		if len(ifacePayload.Subnets) == 0 {
-			err = fmt.Errorf("Subnets or public addresses must be provided")
-			return
-		}
-		for _, snet := range ifacePayload.Subnets {
-			var subnet *model.Subnet
-			subnet, err = subnetAdmin.GetSubnet(ctx, snet)
-			if err != nil {
-				return
-			}
-			if vlan == 0 {
-				vlan = subnet.Vlan
-			} else if vlan != subnet.Vlan {
-				err = fmt.Errorf("All subnets must be in the same vlan")
-				return
-			}
-			if router == nil && subnet.RouterID > 0 {
-				router, err = routerAdmin.Get(ctx, subnet.RouterID)
-				if err != nil {
-					return
-				}
-				routerID = subnet.RouterID
-			}
-			if router != nil && router.ID != subnet.RouterID {
-				err = fmt.Errorf("VPC of subnet must be the same with VPC of instance")
-				return
-			}
-			ifaceInfo.Subnets = append(ifaceInfo.Subnets, subnet)
-		}
-		if len(ifaceInfo.Subnets) == 0 {
-			err = fmt.Errorf("No valid subnets specified")
-			return
-		}
-	}
-	for _, ipSite := range ifacePayload.SiteSubnets {
-		var site *model.Subnet
-		site, err = subnetAdmin.GetSubnet(ctx, ipSite)
-		if err != nil {
-			return
-		}
-		if vlan != site.Vlan {
-			err = fmt.Errorf("All subnets including sites must be in the same vlan")
-			return
-		}
-		if site.Interface > 0 {
-			err = fmt.Errorf("Site subnet is not available")
-			return
-		}
-		ifaceInfo.SiteSubnets = append(ifaceInfo.SiteSubnets, site)
-	}
-	if ifacePayload.IpAddress != "" {
-		ifaceInfo.IpAddress = ifacePayload.IpAddress
-	}
-	if ifacePayload.MacAddress != "" {
-		ifaceInfo.MacAddress = ifacePayload.MacAddress
-	}
-	if ifacePayload.Inbound > 0 {
-		ifaceInfo.Inbound = ifacePayload.Inbound
-	}
-	if ifacePayload.Outbound > 0 {
-		ifaceInfo.Outbound = ifacePayload.Outbound
-	}
-	if len(ifacePayload.SecurityGroups) == 0 {
-		var routerID, sgID int64
-		var secgroup *model.SecurityGroup
-		if router != nil {
-			routerID = router.ID
-			sgID = router.DefaultSG
-			secgroup, err = secgroupAdmin.Get(ctx, sgID)
-			if err != nil {
-				return
-			}
-			if secgroup.RouterID != routerID {
-				err = fmt.Errorf("Security group not in subnet vpc")
-				return
-			}
-		} else {
-			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
-			if err != nil {
-				logger.Error("Get default security group failed", err)
-				return
-			}
-		}
-		ifaceInfo.SecurityGroups = append(ifaceInfo.SecurityGroups, secgroup)
-	} else {
-		for _, sg := range ifacePayload.SecurityGroups {
-			var secgroup *model.SecurityGroup
-			secgroup, err = secgroupAdmin.GetSecurityGroup(ctx, sg)
-			if err != nil {
-				return
-			}
-			if secgroup.RouterID != routerID {
-				err = fmt.Errorf("Security group not in subnet vpc")
-				return
-			}
-			ifaceInfo.SecurityGroups = append(ifaceInfo.SecurityGroups, secgroup)
-		}
-	}
-	logger.Debugf("Get interface info success, router %+v, ifaceInfo %+v", router, ifaceInfo)
-	return
 }
 
 func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.Instance) (instanceResp *InstanceResponse, err error) {

@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 6 ] && echo "$0 <vm_ID> <vlan> <vm_ip> <vm_mac> <gateway> <router>" && exit -1
+[ $# -lt 6 ] && echo "$0 <vm_ID> <vlan> <vm_ip> <vm_mac> <gateway> <router> [interface_ID]" && exit -1
 
 ID=$1
 vm_ID=inst-$ID
@@ -12,6 +12,7 @@ vm_ip=$3
 vm_mac=$4
 gateway=$5
 router=$6
+iface_ID=$7
 nic_name=tap$(echo $vm_mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./create_link.sh $vlan
@@ -25,3 +26,5 @@ fi
 ./create_sg_chain.sh $nic_name $vm_ip $vm_mac
 ./apply_sg_rule.sh $nic_name
 ./set_subnet_gw.sh $router $vlan $gateway $ext_vlan
+
+[ -n "$iface_ID" ] && echo "|:-COMMAND-:| $(basename $0) '$ID' '$iface_ID' '$SCI_CLIENT_ID'"

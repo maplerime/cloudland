@@ -3,12 +3,14 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 4 ] && echo "$0 <vm_ID> <vlan> <vm_ip> <vm_mac>" && exit -1
+[ $# -lt 5 ] && echo "$0 <vm_ID> <interface_ID> <vlan> <vm_ip> <vm_mac>" && exit -1
 
+ID=$1
 vm_ID=inst-$1
-vlan=$2
-vm_ip=$3
-vm_mac=$4
+iface_ID=$2
+vlan=$3
+vm_ip=$4
+vm_mac=$5
 nic_name=tap$(echo $vm_mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./clear_link.sh $vlan
@@ -29,3 +31,4 @@ if [ -f "$meta_file" ]; then
     # delete file if empty
     [ ! -s "$meta_file" ] && rm -f "$meta_file"
 fi
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$iface_ID' '$SCI_CLIENT_ID'"
