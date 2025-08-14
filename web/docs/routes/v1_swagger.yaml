@@ -237,7 +237,7 @@ definitions:
       ip_address:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       type:
@@ -551,6 +551,8 @@ definitions:
         type: array
       userdata:
         type: string
+      userdata_type:
+        type: string
       vpc:
         $ref: '#/definitions/common.BaseReference'
       zone:
@@ -757,7 +759,7 @@ definitions:
       mac_address:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       outbound:
@@ -1287,7 +1289,7 @@ definitions:
       id:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       netmask:
@@ -1591,7 +1593,7 @@ definitions:
       id:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
     type: object
