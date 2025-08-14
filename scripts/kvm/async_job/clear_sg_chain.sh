@@ -5,6 +5,12 @@ source ../../cloudrc
 
 [ $# -lt 1 ] && echo "$0 <interface> [force]" && exit -1
 
+if [ "$USE_NFTABLES" = true ]; then
+    # call clear_sg_chain_nft.sh instead
+    ./clear_sg_chain_nft.sh $@
+    exit 0
+fi
+
 vnic=$1
 force=$2
 chain_in=secgroup-in-$vnic

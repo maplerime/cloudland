@@ -42,7 +42,8 @@ function daily_job()
         last_run_date=$(cat $daily_state_file)
     fi
     if [ "$last_run_date" != "$current_date" ]; then
-        sudo ./operation/cleanup_outdated_iptables.sh
+        #sudo ./operation/cleanup_outdated_iptables.sh
+        sudo ./operation/cleanup_firewall.sh
         echo "$current_date" >$daily_state_file
     fi
 }

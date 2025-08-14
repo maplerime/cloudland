@@ -53,7 +53,19 @@ function get_tunip()
 	echo "tunip=$tunip" >> $localrc
 }
 
+# Flag to determine which firewall to use (iptables or nftables)
+USE_NFTABLES=${USE_NFTABLES:-false}
+
 function apply_fw()
+{
+    if [ "$USE_NFTABLES" = true ]; then
+        apply_fw_nft "$@"
+    else
+        apply_fw_ipt "$@"
+    fi
+}
+
+function apply_fw_ipt()
 {
     action=$1
     chain=$2
@@ -66,6 +78,73 @@ function apply_fw()
         iptables -S $chain || iptables -N $chain
     fi
     iptables $action $chain $rule
+}
+
+function apply_fw_nft()
+{
+    action=$1
+    chain=$2
+    shift
+    shift
+    rule=$*
+    
+    # Convert iptables rules to nftables rules
+    case "$action" in
+        '-N')
+            # Create chain if it doesn't exist
+            nft list chain inet filter $chain 2>/dev/null || nft add chain inet filter $chain
+            ;;
+        '-I')
+            # Insert rule at the beginning (not directly supported in nftables, so we add at position 0)
+            # For now, we'll add the rule and handle ordering in the calling scripts
+            nft_rule=$(convert_ipt_to_nft "$chain" "$rule")
+            nft add rule inet filter $chain $nft_rule
+            ;;
+        '-A')
+            # Append rule
+            nft_rule=$(convert_ipt_to_nft "$chain" "$rule")
+            nft add rule inet filter $chain $nft_rule
+            ;;
+        '-D')
+            # Delete rule
+            nft_rule=$(convert_ipt_to_nft "$chain" "$rule")
+            nft delete rule inet filter $chain $nft_rule 2>/dev/null
+            ;;
+        *)
+            # Default action
+            nft_rule=$(convert_ipt_to_nft "$chain" "$rule")
+            nft add rule inet filter $chain $nft_rule
+            ;;
+    esac
+}
+
+function convert_ipt_to_nft()
+{
+    chain=$1
+    shift
+    ipt_rule=$*
+    
+    # Basic conversion from iptables to nftables syntax
+    # This is a simplified conversion and may need to be expanded based on actual usage
+    
+    # Replace common iptables modules with nftables equivalents
+    nft_rule=$(echo "$ipt_rule" | \
+        sed 's/-m state --state RELATED,ESTABLISHED/ct state { established, related }/g' | \
+        sed 's/-m state --state INVALID/ct state invalid/g' | \
+        sed 's/-m physdev --physdev-out \([^ ]*\) --physdev-is-bridged/iifname "\1" bridge/physdev_is_bridged/g' | \
+        sed 's/-m physdev --physdev-in \([^ ]*\) --physdev-is-bridged/oifname "\1" bridge/physdev_is_bridged/g' | \
+        sed 's/-m mac --mac-source \([^ ]*\)/ether saddr \1/g' | \
+        sed 's/-p tcp -m tcp/tcp/g' | \
+        sed 's/-p udp -m udp/udp/g' | \
+        sed 's/-p icmp -m icmp/icmp/g' | \
+        sed 's/--dport \([^ ]*\)/dport \1/g' | \
+        sed 's/-s \([^ ]*\)/ip saddr \1/g' | \
+        sed 's/-d \([^ ]*\)/ip daddr \1/g' | \
+        sed 's/-j RETURN/return/g' | \
+        sed 's/-j DROP/drop/g' | \
+        sed 's/-j ACCEPT/accept/g')
+    
+    echo "$nft_rule"
 }
 
 function apply_vnic()
@@ -184,10 +263,20 @@ function inet_access()
 {
     mkdir -p /etc/netns/router-0
     echo "nameserver $dns_server" >/etc/netns/router-0/resolv.conf
-    ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-    ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
-    ip netns exec router-0 $*
-    ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    
+    if [ "$USE_NFTABLES" = true ]; then
+        # For nftables, we would need to implement equivalent functionality
+        # This is a simplified approach - in practice, you might need a more complex solution
+        ip netns exec router-0 nft delete rule inet router-0 input ct state { established, related } accept 2>/dev/null
+        ip netns exec router-0 nft add rule inet router-0 input ct state { established, related } accept
+        ip netns exec router-0 $*
+        ip netns exec router-0 nft delete rule inet router-0 input ct state { established, related } accept
+    else
+        ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+        ip netns exec router-0 iptables -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+        ip netns exec router-0 $*
+        ip netns exec router-0 iptables -D INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+    fi
 }
 
 function get_uuid_prefix()

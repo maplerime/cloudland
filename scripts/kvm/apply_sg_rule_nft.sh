@@ -3,13 +3,10 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 1 ] && echo "$0 <interface> [add|delete]" && exit -1
+# Enable nftables mode
+USE_NFTABLES=true
 
-if [ "$USE_NFTABLES" = true ]; then
-    # call apply_sg_rule_nft.sh instead
-    ./apply_sg_rule_nft.sh $@
-    exit 0
-fi
+[ $# -lt 1 ] && echo "$0 <interface> [add|delete]" && exit -1
 
 vnic=$1
 act=$2
@@ -26,12 +23,16 @@ function allow_ipv4()
     proto=$3
     min=$4
     max=$5
+    
+    # Convert args to nftables format
+    nft_args=$(echo "$args" | sed 's/-s \([^ ]*\)/ip saddr \1/' | sed 's/-d \([^ ]*\)/ip daddr \1/')
+    
     if [ -z "$min" -a -z "$max" ]; then
-        apply_fw $action $chain -p $proto $args -m conntrack --ctstate NEW -j RETURN
+        apply_fw $action $chain $proto $nft_args ct state new return
     elif [ "$max" -eq "$min" ]; then
-        apply_fw $action $chain -p $proto -m $proto -m conntrack --ctstate NEW --dport $max $args -j RETURN
+        apply_fw $action $chain $proto $nft_args ct state new $proto dport $max return
     elif [ "$max" -gt "$min" ]; then
-        apply_fw $action $chain -p $proto -m $proto -m conntrack --ctstate NEW --dport $min:$max $args -j RETURN
+        apply_fw $action $chain $proto $nft_args ct state new $proto dport $min-$max return
     fi
 }
 
@@ -41,12 +42,18 @@ function allow_icmp()
     args=$2
     ptype=$3
     pcode=$4
+    
+    # Convert args to nftables format
+    nft_args=$(echo "$args" | sed 's/-s \([^ ]*\)/ip saddr \1/' | sed 's/-d \([^ ]*\)/ip daddr \1/')
+    
     if [ "$ptype" != "-1" ]; then
         typecode=$ptype
         [ "$pcode" != "-1" ] && typecode=$ptype/$pcode
-        args="$args --icmp-type $typecode"
+        # For nftables, ICMP type/code matching is done differently
+        # This is a simplified approach
+        nft_args="$nft_args icmp type $ptype"
     fi
-    apply_fw $action $chain -p icmp $args -j RETURN
+    apply_fw $action $chain icmp $nft_args return
 }
 
 sec_data=$(cat)
@@ -56,9 +63,10 @@ while [ $i -lt $len ]; do
     read -d'\n' -r direction remote_ip protocol port_min port_max < <(jq -r ".[$i].direction, .[$i].remote_ip, .[$i].protocol, .[$i].port_min, .[$i].port_max" <<<$sec_data)
     chain=$chain_in
     [ "$direction" = "egress" ] && chain=$chain_out
+    args=""
     if [ -n "$remote_ip" ]; then
-        [ "$direction" = "ingress" ] && args="-s $remote_ip"
-        [ "$direction" = "egress" ] && args="-d $remote_ip"
+        [ "$direction" = "ingress" ] && args="ip saddr $remote_ip"
+        [ "$direction" = "egress" ] && args="ip daddr $remote_ip"
     fi
     case "$protocol" in
         "tcp")
@@ -73,7 +81,9 @@ while [ $i -lt $len ]; do
             allow_icmp "$chain" "$args" "$ptype" "$pcode"
             ;;
         *)
-            apply_fw "$action" "$chain" "-p" "$protocol" "$args" -j RETURN
+            # Convert args to nftables format
+            nft_args=$(echo "$args" | sed 's/-s \([^ ]*\)/ip saddr \1/' | sed 's/-d \([^ ]*\)/ip daddr \1/')
+            apply_fw "$action" "$chain" "$protocol" "$nft_args" return
             ;;
     esac
     let i=$i+1
