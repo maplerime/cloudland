@@ -42,6 +42,7 @@ type VPCPayload struct {
 }
 
 type VPCPatchPayload struct {
+	Name string `json:"name" binding:"required,min=2,max=32"`
 }
 
 // @Summary get a vpc
@@ -83,7 +84,34 @@ func (v *VPCAPI) Get(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /vpcs/{id} [patch]
 func (v *VPCAPI) Patch(c *gin.Context) {
-	vpcResp := &VPCResponse{}
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := &VPCPatchPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind json: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	router, err := routerAdmin.GetRouterByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get vpc by uuid: %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid vpc query", err)
+		return
+	}
+	logger.Debugf("Patching vpc %s with %+v", uuID, payload)
+	router, err = routerAdmin.Update(ctx, router.ID, payload.Name, 0)
+	if err != nil {
+		logger.Errorf("Failed to update vpc %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to update vpc", err)
+		return
+	}
+	vpcResp, err := v.getVPCResponse(ctx, router)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	logger.Debugf("Patch volume successfully, %s, %+v", uuID, vpcResp)
 	c.JSON(http.StatusOK, vpcResp)
 }
 
