@@ -237,7 +237,7 @@ definitions:
       ip_address:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       type:
@@ -757,7 +757,7 @@ definitions:
       mac_address:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       outbound:
@@ -1287,7 +1287,7 @@ definitions:
       id:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       netmask:
@@ -1390,6 +1390,13 @@ definitions:
         type: array
     type: object
   apis.VPCPatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
     type: object
   apis.VPCPayload:
     properties:
@@ -1591,7 +1598,7 @@ definitions:
       id:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
     type: object

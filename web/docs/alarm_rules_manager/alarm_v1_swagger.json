@@ -3973,7 +3973,7 @@
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "type": {
@@ -4719,7 +4719,7 @@
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "outbound": {
@@ -5507,7 +5507,7 @@
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "netmask": {
@@ -5661,7 +5661,17 @@
             }
         },
         "apis.VPCPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.VPCPayload": {
             "type": "object",
@@ -5964,7 +5974,7 @@
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 }
             }

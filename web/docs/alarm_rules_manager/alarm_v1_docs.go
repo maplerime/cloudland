@@ -3979,7 +3979,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "type": {
@@ -4725,7 +4725,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "outbound": {
@@ -5513,7 +5513,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "netmask": {
@@ -5667,7 +5667,17 @@ const docTemplatealarm_v1 = `{
             }
         },
         "apis.VPCPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.VPCPayload": {
             "type": "object",
@@ -5970,7 +5980,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 }
             }
