@@ -105,7 +105,7 @@ func (a *InterfaceAdmin) Delete(ctx context.Context, instance *model.Instance, i
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_nic.sh '%d' '%d' '%d' '%s' '%s'", instance.ID, iface.ID, iface.Address.Subnet.Vlan, iface.Address.Address, iface.MacAddr)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_vm_nic.sh '%d' '%d' '%d' '%s' '%s'", instance.ID, iface.ID, iface.Address.Subnet.Vlan, iface.Address.Address, iface.MacAddr)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Detach vm nic command execution failed", err)
