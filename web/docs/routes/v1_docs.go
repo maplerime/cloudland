@@ -3918,7 +3918,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "type": {
@@ -4375,6 +4375,9 @@ const docTemplatev1 = `{
                 "userdata": {
                     "type": "string"
                 },
+                "userdata_type": {
+                    "type": "string"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -4664,7 +4667,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "outbound": {
@@ -5452,7 +5455,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "netmask": {
@@ -5909,7 +5912,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 }
             }

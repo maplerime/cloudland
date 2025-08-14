@@ -61,16 +61,17 @@ type VolumeInfo struct {
 }
 
 type InstanceData struct {
-	Userdata   string             `json:"userdata"`
-	DNS        string             `json:"dns"`
-	Vlans      []*VlanInfo        `json:"vlans"`
-	Networks   []*InstanceNetwork `json:"networks"`
-	Links      []*NetworkLink     `json:"links"`
-	Volumes    []*VolumeInfo      `json:"volumes"`
-	Keys       []string           `json:"keys"`
-	RootPasswd string             `json:"root_passwd"`
-	LoginPort  int                `json:"login_port"`
-	OSCode     string             `json:"os_code"`
+	Userdata     string             `json:"userdata"`
+	UserdataType string             `json:"userdata_type"`
+	DNS          string             `json:"dns"`
+	Vlans        []*VlanInfo        `json:"vlans"`
+	Networks     []*InstanceNetwork `json:"networks"`
+	Links        []*NetworkLink     `json:"links"`
+	Volumes      []*VolumeInfo      `json:"volumes"`
+	Keys         []string           `json:"keys"`
+	RootPasswd   string             `json:"root_passwd"`
+	LoginPort    int                `json:"login_port"`
+	OSCode       string             `json:"os_code"`
 }
 
 type InstancesData struct {
@@ -101,7 +102,7 @@ func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyp
 	return
 }
 
-func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, image *model.Image,
+func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
 	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t, poolID %s",
@@ -202,21 +203,22 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
-			Model:       model.Model{Creater: memberShip.UserID},
-			Owner:       memberShip.OrgID,
-			Hostname:    hostname,
-			ImageID:     image.ID,
-			Snapshot:    int64(snapshot),
-			Keys:        keys,
-			PasswdLogin: passwdLogin,
-			LoginPort:   int32(loginPort),
-			Userdata:    userdata,
-			Status:      "pending",
-			ZoneID:      zoneID,
-			RouterID:    routerID,
-			Cpu:         cpu,
-			Memory:      memory,
-			Disk:        disk,
+			Model:        model.Model{Creater: memberShip.UserID},
+			Owner:        memberShip.OrgID,
+			Hostname:     hostname,
+			ImageID:      image.ID,
+			Snapshot:     int64(snapshot),
+			Keys:         keys,
+			PasswdLogin:  passwdLogin,
+			LoginPort:    int32(loginPort),
+			Userdata:     userdata,
+			UserdataType: userdataType,
+			Status:       "pending",
+			ZoneID:       zoneID,
+			RouterID:     routerID,
+			Cpu:          cpu,
+			Memory:       memory,
+			Disk:         disk,
 		}
 		err = db.Create(instance).Error
 		if err != nil {
@@ -873,15 +875,16 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:   userdata,
-		DNS:        dns,
-		Vlans:      vlans,
-		Networks:   instNetworks,
-		Links:      instLinks,
-		Keys:       instKeys,
-		RootPasswd: rootPasswd,
-		LoginPort:  loginPort,
-		OSCode:     GetImageOSCode(ctx, instance),
+		Userdata:     userdata,
+		UserdataType: instance.UserdataType,
+		DNS:          dns,
+		Vlans:        vlans,
+		Networks:     instNetworks,
+		Links:        instLinks,
+		Keys:         instKeys,
+		RootPasswd:   rootPasswd,
+		LoginPort:    loginPort,
+		OSCode:       GetImageOSCode(ctx, instance),
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -935,16 +938,17 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	instData := &InstanceData{
-		Userdata:   instance.Userdata,
-		DNS:        dns,
-		Vlans:      vlans,
-		Networks:   instNetworks,
-		Links:      instLinks,
-		Volumes:    volumes,
-		Keys:       instKeys,
-		RootPasswd: rootPasswd,
-		LoginPort:  int(instance.LoginPort),
-		OSCode:     GetImageOSCode(ctx, instance),
+		Userdata:     instance.Userdata,
+		UserdataType: instance.UserdataType,
+		DNS:          dns,
+		Vlans:        vlans,
+		Networks:     instNetworks,
+		Links:        instLinks,
+		Volumes:      volumes,
+		Keys:         instKeys,
+		RootPasswd:   rootPasswd,
+		LoginPort:    int(instance.LoginPort),
+		OSCode:       GetImageOSCode(ctx, instance),
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -2248,8 +2252,18 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	}
 	nestedEnable := c.QueryBool("nested_enable")
 	userdata := c.QueryTrim("userdata")
+	userdataTypeStr := c.QueryTrim("userdata_type")
+	var userdataType string
+	if userdataTypeStr == "" {
+		userdataType = model.UserDataTypePlain
+	} else {
+		userdataType = userdataTypeStr
+		if !model.IsValidUserDataType(userdataType) {
+			userdataType = model.UserDataTypePlain
+		}
+	}
 	poolID := c.QueryTrim("pool")
-	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable, poolID)
+	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable, poolID)
 	if err != nil {
 		logger.Error("Create instance failed", err)
 		c.Data["ErrorMsg"] = err.Error()
