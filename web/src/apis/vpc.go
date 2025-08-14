@@ -111,7 +111,7 @@ func (v *VPCAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return
 	}
-	logger.Debugf("Patch volume successfully, %s, %+v", uuID, vpcResp)
+	logger.Debugf("Patch vpc successfully, %s, %+v", uuID, vpcResp)
 	c.JSON(http.StatusOK, vpcResp)
 }
 
