@@ -5609,7 +5609,17 @@ const docTemplatev1 = `{
             }
         },
         "apis.VPCPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.VPCPayload": {
             "type": "object",

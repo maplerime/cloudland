@@ -1392,6 +1392,13 @@ definitions:
         type: array
     type: object
   apis.VPCPatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
     type: object
   apis.VPCPayload:
     properties:
