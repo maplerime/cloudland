@@ -7,6 +7,10 @@
 								{{.i18n.Tr "Update Security Rule"}}
 							</h3>
 							<div class="ui attached segment">
+                                <div class="inline field">
+                                    <label for="name">{{.i18n.Tr "Name"}}</label>
+                                    <input id="name" name="name" value="{{ .Secrules.Name }}">
+                                </div>
 								<div class="required inline field">
 									<label for="remoteip">{{.i18n.Tr "RemoteIp"}}</label>
 									<input id="remoteip" name="remoteip" value="{{ .Secrules.RemoteIp }}" required>

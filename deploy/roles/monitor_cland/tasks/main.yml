@@ -3,15 +3,6 @@
      is_current_in_hyper: "{{ inventory_hostname in groups['hyper'] }}"
   tags: [monitor]
 
-- name: Create node_exporter data directory
-  file:
-    path: /var/lib/node_exporter
-    state: directory
-    owner: prometheus
-    group: prometheus
-    mode: '0755'
-  tags: [monitor]
-
 - name: Setup prometheus-node-exporter for cland nodes
   block:
     - name: Set node exporter port variable

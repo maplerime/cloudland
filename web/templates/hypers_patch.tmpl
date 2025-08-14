@@ -1,0 +1,101 @@
+{{template "_head" .}}
+<div class="user signup">
+	<div class="ui middle very relaxed page grid">
+        <div class="column" >
+            <form class="ui form" action="{{.Link}}" method="post" onsubmit="javascript:return submitForm(this);">
+                <h3 class="ui top attached header">
+                    {{.i18n.Tr "Update Hypervisor"}}
+                </h3>
+                <div class="ui attached segment">
+                    <div class="inline field">
+                        <label for="hostid">{{.i18n.Tr "HyperID"}}</label>
+                        <input id="hostid" name="hostid" value="{{ .Hyper.Hostid }}" disabled>
+                    </div>
+                    <div class="inline field">
+                        <label for="hostname">{{.i18n.Tr "Hostname"}}</label>
+                        <input id="hostname" name="hostname" value="{{ .Hyper.Hostname }}" disabled>
+                    </div>
+                    <div class="inline field">
+                        <label for="host_ip">{{.i18n.Tr "HostIP"}}</label>
+                        <input id="host_ip" name="host_ip" value="{{ .Hyper.HostIP }}" disabled>
+                    </div>
+                    <div class="required inline field">
+                        <label for="status">{{.i18n.Tr "Status"}}</label>
+                        <select name="status" id="status" class="ui selection dropdown">
+                             <option value="1" {{ if eq .Hyper.Status 1 }} selected {{ end }}>{{.i18n.Tr "Enable"}}</option>
+                             <option value="0" {{ if eq .Hyper.Status 0 }} selected {{ end }}>{{.i18n.Tr "Disable"}}</option>
+                        </select>
+                    </div>
+                    <div class="required inline field">
+                        <label for="zone_id">{{.i18n.Tr "Zone"}}</label>
+                        <select name="zone_id" id="zone_id" class="ui selection dropdown">
+                            {{ range .Zones }}
+                                <option value="{{ .ID }}" {{ if eq $.Hyper.ZoneID .ID }}selected{{end}}>{{ .Name }}</option>
+                            {{ end }}
+                        </select>
+                    </div>
+                    <div class="required inline field">
+                        <label for="cpu_over_rate">{{.i18n.Tr "CPU Over Commit Rate"}}</label>
+                        <input id="cpu_over_rate" name="cpu_over_rate" type="number" step="0.1" min="1.0" value="{{ .Hyper.CpuOverRate }}" required>
+                    </div>
+                    <div class="required inline field">
+                        <label for="mem_over_rate">{{.i18n.Tr "Memory Over Commit Rate"}}</label>
+                        <input id="mem_over_rate" name="mem_over_rate" type="number" step="0.1" min="1.0" value="{{ .Hyper.MemOverRate }}" required>
+                    </div>
+                    <div class="required inline field">
+                        <label for="disk_over_rate">{{.i18n.Tr "Disk Over Commit Rate"}}</label>
+                        <input id="disk_over_rate" name="disk_over_rate" type="number" step="0.1" min="1.0" value="{{ .Hyper.DiskOverRate }}" required>
+                    </div>
+                    <div class="inline field">
+                        <label for="remark">{{.i18n.Tr "Remark"}}</label>
+                        <textarea id="remark" name="remark" rows="3" placeholder="{{.i18n.Tr "Optional hypervisor description or notes"}}">{{ .Hyper.Remark }}</textarea>
+                    </div>
+                    <input type="hidden" name="host_id" value="{{ .Hyper.Hostid }}">
+                    <div class="inline field">
+                        <label></label>
+                        <button class="ui green button" type="submit" id="update-hypervisor-btn">{{.i18n.Tr "Update Hypervisor"}}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+	</div>
+</div>
+
+<!-- Zone Change Warning Modal -->
+<div class="ui small zone-change-warning modal">
+    <div class="ui icon header">
+        <i class="warning sign icon"></i>
+        {{.i18n.Tr "Zone Change Warning"}}
+    </div>
+    <div class="content">
+        <p>{{.i18n.Tr "Hypervisor zone change warning"}}</p>
+    </div>
+    <div class="actions">
+        <div class="ui red basic cancel button">
+            <i class="remove icon"></i>
+            {{.i18n.Tr "No"}}
+        </div>
+        <div class="ui green basic ok button">
+            <i class="checkmark icon"></i>
+            {{.i18n.Tr "Yes"}}
+        </div>
+    </div>
+</div>
+
+<script>
+function submitForm(form) {
+    var originalZoneId = '{{ .Hyper.ZoneID }}';
+    
+    var currentZoneId = document.getElementById('zone_id').value;
+    
+    if (currentZoneId !== originalZoneId) {
+        if (!confirm("{{.i18n.Tr "Hypervisor zone change warning"}}")) {
+            return false; // Prevent form submission if user cancels
+        }
+    }
+    // Proceed with form submission
+    return true; // Allow form submission
+}
+</script>
+
+{{template "_footer" .}}
