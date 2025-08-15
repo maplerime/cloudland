@@ -86,7 +86,7 @@ func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *mode
 		return
 	}
 	var moreAddresses []string
-	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+	_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 	if err != nil {
 		logger.Errorf("Failed to get instance networks, %v", err)
 		return
@@ -189,11 +189,6 @@ func genMacaddr() (mac string, err error) {
 }
 
 func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
-	if instance.RouterID > 0 {
-		logger.Error("VPC instance is not allowed to set public addresses", err)
-		err = fmt.Errorf("VPC instance is not allowed to set public addresses")
-		return
-	}
 	ctx, db := GetContextDB(ctx)
 	primaryIface = iface
 	if primaryIface == nil {
@@ -440,53 +435,35 @@ func GetSecurityData(ctx context.Context, secgroups []*model.SecurityGroup) (sec
 	return
 }
 
-func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *model.Interface, netID int) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
+func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces []*model.Interface) (instNetworks []*InstanceNetwork, moreAddresses []string, err error) {
 	ctx, db := GetContextDB(ctx)
-	subnet := iface.Address.Subnet
-	address := strings.Split(iface.Address.Address, "/")[0]
-	instNetwork := &InstanceNetwork{
-		Address: address,
-		Netmask: subnet.Netmask,
-		Type:    "ipv4",
-		Link:    iface.Name,
-		ID:      fmt.Sprintf("network%d", netID),
-	}
-	if iface.PrimaryIf {
-		gateway := strings.Split(subnet.Gateway, "/")[0]
-		instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
-		instNetwork.Routes = append(instNetwork.Routes, instRoute)
-		instNetworks = append(instNetworks, instNetwork)
-	}
 	osCode := GetImageOSCode(ctx, instance)
-	moreAddresses = []string{}
-	for _, addr := range iface.SecondAddresses {
-		if osCode == "linux" {
-			subnet := addr.Subnet
-			address := strings.Split(addr.Address, "/")[0]
-			instNetworks = append(instNetworks, &InstanceNetwork{
-				Address: address,
-				Netmask: subnet.Netmask,
-				Type:    "ipv4",
-				Link:    iface.Name,
-				ID:      fmt.Sprintf("network%d", netID),
-			})
-		}
-		moreAddresses = append(moreAddresses, addr.Address)
+	if len(ifaces) == 0 {
+		ifaces = instance.Interfaces
 	}
-	if instance.RouterID == 0 {
-		for _, site := range iface.SiteSubnets {
-			siteAddrs := []*model.Address{}
-			err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
-			if err != nil {
-				logger.Errorf("Failed to query site ip(s), %v", err)
-				return
-			}
-			for _, addr := range siteAddrs {
+	for i, iface := range ifaces {
+		netID := i
+		subnet := iface.Address.Subnet
+		address := strings.Split(iface.Address.Address, "/")[0]
+		instNetwork := &InstanceNetwork{
+			Address: address,
+			Netmask: subnet.Netmask,
+			Type:    "ipv4",
+			Link:    iface.Name,
+			ID:      fmt.Sprintf("network%d", netID),
+		}
+		if iface.PrimaryIf {
+			gateway := strings.Split(subnet.Gateway, "/")[0]
+			instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
+			instNetwork.Routes = append(instNetwork.Routes, instRoute)
+			moreAddresses = []string{}
+			for _, addr := range iface.SecondAddresses {
 				if osCode == "linux" {
+					subnet := addr.Subnet
 					address := strings.Split(addr.Address, "/")[0]
 					instNetworks = append(instNetworks, &InstanceNetwork{
 						Address: address,
-						Netmask: site.Netmask,
+						Netmask: subnet.Netmask,
 						Type:    "ipv4",
 						Link:    iface.Name,
 						ID:      fmt.Sprintf("network%d", netID),
@@ -494,7 +471,31 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, iface *m
 				}
 				moreAddresses = append(moreAddresses, addr.Address)
 			}
+			if iface.Address.Subnet.RouterID == 0 {
+				for _, site := range iface.SiteSubnets {
+					siteAddrs := []*model.Address{}
+					err = db.Where("subnet_id = ? and address != ?", site.ID, site.Gateway).Find(&siteAddrs).Error
+					if err != nil {
+						logger.Errorf("Failed to query site ip(s), %v", err)
+						return
+					}
+					for _, addr := range siteAddrs {
+						if osCode == "linux" {
+							address := strings.Split(addr.Address, "/")[0]
+							instNetworks = append(instNetworks, &InstanceNetwork{
+								Address: address,
+								Netmask: site.Netmask,
+								Type:    "ipv4",
+								Link:    iface.Name,
+								ID:      fmt.Sprintf("network%d", netID),
+							})
+						}
+						moreAddresses = append(moreAddresses, addr.Address)
+					}
+				}
+			}
 		}
+		instNetworks = append(instNetworks, instNetwork)
 	}
 	return
 }
