@@ -35,7 +35,7 @@ type FdbRule struct {
 	Router   int64  `json:"router"`
 }
 
-func sendFdbRules(ctx context.Context, instance *model.Instance, interfaces []*model.Interface) (err error) {
+func sendFdbRules(ctx context.Context, instance *model.Instance, instIface *model.Interface) (err error) {
 	db := DB()
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
@@ -46,8 +46,9 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, interfaces []*m
 		logger.Error("Failed to query hypervisor")
 		return
 	}
-	if len(interfaces) == 0 {
-		interfaces = instance.Interfaces
+	interfaces := instance.Interfaces
+	if instIface != nil {
+		interfaces = []*model.Interface{instIface}
 	}
 	for _, iface := range interfaces {
 		if iface.Address.Subnet.Type != "public" {
@@ -185,30 +186,22 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	}
-	if serverStatus == "running" {
-		if reason == "init" {
-			err = sendFdbRules(ctx, instance, nil)
+	if serverStatus == "running" && reason == "sync" {
+		err = syncMigration(ctx, instance)
+		if err != nil {
+			logger.Error("Failed to sync migrationinfo", err)
+			return
+		}
+		err = syncNicInfo(ctx, instance)
+		if err != nil {
+			logger.Error("Failed to sync nic info", err)
+			return
+		}
+		if instance.RouterID > 0 {
+			err = syncFloatingIp(ctx, instance)
 			if err != nil {
-				logger.Error("Failed to send fdb rules", err)
+				logger.Error("Failed to sync floating ip", err)
 				return
-			}
-		} else if reason == "sync" {
-			err = syncMigration(ctx, instance)
-			if err != nil {
-				logger.Error("Failed to sync migrationinfo", err)
-				return
-			}
-			err = syncNicInfo(ctx, instance)
-			if err != nil {
-				logger.Error("Failed to sync nic info", err)
-				return
-			}
-			if instance.RouterID > 0 {
-				err = syncFloatingIp(ctx, instance)
-				if err != nil {
-					logger.Error("Failed to sync floating ip", err)
-					return
-				}
 			}
 		}
 	}

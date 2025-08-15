@@ -39,18 +39,14 @@ func AttachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Invalid instance ID", err)
 		return
 	}
-	ifaceID, err := strconv.Atoi(args[2])
-	if err != nil {
-		logger.Error("Invalid interface ID", err)
-		return
-	}
-	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
-	err = db.Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instID).Take(iface).Error
+	macAddr := args[2]
+	iface := &model.Interface{}
+	err = db.Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address").Preload("Address.Subnet").Where("instance = ? and mac_addr = ?", instID, macAddr).Take(iface).Error
 	if err != nil {
 		logger.Error("Failed to get interface", err)
 		return
 	}
-	err = sendFdbRules(ctx, instance, []*model.Interface{iface})
+	err = sendFdbRules(ctx, instance, iface)
 	if err != nil {
 		logger.Error("Failed to send fdb rules for interface", err)
 		return

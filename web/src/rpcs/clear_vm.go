@@ -20,7 +20,7 @@ func init() {
 	Add("clear_vm", ClearVM)
 }
 
-func deleteInterfaces(ctx context.Context, instance *model.Instance, interfaces []*model.Interface) (err error) {
+func deleteInterfaces(ctx context.Context, instance *model.Instance, instIface *model.Interface) (err error) {
 	ctx, db := GetContextDB(ctx)
 	hyperSet := make(map[int32]struct{})
 	instances := []*model.Instance{}
@@ -51,8 +51,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, interfaces 
 		}
 		i++
 	}
-	if len(interfaces) == 0 {
-		interfaces = instance.Interfaces
+	interfaces := instance.Interfaces
+	if instIface != nil {
+		interfaces = []*model.Interface{instIface}
 	}
 	for _, iface := range interfaces {
 		if iface.FloatingIp == 0 {

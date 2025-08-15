@@ -50,7 +50,7 @@ func DetachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Failed to get interface", err)
 		return
 	}
-	err = deleteInterfaces(ctx, instance, []*model.Interface{iface})
+	err = deleteInterfaces(ctx, instance, iface)
 	if err != nil {
 		logger.Error("Failed to delete interface", err)
 		return

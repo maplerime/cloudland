@@ -132,10 +132,11 @@ func New() (m *macaron.Macaron) {
 	m.Get("/instances/:id/end_rescue", instanceView.EndRescue)
 	m.Post("/instances/:id/end_rescue", instanceView.EndRescue)
 	m.Post("/instances/:id/console", consoleView.ConsoleURL)
-	m.Get("/interfaces/:id", interfaceView.Edit)
-	m.Post("/interfaces/:id", interfaceView.Patch)
-	m.Post("/interfaces/new", interfaceView.Create)
-	m.Delete("/interfaces/:id", interfaceView.Delete)
+	m.Get("/instances/:id/interfaces/new", interfaceView.New)
+	m.Post("/instances/:id/interfaces/new", interfaceView.Create)
+	m.Get("/instances/:instid/interfaces/:id", interfaceView.Edit)
+	m.Post("/instances/:instid/interfaces/:id", interfaceView.Patch)
+	m.Delete("/instances/:instid/interfaces/:id", interfaceView.Delete)
 	m.Get("/flavors", flavorView.List)
 	m.Get("/flavors/new", flavorView.New)
 	m.Post("/flavors/new", flavorView.Create)
@@ -250,7 +251,7 @@ func LinkHandler(c *macaron.Context, store session.Store) {
 		c.Data["Members"] = store.Get("members").([]*model.Member)
 	} else if link != "" && link != "/" && !strings.HasPrefix(link, "/login") {
 		UrlBefore = link
-		c.Redirect("login?redirect_to=")
+		c.Redirect("/login?redirect_to=")
 	}
 }
 
