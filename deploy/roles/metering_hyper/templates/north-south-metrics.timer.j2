@@ -1,0 +1,11 @@
+[Unit]
+Description=Run North-South Metrics Generation every {{ metrics_interval | default('5min') }}
+Requires=north-south-metrics.service
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec={{ metrics_interval | default('5min') }}
+Unit=north-south-metrics.service
+
+[Install]
+WantedBy=timers.target
