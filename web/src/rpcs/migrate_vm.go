@@ -113,7 +113,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	if status == "completed" {
-		err = db.Model(instance).Updates(map[string]interface{}{"status": "running"}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{"status": "running"}).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to running, %v", err)
 			return
@@ -124,7 +124,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "failed" {
-		err = db.Model(instance).Updates(map[string]interface{}{"status": "unknown"}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{"status": "unknown"}).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to unknown, %v", err)
 			return
@@ -172,7 +172,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
 			return
 		}
-		if instance.FloatingIps != nil {
+		if instance.RouterID > 0 && instance.FloatingIps != nil {
 			for _, fip := range instance.FloatingIps {
 				control := fmt.Sprintf("inter=%d", migration.SourceHyper)
 				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", fip.RouterID, fip.FipAddress, fip.IntAddress, primaryIface.Address.Subnet.Vlan, fip.ID)
@@ -200,13 +200,15 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, primaryIface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
-				logger.Error("Execute floating ip failed", err)
+				logger.Error("Execute clear second ips failed", err)
 				return
 			}
 		}
 		taskStatus = "completed"
 	}
+	logger.Errorf("Migration condition: %s, new status: %s", migration.Status, status)
 	if migration.Status != "completed" && migration.Status != "failed" {
+		logger.Errorf("Migration status: %s, new status: %s", migration.Status, status)
 		migration.Status = status
 	}
 	err = db.Model(migration).Save(migration).Error

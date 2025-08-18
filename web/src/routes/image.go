@@ -38,8 +38,8 @@ func FileExist(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, qaEnabled bool, instID int64, uuid string) (image *model.Image, err error) {
-	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instID, uuid)
+func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, isRescue bool, instID int64, uuid string, rescueImage *model.Image) (image *model.Image, err error) {
+	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -79,12 +79,16 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			Status:       "creating",
 			Architecture: architecture,
 			BootLoader:   bootLoader,
-			QAEnabled:    qaEnabled,
 		}
 		if uuid != "" {
 			logger.Debugf("Creating image with UUID %s", uuid)
 			image.UUID = uuid
 		}
+	}
+	image.QAEnabled = true
+	image.IsRescue = isRescue
+	if rescueImage != nil {
+		image.RescueImage = rescueImage.ID
 	}
 	image.StorageType = GetVolumeDriver()
 	logger.Debugf("Creating image %+v", image)
@@ -462,7 +466,8 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 }
 
 func (v *ImageView) Create(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized for this operation")
@@ -484,10 +489,25 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	osVersion := c.QueryTrim("osVersion")
 	virtType := "kvm-x86_64"
 	userName := c.QueryTrim("userName")
-	qaEnabled := true
 	architecture := "x86_64"
 	bootLoader := c.QueryTrim("bootLoader")
-	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, qaEnabled, instance, uuid)
+	isRescueStr := c.QueryTrim("isRescue")
+	isRescue := false
+	if isRescueStr == "true" {
+		isRescue = true
+	}
+	rescueImageID := c.QueryInt64("rescueImage")
+	var rescueImage *model.Image
+	if rescueImageID > 0 {
+		var err error
+		rescueImage, err = imageAdmin.Get(ctx, rescueImageID)
+		if err != nil {
+			c.Data["ErrorMsg"] = "Invalid image"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+	}
+	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage)
 	if err != nil {
 		logger.Error("Create image failed", err)
 		c.Data["ErrorMsg"] = err.Error()

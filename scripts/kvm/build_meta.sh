@@ -1,10 +1,11 @@
 #!/bin/bash
 cd `dirname $0`
 source ../cloudrc
-[ $# -lt 2 ] && echo "$0 <vm_ID> <vm_name>" && exit -1
+[ $# -lt 2 ] && echo "$0 <vm_ID> <vm_name> <rescue>" && exit -1
 
 vm_ID=$1
 vm_name=$2
+rescue=$3
 [ "${vm_name%%.*}" = "$vm_name" ] && vm_name=${vm_name}.$cloud_domain
 working_dir=/tmp/$vm_ID
 latest_dir=$working_dir/openstack/latest
@@ -13,8 +14,13 @@ rm -f ${latest_dir}/*
 
 vm_meta=$(cat | base64 -d)
 userdata=$(jq -r .userdata <<<$vm_meta)
+userdata_type=$(jq -r .userdata_type <<<$vm_meta)
 if [ -n "$userdata" ]; then
-   echo "$userdata" > $latest_dir/user_data
+   if [ "$userdata_type" = "base64" ]; then
+      echo "$userdata" | base64 -d > $latest_dir/user_data
+   else
+      echo "$userdata" > $latest_dir/user_data
+   fi
 fi
 
 root_passwd=$(jq -r '.root_passwd' <<< $vm_meta)
@@ -145,5 +151,7 @@ if [ "$mtu" -lt 1450 ]; then
 fi
 echo "$net_json" > $latest_dir/network_data.json
 
-mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null
-rm -rf $latest_dir
+iso_name=$vm_ID
+[ "$rescue" = "true" ] && iso_name=$vm_ID-rescue
+mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${iso_name}.iso $working_dir &> /dev/null
+rm -rf $working_dir

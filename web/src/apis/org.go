@@ -8,9 +8,13 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"strconv"
 
 	. "web/src/common"
+	"web/src/model"
 	"web/src/routes"
 
 	"github.com/gin-gonic/gin"
@@ -21,11 +25,14 @@ var orgAdmin = &routes.OrgAdmin{}
 
 type OrgAPI struct{}
 
+type MemberInfo struct {
+	*ResourceReference
+	Role string `json:"role"`
+}
+
 type OrgResponse struct {
 	*ResourceReference
-	Cpu    int32 `json:"cpu"`
-	Memory int32 `json:"memory"`
-	Disk   int32
+	Members []*MemberInfo `json:"members"`
 }
 
 type OrgListResponse struct {
@@ -51,8 +58,42 @@ type OrgPatchPayload struct {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /orgs/{id} [get]
 func (v *OrgAPI) Get(c *gin.Context) {
-	orgResp := &OrgResponse{}
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Get org by uuid: %s", uuID)
+	org, err := orgAdmin.GetOrgByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get org by uuid: %s", uuID)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+		return
+	}
+	orgResp, err := v.getOrgResponse(ctx, org)
+	if err != nil {
+		logger.Errorf("Failed to get org response: %s", uuID)
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	logger.Debugf("Got org : %+v", orgResp)
 	c.JSON(http.StatusOK, orgResp)
+}
+
+func (v *OrgAPI) getOrgResponse(ctx context.Context, org *model.Organization) (orgResp *OrgResponse, err error) {
+	orgResp = &OrgResponse{
+		ResourceReference: &ResourceReference{
+			ID:   org.UUID,
+			Name: org.Name,
+		},
+	}
+	for _, member := range org.Members {
+		orgResp.Members = append(orgResp.Members, &MemberInfo{
+			ResourceReference: &ResourceReference{
+				ID:   member.UUID,
+				Name: member.UserName,
+			},
+			Role: member.Role.String(),
+		})
+	}
+	return
 }
 
 // @Summary patch a org
@@ -122,6 +163,48 @@ func (v *OrgAPI) Create(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /orgs [get]
 func (v *OrgAPI) List(c *gin.Context) {
-	orgListResp := &OrgListResponse{}
+	ctx := c.Request.Context()
+	offsetStr := c.DefaultQuery("offset", "0")
+	limitStr := c.DefaultQuery("limit", "50")
+	queryStr := c.DefaultQuery("query", "")
+	logger.Debugf("List users, offset:%s, limit:%s, query:%s", offsetStr, limitStr, queryStr)
+	offset, err := strconv.Atoi(offsetStr)
+	if err != nil {
+		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
+		return
+	}
+	limit, err := strconv.Atoi(limitStr)
+	if err != nil {
+		logger.Errorf("Invalid query limit: %s, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
+		return
+	}
+	if offset < 0 || limit < 0 {
+		errStr := "Invalid query offset or limit, cannot be negative"
+		logger.Errorf(errStr)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
+		return
+	}
+	total, orgs, err := orgAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
+	if err != nil {
+		logger.Errorf("Failed to list orgs, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to list orgs", err)
+		return
+	}
+	orgListResp := &OrgListResponse{
+		Total:  int(total),
+		Offset: offset,
+		Limit:  len(orgs),
+	}
+	orgListResp.Orgs = make([]*OrgResponse, orgListResp.Limit)
+	for i, org := range orgs {
+		orgListResp.Orgs[i], err = v.getOrgResponse(ctx, org)
+		if err != nil {
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+	}
+	logger.Debugf("List orgs successfully, %+v", orgListResp)
 	c.JSON(http.StatusOK, orgListResp)
 }

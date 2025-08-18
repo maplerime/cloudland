@@ -48,6 +48,11 @@ type InstanceResizePayload struct {
 	Memory int32 `json:"memory" binding:"omitempty,gte=1"`
 }
 
+type InstanceRescuePayload struct {
+	RescueImage *BaseReference `json:"rescue_image" binding:"omitempty"`
+	Password    string         `json:"password" binging:"required,min=8,max=64"`
+}
+
 type InstancePayload struct {
 	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
 	Hypervisor          *int                `json:"hypervisor" binding:"omitempty,gte=0,lte=65535"`
@@ -65,6 +70,7 @@ type InstancePayload struct {
 	Zone                string              `json:"zone" binding:"required,min=1,max=32"`
 	VPC                 *BaseReference      `json:"vpc" binding:"omitempty"`
 	Userdata            string              `json:"userdata,omitempty"`
+	UserdataType        string              `json:"userdata_type,omitempty"`
 	NestedEnable        bool                `json:"nested_enable,omitempty"`
 	PoolID              string              `json:"pool_id" binding:"omitempty"`
 }
@@ -293,8 +299,91 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, nil)
+	c.JSON(http.StatusNoContent, nil)
+}
 
+// @Summary rescue a instance
+// @Description rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceRescuePayload  true   "Instance rescue payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/rescue [post]
+func (v *InstanceAPI) Rescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind JSON
+	payload := &InstanceRescuePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Rescue instance with %+v", payload)
+
+	// check rescue image
+	var rescueImage *model.Image
+	if payload.RescueImage != nil {
+		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
+		if err != nil {
+			logger.Errorf("Failed to get rescue image %+v, %+v", payload.RescueImage, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid rescue image", err)
+			return
+		}
+	}
+
+	err = instanceAdmin.Rescue(ctx, instance, rescueImage, payload.Password)
+	if err != nil {
+		logger.Error("Rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "Rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary end rescue a instance
+// @Description end rescue a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/end_rescue [post]
+func (v *InstanceAPI) EndRescue(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Rescue instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	err = instanceAdmin.EndRescue(ctx, instance)
+	if err != nil {
+		logger.Error("End rescue failed", err)
+		ErrorResponse(c, http.StatusBadRequest, "End rescue failed", err)
+		return
+	}
+
+	c.JSON(http.StatusNoContent, nil)
 }
 
 // @Summary resize a instance
@@ -492,9 +581,17 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.Disk <= 0 {
 		payload.Disk = flavor.Disk
 	}
-	logger.Debugf("Creating %d instances with hostname %s, userdata %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
-		count, hostname, userdata, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	userdataType := payload.UserdataType
+	if userdataType == "" {
+		userdataType = model.UserDataTypePlain
+	} else if !model.IsValidUserDataType(userdataType) {
+		logger.Errorf("Invalid userdata_type: %s", userdataType)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid userdata_type", nil)
+		return
+	}
+	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
+		count, hostname, userdata, userdataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
 	if err != nil {
 		logger.Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)

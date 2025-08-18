@@ -34,6 +34,7 @@ type SecruleResponse struct {
 	Protocol    string         `json:"protocol"`
 	PortMin     int32          `json:"port_min"`
 	PortMax     int32          `json:"port_max"`
+	Name        string         `json:"name"`
 }
 
 type SecruleListResponse struct {
@@ -44,6 +45,7 @@ type SecruleListResponse struct {
 }
 
 type SecurityRulePayload struct {
+	Name       string `json:"name" binding:"omitempty,min=2,max=32"`
 	RemoteCIDR string `json:"remote_cidr" binding:"cidrv4"`
 	Direction  string `json:"direction" binding:"required,oneof=ingress egress"`
 	Protocol   string `json:"protocol" binding:"required,oneof=tcp udp icmp"`
@@ -151,7 +153,7 @@ func (v *SecruleAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating secrule with %+v", payload)
-	secrule, err := secruleAdmin.Create(ctx, payload.RemoteCIDR, payload.Direction, payload.Protocol, payload.PortMin, payload.PortMax, secgroup)
+	secrule, err := secruleAdmin.Create(ctx, payload.Name, payload.RemoteCIDR, payload.Direction, payload.Protocol, payload.PortMin, payload.PortMax, secgroup)
 	if err != nil {
 		logger.Errorf("Failed to create secrule, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -178,6 +180,7 @@ func (v *SecruleAPI) getSecruleResponse(ctx context.Context, secrule *model.Secu
 		Direction: secrule.Direction,
 		IpVersion: secrule.IpVersion,
 		Protocol:  secrule.Protocol,
+		Name:      secrule.Name,
 	}
 	if secrule.RemoteIp != "" {
 		secruleResp.RemoteCIDR = secrule.RemoteIp

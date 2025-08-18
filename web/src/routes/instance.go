@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/spf13/viper"
 	"net"
 	"net/http"
 	"strconv"
@@ -22,6 +21,8 @@ import (
 	"web/src/dbs"
 	"web/src/model"
 	"web/src/utils/encrpt"
+
+	"github.com/spf13/viper"
 
 	"github.com/gin-gonic/gin"
 	"github.com/go-macaron/session"
@@ -60,16 +61,17 @@ type VolumeInfo struct {
 }
 
 type InstanceData struct {
-	Userdata   string             `json:"userdata"`
-	DNS        string             `json:"dns"`
-	Vlans      []*VlanInfo        `json:"vlans"`
-	Networks   []*InstanceNetwork `json:"networks"`
-	Links      []*NetworkLink     `json:"links"`
-	Volumes    []*VolumeInfo      `json:"volumes"`
-	Keys       []string           `json:"keys"`
-	RootPasswd string             `json:"root_passwd"`
-	LoginPort  int                `json:"login_port"`
-	OSCode     string             `json:"os_code"`
+	Userdata     string             `json:"userdata"`
+	UserdataType string             `json:"userdata_type"`
+	DNS          string             `json:"dns"`
+	Vlans        []*VlanInfo        `json:"vlans"`
+	Networks     []*InstanceNetwork `json:"networks"`
+	Links        []*NetworkLink     `json:"links"`
+	Volumes      []*VolumeInfo      `json:"volumes"`
+	Keys         []string           `json:"keys"`
+	RootPasswd   string             `json:"root_passwd"`
+	LoginPort    int                `json:"login_port"`
+	OSCode       string             `json:"os_code"`
 }
 
 type InstancesData struct {
@@ -100,7 +102,7 @@ func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyp
 	return
 }
 
-func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, image *model.Image,
+func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
 	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t, poolID %s",
@@ -201,21 +203,22 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
-			Model:       model.Model{Creater: memberShip.UserID},
-			Owner:       memberShip.OrgID,
-			Hostname:    hostname,
-			ImageID:     image.ID,
-			Snapshot:    int64(snapshot),
-			Keys:        keys,
-			PasswdLogin: passwdLogin,
-			LoginPort:   int32(loginPort),
-			Userdata:    userdata,
-			Status:      model.InstanceStatusPending,
-			ZoneID:      zoneID,
-			RouterID:    routerID,
-			Cpu:         cpu,
-			Memory:      memory,
-			Disk:        disk,
+			Model:        model.Model{Creater: memberShip.UserID},
+			Owner:        memberShip.OrgID,
+			Hostname:     hostname,
+			ImageID:      image.ID,
+			Snapshot:     int64(snapshot),
+			Keys:         keys,
+			PasswdLogin:  passwdLogin,
+			LoginPort:    int32(loginPort),
+			Userdata:     userdata,
+			UserdataType: userdataType,
+			Status:       model.InstanceStatusPending,
+			ZoneID:       zoneID,
+			RouterID:     routerID,
+			Cpu:          cpu,
+			Memory:       memory,
+			Disk:         disk,
 		}
 		err = db.Create(instance).Error
 		if err != nil {
@@ -255,7 +258,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -264,6 +267,84 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		i++
 	}
 	a.executeCommandList(ctx, execCommands)
+	return
+}
+
+func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, rescueImage *model.Image, rootPasswd string) (err error) {
+	logger.Debugf("Rescue instance %d", instance.ID)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if instance.Status == "rescuing" {
+		err = fmt.Errorf("Instance is already in rescue status")
+		return
+	}
+	image := instance.Image
+	if rescueImage == nil {
+		if image.RescueImage <= 0 {
+			err = fmt.Errorf("No rescue image specified for the instance image")
+			return
+		}
+		rescueImage, err = imageAdmin.Get(ctx, image.RescueImage)
+		if err != nil {
+			return
+		}
+	}
+	err = db.Model(instance).Update("status", "rescuing").Error
+	if err != nil {
+		logger.Error("Update instance status to rescuing failed", err)
+		return
+	}
+	logger.Debugf("Rescue image is %s", rescueImage.Name)
+	imagePrefix := fmt.Sprintf("image-%d-%s", rescueImage.ID, strings.Split(rescueImage.UUID, "-")[0])
+	bootVolume := &model.Volume{}
+	if err = db.Where("instance_id = ? and booting = true", instance.ID).Take(bootVolume).Error; err != nil {
+		logger.Error("Failed to query boot volume, %v", err)
+		return
+	}
+	metadata := ""
+	metadata, err = a.GetMetadata(ctx, instance, rootPasswd)
+	if err != nil {
+		logger.Error("Build instance metadata failed", err)
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Delete vm command execution failed", err)
+		return
+	}
+	return
+}
+
+func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance) (err error) {
+	logger.Debugf("End rescuing instance %d", instance.ID)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	if instance.Status != "rescuing" {
+		err = fmt.Errorf("Instance is not in rescue status")
+		return
+	}
+	err = db.Model(instance).Update("status", "shut_off").Error
+	if err != nil {
+		logger.Error("Update instance status to rescuing failed", err)
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/end_rescue.sh '%d'", instance.ID)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Delete vm command execution failed", err)
+		return
+	}
 	return
 }
 
@@ -405,6 +486,11 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 
 func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, rootPasswd string, keys []*model.Key, cpu int32, memory int32, disk int32, loginPort int) (err error) {
 	logger.Debugf("Reinstall instance %d with image %d, cpu %d, memory %d, disk %d", instance.ID, image.ID, cpu, memory, disk)
+	if instance.Status == "rescuing" {
+		err = fmt.Errorf("Instance is not in the right state")
+		logger.Error("Instance is not in the right state")
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -553,7 +639,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)
@@ -699,7 +785,9 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 			}
 		}
 		if iface == nil {
-			err = fmt.Errorf("Failed to create interface")
+			if err == nil {
+				err = fmt.Errorf("Failed to create interface")
+			}
 			return
 		}
 		err = interfaceAdmin.allocateSecondAddresses(ctx, instance, iface, subnets, count)
@@ -822,15 +910,16 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:   userdata,
-		DNS:        dns,
-		Vlans:      vlans,
-		Networks:   instNetworks,
-		Links:      instLinks,
-		Keys:       instKeys,
-		RootPasswd: rootPasswd,
-		LoginPort:  loginPort,
-		OSCode:     GetImageOSCode(ctx, instance),
+		Userdata:     userdata,
+		UserdataType: instance.UserdataType,
+		DNS:          dns,
+		Vlans:        vlans,
+		Networks:     instNetworks,
+		Links:        instLinks,
+		Keys:         instKeys,
+		RootPasswd:   rootPasswd,
+		LoginPort:    loginPort,
+		OSCode:       GetImageOSCode(ctx, instance),
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -884,16 +973,17 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	instData := &InstanceData{
-		Userdata:   instance.Userdata,
-		DNS:        dns,
-		Vlans:      vlans,
-		Networks:   instNetworks,
-		Links:      instLinks,
-		Volumes:    volumes,
-		Keys:       instKeys,
-		RootPasswd: rootPasswd,
-		LoginPort:  int(instance.LoginPort),
-		OSCode:     GetImageOSCode(ctx, instance),
+		Userdata:     instance.Userdata,
+		UserdataType: instance.UserdataType,
+		DNS:          dns,
+		Vlans:        vlans,
+		Networks:     instNetworks,
+		Links:        instLinks,
+		Volumes:      volumes,
+		Keys:         instKeys,
+		RootPasswd:   rootPasswd,
+		LoginPort:    int(instance.LoginPort),
+		OSCode:       GetImageOSCode(ctx, instance),
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -1346,7 +1436,7 @@ func (v *InstanceView) New(c *macaron.Context, store session.Store) {
 	}
 	db := DB()
 	images := []*model.Image{}
-	if err := db.Find(&images).Error; err != nil {
+	if err := db.Where("").Find(&images).Error; err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return
@@ -1786,6 +1876,103 @@ func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
 	}
 }
 
+func (v *InstanceView) Rescue(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	redirectTo := "/instances"
+	db := DB()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		rescueImages := []*model.Image{}
+		if err := db.Where("is_rescue = true").Find(&rescueImages).Error; err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(500, "500")
+			return
+		}
+		c.Data["RescueImages"] = rescueImages
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/rescue", instanceID)
+		c.HTML(200, "instances_rescue")
+		return
+	} else if c.Req.Method == "POST" {
+		rescueImageID := c.QueryInt64("rescue_image")
+		var rescueImage *model.Image
+		if rescueImageID > 0 {
+			rescueImage, err = imageAdmin.Get(ctx, rescueImageID)
+			if err != nil {
+				c.Data["ErrorMsg"] = "No valid image"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+		}
+		rootPasswd := c.QueryTrim("rootpasswd")
+		err = instanceAdmin.Rescue(ctx, instance, rescueImage, rootPasswd)
+		if err != nil {
+			logger.Error("Rescue failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
+}
+
+func (v *InstanceView) EndRescue(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		c.Data["Instance"] = instance
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/end_rescue", instanceID)
+		c.HTML(200, "instances_end_rescue")
+	} else if c.Req.Method == "POST" {
+		redirectTo := "/instances"
+		err = instanceAdmin.EndRescue(ctx, instance)
+		if err != nil {
+			logger.Error("Rescue failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
+}
+
 func (v *InstanceView) checkNetparam(subnets []*model.Subnet, IP, mac string) (macAddr string, err error) {
 	if mac != "" {
 		macl := strings.Split(mac, ":")
@@ -2161,8 +2348,18 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	}
 	nestedEnable := c.QueryBool("nested_enable")
 	userdata := c.QueryTrim("userdata")
+	userdataTypeStr := c.QueryTrim("userdata_type")
+	var userdataType string
+	if userdataTypeStr == "" {
+		userdataType = model.UserDataTypePlain
+	} else {
+		userdataType = userdataTypeStr
+		if !model.IsValidUserDataType(userdataType) {
+			userdataType = model.UserDataTypePlain
+		}
+	}
 	poolID := c.QueryTrim("pool")
-	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable, poolID)
+	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable, poolID)
 	if err != nil {
 		logger.Error("Create instance failed", err)
 		c.Data["ErrorMsg"] = err.Error()
