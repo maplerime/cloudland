@@ -213,7 +213,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			LoginPort:    int32(loginPort),
 			Userdata:     userdata,
 			UserdataType: userdataType,
-			Status:       "pending",
+			Status:       model.InstanceStatusPending,
 			ZoneID:       zoneID,
 			RouterID:     routerID,
 			Cpu:          cpu,
@@ -370,8 +370,8 @@ func (a *InstanceAdmin) ChangeInstanceStatus(ctx context.Context, instance *mode
 	return
 }
 
-func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, flavor *model.Flavor, hostname string, action PowerAction, hyperID int) (err error) {
-	if instance.Status == "migrating" {
+func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, hostname string, action PowerAction, hyperID int) (err error) {
+	if instance.Status == model.InstanceStatusMigrating {
 		err = fmt.Errorf("Instance is not in a valid state")
 		return
 	}
@@ -402,36 +402,6 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, fl
 		}
 		// TODO: migrate VM
 	}
-	if flavor != nil && flavor.ID != instance.FlavorID {
-		if instance.Status == "running" {
-			err = fmt.Errorf("Instance must be shutdown first before resize")
-			logger.Error(err)
-			return
-		}
-		if flavor.Disk < instance.Flavor.Disk {
-			err = fmt.Errorf("Disk(s) can not be resized to smaller size")
-			logger.Error("Disk(s) can not be resized to smaller size")
-			return
-		}
-		cpu := flavor.Cpu - instance.Flavor.Cpu
-		if cpu < 0 {
-			cpu = 0
-		}
-		memory := flavor.Memory - instance.Flavor.Memory
-		if memory < 0 {
-			memory = 0
-		}
-		disk := flavor.Disk - instance.Flavor.Disk + flavor.Ephemeral - instance.Flavor.Ephemeral
-		control := fmt.Sprintf("inter=%d cpu=%d memory=%d disk=%d network=%d", instance.Hyper, cpu, memory, disk, 0)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_vm.sh '%d' '%d' '%d' '%d' '%d' '%d' '%d'", instance.ID, flavor.Cpu, flavor.Memory, flavor.Disk, flavor.Swap, flavor.Ephemeral, disk)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Resize vm command execution failed", err)
-			return
-		}
-		instance.FlavorID = flavor.ID
-		instance.Flavor = flavor
-	}
 	if instance.Hostname != hostname {
 		instance.Hostname = hostname
 	}
@@ -445,6 +415,71 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, fl
 			logger.Error("action vm command execution failed", err)
 			return
 		}
+	}
+	return
+}
+
+func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cpu int32, memory int32) (err error) {
+	logger.Debugf("Resize instance %d with cpu %d, memory %d", instance.ID, cpu, memory)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
+	if err != nil {
+		logger.Error("Failed to check owner")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized to reinstall the instance")
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	var bootVolume *model.Volume
+	for _, volume := range instance.Volumes {
+		if volume.Booting {
+			bootVolume = volume
+			break
+		}
+	}
+	if bootVolume == nil {
+		logger.Error("Instance has no boot volume")
+		err = fmt.Errorf("Corrupted instance")
+		return
+	}
+	status := model.InstanceStatusResizing
+	if instance.Status == status {
+		logger.Error("Instance is already resizing")
+		err = fmt.Errorf("Instance is already resizing")
+		return
+	}
+	instance.Status = status
+	instance.Cpu = cpu
+	instance.Memory = memory
+	if instance.Disk == 0 {
+		instance.Disk = bootVolume.Size
+	}
+	if err = db.Save(&instance).Error; err != nil {
+		logger.Error("Failed to save instance", err)
+		return
+	}
+	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+		"flavor_id": 0,
+	}).Error
+	if err != nil {
+		logger.Error("Failed to save instance", err)
+		return
+	}
+
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_vm.sh '%d' '%d' '%d'", instance.ID, cpu, memory)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Resize remote exec failed", err)
+		return
 	}
 	return
 }
@@ -554,7 +589,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		passwdLogin = true
 		logger.Debug("Root password login enabled")
 	}
-	instance.Status = "reinstalling"
+	instance.Status = model.InstanceStatusReinstalling
 	instance.LoginPort = int32(loginPort)
 	instance.PasswdLogin = passwdLogin
 	instance.ImageID = image.ID
@@ -637,7 +672,7 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		logger.Error(err)
 		return
 	}
-	if instance.Status != "running" {
+	if instance.Status != model.InstanceStatusRunning {
 		err = fmt.Errorf("Instance must be running")
 		logger.Error(err)
 		return
@@ -959,7 +994,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 }
 
 func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (err error) {
-	if instance.Status == "migrating" {
+	if instance.Status == model.InstanceStatusMigrating {
 		err = fmt.Errorf("Instance is not in a valid state")
 		return
 	}
@@ -1050,7 +1085,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Delete vm command execution failed ", err)
 		return
 	}
-	instance.Status = "deleting"
+	instance.Status = model.InstanceStatusDeleting
 	err = db.Model(instance).Updates(instance).Error
 	if err != nil {
 		logger.Errorf("Failed to mark vm as deleting ", err)
@@ -1561,7 +1596,7 @@ func (v *InstanceView) Edit(c *macaron.Context, store session.Store) {
 	} else if flag == "MigrateInstance" {
 		c.HTML(200, "instances_migrate")
 	} else if flag == "ResizeInstance" {
-		c.HTML(200, "instances_size")
+		c.HTML(200, "instances_resize")
 	} else {
 		c.HTML(200, "instances_patch")
 	}
@@ -1571,7 +1606,6 @@ func (v *InstanceView) Patch(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "../instances"
 	instanceID := c.ParamsInt64("id")
-	flavorID := c.QueryInt64("flavor")
 	hostname := c.QueryTrim("hostname")
 	hyperID := c.QueryInt("hyper")
 	action := c.QueryTrim("action")
@@ -1582,17 +1616,7 @@ func (v *InstanceView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	var flavor *model.Flavor
-	if flavorID > 0 {
-		flavor, err = flavorAdmin.Get(ctx, flavorID)
-		if err != nil {
-			logger.Error("Invalid flavor", err)
-			c.Data["ErrorMsg"] = err.Error()
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
-	}
-	err = instanceAdmin.Update(c.Req.Context(), instance, flavor, hostname, PowerAction(action), hyperID)
+	err = instanceAdmin.Update(c.Req.Context(), instance, hostname, PowerAction(action), hyperID)
 	if err != nil {
 		logger.Errorf("update instance failed, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -1772,6 +1796,78 @@ func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
 		err = instanceAdmin.Reinstall(ctx, instance, image, rootPasswd, instKeys, cpu, memory, disk, loginPort)
 		if err != nil {
 			logger.Error("Reinstall failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
+}
+
+func (v *InstanceView) Resize(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	redirectTo := "/instances"
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/resize", instanceID)
+		c.HTML(200, "instances_resize")
+		return
+	} else if c.Req.Method == "POST" {
+		cpu, memory := instance.Cpu, instance.Memory
+		if instance.Cpu == 0 {
+			var flavor *model.Flavor
+			flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
+			if err != nil {
+				logger.Errorf("No valid flavor", err)
+				c.Data["ErrorMsg"] = "No valid flavor"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			cpu, memory = flavor.Cpu, flavor.Memory
+		}
+		newCpu := c.QueryInt64("cpu")
+		newMemory := c.QueryInt64("memory")
+		if newCpu < 0 {
+			logger.Error("CPU must be greater than 0")
+			c.Data["ErrorMsg"] = "CPU must be greater than 0"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if newMemory < 0 {
+			logger.Error("Memory must be greater than 0")
+			c.Data["ErrorMsg"] = "Memory must be greater than 0"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if newCpu > 0 {
+			cpu = int32(newCpu)
+		}
+		if newMemory > 0 {
+			memory = int32(newMemory)
+		}
+
+		err = instanceAdmin.Resize(ctx, instance, cpu, memory)
+		if err != nil {
+			logger.Error("Resize failed", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return

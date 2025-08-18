@@ -28,7 +28,6 @@ type InstanceAPI struct{}
 type InstancePatchPayload struct {
 	Hostname    string      `json:"hostname" binding:"omitempty,hostname|fqdn"`
 	PowerAction PowerAction `json:"power_action" binding:"omitempty,oneof=stop hard_stop start restart hard_restart pause resume"`
-	Flavor      string      `json:"flavor" binding:"omitempty,min=1,max=32"`
 }
 
 type InstanceSetUserPasswordPayload struct {
@@ -42,6 +41,11 @@ type InstanceReinstallPayload struct {
 	Keys      []*BaseReference `json:"keys" binding:"omitempty,gte=0,lte=16"`
 	Password  string           `json:"password" binging:"omitempty,min=8,max=64"`
 	LoginPort int              `json:"login_port" binding:"omitempty,min=1,max=65535"`
+}
+
+type InstanceResizePayload struct {
+	Cpu    int32 `json:"cpu" binding:"omitempty,gte=1"`
+	Memory int32 `json:"memory" binding:"omitempty,gte=1"`
 }
 
 type InstanceRescuePayload struct {
@@ -158,16 +162,7 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 		hostname = payload.Hostname
 		logger.Debugf("Update hostname to %s", hostname)
 	}
-	var flavor *model.Flavor
-	if payload.Flavor != "" {
-		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
-		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor query", err)
-			return
-		}
-	}
-	err = instanceAdmin.Update(ctx, instance, flavor, hostname, payload.PowerAction, int(instance.Hyper))
+	err = instanceAdmin.Update(ctx, instance, hostname, payload.PowerAction, int(instance.Hyper))
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
@@ -389,6 +384,68 @@ func (v *InstanceAPI) EndRescue(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusNoContent, nil)
+}
+
+// @Summary resize a instance
+// @Description resize a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceResizePayload  true   "Instance resize payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/resize [post]
+func (v *InstanceAPI) Resize(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Resize instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind json
+	payload := &InstanceResizePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Resize instance %s with payload %+v", uuID, payload)
+
+	// old data compatibility
+	cpu, memory := instance.Cpu, instance.Memory
+	if instance.Cpu == 0 {
+		var flavor *model.Flavor
+		flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
+		if err != nil {
+			logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
+			return
+		}
+		cpu, memory = flavor.Cpu, flavor.Memory
+	}
+	if payload.Cpu > 0 {
+		cpu = payload.Cpu
+	}
+	if payload.Memory > 0 {
+		memory = payload.Memory
+	}
+
+	logger.Debugf("Resize instance %s to cpu %d, memory %d", uuID, cpu, memory)
+	err = instanceAdmin.Resize(ctx, instance, cpu, memory)
+	if err != nil {
+		logger.Errorf("Failed to resize instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to resize instance", err)
+		return
+	}
+	c.JSON(http.StatusOK, nil)
+
 }
 
 // @Summary delete a instance
@@ -710,7 +767,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 		},
 		Hostname:  instance.Hostname,
 		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status,
+		Status:    instance.Status.String(),
 		Reason:    instance.Reason,
 		Cpu:       instance.Cpu,
 		Memory:    instance.Memory,

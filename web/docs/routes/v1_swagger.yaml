@@ -480,10 +480,6 @@ definitions:
     type: object
   apis.InstancePatchPayload:
     properties:
-      flavor:
-        maxLength: 32
-        minLength: 1
-        type: string
       hostname:
         type: string
       power_action:
@@ -583,6 +579,15 @@ definitions:
         type: integer
       password:
         type: string
+    type: object
+  apis.InstanceResizePayload:
+    properties:
+      cpu:
+        minimum: 1
+        type: integer
+      memory:
+        minimum: 1
+        type: integer
     type: object
   apis.InstanceRescuePayload:
     properties:
@@ -1504,6 +1509,14 @@ definitions:
         type: integer
     required:
     - name
+    - size
+    type: object
+  apis.VolumeResizePayload:
+    properties:
+      size:
+        minimum: 1
+        type: integer
+    required:
     - size
     type: object
   apis.VolumeResponse:
@@ -2655,6 +2668,39 @@ paths:
       summary: reinstall a instance
       tags:
       - Compute
+  /instances/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a instance
+      tags:
+      - Compute
   /instances/{id}/rescue:
     post:
       consumes:
@@ -3778,6 +3824,34 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a volume
+      parameters:
+      - description: Volume resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a volume
       tags:
       - Compute
   /vpcs:

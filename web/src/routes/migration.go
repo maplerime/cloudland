@@ -60,7 +60,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 	}
 	for _, instance := range instances {
-		if instance.Status == "migrating" || instance.Status == "reinstalling" || instance.Status == "rescuing" {
+		if instance.Status == model.InstanceStatusMigrating || instance.Status == "reinstalling" || instance.Status == "rescuing" {
 			continue
 		}
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
@@ -125,7 +125,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			}
 			control = "select=" + hyperGroup
 		}
-		err = db.Model(instance).Update("status", "migrating").Error
+		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to migrating, %v", err)
 			return

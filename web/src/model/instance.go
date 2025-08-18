@@ -10,6 +10,24 @@ import (
 	"web/src/dbs"
 )
 
+type InstanceStatus string
+
+const (
+	InstanceStatusPending      InstanceStatus = "pending"
+	InstanceStatusRunning      InstanceStatus = "running"
+	InstanceStatusShutoff      InstanceStatus = "shut_off"
+	InstanceStatusPaused       InstanceStatus = "paused"
+	InstanceStatusMigrating    InstanceStatus = "migrating"
+	InstanceStatusReinstalling InstanceStatus = "reinstalling"
+	InstanceStatusResizing     InstanceStatus = "resizing"
+	InstanceStatusDeleting     InstanceStatus = "deleting"
+	InstanceStatusDeleted      InstanceStatus = "deleted"
+)
+
+func (s InstanceStatus) String() string {
+	return string(s)
+}
+
 // UserDataType 用户数据类型常量
 const (
 	UserDataTypePlain  = "plain"
@@ -27,18 +45,18 @@ func IsValidUserDataType(userdataType string) bool {
 
 type Instance struct {
 	Model
-	Owner        int64         `gorm:"default:1"` /* The organization ID of the resource */
-	Hostname     string        `gorm:"unique_index:idx_router_instance;type:varchar(128)"`
-	Domain       string        `gorm:"type:varchar(128)"`
-	Status       string        `gorm:"type:varchar(32)"`
-	Reason       string        `gorm:"type:text"`
-	FloatingIps  []*FloatingIp `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false`
-	Volumes      []*Volume     `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false"`
-	Interfaces   []*Interface  `gorm:"foreignkey:Instance"`
-	Portmaps     []*Portmap    `gorm:"foreignkey:instanceID"`
-	Cpu          int32         `gorm:"default:0"`
-	Memory       int32         `gorm:"default:0"`
-	Disk         int32         `gorm:"default:0"`
+	Owner        int64          `gorm:"default:1"` /* The organization ID of the resource */
+	Hostname     string         `gorm:"unique_index:idx_router_instance;type:varchar(128)"`
+	Domain       string         `gorm:"type:varchar(128)"`
+	Status       InstanceStatus `gorm:"type:varchar(32)"`
+	Reason       string         `gorm:"type:text"`
+	FloatingIps  []*FloatingIp  `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false`
+	Volumes      []*Volume      `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false"`
+	Interfaces   []*Interface   `gorm:"foreignkey:Instance"`
+	Portmaps     []*Portmap     `gorm:"foreignkey:instanceID"`
+	Cpu          int32          `gorm:"default:0"`
+	Memory       int32          `gorm:"default:0"`
+	Disk         int32          `gorm:"default:0"`
 	FlavorID     int64
 	Flavor       *Flavor `gorm:"foreignkey:FlavorID"`
 	ImageID      int64
