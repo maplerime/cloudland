@@ -1,10 +1,10 @@
 [Unit]
-Description=Run Volume Size Metrics Generation every {{ metrics_interval | default('10min') }}
+Description=Run Volume Size Metrics Generation every {{ metrics_interval | default('30min') }}
 Requires=volume-size-metrics.service
 
 [Timer]
 OnBootSec=10
-OnUnitActiveSec={{ metrics_interval | default('10min') }}
+OnUnitActiveSec={{ metrics_interval | default('30min') }}
 Unit=volume-size-metrics.service
 
 [Install]

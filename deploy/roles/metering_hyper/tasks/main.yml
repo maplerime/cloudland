@@ -1,3 +1,10 @@
+- name: Ensure /opt/cloudland/scripts/metering directory exists
+  file:
+    path: /opt/cloudland/scripts/metering
+    state: directory
+    mode: '0755'
+  tags: [metering_hyper]
+
 - name: Copy north-south traffic metrics collection script
   copy:
     src: generate_north_south_metrics.sh
@@ -85,19 +92,6 @@
     enabled: yes
     state: started
   tags: [metering_hyper]
-
-- name: Ensure remote_write for billing metrics is present
-  blockinfile:
-    path: /etc/prometheus/prometheus.yml
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - remote_write for billing"
-    block: |
-      remote_write:
-        - url: "http://{{ vmagent_host }}:443/api/v1/meter/vmagnt"
-          write_relabel_configs:
-            - source_labels: [__name__]
-              regex: 'libvirt_domain_info_state|domain_north_south_.*|libvirt_domain_info_vcpu|libvirt_domain_info_memory_maximum_bytes|libvirt_domain_block_stats_capacity_bytes|wds_volume_size_bytes'
-              action: keep
-  notify: Reload prometheus
 
 - name: Check volume-size-metrics.timer status
   systemd:

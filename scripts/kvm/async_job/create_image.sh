@@ -13,7 +13,8 @@ image_name=image-$ID-$prefix
 state=error
 mkdir -p $image_cache
 image=$image_cache/$image_name
-inet_access curl -s -k $url -o $image
+curl -s -k $url -o $image
+#cp /tmp/noble-server-cloudimg-amd64.img $image
 if [ ! -s "$image" ]; then
     echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format'"
     exit -1

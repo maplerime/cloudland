@@ -4,7 +4,7 @@
   blockinfile:
     path: /etc/prometheus/prometheus.yml
     marker: "# {mark} ANSIBLE MANAGED BLOCK - remote_write for billing"
-    insertafter: '^global:'
+    insertafter: '^evaluation_interval:'
     block: |
       remote_write:
         - url: "http://{{ metering_server_ip | default('localhost') }}:8429/api/v1/write"

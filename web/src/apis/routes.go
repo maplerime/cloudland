@@ -110,6 +110,8 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/floating_ips/:id", floatingIpAPI.Get)
 		authGroup.DELETE("/api/v1/floating_ips/:id", floatingIpAPI.Delete)
 		authGroup.PATCH("/api/v1/floating_ips/:id", floatingIpAPI.Patch)
+		authGroup.POST("/api/v1/floating_ips/site_attach", floatingIpAPI.SiteAttach)
+		authGroup.POST("/api/v1/floating_ips/site_detach", floatingIpAPI.SiteDetach)
 
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)
@@ -177,7 +179,6 @@ func Register() (r *gin.Engine) {
 			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
 			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
 			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
-			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)

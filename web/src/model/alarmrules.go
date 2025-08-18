@@ -32,6 +32,8 @@ type RuleGroupV2 struct {
 	Owner      string `gorm:"type:varchar(255);index"`
 	Enabled    bool   `gorm:"default:true"`
 	TriggerCnt int    `gorm:"default:0"`
+	Email      string `gorm:"type:varchar(255);default:''"`
+	Action     bool   `gorm:"default:false"`
 }
 
 type CPURuleDetail struct {
