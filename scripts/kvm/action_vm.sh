@@ -17,6 +17,12 @@ function wait_vm_status()
     done
 }
 
+function get_vm_state()
+{
+    vm_ID=$1
+    virsh dominfo $vm_ID | grep State | cut -d: -f2- | xargs | sed 's/shut off/shut_off/g'
+}
+
 vm_ID=inst-$1
 action=$2
 if [ "$action" = "restart" ]; then
@@ -26,8 +32,15 @@ elif [ "$action" = "start" ]; then
     virsh start $vm_ID
     wait_vm_status $vm_ID "running"
 elif [ "$action" = "stop" ]; then
+    # first try to shutdown the vm
     virsh shutdown $vm_ID
     wait_vm_status $vm_ID "shut_off"
+    # if the vm is not shut_off, destroy it
+    current_state=$(get_vm_state $vm_ID)
+    if [ "$current_state" != "shut_off" ]; then
+        virsh destroy $vm_ID
+        wait_vm_status $vm_ID "shut_off"
+    fi
 elif [ "$action" = "hard_stop" ]; then
     virsh destroy $vm_ID
     wait_vm_status $vm_ID "shut_off"
@@ -45,5 +58,5 @@ else
     die "Invalid action: $action"
 fi
 
-state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2- | xargs | sed 's/shut off/shut_off/g')
+state=$(get_vm_state $vm_ID)
 echo "|:-COMMAND-:| $(basename $0) '$1' '$state'"
