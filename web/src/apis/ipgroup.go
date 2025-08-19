@@ -11,7 +11,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -370,11 +369,6 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			Outbound:   fip.Outbound,
 		})
 	}
-
-	// Sort floating IPs by ID in ascending order
-	sort.Slice(floatingIpRefs, func(i, j int) bool {
-		return floatingIpRefs[i].ID < floatingIpRefs[j].ID
-	})
 
 	ipGroupResp = &IpGroupResponse{
 		ResourceReference: &ResourceReference{
