@@ -26,7 +26,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 	//|:-COMMAND-:| launch_vm.sh '3' '5 running 7 running 9 shut_off'
 	db := DB()
 	argn := len(args)
-	if argn < 2 {
+	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return

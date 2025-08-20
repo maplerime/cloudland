@@ -219,12 +219,18 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 					"int_address": "",
 					"type":        string(PublicFloating)}).Error
 				if err != nil {
-					logger.Error("Update interface ", err)
+					logger.Error("Failed to update floating ip ", err)
 					return
+				}
+				for _, fip := range floatingIps {
+					if fip.ID == iface.FloatingIp {
+						fip.InstanceID = 0
+					}
 				}
 			}
 		}
 	}
+	primaryIface.SecondAddresses = nil
 	for i, fip := range floatingIps {
 		if fip.InstanceID > 0 {
 			continue
