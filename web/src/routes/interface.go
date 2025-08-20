@@ -297,7 +297,10 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 
 func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, address, mac string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, subnets []*model.Subnet, secondAddrsCount int) (iface *model.Interface, err error) {
 	memberShip := GetMemberShip(ctx)
-	ifname := "eth1"
+	ifaceLen := len(instance.Interfaces)
+	if ifaceLen >= 8 {
+	}
+	ifname := fmt.Sprintf("eth%d", ifaceLen)
 	for _, subnet := range subnets {
 		if subnet.Type == "site" {
 			logger.Error("Not allowed to create interface in site subnet")
@@ -654,39 +657,87 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 	}
-	c.Redirect("../instances")
+	redirectTo := "../interfaces"
+	c.Redirect(redirectTo)
+}
+
+func (v *InterfaceView) List(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	offset := c.QueryInt64("offset")
+	limit := c.QueryInt64("limit")
+	if limit == 0 {
+		limit = 16
+	}
+	order := c.QueryTrim("order")
+	if order == "" {
+		order = "created_at"
+	}
+	instid := c.Params("instid")
+	if instid == "" {
+		logger.Error("Instance ID is empty")
+		c.Data["ErrorMsg"] = "Instance ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instID, err := strconv.Atoi(instid)
+	if err != nil {
+		logger.Error("Invalid instance ID", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instID))
+	if err != nil {
+		logger.Error("Failed to get instance", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	total, interfaces, err := interfaceAdmin.List(ctx, offset, limit, order, instance)
+	if err != nil {
+		logger.Error("Failed to list interface(s)", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
+	pages := GetPages(total, limit)
+	c.Data["Instance"] = instance
+	c.Data["Interfaces"] = interfaces
+	c.Data["Total"] = total
+	c.Data["Pages"] = pages
+	c.HTML(200, "interfaces")
 }
 
 func (v *InterfaceView) Delete(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
-	memberShip := GetMemberShip(ctx)
+	instID := c.ParamsInt64("instid")
+	instance, err := instanceAdmin.Get(ctx, instID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
 	id := c.ParamsInt64("id")
-	permit, err := memberShip.CheckOwner(model.Writer, "interfaces", id)
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
-		c.Error(http.StatusBadRequest)
-		return
-	}
-	iface := &model.Interface{Model: model.Model{ID: id}}
-	err = DB().Take(iface).Error
+	iface, err := interfaceAdmin.Get(ctx, id)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	err = DeleteInterface(ctx, iface)
+	err = interfaceAdmin.Delete(ctx, instance, iface)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	c.JSON(200, "ok")
+	c.JSON(200, map[string]interface{}{
+		"redirect": "interfaces",
+	})
 }
 
 func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
-	redirectTo := "../instances"
+	redirectTo := "../interfaces"
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"

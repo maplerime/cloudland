@@ -134,6 +134,7 @@ func New() (m *macaron.Macaron) {
 	m.Post("/instances/:id/console", consoleView.ConsoleURL)
 	m.Get("/instances/:id/interfaces/new", interfaceView.New)
 	m.Post("/instances/:id/interfaces/new", interfaceView.Create)
+	m.Get("/instances/:instid/interfaces", interfaceView.List)
 	m.Get("/instances/:instid/interfaces/:id", interfaceView.Edit)
 	m.Post("/instances/:instid/interfaces/:id", interfaceView.Patch)
 	m.Delete("/instances/:instid/interfaces/:id", interfaceView.Delete)
