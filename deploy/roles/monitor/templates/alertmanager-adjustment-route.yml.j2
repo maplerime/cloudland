@@ -4,6 +4,7 @@ routes:
   # 为资源调整告警配置特殊路由
   - match:
       alert_type: resource_adjustment
+    group_by: ['alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
     group_wait: 0s
     group_interval: 30s  # 每30秒分组一次
     repeat_interval: 30s  # 每30秒重复一次

@@ -770,11 +770,14 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 
 	// 根据操作类型执行相应的资源调整
 	var err error
+	fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing actionType: %s, domain: %s, ruleGroup: %s\n", actionType, domain, ruleGroup)
 	switch actionType {
 	case "limit_cpu":
+		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Executing CPU limit operation for domain: %s\n", domain)
 		log.Printf("[ADJUST-%s] Executing CPU limit operation", requestID)
 		err = a.operator.AdjustCPUResource(ctx, record, domain, true)
 	case "restore_cpu":
+		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Executing CPU restore operation for domain: %s\n", domain)
 		log.Printf("[ADJUST-%s] Executing CPU restore operation", requestID)
 		err = a.operator.RestoreCPUResource(ctx, record, domain)
 	case "limit_in_bw":
@@ -801,10 +804,12 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 
 	// 更新历史记录状态
 	if err != nil {
+		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing failed for domain %s, actionType %s: %v\n", domain, actionType, err)
 		log.Printf("[ADJUST-%s] Processing failed: %v", requestID, err)
 		history.Status = "failed"
 		history.Details = fmt.Sprintf("Processing %s failed: %v", actionType, err)
 	} else {
+		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing successful for domain %s, actionType %s\n", domain, actionType)
 		log.Printf("[ADJUST-%s] Processing successful", requestID)
 		history.Status = "completed"
 		history.Details = fmt.Sprintf("Successfully processed %s (domain: %s)", actionType, domain)
@@ -816,6 +821,7 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 	}
 
 	elapsed := time.Since(startTime)
+	fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing completed for domain %s, elapsed time: %v, success: %v\n", domain, elapsed, err == nil)
 	log.Printf("[ADJUST-%s] Processing completed, time taken: %v", requestID, elapsed)
 	fmt.Printf("[Processing completed] Domain: %s, Result: %v, Time taken: %v\n", domain, err == nil, elapsed)
 

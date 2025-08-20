@@ -251,12 +251,16 @@ func (o *AdjustOperator) SendAdjustEmail(email string, record *AdjustmentRecord,
 
 // AdjustCPUResource 调整CPU资源
 func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, limit bool) error {
+	fmt.Printf("wngzhe AdjustCPUResource - domain: %s, limit: %v, ruleGroupUUID: %s\n", domain, limit, record.RuleGroupUUID)
+	log.Printf("wngzhe AdjustCPUResource - Starting CPU adjustment for domain: %s, limit: %v", domain, limit)
+
 	// 查询虚拟机实例以获取计算节点信息
 	uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 	if err != nil {
 		log.Printf("Failed to get instance UUID: %v", err)
 		return fmt.Errorf("Failed to get instance UUID: %v", err)
 	}
+	fmt.Printf("wngzhe AdjustCPUResource - Got instance UUID: %s\n", uuid)
 
 	// 使用instanceAdmin调用实例方法
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuid)
@@ -264,58 +268,74 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 		log.Printf("Failed to get instance info: %v", err)
 		return fmt.Errorf("Failed to get instance info: %v", err)
 	}
+	fmt.Printf("wngzhe AdjustCPUResource - Got instance info: CPU=%d, Hyper=%d\n", instance.Cpu, instance.Hyper)
 
 	// 构建命令
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	fmt.Printf("wngzhe AdjustCPUResource - Control command: %s\n", control)
 
 	// 确定CPU核心数
 	cpuCount := instance.Cpu // 默认使用实例配置的CPU数
+	fmt.Printf("wngzhe AdjustCPUResource - Initial cpuCount: %d\n", cpuCount)
 
 	if limit {
+		fmt.Printf("wngzhe AdjustCPUResource - Applying CPU limit for ruleGroupUUID: %s\n", record.RuleGroupUUID)
+
 		// 根据规则组获取限制值
 		details, err := o.GetCPUAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
 			log.Printf("Failed to get CPU adjustment rule details: %v", err)
 			return fmt.Errorf("Failed to get CPU adjustment rule details: %v", err)
 		}
+		fmt.Printf("wngzhe AdjustCPUResource - Got %d CPU adjustment rule details\n", len(details))
 
 		// 检查单核CPU情况
 		if instance.Cpu == 1 {
+			fmt.Printf("wngzhe AdjustCPUResource - Cannot limit CPU for single-core instance: %s\n", domain)
 			log.Printf("Cannot limit CPU for single-core instance: %s", domain)
 			return fmt.Errorf("Cannot limit CPU for single-core instance")
 		}
 
 		// 计算限制后的CPU数量
 		limitPercent := details[0].LimitPercent
+		fmt.Printf("wngzhe AdjustCPUResource - LimitPercent: %d%%, Original CPU: %d\n", limitPercent, instance.Cpu)
 		cpuCount = instance.Cpu * int32(limitPercent) / 100
 		if cpuCount < 1 {
 			cpuCount = 1 // 至少保留一个CPU核心
 		}
+		fmt.Printf("wngzhe AdjustCPUResource - Calculated limited cpuCount: %d\n", cpuCount)
 	}
 
 	// 使用virsh setvcpus命令动态调整CPU
 	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/adjust_cpu_hotplug.sh '%s' '%d'",
 		domain, cpuCount)
+	fmt.Printf("wngzhe AdjustCPUResource - Executing command: %s\n", command)
 
 	// 执行命令
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
+		fmt.Printf("wngzhe AdjustCPUResource - Command execution failed: %v\n", err)
 		log.Printf("Failed to adjust CPU: %v", err)
 		return fmt.Errorf("Failed to adjust CPU resources: %v", err)
 	}
 
+	fmt.Printf("wngzhe AdjustCPUResource - CPU adjustment completed successfully: domain=%s, final cpuCount=%d\n", domain, cpuCount)
 	log.Printf("Successfully adjusted CPU resources: domain=%s, limit=%v, cpuCount=%d", domain, limit, cpuCount)
 	return nil
 }
 
 // RestoreCPUResource 恢复CPU资源
 func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *AdjustmentRecord, domain string) error {
+	fmt.Printf("wngzhe RestoreCPUResource - Starting CPU restore for domain: %s, ruleGroupUUID: %s\n", domain, record.RuleGroupUUID)
+	log.Printf("wngzhe RestoreCPUResource - Starting CPU restore for domain: %s", domain)
+
 	// 查询虚拟机实例以获取计算节点信息和原始CPU配置
 	uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 	if err != nil {
 		log.Printf("Failed to get instance UUID: %v", err)
 		return fmt.Errorf("Failed to get instance UUID: %v", err)
 	}
+	fmt.Printf("wngzhe RestoreCPUResource - Got instance UUID: %s\n", uuid)
 
 	// 使用instanceAdmin调用实例方法
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuid)
@@ -323,21 +343,26 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 		log.Printf("Failed to get instance info: %v", err)
 		return fmt.Errorf("Failed to get instance info: %v", err)
 	}
+	fmt.Printf("wngzhe RestoreCPUResource - Got instance info: Original CPU=%d, Hyper=%d\n", instance.Cpu, instance.Hyper)
 
 	// 构建命令
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	fmt.Printf("wngzhe RestoreCPUResource - Control command: %s\n", control)
 
 	// 恢复原始CPU数量
 	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/adjust_cpu_hotplug.sh '%s' '%d'",
 		domain, instance.Cpu)
+	fmt.Printf("wngzhe RestoreCPUResource - Executing restore command: %s\n", command)
 
 	// 执行命令
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
+		fmt.Printf("wngzhe RestoreCPUResource - Command execution failed: %v\n", err)
 		log.Printf("Failed to restore CPU: %v", err)
 		return fmt.Errorf("Failed to restore CPU resources: %v", err)
 	}
 
+	fmt.Printf("wngzhe RestoreCPUResource - CPU restore completed successfully: domain=%s, restored cpuCount=%d\n", domain, instance.Cpu)
 	log.Printf("Successfully restored CPU resources: domain=%s, cpuCount=%d", domain, instance.Cpu)
 	return nil
 }
