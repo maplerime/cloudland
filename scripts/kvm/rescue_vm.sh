@@ -25,7 +25,7 @@ vm_rescue=$vm_ID-rescue
 ./action_vm.sh $ID hard_stop
 md=$(cat)
 metadata=$(echo $md | base64 -d)
-./build_meta.sh "$vm_ID" "$vm_name" "true" <<< $md >/dev/null 2>&1
+./build_meta.sh "$vm_ID" "$vm_name-rescue" "true" <<< $md >/dev/null 2>&1
 
 vm_meta=$cache_dir/meta/$vm_ID-rescue.iso
 template=$template_dir/template_with_qa.xml
@@ -146,9 +146,14 @@ vlans=$(jq .vlans <<< $metadata)
 nvlan=$(jq length <<< $vlans)
 i=0
 while [ $i -lt $nvlan ]; do
-    read -d'\n' -r mac < <(jq -r ".[$i].mac_address" <<<$vlans)
+    read -d'\n' -r vlan mac < <(jq -r ".[$i].vlan, .[$i].mac_address" <<<$vlans)
     nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
     interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    if [ ! -f "$interface_xml" ]; then
+        template=$template_dir/interface.xml
+        cp $template $interface_xml
+        sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g" $interface_xml
+    fi
     virsh attach-device $vm_rescue $interface_xml --config --persistent
     let i=$i+1
 done
