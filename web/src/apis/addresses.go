@@ -91,7 +91,7 @@ func (v *AddressAPI) Patch(c *gin.Context) {
 // @tags Network
 // @Accept  json
 // @Produce json
-// @Param   message  body   AddressLockPayload  true   "Address lock payload"
+// @Param   message  body   AddressUpdateLockPayload  true   "Address lock or unlock payload"
 // @Router /subnets/{id}/addresses/{address_id}/lock-state [patch]
 // @Success 200 {object} AddressResponse
 // @Failure 400 {object} common.APIError "Bad request"

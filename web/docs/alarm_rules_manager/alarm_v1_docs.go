@@ -2994,6 +2994,52 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/subnets/{id}/addresses/{address_id}/lock-state": {
+            "patch": {
+                "description": "lock or unlock an address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "update address lock",
+                "parameters": [
+                    {
+                        "description": "Address lock or unlock payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressUpdateLockPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "list users",
@@ -3781,9 +3827,6 @@ const docTemplatealarm_v1 = `{
         "apis.AddressPatchPayload": {
             "type": "object",
             "properties": {
-                "lock": {
-                    "type": "boolean"
-                },
                 "remark": {
                     "type": "string",
                     "maxLength": 512
@@ -3828,6 +3871,17 @@ const docTemplatealarm_v1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.AddressUpdateLockPayload": {
+            "type": "object",
+            "required": [
+                "lock"
+            ],
+            "properties": {
+                "lock": {
+                    "type": "boolean"
                 }
             }
         },

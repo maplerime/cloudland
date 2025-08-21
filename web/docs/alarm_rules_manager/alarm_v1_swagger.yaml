@@ -9,8 +9,6 @@ definitions:
     type: object
   apis.AddressPatchPayload:
     properties:
-      lock:
-        type: boolean
       remark:
         maxLength: 512
         type: string
@@ -41,6 +39,13 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  apis.AddressUpdateLockPayload:
+    properties:
+      lock:
+        type: boolean
+    required:
+    - lock
     type: object
   apis.ConsoleResponse:
     properties:
@@ -3718,6 +3723,36 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch an address
+      tags:
+      - Network
+  /subnets/{id}/addresses/{address_id}/lock-state:
+    patch:
+      consumes:
+      - application/json
+      description: lock or unlock an address
+      parameters:
+      - description: Address lock or unlock payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressUpdateLockPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AddressResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update address lock
       tags:
       - Network
   /users:
