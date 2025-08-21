@@ -86,6 +86,12 @@ func (v *AddressAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update address", err)
 		return
 	}
+	addrResp, err := v.getAddressResponse(ctx, addr)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	c.JSON(http.StatusOK, addrResp)
 }
 
 func (v *AddressAPI) getAddressResponse(ctx context.Context, addr *model.Address) (addrResp *AddressResponse, err error) {

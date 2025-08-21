@@ -19,7 +19,7 @@ type AddressAdmin struct{}
 func (a *AddressAdmin) GetAddressByUUID(ctx context.Context, uuID string, subnet *model.Subnet) (addr *model.Address, err error) {
 	ctx, db := GetContextDB(ctx)
 	addr = &model.Address{}
-	err = db.Preload("Subnet").Where("uuid = ? and subnet_id = ?", uuID, subnet.ID).Take(addr).Error
+	err = db.Where("uuid = ? and subnet_id = ?", uuID, subnet.ID).Take(addr).Error
 	if err != nil {
 		logger.Error("Failed to query address, %v", err)
 		return
