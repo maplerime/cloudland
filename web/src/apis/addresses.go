@@ -38,7 +38,7 @@ type AddressPatchPayload struct {
 }
 
 type AddressUpdateLockPayload struct {
-	Lock bool `json:"lock" binding:"required"`
+	Lock bool `json:"lock" binding:"omitempty"`
 }
 
 // @Summary patch an address
