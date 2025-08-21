@@ -34,9 +34,8 @@ type AddressResponse struct {
 }
 
 type AddressPatchPayload struct {
-	Allocated *bool   `json:"allocated" binding:"omitempty"`
-	Reserved  *bool   `json:"reserved" binding:"omitempty"`
-	Remark    *string `json:"remark" binding:"omitempty,max=512"`
+	Remark *string `json:"remark" binding:"omitempty,max=512"`
+	Lock   *bool   `json:"lock" binding:"omitempty"`
 }
 
 // @Summary patch an address
@@ -71,11 +70,9 @@ func (v *AddressAPI) Patch(c *gin.Context) {
 		return
 	}
 
-	if payload.Allocated != nil {
-		addr.Allocated = *payload.Allocated
-	}
-	if payload.Reserved != nil {
-		addr.Reserved = *payload.Reserved
+	if payload.Lock != nil {
+		addr.Reserved = *payload.Lock
+		addr.Allocated = *payload.Lock || addr.Interface != 0
 	}
 	if payload.Remark != nil {
 		addr.Remark = *payload.Remark
