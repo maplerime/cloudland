@@ -2933,7 +2933,7 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/subnets/{id}/addresses/{address_id}/lock-state": {
+        "/subnets/{id}/addresses/{address_id}/update-lock": {
             "patch": {
                 "description": "lock or unlock an address",
                 "consumes": [
