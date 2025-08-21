@@ -3876,9 +3876,6 @@ const docTemplatealarm_v1 = `{
         },
         "apis.AddressUpdateLockPayload": {
             "type": "object",
-            "required": [
-                "lock"
-            ],
             "properties": {
                 "lock": {
                     "type": "boolean"

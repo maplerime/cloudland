@@ -44,8 +44,6 @@ definitions:
     properties:
       lock:
         type: boolean
-    required:
-    - lock
     type: object
   apis.ConsoleResponse:
     properties:

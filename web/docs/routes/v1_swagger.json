@@ -3808,9 +3808,6 @@
         },
         "apis.AddressUpdateLockPayload": {
             "type": "object",
-            "required": [
-                "lock"
-            ],
             "properties": {
                 "lock": {
                     "type": "boolean"

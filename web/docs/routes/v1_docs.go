@@ -3815,9 +3815,6 @@ const docTemplatev1 = `{
         },
         "apis.AddressUpdateLockPayload": {
             "type": "object",
-            "required": [
-                "lock"
-            ],
             "properties": {
                 "lock": {
                     "type": "boolean"
