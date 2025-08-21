@@ -119,6 +119,10 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/api/v1/floating_ips/site_attach", floatingIpAPI.SiteAttach)
 		authGroup.POST("/api/v1/floating_ips/site_detach", floatingIpAPI.SiteDetach)
 
+		// Addresses
+		authGroup.PATCH("/api/v1/subnets/:id/addresses/:address_id", addressAPI.Patch)
+		authGroup.PATCH("/api/v1/subnets/:id/addresses/:address_id/update-lock", addressAPI.UpdateLock)
+
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)
 		authGroup.GET("/api/v1/keys/:id", keyAPI.Get)

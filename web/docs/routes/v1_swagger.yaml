@@ -7,6 +7,44 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
+  apis.AddressPatchPayload:
+    properties:
+      remark:
+        maxLength: 512
+        type: string
+    type: object
+  apis.AddressResponse:
+    properties:
+      address:
+        type: string
+      allocated:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      netmask:
+        type: string
+      owner:
+        type: string
+      remark:
+        type: string
+      reserved:
+        type: boolean
+      subnet:
+        $ref: '#/definitions/common.ResourceReference'
+      type:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.AddressUpdateLockPayload:
+    properties:
+      lock:
+        type: boolean
+    type: object
   apis.ConsoleResponse:
     properties:
       console_host:
@@ -62,6 +100,19 @@ definitions:
       owner:
         type: string
       updated_at:
+        type: string
+      value:
+        type: string
+    type: object
+  apis.DictionaryWithInfo:
+    properties:
+      category:
+        type: string
+      id:
+        type: string
+      name:
+        maxLength: 36
+        minLength: 2
         type: string
       value:
         type: string
@@ -230,16 +281,26 @@ definitions:
     type: object
   apis.FloatingIpWithInfo:
     properties:
+      dictionary:
+        $ref: '#/definitions/apis.DictionaryWithInfo'
       fip_address:
         type: string
       id:
         type: string
+      inbound:
+        type: integer
       ip_address:
         type: string
+      ip_group:
+        $ref: '#/definitions/common.BaseReference'
       name:
         maxLength: 36
         minLength: 2
         type: string
+      outbound:
+        type: integer
+      subnet:
+        $ref: '#/definitions/apis.SubnetWithInfo'
       type:
         type: string
       vlan:
@@ -580,6 +641,13 @@ definitions:
       password:
         type: string
     type: object
+  apis.InstanceRescuePayload:
+    properties:
+      password:
+        type: string
+      rescue_image:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
   apis.InstanceResizePayload:
     properties:
       cpu:
@@ -588,13 +656,6 @@ definitions:
       memory:
         minimum: 1
         type: integer
-    type: object
-  apis.InstanceRescuePayload:
-    properties:
-      password:
-        type: string
-      rescue_image:
-        $ref: '#/definitions/common.BaseReference'
     type: object
   apis.InstanceResponse:
     properties:
@@ -2668,39 +2729,6 @@ paths:
       summary: reinstall a instance
       tags:
       - Compute
-  /instances/{id}/resize:
-    post:
-      consumes:
-      - application/json
-      description: resize a instance
-      parameters:
-      - description: Instance UUID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Instance resize payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.InstanceResizePayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: resize a instance
-      tags:
-      - Compute
   /instances/{id}/rescue:
     post:
       consumes:
@@ -2732,6 +2760,39 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: rescue a instance
+      tags:
+      - Compute
+  /instances/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a instance
       tags:
       - Compute
   /instances/{id}/set_user_password:
@@ -3555,6 +3616,66 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a subnet
+      tags:
+      - Network
+  /subnets/{id}/addresses/{address_id}:
+    patch:
+      consumes:
+      - application/json
+      description: patch an address
+      parameters:
+      - description: Address patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AddressResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch an address
+      tags:
+      - Network
+  /subnets/{id}/addresses/{address_id}/update-lock:
+    patch:
+      consumes:
+      - application/json
+      description: lock or unlock an address
+      parameters:
+      - description: Address lock or unlock payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressUpdateLockPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AddressResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update address lock
       tags:
       - Network
   /users:

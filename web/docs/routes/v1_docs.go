@@ -1538,56 +1538,6 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/instances/{id}/resize": {
-            "post": {
-                "description": "resize a instance",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "Compute"
-                ],
-                "summary": "resize a instance",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Instance UUID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Instance resize payload",
-                        "name": "message",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/apis.InstanceResizePayload"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK"
-                    },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
-                    "401": {
-                        "description": "Not authorized",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    }
-                }
-            }
-        },
         "/instances/{id}/rescue": {
             "post": {
                 "description": "rescue a instance",
@@ -1616,6 +1566,56 @@ const docTemplatev1 = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceRescuePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/resize": {
+            "post": {
+                "description": "resize a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceResizePayload"
                         }
                     }
                 ],
@@ -2887,6 +2887,98 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/subnets/{id}/addresses/{address_id}": {
+            "patch": {
+                "description": "patch an address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "patch an address",
+                "parameters": [
+                    {
+                        "description": "Address patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/subnets/{id}/addresses/{address_id}/update-lock": {
+            "patch": {
+                "description": "lock or unlock an address",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "update address lock",
+                "parameters": [
+                    {
+                        "description": "Address lock or unlock payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressUpdateLockPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "list users",
@@ -3671,6 +3763,64 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.AddressPatchPayload": {
+            "type": "object",
+            "properties": {
+                "remark": {
+                    "type": "string",
+                    "maxLength": 512
+                }
+            }
+        },
+        "apis.AddressResponse": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "allocated": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "netmask": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "reserved": {
+                    "type": "boolean"
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.ResourceReference"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.AddressUpdateLockPayload": {
+            "type": "object",
+            "properties": {
+                "lock": {
+                    "type": "boolean"
+                }
+            }
+        },
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
@@ -3754,6 +3904,25 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "value": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.DictionaryWithInfo": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 36,
+                    "minLength": 2
                 },
                 "value": {
                     "type": "string"
@@ -4000,19 +4169,34 @@ const docTemplatev1 = `{
         "apis.FloatingIpWithInfo": {
             "type": "object",
             "properties": {
+                "dictionary": {
+                    "$ref": "#/definitions/apis.DictionaryWithInfo"
+                },
                 "fip_address": {
                     "type": "string"
                 },
                 "id": {
                     "type": "string"
                 },
+                "inbound": {
+                    "type": "integer"
+                },
                 "ip_address": {
                     "type": "string"
+                },
+                "ip_group": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "name": {
                     "type": "string",
                     "maxLength": 36,
                     "minLength": 2
+                },
+                "outbound": {
+                    "type": "integer"
+                },
+                "subnet": {
+                    "$ref": "#/definitions/apis.SubnetWithInfo"
                 },
                 "type": {
                     "type": "string"
@@ -4503,6 +4687,17 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.InstanceRescuePayload": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "rescue_image": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
         "apis.InstanceResizePayload": {
             "type": "object",
             "properties": {
@@ -4513,17 +4708,6 @@ const docTemplatev1 = `{
                 "memory": {
                     "type": "integer",
                     "minimum": 1
-                }
-            }
-        },
-        "apis.InstanceRescuePayload": {
-            "type": "object",
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "rescue_image": {
-                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },

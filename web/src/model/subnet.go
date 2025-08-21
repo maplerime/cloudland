@@ -46,6 +46,7 @@ type Address struct {
 	Subnet          *Subnet `gorm:"foreignkey:SubnetID"`
 	Interface       int64
 	SecondInterface int64
+	Remark          string `gorm:"type:varchar(512);default:''"`
 }
 
 func init() {
