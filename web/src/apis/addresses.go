@@ -34,8 +34,11 @@ type AddressResponse struct {
 }
 
 type AddressPatchPayload struct {
-	Remark *string `json:"remark" binding:"omitempty,max=512"`
-	Lock   *bool   `json:"lock" binding:"omitempty"`
+	Remark string `json:"remark" binding:"omitempty,max=512"`
+}
+
+type AddressLockPayload struct {
+	Lock bool `json:"lock" binding:"required"`
 }
 
 // @Summary patch an address
@@ -69,14 +72,54 @@ func (v *AddressAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
 		return
 	}
+	addr.Remark = payload.Remark
+	err = addressAdmin.Update(ctx, addr)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to update address", err)
+		return
+	}
+	addrResp, err := v.getAddressResponse(ctx, addr)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	c.JSON(http.StatusOK, addrResp)
+}
 
-	if payload.Lock != nil {
-		addr.Reserved = *payload.Lock
-		addr.Allocated = *payload.Lock || addr.Interface > 0
+// @Summary update address lock
+// @Description lock or unlock an address
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Param   message  body   AddressLockPayload  true   "Address lock payload"
+// @Router /subnets/{id}/addresses/{address_id}/lock-state [patch]
+// @Success 200 {object} AddressResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+func (v *AddressAPI) UpdateLock(c *gin.Context) {
+	ctx := c.Request.Context()
+	subnetUUID := c.Param("id")
+	addressUUID := c.Param("address_id")
+
+	payload := &AddressLockPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
 	}
-	if payload.Remark != nil {
-		addr.Remark = *payload.Remark
+
+	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, subnetUUID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet", err)
+		return
 	}
+	addr, err := addressAdmin.GetAddressByUUID(ctx, addressUUID, subnet)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid address", err)
+		return
+	}
+
+	addr.Reserved = payload.Lock
+	addr.Allocated = payload.Lock || addr.Interface > 0
 
 	err = addressAdmin.Update(ctx, addr)
 	if err != nil {

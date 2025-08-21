@@ -121,6 +121,7 @@ func Register() (r *gin.Engine) {
 
 		// Addresses
 		authGroup.PATCH("/api/v1/subnets/:id/addresses/:address_id", addressAPI.Patch)
+		authGroup.PATCH("/api/v1/subnets/:id/addresses/:address_id/lock-state", addressAPI.UpdateLock)
 
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)
