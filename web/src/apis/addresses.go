@@ -37,7 +37,7 @@ type AddressPatchPayload struct {
 	Remark string `json:"remark" binding:"omitempty,max=512"`
 }
 
-type AddressLockPayload struct {
+type AddressUpdateLockPayload struct {
 	Lock bool `json:"lock" binding:"required"`
 }
 
@@ -101,7 +101,7 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 	subnetUUID := c.Param("id")
 	addressUUID := c.Param("address_id")
 
-	payload := &AddressLockPayload{}
+	payload := &AddressUpdateLockPayload{}
 	if err := c.ShouldBindJSON(payload); err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
