@@ -9,6 +9,7 @@ ID=$1
 vm_ID=inst-$ID
 vm_rescue=$vm_ID-rescue
 vm_xml=$(virsh dumpxml $vm_rescue)
+./generate_vm_instance_map.sh remove $vm_rescue
 virsh undefine $vm_rescue
 cmd="virsh destroy $vm_rescue"
 result=$(eval "$cmd")

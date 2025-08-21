@@ -10,6 +10,10 @@ vm_ID=inst-$ID
 router=$2
 boot_volume=$3
 vm_xml=$(virsh dumpxml $vm_ID)
+
+# Call generate_vm_instance_map.sh to remove mapping before VM deletion
+./generate_vm_instance_map.sh remove $vm_ID
+
 virsh undefine $vm_ID
 if [ $? -ne 0 ]; then
     virsh undefine --nvram $vm_ID
@@ -20,6 +24,8 @@ count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)
     ./clear_sg_chain.sh $vif_dev
+    meta_file="$async_job_dir/$vif_dev"
+    [ -f "$meta_file" ] && rm -f "$meta_file"
 done
 ./clear_local_router.sh $router
 
