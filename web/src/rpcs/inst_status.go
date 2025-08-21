@@ -26,7 +26,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 	//|:-COMMAND-:| launch_vm.sh '3' '5 running 7 running 9 shut_off'
 	db := DB()
 	argn := len(args)
-	if argn < 2 {
+	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -56,7 +56,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			logger.Error("Invalid instance ID", err)
 			if gorm.IsRecordNotFoundError(err) {
 				instance.Hostname = "unknown"
-				instance.Status = status
+				instance.Status = model.InstanceStatus(status)
 				instance.Hyper = int32(hyperID)
 				err = db.Create(instance).Error
 				if err != nil {
@@ -65,10 +65,10 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == "migrating" || instance.Status == "rescuing" {
+		if instance.Status == model.InstanceStatusMigrating || instance.Status == "rescuing" {
 			continue
 		}
-		if instance.Status != status {
+		if instance.Status.String() != status {
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
 				"status": status,
 			}).Error

@@ -28,7 +28,6 @@ type InstanceAPI struct{}
 type InstancePatchPayload struct {
 	Hostname    string      `json:"hostname" binding:"omitempty,hostname|fqdn"`
 	PowerAction PowerAction `json:"power_action" binding:"omitempty,oneof=stop hard_stop start restart hard_restart pause resume"`
-	Flavor      string      `json:"flavor" binding:"omitempty,min=1,max=32"`
 }
 
 type InstanceSetUserPasswordPayload struct {
@@ -44,9 +43,14 @@ type InstanceReinstallPayload struct {
 	LoginPort int              `json:"login_port" binding:"omitempty,min=1,max=65535"`
 }
 
+type InstanceResizePayload struct {
+	Cpu    int32 `json:"cpu" binding:"omitempty,gte=1"`
+	Memory int32 `json:"memory" binding:"omitempty,gte=1"`
+}
+
 type InstanceRescuePayload struct {
-	RescueImage     *BaseReference   `json:"rescue_image" binding:"omitempty"`
-	Password  string           `json:"password" binging:"required,min=8,max=64"`
+	RescueImage *BaseReference `json:"rescue_image" binding:"omitempty"`
+	Password    string         `json:"password" binging:"required,min=8,max=64"`
 }
 
 type InstancePayload struct {
@@ -66,6 +70,7 @@ type InstancePayload struct {
 	Zone                string              `json:"zone" binding:"required,min=1,max=32"`
 	VPC                 *BaseReference      `json:"vpc" binding:"omitempty"`
 	Userdata            string              `json:"userdata,omitempty"`
+	UserdataType        string              `json:"userdata_type,omitempty"`
 	NestedEnable        bool                `json:"nested_enable,omitempty"`
 	PoolID              string              `json:"pool_id" binding:"omitempty"`
 }
@@ -157,16 +162,7 @@ func (v *InstanceAPI) Patch(c *gin.Context) {
 		hostname = payload.Hostname
 		logger.Debugf("Update hostname to %s", hostname)
 	}
-	var flavor *model.Flavor
-	if payload.Flavor != "" {
-		flavor, err = flavorAdmin.GetFlavorByName(ctx, payload.Flavor)
-		if err != nil {
-			logger.Errorf("Failed to get flavor %+v, %+v", payload.Flavor, err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor query", err)
-			return
-		}
-	}
-	err = instanceAdmin.Update(ctx, instance, flavor, hostname, payload.PowerAction, int(instance.Hyper))
+	err = instanceAdmin.Update(ctx, instance, hostname, payload.PowerAction, int(instance.Hyper))
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
@@ -390,6 +386,68 @@ func (v *InstanceAPI) EndRescue(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// @Summary resize a instance
+// @Description resize a instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceResizePayload  true   "Instance resize payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/resize [post]
+func (v *InstanceAPI) Resize(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Resize instance %s", uuID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+
+	// bind json
+	payload := &InstanceResizePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Resize instance %s with payload %+v", uuID, payload)
+
+	// old data compatibility
+	cpu, memory := instance.Cpu, instance.Memory
+	if instance.Cpu == 0 {
+		var flavor *model.Flavor
+		flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
+		if err != nil {
+			logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid flavor", err)
+			return
+		}
+		cpu, memory = flavor.Cpu, flavor.Memory
+	}
+	if payload.Cpu > 0 {
+		cpu = payload.Cpu
+	}
+	if payload.Memory > 0 {
+		memory = payload.Memory
+	}
+
+	logger.Debugf("Resize instance %s to cpu %d, memory %d", uuID, cpu, memory)
+	err = instanceAdmin.Resize(ctx, instance, cpu, memory)
+	if err != nil {
+		logger.Errorf("Failed to resize instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to resize instance", err)
+		return
+	}
+	c.JSON(http.StatusOK, nil)
+
+}
+
 // @Summary delete a instance
 // @Description delete a instance
 // @tags Compute
@@ -523,9 +581,17 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	if payload.Disk <= 0 {
 		payload.Disk = flavor.Disk
 	}
-	logger.Debugf("Creating %d instances with hostname %s, userdata %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
-		count, hostname, userdata, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	userdataType := payload.UserdataType
+	if userdataType == "" {
+		userdataType = model.UserDataTypePlain
+	} else if !model.IsValidUserDataType(userdataType) {
+		logger.Errorf("Invalid userdata_type: %s", userdataType)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid userdata_type", nil)
+		return
+	}
+	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
+		count, hostname, userdata, userdataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
 	if err != nil {
 		logger.Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)
@@ -701,7 +767,7 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 		},
 		Hostname:  instance.Hostname,
 		LoginPort: int(instance.LoginPort),
-		Status:    instance.Status,
+		Status:    instance.Status.String(),
 		Reason:    instance.Reason,
 		Cpu:       instance.Cpu,
 		Memory:    instance.Memory,

@@ -205,7 +205,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		uuid = volume.GetOriginVolumeID()
 	}
 	// RN-156: append the volume UUID to the command
-	if volume.InstanceID > 0 && instID == 0 && volume.Status == "attached" {
+	if volume.InstanceID > 0 && instID == 0 && volume.Status == model.VolumeStatusAttached {
 		if volume.Booting {
 			logger.Error("Boot volume can not be detached")
 			err = fmt.Errorf("Boot volume can not be detached")
@@ -222,7 +222,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		// the instance ID should be set to 0 after the volume is detached successfully (after script executed successfully)
 		//volume.Instance = nil
 		//volume.InstanceID = 0
-	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == "available" {
+	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == model.VolumeStatusAvailable {
 		instance := &model.Instance{Model: model.Model{ID: instID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
@@ -264,7 +264,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 
-	if volume.Status == "attached" {
+	if volume.Status == model.VolumeStatusAttached {
 		logger.Error("Please detach volume before delete it")
 		err = fmt.Errorf("Please detach volume[%s] before delete it", volume.Name)
 		return
@@ -301,6 +301,85 @@ func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err 
 		return
 	}
 	return a.Delete(ctx, volume)
+}
+
+func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int32) (err error) {
+	logger.Debugf("Resize volume %d with size %d", volume.ID, size)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, nil)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckOwner(model.Writer, "volumes", volume.ID)
+	if !permit {
+		logger.Error("Failed to check owner")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized to delete the instance")
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	if volume.Status == "resizing" || volume.Status == "error" {
+		logger.Error("Volume is already resizing or in error status")
+		err = fmt.Errorf("Volume is already resizing or in error status")
+		return
+	}
+	if size <= volume.Size {
+		logger.Error("The size must be greater than the original size")
+		err = fmt.Errorf("the size must be greater than the original size")
+		return
+	}
+	if err = db.Model(volume).Updates(map[string]interface{}{
+		"size":   size,
+		"status": model.VolumeStatusResizing,
+	}).Error; err != nil {
+		logger.Error("update volume failed", err)
+		return
+	}
+	if volume.Booting {
+		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
+		if err = db.Model(instance).Take(instance).Error; err != nil {
+			logger.Error("DB: query instance failed", err)
+			return
+		}
+		cpu, memory := instance.Cpu, instance.Memory
+		if instance.Cpu == 0 {
+			var flavor *model.Flavor
+			flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
+			if err != nil {
+				logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+				return
+			}
+			cpu, memory = flavor.Cpu, flavor.Memory
+		}
+		if err = db.Model(instance).Updates(map[string]interface{}{
+			"cpu":    cpu,
+			"memory": memory,
+			"disk":   size,
+		}).Error; err != nil {
+			logger.Error("DB: update instance failed", err)
+			return
+		}
+	}
+	control := fmt.Sprintf("inter=")
+	volDriver := GetVolumeDriver()
+	uuid := volume.UUID
+	if volDriver != "local" {
+		uuid = volume.GetOriginVolumeID()
+	}
+	if volume.InstanceID != 0 {
+		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Resize remote exec failed", err)
+		return
+	}
+	return
 }
 
 // list data volumes
@@ -578,4 +657,50 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
+}
+
+func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	redirectTo := "/volumes"
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	volumeID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Volume ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	volume, err := volumeAdmin.Get(ctx, int64(volumeID))
+	if err != nil {
+		logger.Error("Volume query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Volume query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		c.Data["Link"] = fmt.Sprintf("/volumes/%d/resize", volumeID)
+		c.HTML(200, "volumes_resize")
+		return
+	} else if c.Req.Method == "POST" {
+		size := c.QueryInt64("size")
+		if size <= int64(volume.Size) {
+			logger.Error("The size must be greater than the original size")
+			c.Data["ErrorMsg"] = "The size must be greater than the original size"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		err = volumeAdmin.Resize(ctx, volume, int32(size))
+		if err != nil {
+			logger.Error("Resize failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Redirect(redirectTo)
+	}
 }

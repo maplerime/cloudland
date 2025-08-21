@@ -64,12 +64,23 @@ type SubnetWithInfo struct {
 	Type    string `json:"type"`
 }
 
+type DictionaryWithInfo struct {
+	*BaseReference
+	Category string `json:"category"`
+	Value    string `json:"value"`
+}
+
 type FloatingIpWithInfo struct {
 	*BaseReference
-	Vlan       int64  `json:"vlan"`
-	IPAddress  string `json:"ip_address"`
-	FipAddress string `json:"fip_address"`
-	Type       string `json:"type"`
+	Vlan       int64               `json:"vlan"`
+	IPAddress  string              `json:"ip_address"`
+	FipAddress string              `json:"fip_address"`
+	Type       string              `json:"type"`
+	Subnet     *SubnetWithInfo     `json:"subnet,omitempty"`
+	IpGroup    *BaseReference      `json:"ip_group,omitempty"`
+	Dictionary *DictionaryWithInfo `json:"dictionary,omitempty"`
+	Inbound    int32               `json:"inbound"`
+	Outbound   int32               `json:"outbound"`
 }
 
 // @Summary get a ipGroup
@@ -300,9 +311,48 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 	var floatingIpRefs []*FloatingIpWithInfo
 	for _, fip := range ipGroup.FloatingIPs {
 		var vlan int64
+		var subnetInfo *SubnetWithInfo
+		var ipGroupInfo *BaseReference
+		var dictionaryInfo *DictionaryWithInfo
+
+		// Get subnet information
 		if fip.Subnet != nil {
 			vlan = fip.Subnet.Vlan
+			subnetInfo = &SubnetWithInfo{
+				BaseReference: &BaseReference{
+					ID:   fip.Subnet.UUID,
+					Name: fip.Subnet.Name,
+				},
+				Vlan:    fip.Subnet.Vlan,
+				Network: fip.Subnet.Network,
+				Netmask: fip.Subnet.Netmask,
+				Gateway: fip.Subnet.Gateway,
+				Start:   fip.Subnet.Start,
+				End:     fip.Subnet.End,
+				Type:    fip.Subnet.Type,
+			}
 		}
+
+		// Get ipgroup information
+		if fip.Group != nil {
+			ipGroupInfo = &BaseReference{
+				ID:   fip.Group.UUID,
+				Name: fip.Group.Name,
+			}
+		}
+
+		// Get dictionary information (through subnet group association)
+		if fip.Subnet != nil && fip.Subnet.Group != nil && fip.Subnet.Group.DictionaryType != nil {
+			dictionaryInfo = &DictionaryWithInfo{
+				BaseReference: &BaseReference{
+					ID:   fip.Subnet.Group.DictionaryType.UUID,
+					Name: fip.Subnet.Group.DictionaryType.Name,
+				},
+				Category: fip.Subnet.Group.DictionaryType.Category,
+				Value:    fip.Subnet.Group.DictionaryType.Value,
+			}
+		}
+
 		floatingIpRefs = append(floatingIpRefs, &FloatingIpWithInfo{
 			BaseReference: &BaseReference{
 				ID:   fip.UUID,
@@ -312,6 +362,11 @@ func (v *IpGroupAPI) getIpGroupResponse(ctx context.Context, ipGroup *model.IpGr
 			IPAddress:  fip.IPAddress,
 			FipAddress: fip.FipAddress,
 			Type:       fip.Type,
+			Subnet:     subnetInfo,
+			IpGroup:    ipGroupInfo,
+			Dictionary: dictionaryInfo,
+			Inbound:    fip.Inbound,
+			Outbound:   fip.Outbound,
 		})
 	}
 

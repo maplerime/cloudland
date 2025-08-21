@@ -1538,6 +1538,56 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/instances/{id}/resize": {
+            "post": {
+                "description": "resize a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceResizePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/rescue": {
             "post": {
                 "description": "rescue a instance",
@@ -3245,6 +3295,49 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/volumes/{id}/resize": {
+            "post": {
+                "description": "resize a volume",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a volume",
+                "parameters": [
+                    {
+                        "description": "Volume resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeResizePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/vpcs": {
             "get": {
                 "description": "list vpcs",
@@ -3918,7 +4011,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "type": {
@@ -4271,11 +4364,6 @@ const docTemplatev1 = `{
         "apis.InstancePatchPayload": {
             "type": "object",
             "properties": {
-                "flavor": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 1
-                },
                 "hostname": {
                     "type": "string"
                 },
@@ -4375,6 +4463,9 @@ const docTemplatev1 = `{
                 "userdata": {
                     "type": "string"
                 },
+                "userdata_type": {
+                    "type": "string"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -4409,6 +4500,19 @@ const docTemplatev1 = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.InstanceResizePayload": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "memory": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -4664,7 +4768,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "outbound": {
@@ -5452,7 +5556,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "netmask": {
@@ -5606,7 +5710,17 @@ const docTemplatev1 = `{
             }
         },
         "apis.VPCPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.VPCPayload": {
             "type": "object",
@@ -5766,6 +5880,18 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.VolumeResizePayload": {
+            "type": "object",
+            "required": [
+                "size"
+            ],
+            "properties": {
+                "size": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "apis.VolumeResponse": {
             "type": "object",
             "properties": {
@@ -5909,7 +6035,7 @@ const docTemplatev1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 }
             }
