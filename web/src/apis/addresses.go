@@ -72,7 +72,7 @@ func (v *AddressAPI) Patch(c *gin.Context) {
 
 	if payload.Lock != nil {
 		addr.Reserved = *payload.Lock
-		addr.Allocated = *payload.Lock || addr.Interface != 0
+		addr.Allocated = *payload.Lock || addr.Interface > 0
 	}
 	if payload.Remark != nil {
 		addr.Remark = *payload.Remark
