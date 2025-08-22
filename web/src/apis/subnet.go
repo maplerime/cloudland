@@ -77,7 +77,6 @@ type SubnetPayload struct {
 type SubnetPatchPayload struct {
 	Name  string         `json:"name" binding:"omitempty,min=2,max=64"`
 	Group *BaseReference `json:"group" binding:"omitempty"`
-	Vlan  int64          `json:"vlan" binding:"omitempty,gte=1,lte=4096"`
 	Type  SubnetType     `json:"type" binding:"omitempty,oneof=public internal site"`
 }
 
@@ -140,9 +139,6 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 	if payload.Type != "" {
 		subnet.Type = string(payload.Type)
 	}
-	if payload.Vlan != 0 {
-		subnet.Vlan = payload.Vlan
-	}
 	if payload.Group != nil {
 		if payload.Group.ID != "" {
 			subnet.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
@@ -155,7 +151,7 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 			subnet.Group = nil
 		}
 	}
-	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Vlan, subnet.Group)
+	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group)
 	if err != nil {
 		logger.Errorf("Failed to update subnet %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update subnet", err)

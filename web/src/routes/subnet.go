@@ -221,8 +221,8 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, vlan int64, ipGroup *model.IpGroup) (err error) {
-	logger.Debugf("Updating subnet with ID: %d, name: %s, subnetType: %s, vlan: %d, ipGroup: %+v", id, name, subnetType, vlan, ipGroup)
+func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup) (err error) {
+	logger.Debugf("Updating subnet with ID: %d, name: %s, subnetType: %s, ipGroup: %+v", id, name, subnetType, ipGroup)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -233,7 +233,6 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 
 	updates := map[string]interface{}{
 		"name": name,
-		"vlan": vlan,
 		"type": subnetType,
 	}
 
@@ -886,7 +885,7 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	// 	c.HTML(http.StatusBadRequest, "error")
 	// 	return
 	// }
-	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, subnet.Vlan, ipGroup)
+	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, ipGroup)
 	if err != nil {
 		logger.Error("Create subnet failed", err)
 		c.Data["ErrorMsg"] = err.Error()
