@@ -572,7 +572,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	// update security group rules
 	if loginPort != int(instance.LoginPort) {
 		for _, iface := range instance.Interfaces {
-			err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance.LoginPort, iface)
+			err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance, iface)
 			if err != nil {
 				logger.Errorf("Failed to remove security rule", err)
 			}
@@ -1013,7 +1013,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	}
 	var moreAddresses []string
 	for _, iface := range instance.Interfaces {
-		err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance.LoginPort, iface)
+		err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance, iface)
 		if err != nil {
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}

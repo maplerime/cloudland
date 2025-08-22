@@ -268,8 +268,12 @@ func (a *SecgroupAdmin) GetInterfaceSecgroups(ctx context.Context, iface *model.
 }
 
 func (a *SecgroupAdmin) AllowPortForInterfaceSecgroups(ctx context.Context, port int32, iface *model.Interface) (err error) {
-	if port > 0 && port != 22 && port != 3389 {
-		for _, sg := range iface.SecurityGroups {
+	if port == 22 || port == 3389 || port <= 0{
+		return
+	}
+	for _, sg := range iface.SecurityGroups {
+		_, err1 := secruleAdmin.GetRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
+		if err1 != nil {
 			_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", port, port, sg)
 			if err != nil {
 				logger.Error("Failed to create security rule", err)
@@ -280,14 +284,34 @@ func (a *SecgroupAdmin) AllowPortForInterfaceSecgroups(ctx context.Context, port
 	return
 }
 
-func (a *SecgroupAdmin) RemovePortForInterfaceSecgroups(ctx context.Context, port int32, iface *model.Interface) (err error) {
-	if port > 0 && port != 22 && port != 3389 {
-		for _, sg := range iface.SecurityGroups {
-			_, err = secruleAdmin.DeleteRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
-			if err != nil {
-				logger.Error("Failed to remove security rule", err)
-				return
-			}
+func (a *SecgroupAdmin) RemovePortForInterfaceSecgroups(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
+	port := instance.LoginPort
+	if port == 22 || port == 3389 || port <= 0 {
+		return
+	}
+	count := 0
+	ctx, db := GetContextDB(ctx)
+	err = db.Model(&model.Instance{}).Where("login_port = ? and router_id = ?", port, instance.RouterID).Count(&count).Error
+	if err != nil {
+		logger.Error("Failed to count instances of the login port", err)
+		return
+	}
+	if count > 1 {
+		logger.Infof("No need to remove security rule for port: %d", count)
+		return
+	}
+	for _, sg := range iface.SecurityGroups {
+		var secrule *model.SecurityRule
+		secrule, err = secruleAdmin.GetRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
+		if err != nil {
+			logger.Error("Failed to remove security rule", err)
+			return
+		}
+		logger.Errorf("Security rule: %v", secrule)
+		err = secruleAdmin.Delete(ctx, secrule, sg)
+		if err != nil {
+			logger.Error("Failed to create security rule", err)
+			return
 		}
 	}
 	return
