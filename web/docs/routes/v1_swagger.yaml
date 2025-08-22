@@ -1284,11 +1284,12 @@ definitions:
         minLength: 2
         type: string
       type:
-        $ref: '#/definitions/common.SubnetType'
-      vlan:
-        maximum: 16777215
-        minimum: 1
-        type: integer
+        allOf:
+        - $ref: '#/definitions/common.SubnetType'
+        enum:
+        - public
+        - internal
+        - site
     type: object
   apis.SubnetPayload:
     properties:

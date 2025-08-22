@@ -5633,12 +5633,16 @@ const docTemplatev1 = `{
                     "minLength": 2
                 },
                 "type": {
-                    "$ref": "#/definitions/common.SubnetType"
-                },
-                "vlan": {
-                    "type": "integer",
-                    "maximum": 16777215,
-                    "minimum": 1
+                    "enum": [
+                        "public",
+                        "internal",
+                        "site"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.SubnetType"
+                        }
+                    ]
                 }
             }
         },
