@@ -17,8 +17,11 @@ if [ "$force" != "true" ]; then
         sleep 1
     done
 fi
-
 rm -f $async_job_dir/$vnic
+
+lock_file="$run_dir/iptables.lock"
+exec 200>>"$lock_file"
+flock -x 200
 apply_fw -D FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j secgroup-chain
 apply_fw -D FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j secgroup-chain
 apply_fw -D secgroup-chain -m physdev --physdev-out $vnic --physdev-is-bridged -j $chain_in
@@ -31,3 +34,4 @@ apply_fw -F $chain_out
 apply_fw -X $chain_in
 apply_fw -X $chain_as
 apply_fw -X $chain_out
+flock -u 200
