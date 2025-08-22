@@ -77,8 +77,8 @@ type SubnetPayload struct {
 type SubnetPatchPayload struct {
 	Name  string         `json:"name" binding:"omitempty,min=2,max=64"`
 	Group *BaseReference `json:"group" binding:"omitempty"`
-	Vlan  int64          `json:"vlan" binding:"omitempty,gte=1,lte=16777215"`
-	Type  SubnetType     `json:"type" binding:"omitempty"`
+	Vlan  int64          `json:"vlan" binding:"omitempty,gte=1,lte=4096"`
+	Type  SubnetType     `json:"type" binding:"omitempty,oneof=public internal site"`
 }
 
 // @Summary get a subnet
