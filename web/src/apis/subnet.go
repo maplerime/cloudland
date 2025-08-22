@@ -144,11 +144,15 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 		subnet.Vlan = payload.Vlan
 	}
 	if payload.Group != nil {
-		subnet.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
-		if err != nil {
-			logger.Errorf("Failed to get ipGroup by UUID %s, %+v", payload.Group.ID, err)
-			ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
-			return
+		if payload.Group.ID != "" {
+			subnet.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
+			if err != nil {
+				logger.Errorf("Failed to get ipGroup by UUID %s, %+v", payload.Group.ID, err)
+				ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
+				return
+			}
+		} else {
+			subnet.Group = nil
 		}
 	}
 	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Vlan, subnet.Group)
