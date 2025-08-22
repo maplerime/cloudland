@@ -5683,7 +5683,29 @@ const docTemplatealarm_v1 = `{
             }
         },
         "apis.SubnetPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "type": {
+                    "enum": [
+                        "public",
+                        "internal",
+                        "site"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/common.SubnetType"
+                        }
+                    ]
+                }
+            }
         },
         "apis.SubnetPayload": {
             "type": "object",

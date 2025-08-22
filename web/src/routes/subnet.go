@@ -221,8 +221,8 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, gateway, start, end, dns, routes string, ipGroup *model.IpGroup) (err error) {
-	logger.Debugf("Updating subnet with ID: %d, name: %s, gateway: %s, start: %s, end: %s, dns: %s, routes: %s, ipGroup: %+v", id, name, gateway, start, end, dns, routes, ipGroup)
+func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup) (err error) {
+	logger.Debugf("Updating subnet with ID: %d, name: %s, subnetType: %s, ipGroup: %+v", id, name, subnetType, ipGroup)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -233,6 +233,7 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, gateway, start
 
 	updates := map[string]interface{}{
 		"name": name,
+		"type": subnetType,
 	}
 
 	if ipGroup != nil {
@@ -844,11 +845,14 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	subnet, err := subnetAdmin.Get(ctx, id)
+	if err != nil {
+		logger.Error("Failed to get subnet ", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(404, "404")
+		return
+	}
 	name := c.QueryTrim("name")
-	gateway := c.QueryTrim("gateway")
-	start := c.QueryTrim("start")
-	end := c.QueryTrim("end")
-	dns := c.QueryTrim("dns")
 	groupID := c.QueryTrim("group")
 	var groupIDInt int
 	if groupID == "" {
@@ -881,7 +885,7 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	// 	c.HTML(http.StatusBadRequest, "error")
 	// 	return
 	// }
-	err = subnetAdmin.Update(c.Req.Context(), id, name, gateway, start, end, dns, "", ipGroup)
+	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, ipGroup)
 	if err != nil {
 		logger.Error("Create subnet failed", err)
 		c.Data["ErrorMsg"] = err.Error()

@@ -1276,6 +1276,20 @@ definitions:
         type: integer
     type: object
   apis.SubnetPatchPayload:
+    properties:
+      group:
+        $ref: '#/definitions/common.BaseReference'
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+      type:
+        allOf:
+        - $ref: '#/definitions/common.SubnetType'
+        enum:
+        - public
+        - internal
+        - site
     type: object
   apis.SubnetPayload:
     properties:
