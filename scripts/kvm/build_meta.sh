@@ -14,8 +14,13 @@ rm -f ${latest_dir}/*
 
 vm_meta=$(cat | base64 -d)
 userdata=$(jq -r .userdata <<<$vm_meta)
+userdata_type=$(jq -r .userdata_type <<<$vm_meta)
 if [ -n "$userdata" ]; then
-   echo "$userdata" > $latest_dir/user_data
+   if [ "$userdata_type" = "base64" ]; then
+      echo "$userdata" | base64 -d > $latest_dir/user_data
+   else
+      echo "$userdata" > $latest_dir/user_data
+   fi
 fi
 
 root_passwd=$(jq -r '.root_passwd' <<< $vm_meta)

@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 8 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader>"
+[ $# -lt 9 ] && die "$0 <vm_ID> <image> <name> <cpu> <memory> <disk_size> <disk_id> <boot_loader> <instance_uuid>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -14,6 +14,7 @@ vm_mem=$5
 disk_size=$6
 disk_ID=$7
 boot_loader=$8
+instance_uuid=${9:-$ID}
 state=error
 vm_vnc=""
 vol_state=error
@@ -24,7 +25,7 @@ vm_rescue=$vm_ID-rescue
 ./action_vm.sh $ID hard_stop
 md=$(cat)
 metadata=$(echo $md | base64 -d)
-./build_meta.sh "$vm_ID" "$vm_name" "true" <<< $md >/dev/null 2>&1
+./build_meta.sh "$vm_ID" "$vm_name-rescue" "true" <<< $md >/dev/null 2>&1
 
 vm_meta=$cache_dir/meta/$vm_ID-rescue.iso
 template=$template_dir/template_with_qa.xml
@@ -101,7 +102,7 @@ else
     vm_virt_feature="svm"
 fi
 os_code=$(jq -r '.os_code' <<< $metadata)
-sed -i "s/VM_ID/$vm_rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
+sed -i "s/VM_ID/$vm_rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g; s/INSTANCE_UUID/$instance_uuid/g" $vm_xml
 vm_nvram="$image_dir/${vm_rescue}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
     cp $nvram_template $vm_nvram
@@ -117,6 +118,7 @@ if [ "$boot_loader" = "uefi" ]; then
     -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
     -e "s#VM_BOOT_LOADER#$uefi_boot_loader#g" \
     -e "s#VM_NVRAM#$vm_nvram#g" \
+    -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
 else
     sed -i \
@@ -129,10 +131,12 @@ else
     -e "s#VM_AGENT#$vm_QA#g" \
     -e "s/VM_NESTED/$vm_nested/g" \
     -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s/INSTANCE_UUID/$instance_uuid/g" \
     $vm_xml
 fi
 
 virsh define $vm_xml
+./generate_vm_instance_map.sh add $vm_ID
 
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}.xml
 cp $disk_template $disk_xml
@@ -143,9 +147,14 @@ vlans=$(jq .vlans <<< $metadata)
 nvlan=$(jq length <<< $vlans)
 i=0
 while [ $i -lt $nvlan ]; do
-    read -d'\n' -r mac < <(jq -r ".[$i].mac_address" <<<$vlans)
+    read -d'\n' -r vlan mac < <(jq -r ".[$i].vlan, .[$i].mac_address" <<<$vlans)
     nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
     interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    if [ ! -f "$interface_xml" ]; then
+        template=$template_dir/interface.xml
+        cp $template $interface_xml
+        sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g" $interface_xml
+    fi
     virsh attach-device $vm_rescue $interface_xml --config --persistent
     let i=$i+1
 done

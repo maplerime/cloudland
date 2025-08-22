@@ -708,6 +708,32 @@ const docTemplatealarm_v1 = `{
                     "Administration"
                 ],
                 "summary": "list hypervisors",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Offset for pagination",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit for pagination",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order by field",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search query",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -724,7 +750,7 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/hypers/{name}": {
+        "/hypers/{hostid}": {
             "get": {
                 "description": "get a hypervisor",
                 "consumes": [
@@ -737,6 +763,15 @@ const docTemplatealarm_v1 = `{
                     "Administration"
                 ],
                 "summary": "get a hypervisor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor host ID",
+                        "name": "hostid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -752,6 +787,75 @@ const docTemplatealarm_v1 = `{
                     },
                     "401": {
                         "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "update hypervisor status, zone, over-commit rates, and remark",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "update a hypervisor",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Hypervisor host ID",
+                        "name": "hostid",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Hypervisor update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.HyperPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.HyperResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
@@ -1473,6 +1577,56 @@ const docTemplatealarm_v1 = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/apis.InstanceReinstallPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/{id}/resize": {
+            "post": {
+                "description": "resize a instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceResizePayload"
                         }
                     }
                 ],
@@ -3202,6 +3356,49 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/volumes/{id}/resize": {
+            "post": {
+                "description": "resize a volume",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "resize a volume",
+                "parameters": [
+                    {
+                        "description": "Volume resize payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeResizePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/vpcs": {
             "get": {
                 "description": "list vpcs",
@@ -3386,7 +3583,7 @@ const docTemplatealarm_v1 = `{
         },
         "/zones": {
             "get": {
-                "description": "list zonevisors",
+                "description": "list zones",
                 "consumes": [
                     "application/json"
                 ],
@@ -3396,7 +3593,7 @@ const docTemplatealarm_v1 = `{
                 "tags": [
                     "Zone"
                 ],
-                "summary": "list zonevisors",
+                "summary": "list zones",
                 "responses": {
                     "200": {
                         "description": "OK",
@@ -3411,11 +3608,9 @@ const docTemplatealarm_v1 = `{
                         }
                     }
                 }
-            }
-        },
-        "/zones/{name}": {
-            "get": {
-                "description": "get a zonevisor",
+            },
+            "post": {
+                "description": "create a zone",
                 "consumes": [
                     "application/json"
                 ],
@@ -3425,13 +3620,89 @@ const docTemplatealarm_v1 = `{
                 "tags": [
                     "Zone"
                 ],
-                "summary": "get a zonevisor",
+                "summary": "create a zone",
+                "parameters": [
+                    {
+                        "description": "Zone create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZonePayload"
+                        }
+                    }
+                ],
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.ZoneResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/zones/{name}": {
+            "get": {
+                "description": "get a zone",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Zone"
+                ],
+                "summary": "get a zone",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZoneResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a zone",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Zone"
+                ],
+                "summary": "delete a zone",
+                "responses": {
+                    "200": {
+                        "description": "OK"
                     },
                     "400": {
                         "description": "Bad request",
@@ -3464,6 +3735,15 @@ const docTemplatealarm_v1 = `{
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
+                "console_host": {
+                    "type": "string"
+                },
+                "console_path": {
+                    "type": "string"
+                },
+                "console_port": {
+                    "type": "integer"
+                },
                 "console_url": {
                     "type": "string"
                 },
@@ -3792,7 +4072,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "type": {
@@ -3823,25 +4103,91 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.HyperPatchPayload": {
+            "type": "object",
+            "properties": {
+                "cpu_over_rate": {
+                    "type": "number",
+                    "minimum": 1
+                },
+                "disk_over_rate": {
+                    "type": "number",
+                    "minimum": 1
+                },
+                "mem_over_rate": {
+                    "type": "number",
+                    "minimum": 1
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer",
+                    "maximum": 1,
+                    "minimum": 0
+                },
+                "zone_id": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "apis.HyperResponse": {
             "type": "object",
             "properties": {
+                "children": {
+                    "type": "integer"
+                },
                 "cpu": {
                     "type": "integer"
+                },
+                "cpu_over_rate": {
+                    "type": "number"
                 },
                 "disk": {
                     "type": "integer"
                 },
-                "id": {
+                "disk_over_rate": {
+                    "type": "number"
+                },
+                "host_ip": {
                     "type": "string"
+                },
+                "hostid": {
+                    "type": "integer"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "mem_over_rate": {
+                    "type": "number"
                 },
                 "memory": {
                     "type": "integer"
                 },
-                "name": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 2
+                "parentid": {
+                    "type": "integer"
+                },
+                "remark": {
+                    "type": "string"
+                },
+                "route_ip": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "integer"
+                },
+                "status_name": {
+                    "type": "string"
+                },
+                "virt_type": {
+                    "type": "string"
+                },
+                "zone_id": {
+                    "type": "integer"
+                },
+                "zone_name": {
+                    "type": "string"
                 }
             }
         },
@@ -4079,11 +4425,6 @@ const docTemplatealarm_v1 = `{
         "apis.InstancePatchPayload": {
             "type": "object",
             "properties": {
-                "flavor": {
-                    "type": "string",
-                    "maxLength": 32,
-                    "minLength": 1
-                },
                 "hostname": {
                     "type": "string"
                 },
@@ -4217,6 +4558,19 @@ const docTemplatealarm_v1 = `{
                 },
                 "password": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.InstanceResizePayload": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "memory": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -4472,7 +4826,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "outbound": {
@@ -5017,6 +5371,11 @@ const docTemplatealarm_v1 = `{
                         "egress"
                     ]
                 },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
                 "port_max": {
                     "type": "integer",
                     "maximum": 65535,
@@ -5255,7 +5614,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 },
                 "netmask": {
@@ -5409,7 +5768,17 @@ const docTemplatealarm_v1 = `{
             }
         },
         "apis.VPCPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
         },
         "apis.VPCPayload": {
             "type": "object",
@@ -5569,6 +5938,18 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.VolumeResizePayload": {
+            "type": "object",
+            "required": [
+                "size"
+            ],
+            "properties": {
+                "size": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
         "apis.VolumeResponse": {
             "type": "object",
             "properties": {
@@ -5645,23 +6026,33 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.ZonePayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "default": {
+                    "type": "boolean"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                }
+            }
+        },
         "apis.ZoneResponse": {
             "type": "object",
             "properties": {
-                "cpu": {
-                    "type": "integer"
-                },
                 "created_at": {
                     "type": "string"
                 },
-                "disk": {
-                    "type": "integer"
+                "default": {
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"
-                },
-                "memory": {
-                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -5702,7 +6093,7 @@ const docTemplatealarm_v1 = `{
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 36,
                     "minLength": 2
                 }
             }

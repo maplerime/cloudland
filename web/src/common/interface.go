@@ -195,87 +195,86 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 		primaryIface = floatingIps[0].Interface
 	}
 	primarySubnet = primaryIface.Address.Subnet
-	secondIpsLength := len(primaryIface.SecondAddresses)
-	floatingIpsLength := len(floatingIps)
-	cnt := floatingIpsLength - 1 - secondIpsLength
-	if cnt >= 0 {
-		for i, fip := range floatingIps {
-			if fip.InstanceID > 0 {
-				continue
+	for _, address := range primaryIface.SecondAddresses {
+		err = db.Model(address).Updates(map[string]interface{}{"second_interface": 0}).Error
+		if err != nil {
+			logger.Error("Update interface ", err)
+			return
+		}
+		if address.Interface > 0 {
+			iface := &model.Interface{Model: model.Model{ID: address.Interface}}
+			if err = db.Model(iface).Take(iface).Error; err != nil {
+				logger.Errorf("Failed to query interface, %v", err)
+				return
 			}
-			fip.Instance = instance
-			iface := fip.Interface
-			if i == 0 {
-				primaryIface.Instance = instance.ID
-				primaryIface.Name = "eth0"
-				primaryIface.PrimaryIf = true
-				err = db.Model(primaryIface).Updates(primaryIface).Error
+			if iface.FloatingIp > 0 {
+				floatingIp := &model.FloatingIp{Model: model.Model{ID: iface.FloatingIp}}
+				err = db.Model(floatingIp).Updates(map[string]interface{}{
+					"instance_id": 0,
+					"int_address": "",
+					"type":        string(PublicFloating)}).Error
 				if err != nil {
-					logger.Errorf("Failed to update interface, %v", err)
+					logger.Error("Failed to update floating ip ", err)
 					return
 				}
-				fip.InstanceID = instance.ID
-				fip.IntAddress = primaryIface.Address.Address
-				fip.Type = string(PublicReserved)
-				fip.Instance = nil
-				err = db.Model(fip).Updates(fip).Error
-				if err != nil {
-					logger.Errorf("Failed to update public ip, %v", err)
-					return
-				}
-			} else {
-				secondAddr := fip.Interface.Address
-				secondAddr.Type = "second"
-				secondAddr.SecondInterface = primaryIface.ID
-				err = db.Model(&model.Address{Model: model.Model{ID: secondAddr.ID}}).Updates(map[string]interface{}{
-                                        "second_interface": primaryIface.ID,
-                                        "type": "second",
-                                }).Error
-				if err != nil {
-					logger.Errorf("Failed to update public ip, %v", err)
-					return
-				}
-				primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
-				fip.InstanceID = instance.ID
-				fip.IntAddress = iface.Address.Address
-				fip.Type = string(PublicReserved)
-				fip.Instance = nil
-				err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
-					"instance_id": instance.ID,
-					"int_address": iface.Address.Address,
-					"type": string(PublicReserved),
-				}).Error
-				if err != nil {
-					logger.Errorf("Failed to update public ip, %v", err)
-					return
+				for _, fip := range floatingIps {
+					if fip.ID == iface.FloatingIp {
+						fip.InstanceID = 0
+					}
 				}
 			}
 		}
-	} else if cnt < 0 {
-		for i := secondIpsLength - 1; i > floatingIpsLength-2; i-- {
-			address := primaryIface.SecondAddresses[i]
-			err = db.Model(address).Updates(map[string]interface{}{"second_interface": 0}).Error
+	}
+	primaryIface.SecondAddresses = nil
+	for i, fip := range floatingIps {
+		if fip.InstanceID > 0 {
+			continue
+		}
+		fip.Instance = instance
+		iface := fip.Interface
+		if i == 0 {
+			primaryIface.Instance = instance.ID
+			primaryIface.Name = "eth0"
+			primaryIface.PrimaryIf = true
+			err = db.Model(primaryIface).Updates(primaryIface).Error
 			if err != nil {
-				logger.Error("Update interface ", err)
+				logger.Errorf("Failed to update interface, %v", err)
 				return
 			}
-			if address.Interface > 0 {
-				iface := &model.Interface{Model: model.Model{ID: address.Interface}}
-				if err = db.Model(iface).Take(iface).Error; err != nil {
-					logger.Errorf("Failed to query interface, %v", err)
-					return
-				}
-				if iface.FloatingIp > 0 {
-					floatingIp := &model.FloatingIp{Model: model.Model{ID: iface.FloatingIp}}
-					err = db.Model(floatingIp).Updates(map[string]interface{}{
-						"instance_id": 0,
-						"int_address": "",
-						"type":        string(PublicFloating)}).Error
-					if err != nil {
-						logger.Error("Update interface ", err)
-						return
-					}
-				}
+			fip.InstanceID = instance.ID
+			fip.IntAddress = primaryIface.Address.Address
+			fip.Type = string(PublicReserved)
+			fip.Instance = nil
+			err = db.Model(fip).Updates(fip).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+		} else {
+			secondAddr := fip.Interface.Address
+			secondAddr.Type = "second"
+			secondAddr.SecondInterface = primaryIface.ID
+			err = db.Model(&model.Address{Model: model.Model{ID: secondAddr.ID}}).Updates(map[string]interface{}{
+				"second_interface": primaryIface.ID,
+				"type":             "second",
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
+			}
+			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
+			fip.InstanceID = instance.ID
+			fip.IntAddress = iface.Address.Address
+			fip.Type = string(PublicReserved)
+			fip.Instance = nil
+			err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
+				"instance_id": instance.ID,
+				"int_address": iface.Address.Address,
+				"type":        string(PublicReserved),
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update public ip, %v", err)
+				return
 			}
 		}
 	}

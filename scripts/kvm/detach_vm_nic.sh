@@ -14,12 +14,13 @@ vm_mac=$5
 nic_name=tap$(echo $vm_mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./clear_link.sh $vlan
-state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2- | xargs)
-if [ "$state" = "running" ]; then
-    virsh detach-interface $vm_ID bridge --mac $vm_mac --live --config
-else
-    virsh detach-interface $vm_ID bridge --mac $vm_mac --config
+interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+if [ ! -f "$interface_xml" ]; then
+    cp $template $interface_xml
+    sed -i "s/VM_MAC/$vm_mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g" $interface_xml
 fi
+virsh detach-device $vm_ID $interface_xml
+rm -f $interface_xml
 ./clear_sg_chain.sh $nic_name
 
 meta_file="$async_job_dir/$nic_name"

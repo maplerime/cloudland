@@ -144,7 +144,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
-		logger.Debug("DB failed to query security rule(s), %v", err)
+		logger.Debug("DB failed to query interface(s), %v", err)
 		return
 	}
 
@@ -299,6 +299,8 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	memberShip := GetMemberShip(ctx)
 	ifaceLen := len(instance.Interfaces)
 	if ifaceLen >= 8 {
+		err = fmt.Errorf("Can not create interfaces more than 8")
+		return
 	}
 	ifname := fmt.Sprintf("eth%d", ifaceLen)
 	for _, subnet := range subnets {
@@ -328,6 +330,9 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 			err = fmt.Errorf("Failed to create interface")
 		}
 		return
+	}
+	if instance.RouterID == 0 {
+		instance.RouterID = iface.Address.Subnet.RouterID
 	}
 	err = ApplyInterface(ctx, instance, iface, false)
 	if err != nil {
@@ -388,13 +393,14 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 	}
 	changed := false
 	if iface.PrimaryIf && iface.Address.Subnet.RouterID == 0 {
-		valid := false
-		valid, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		if !valid {
-			logger.Errorf("Failed to check addresses, %v", err)
-			err = fmt.Errorf("Failed to check addresses")
-			return
-		}
+		// valid := true
+		_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		// if !valid {
+		// 	logger.Errorf("Failed to check addresses, %v", err)
+		// 	err = fmt.Errorf("Failed to check addresses")
+		// 	return
+		// }
+
 		if changed {
 			var oldAddresses []string
 			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
@@ -425,6 +431,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				}
 			}
 		}
+
 	}
 	if needRemoteUpdate {
 		err = ApplyInterface(ctx, instance, iface, changed)
@@ -607,6 +614,12 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 			ifaceSubnets = append(ifaceSubnets, ifaceSubnet)
 		}
 	}
+	if len(ifaceSubnets) == 0 {
+		logger.Debug("No valid subnet")
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	address := c.QueryTrim("address")
 	mac := c.QueryTrim("mac")
 	inbound := c.QueryInt("inbound")
@@ -631,25 +644,11 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 
 	sgs := c.QueryStrings("secgroups")
 	logger.Error("security groups: ", sgs)
-	secgroups := []*model.SecurityGroup{}
-	if len(sgs) > 0 {
-		for _, sg := range sgs {
-			sgID, err := strconv.Atoi(sg)
-			if err != nil {
-				logger.Debug("Invalid security group ID, %v", err)
-				c.Data["ErrorMsg"] = err.Error()
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			secgroup, err := secgroupAdmin.Get(ctx, int64(sgID))
-			if err != nil {
-				logger.Debug("Failed to query security group, %v", err)
-				c.Data["ErrorMsg"] = err.Error()
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			secgroups = append(secgroups, secgroup)
-		}
+	secgroups, err := instanceView.getSecurityGroups(ctx, ifaceSubnets[0].RouterID, sgs)
+	if err != nil {
+		logger.Debug("Failed to get security groups", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
 	}
 	_, err = interfaceAdmin.Create(ctx, instance, address, mac, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, 0)
 	if err != nil {

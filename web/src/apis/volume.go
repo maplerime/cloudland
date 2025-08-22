@@ -75,6 +75,10 @@ type VolumeListResponse struct {
 	Volumes []*VolumeResponse `json:"volumes"`
 }
 
+type VolumeResizePayload struct {
+	Size int32 `json:"size" binding:"required,gte=1"`
+}
+
 // @Summary get a volume
 // @Description get a volume
 // @tags Compute
@@ -273,6 +277,42 @@ func (v *VolumeAPI) List(c *gin.Context) {
 	c.JSON(http.StatusOK, volumeListResp)
 }
 
+// @Summary resize a volume
+// @Description resize a volume
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   message	body   VolumeResizePayload  true   "Volume resize payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /volumes/{id}/resize [post]
+func (v *VolumeAPI) Resize(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	volume, err := volumeAdmin.GetVolumeByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get volume by uuid: %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid volume query", err)
+		return
+	}
+	payload := &VolumeResizePayload{}
+	err = c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind json: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Resizing volume %s with size %d", uuID, payload.Size)
+	err = volumeAdmin.Resize(ctx, volume, payload.Size)
+	if err != nil {
+		logger.Errorf("Failed to resize volume %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to resize volume", err)
+		return
+	}
+	c.JSON(http.StatusOK, nil)
+}
+
 func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume) (*VolumeResponse, error) {
 	owner := orgAdmin.GetOrgName(ctx, volume.Owner)
 	volumeResp := &VolumeResponse{
@@ -285,7 +325,7 @@ func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume)
 		},
 		Path:      volume.Path,
 		Size:      volume.Size,
-		Status:    volume.Status,
+		Status:    volume.Status.String(),
 		Target:    volume.Target,
 		Href:      volume.Href,
 		IopsLimit: volume.IopsLimit,

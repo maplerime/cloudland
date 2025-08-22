@@ -29,6 +29,7 @@
 									{{ end }}
 									<th>{{.i18n.Tr "UUID"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
+			                        <th>{{.i18n.Tr "Mac Address"}}</th>
 			                        <th>{{.i18n.Tr "Primary"}}</th>
 			                        <th>{{.i18n.Tr "Floating IP"}}</th>
 			                        <th>{{.i18n.Tr "Native IP"}}</th>
@@ -48,6 +49,7 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 			                        <td>{{.Name}}</td>
+			                        <td>{{.MacAddr}}</td>
 			                        <td>{{.PrimaryIf}}</td>
 				                <td>{{ if .PrimaryIf }}
  						      {{ if $Instance.FloatingIps }}

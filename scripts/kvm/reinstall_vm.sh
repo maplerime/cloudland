@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 10 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname>"
+[ $# -lt 11 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <instance_uuid>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -16,6 +16,7 @@ vm_cpu=$7
 vm_mem=$8
 disk_size=$9
 vm_name=${10}
+instance_uuid=${11:-$ID}
 state=error
 vol_state=error
 
@@ -122,6 +123,8 @@ sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</cur
 if [ -n "$wds_address" ]; then
   sed_cmd="$sed_cmd; s#$old_vhost_name#$vhost_name#g"
 fi
+# Add replacement for instance UUID in metadata
+sed_cmd="$sed_cmd; s#<instance_id>.*</instance_id>#<instance_id>$instance_uuid</instance_id>#g"
 sed -i "$sed_cmd" $vm_xml
 virsh define $vm_xml
 virsh autostart $vm_ID

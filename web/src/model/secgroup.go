@@ -36,6 +36,7 @@ type SecurityRule struct {
 	Protocol      string         `gorm:"type:varchar(20)"`
 	PortMin       int32          `gorm:"default:-1"`
 	PortMax       int32          `gorm:"default:-1"`
+	Name          string         `gorm:"type:varchar(64)"`
 }
 
 func init() {

@@ -9,6 +9,12 @@ definitions:
     type: object
   apis.ConsoleResponse:
     properties:
+      console_host:
+        type: string
+      console_path:
+        type: string
+      console_port:
+        type: integer
       console_url:
         type: string
       instance:
@@ -231,7 +237,7 @@ definitions:
       ip_address:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       type:
@@ -252,19 +258,64 @@ definitions:
       total:
         type: integer
     type: object
+  apis.HyperPatchPayload:
+    properties:
+      cpu_over_rate:
+        minimum: 1
+        type: number
+      disk_over_rate:
+        minimum: 1
+        type: number
+      mem_over_rate:
+        minimum: 1
+        type: number
+      remark:
+        type: string
+      status:
+        maximum: 1
+        minimum: 0
+        type: integer
+      zone_id:
+        minimum: 1
+        type: integer
+    type: object
   apis.HyperResponse:
     properties:
+      children:
+        type: integer
       cpu:
         type: integer
+      cpu_over_rate:
+        type: number
       disk:
         type: integer
-      id:
+      disk_over_rate:
+        type: number
+      host_ip:
         type: string
+      hostid:
+        type: integer
+      hostname:
+        type: string
+      mem_over_rate:
+        type: number
       memory:
         type: integer
-      name:
-        maxLength: 32
-        minLength: 2
+      parentid:
+        type: integer
+      remark:
+        type: string
+      route_ip:
+        type: string
+      status:
+        type: integer
+      status_name:
+        type: string
+      virt_type:
+        type: string
+      zone_id:
+        type: integer
+      zone_name:
         type: string
     type: object
   apis.ImageListResponse:
@@ -429,10 +480,6 @@ definitions:
     type: object
   apis.InstancePatchPayload:
     properties:
-      flavor:
-        maxLength: 32
-        minLength: 1
-        type: string
       hostname:
         type: string
       power_action:
@@ -500,6 +547,8 @@ definitions:
         type: array
       userdata:
         type: string
+      userdata_type:
+        type: string
       vpc:
         $ref: '#/definitions/common.BaseReference'
       zone:
@@ -530,6 +579,15 @@ definitions:
         type: integer
       password:
         type: string
+    type: object
+  apis.InstanceResizePayload:
+    properties:
+      cpu:
+        minimum: 1
+        type: integer
+      memory:
+        minimum: 1
+        type: integer
     type: object
   apis.InstanceRescuePayload:
     properties:
@@ -706,7 +764,7 @@ definitions:
       mac_address:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       outbound:
@@ -1069,6 +1127,10 @@ definitions:
         - ingress
         - egress
         type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
       port_max:
         maximum: 65535
         minimum: 1
@@ -1232,7 +1294,7 @@ definitions:
       id:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
       netmask:
@@ -1335,6 +1397,13 @@ definitions:
         type: array
     type: object
   apis.VPCPatchPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
     type: object
   apis.VPCPayload:
     properties:
@@ -1442,6 +1511,14 @@ definitions:
     - name
     - size
     type: object
+  apis.VolumeResizePayload:
+    properties:
+      size:
+        minimum: 1
+        type: integer
+    required:
+    - size
+    type: object
   apis.VolumeResponse:
     properties:
       booting:
@@ -1492,18 +1569,25 @@ definitions:
           $ref: '#/definitions/apis.ZoneResponse'
         type: array
     type: object
+  apis.ZonePayload:
+    properties:
+      default:
+        type: boolean
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
   apis.ZoneResponse:
     properties:
-      cpu:
-        type: integer
       created_at:
         type: string
-      disk:
-        type: integer
+      default:
+        type: boolean
       id:
         type: string
-      memory:
-        type: integer
       name:
         type: string
       owner:
@@ -1529,7 +1613,7 @@ definitions:
       id:
         type: string
       name:
-        maxLength: 32
+        maxLength: 36
         minLength: 2
         type: string
     type: object
@@ -1993,6 +2077,23 @@ paths:
       consumes:
       - application/json
       description: list hypervisors
+      parameters:
+      - description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      - description: Limit for pagination
+        in: query
+        name: limit
+        type: integer
+      - description: Order by field
+        in: query
+        name: order
+        type: string
+      - description: Search query
+        in: query
+        name: q
+        type: string
       produces:
       - application/json
       responses:
@@ -2007,11 +2108,17 @@ paths:
       summary: list hypervisors
       tags:
       - Administration
-  /hypers/{name}:
+  /hypers/{hostid}:
     get:
       consumes:
       - application/json
       description: get a hypervisor
+      parameters:
+      - description: Hypervisor host ID
+        in: path
+        name: hostid
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -2027,7 +2134,53 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
       summary: get a hypervisor
+      tags:
+      - Administration
+    patch:
+      consumes:
+      - application/json
+      description: update hypervisor status, zone, over-commit rates, and remark
+      parameters:
+      - description: Hypervisor host ID
+        in: path
+        name: hostid
+        required: true
+        type: string
+      - description: Hypervisor update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/apis.HyperPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.HyperResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update a hypervisor
       tags:
       - Administration
   /images:
@@ -2513,6 +2666,39 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: reinstall a instance
+      tags:
+      - Compute
+  /instances/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a instance
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a instance
       tags:
       - Compute
   /instances/{id}/rescue:
@@ -3640,6 +3826,34 @@ paths:
       summary: patch a volume
       tags:
       - Compute
+  /volumes/{id}/resize:
+    post:
+      consumes:
+      - application/json
+      description: resize a volume
+      parameters:
+      - description: Volume resize payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeResizePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: resize a volume
+      tags:
+      - Compute
   /vpcs:
     get:
       consumes:
@@ -3764,7 +3978,7 @@ paths:
     get:
       consumes:
       - application/json
-      description: list zonevisors
+      description: list zones
       produces:
       - application/json
       responses:
@@ -3776,14 +3990,20 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: list zonevisors
+      summary: list zones
       tags:
       - Zone
-  /zones/{name}:
-    get:
+    post:
       consumes:
       - application/json
-      description: get a zonevisor
+      description: create a zone
+      parameters:
+      - description: Zone create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ZonePayload'
       produces:
       - application/json
       responses:
@@ -3799,7 +4019,50 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
-      summary: get a zonevisor
+      summary: create a zone
+      tags:
+      - Zone
+  /zones/{name}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a zone
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a zone
+      tags:
+      - Zone
+    get:
+      consumes:
+      - application/json
+      description: get a zone
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ZoneResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a zone
       tags:
       - Zone
 swagger: "2.0"

@@ -47,6 +47,20 @@ function daily_job()
     fi
 }
 
+function halfday_job()
+{
+    local state_file="$run_dir/halfday_state_file"
+    local current_halfday=$(date +"%Y%m%d-%p")  # e.g., 20250807-AM or 20250807-PM
+
+    if [[ -f "$state_file" ]]; then
+        local last_halfday=$(< "$state_file")
+        [[ "$last_halfday" == "$current_halfday" ]] && return
+    fi
+
+    ./generate_vm_instance_map.sh full
+    echo "$current_halfday" > "$state_file"
+}
+
 function inst_status()
 {
     old_inst_list=$(cat $image_dir/old_inst_list 2>/dev/null)
@@ -56,7 +70,18 @@ function inst_status()
         echo "$all_inst_list" | grep -q $inst-rescue
 	[ $? -eq 0 ] && all_inst_list=$(echo "$all_inst_list" | grep -v $inst-rescue | sed "s/$inst.*shut off/$inst rescuing/")
     done
-    inst_list=$(echo "$all_inst_list" | cut -d' ' -f3- | xargs | sed 's/inst-//g;s/shut off/shut_off/g')
+    n=0
+    export inst_list=""
+    while read line; do
+        inst_stat=$(echo $line | sed 's/inst-//g;s/shut off/shut_off/')
+        inst_list="$inst_stat $inst_list"
+	if [ $n -eq 10 ]; then
+            n=0
+	    echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
+            inst_list=""
+        fi
+        let n=$n+1
+    done <<<$all_inst_list
     [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
 }
 
@@ -187,7 +212,7 @@ function calc_resource()
     resource_list="'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state'"
     echo "'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state'" >/opt/cloudland/run/old_resource_list
     [ "$resource_list" = "$old_resource_list" ] && return
-    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME'"
+    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio'"
 }
 
 calc_resource
@@ -196,5 +221,6 @@ sync_delayed_job
 #probe_arp >/dev/null 2>&1
 inst_status
 daily_job
+halfday_job
 #vlan_status
 #router_status

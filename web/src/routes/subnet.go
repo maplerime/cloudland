@@ -289,12 +289,12 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 		logger.Error("DB failed to query router", err)
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
+	_, err = secruleAdmin.Create(ctx, "", subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, subnet.Network, "ingress", "udp", 1, 65535, secgroup)
+	_, err = secruleAdmin.Create(ctx, "", subnet.Network, "ingress", "udp", 1, 65535, secgroup)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
