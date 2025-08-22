@@ -1276,6 +1276,19 @@ definitions:
         type: integer
     type: object
   apis.SubnetPatchPayload:
+    properties:
+      group:
+        $ref: '#/definitions/common.BaseReference'
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+      type:
+        $ref: '#/definitions/common.SubnetType'
+      vlan:
+        maximum: 16777215
+        minimum: 1
+        type: integer
     type: object
   apis.SubnetPayload:
     properties:

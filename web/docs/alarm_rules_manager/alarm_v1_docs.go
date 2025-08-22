@@ -5683,7 +5683,25 @@ const docTemplatealarm_v1 = `{
             }
         },
         "apis.SubnetPatchPayload": {
-            "type": "object"
+            "type": "object",
+            "properties": {
+                "group": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "type": {
+                    "$ref": "#/definitions/common.SubnetType"
+                },
+                "vlan": {
+                    "type": "integer",
+                    "maximum": 16777215,
+                    "minimum": 1
+                }
+            }
         },
         "apis.SubnetPayload": {
             "type": "object",
