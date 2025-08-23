@@ -63,7 +63,7 @@ function apply_fw()
     if [ "$action" = '-I' -o "$action" = '-A' ]; then
         iptables -C $chain $rule 2>/dev/null
         [ $? -eq 0 ] && return
-        if [ "$action" = '-I' -a "$chain" = 'FORWARD' ]; then
+        if [ "$action" = '-I' ]; then
             iptables $action $chain 2 $rule
             return
         fi
