@@ -61,7 +61,12 @@ function apply_fw()
     shift
     rule=$*
     if [ "$action" = '-I' -o "$action" = '-A' ]; then
-        iptables -D $chain $rule 2>/dev/null
+        iptables -C $chain $rule 2>/dev/null
+        [ $? -eq 0 ] && return
+        if [ "$action" = '-I' ]; then
+            iptables $action $chain 2 $rule
+            return
+        fi
     elif [ "$action" = '-N' ]; then
         iptables -S $chain || iptables -N $chain
     fi
