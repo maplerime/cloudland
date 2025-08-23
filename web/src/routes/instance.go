@@ -572,11 +572,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	// update security group rules
 	if loginPort != int(instance.LoginPort) {
 		for _, iface := range instance.Interfaces {
-			err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance, iface)
+			err = secgroupAdmin.RemoveInstanceLoginPort(ctx, instance, iface)
 			if err != nil {
 				logger.Errorf("Failed to remove security rule", err)
 			}
-			err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
+			err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
 			if err != nil {
 				logger.Errorf("Failed to create security rule", err)
 				return
@@ -837,7 +837,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		return
 	}
 	instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
-	err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
+	err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
 	if err != nil {
 		logger.Error("Failed to allow login port for interface security groups ", err)
 		return
@@ -877,7 +877,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			return
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
-		err = secgroupAdmin.AllowPortForInterfaceSecgroups(ctx, int32(loginPort), iface)
+		err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
 		if err != nil {
 			logger.Error("Failed to allow login port for interface security groups ", err)
 			return
@@ -1013,7 +1013,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	}
 	var moreAddresses []string
 	for _, iface := range instance.Interfaces {
-		err = secgroupAdmin.RemovePortForInterfaceSecgroups(ctx, instance, iface)
+		err = secgroupAdmin.RemoveInstanceLoginPort(ctx, instance, iface)
 		if err != nil {
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}

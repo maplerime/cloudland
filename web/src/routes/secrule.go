@@ -139,6 +139,11 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 			EndTransaction(ctx, err)
 		}
 	}()
+	_, err = secruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
+	if err == nil {
+		logger.Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+		return
+	}
 	if protocol == "icmp" {
 		portMin = -1
 		portMax = -1
