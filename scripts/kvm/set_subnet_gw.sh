@@ -29,4 +29,14 @@ hw_addr=$hw_addr:$(echo $hyper_map | cut -c 1-2):$(echo $hyper_map | cut -c 3-4)
 if [ $? -eq 0 ]; then
     ip netns exec $router ip link set ns-$vlan address $hw_addr
 fi
+rt_file=/etc/iproute2/rt_tables
+tables=$(cat $rt_file | grep fip- | awk '{print $2}')
+for table in $tables; do
+    ip netns exec $router ip route list table $table
+    [ $? -ne 0 ] && continue
+    ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | while read ns_link ns_gw; do
+        ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')
+        ip netns exec $router ip route add $ip_net dev $ns_link table $table
+    done
+done
 ./set_subnet_dhcp.sh "$router" "$vlan" "$gateway" "$network" "$hostmin" "$hostmax"
