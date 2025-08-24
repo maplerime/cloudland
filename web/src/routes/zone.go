@@ -92,7 +92,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	}
 
 	if isDefault {
-		err = db.Model(&model.Zone{}).Where("default = ?", true).Update("default", false).Error
+		err = db.Model(&model.Zone{}).Where(`"default" = ?`, true).Update(`"default"`, false).Error
 		if err != nil {
 			logger.Error("Failed to unset existing default zone", err)
 			return
