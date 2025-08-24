@@ -83,7 +83,6 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 			EndTransaction(ctx, err)
 		}
 	}()
-	db = db.Debug()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
