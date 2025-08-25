@@ -92,7 +92,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	}
 
 	if isDefault {
-		err = db.Model(&model.Zone{}).Where("default = ?", true).Update("default", false).Error
+		err = db.Model(&model.Zone{}).Where(`"default" = ?`, true).Update("default", false).Error
 		if err != nil {
 			logger.Error("Failed to unset existing default zone", err)
 			return
@@ -108,6 +108,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	if err != nil {
 		logger.Error("DB create zone failed, %v", err)
 		return
+
 	}
 
 	logger.Debugf("Zone created successfully: %+v", zone)
@@ -130,7 +131,7 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 	}
 
 	if isDefault && !zone.Default {
-		err = db.Model(&model.Zone{}).Where("default = ? AND id != ?", true, zone.ID).Update("default", false).Error
+		err = db.Model(&model.Zone{}).Where(`"default" = ? AND id != ?`, true, zone.ID).Update("default", false).Error
 		if err != nil {
 			logger.Error("Failed to unset existing default zone", err)
 			return
