@@ -66,7 +66,7 @@ type InstancePayload struct {
 	Flavor              string              `json:"flavor" binding:"omitempty,min=1,max=32"`
 	Image               *BaseReference      `json:"image" binding:"required"`
 	PrimaryInterface    *InterfacePayload   `json:"primary_interface" binding:"required"`
-	SecondaryInterfaces []*InterfacePayload `json:"secondary_interfaces" binding:"omitempty"`
+	SecondaryInterfaces []*InterfacePayload `json:"secondary_interfaces" binding:"omitempty,gte=0,lte=7"`
 	Zone                string              `json:"zone" binding:"required,min=1,max=32"`
 	VPC                 *BaseReference      `json:"vpc" binding:"omitempty"`
 	Userdata            string              `json:"userdata,omitempty"`

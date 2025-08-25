@@ -36,5 +36,5 @@ more_addresses=$(jq -r .more_addresses <<< $vlan_info)
 if [ -n "$more_addresses" ]; then
     echo "$more_addresses" | ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta"
 fi
-
+echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"
