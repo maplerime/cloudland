@@ -4456,6 +4456,9 @@ const docTemplatev1 = `{
                 "os_code": {
                     "type": "string"
                 },
+                "os_version": {
+                    "type": "string"
+                },
                 "owner": {
                     "type": "string"
                 },
