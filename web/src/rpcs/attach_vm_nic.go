@@ -46,6 +46,11 @@ func AttachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Failed to get interface", err)
 		return
 	}
+	err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{"hyper": instance.Hyper}).Error
+	if err != nil {
+		logger.Error("Failed to update interface", err)
+		return
+	}
 	err = sendFdbRules(ctx, instance, iface)
 	if err != nil {
 		logger.Error("Failed to send fdb rules for interface", err)

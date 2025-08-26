@@ -36,6 +36,9 @@ type FdbRule struct {
 }
 
 func sendFdbRules(ctx context.Context, instance *model.Instance, instIface *model.Interface) (err error) {
+	if instance.RouterID == 0 {
+		return
+	}
 	db := DB()
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
