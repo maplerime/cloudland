@@ -29,6 +29,7 @@ type ImageAPI struct{}
 type ImageResponse struct {
 	*ResourceReference
 	OSCode       string `json:"os_code"`
+	OSVersion    string `json:"os_version"`
 	Size         int64  `json:"size"`
 	Format       string `json:"format"`
 	Architecture string `json:"architecture"`
@@ -46,16 +47,16 @@ type ImageListResponse struct {
 }
 
 type ImagePayload struct {
-	UUID         string `json:"uuid,omitempty" binding:"omitempty"`
-	Name         string `json:"name" binding:"required,min=2,max=32"`
-	OSCode       string `json:"os_code" binding:"required,oneof=linux windows other"`
-	DownloadURL  string `json:"download_url" binding:"required,http_url"`
-	OSVersion    string `json:"os_version" binding:"required,min=2,max=32"`
-	User         string `json:"user" binding:"required,min=2,max=32"`
-	InstanceUUID string `json:"instance_uuid"`
-	BootLoader   string `json:"boot_loader" binding:"required,oneof=bios uefi"`
-	IsRescue     bool   `json:"is_resque"`
-	RescueImage  *BaseReference      `json:"rescue_image" binding:"omitempty"`
+	UUID         string         `json:"uuid,omitempty" binding:"omitempty"`
+	Name         string         `json:"name" binding:"required,min=2,max=32"`
+	OSCode       string         `json:"os_code" binding:"required,oneof=linux windows other"`
+	DownloadURL  string         `json:"download_url" binding:"required,http_url"`
+	OSVersion    string         `json:"os_version" binding:"required,min=2,max=32"`
+	User         string         `json:"user" binding:"required,min=2,max=32"`
+	InstanceUUID string         `json:"instance_uuid"`
+	BootLoader   string         `json:"boot_loader" binding:"required,oneof=bios uefi"`
+	IsRescue     bool           `json:"is_resque"`
+	RescueImage  *BaseReference `json:"rescue_image" binding:"omitempty"`
 }
 
 type ImagePatchPayload struct {
@@ -251,6 +252,7 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 			UpdatedAt: image.UpdatedAt.Format(TimeStringForMat),
 		},
 		OSCode:       image.OSCode,
+		OSVersion:    image.OsVersion,
 		Size:         image.Size,
 		Format:       image.Format,
 		Architecture: image.Architecture,
