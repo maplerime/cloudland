@@ -12,10 +12,14 @@ import (
 
 type Dictionary struct {
 	Model
-	Owner    int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Category string `gorm:"column:category;type:varchar(64);index"`
-	Name     string `gorm:"type:varchar(64)"`
-	Value    string `gorm:"unique_index"`
+	Owner     int64  `gorm:"default:1"` /* The organization ID of the resource */
+	Category  string `gorm:"column:category;type:varchar(64);index"`
+	Name      string `gorm:"type:varchar(64)"`
+	ShortName string `gorm:"type:varchar(64)"`
+	Value     string `gorm:"unique_index"`
+	SubType1  string `gorm:"type:varchar(32);default:''"` // data center
+	SubType2  string `gorm:"type:varchar(32);default:''"` // ddos/ ddospro / siteip
+	SubType3  string `gorm:"type:varchar(32);default:''"` //
 }
 
 func init() {

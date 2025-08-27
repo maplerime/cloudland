@@ -18,8 +18,13 @@ var dictionaryAPI = &DictionaryAPI{}
 
 type DictionaryResponse struct {
 	*ResourceReference
-	Category string `json:"category"`
-	Value    string `json:"value"`
+	Category  string `json:"category"`
+	Value     string `json:"value"`
+	Name      string `json:"name"`
+	ShortName string `json:"shortname"`
+	SubType1  string `json:"subtype1"`
+	SubType2  string `json:"subtype2"`
+	SubType3  string `json:"subtype3"`
 }
 type DictionaryListResponse struct {
 	Offset       int                   `json:"offset"`
@@ -28,9 +33,13 @@ type DictionaryListResponse struct {
 	Dictionaries []*DictionaryResponse `json:"dictionaries"`
 }
 type DictionaryPayload struct {
-	Name     string `json:"name" binding:"required,min=2,max=32"`
-	Category string `json:"category" binding:"omitempty"`
-	Value    string `json:"value" binding:"required"`
+	Name      string `json:"name" binding:"required,min=2,max=64"`
+	ShortName string `json:"shortname" binding:"omitempty,min=2,max=64"`
+	Category  string `json:"category" binding:"omitempty,min=2,max=64"`
+	Value     string `json:"value" binding:"required"`
+	SubType1  string `json:"subtype1" binding:"omitempty,min=2,max=32"` // data center
+	SubType2  string `json:"subtype2" binding:"omitempty,min=2,max=32"` // ddos/ ddospro / siteip
+	SubType3  string `json:"subtype3" binding:"omitempty,min=2,max=32"` //
 }
 
 type DictionaryAPI struct{}
@@ -50,7 +59,11 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 	offset, err := strconv.Atoi(offsetStr)
 	queryStr := c.DefaultQuery("query", "")
 	valueStr := c.DefaultQuery("value", "")
-	logger.Debugf("DictionaryAPI.List: offset=%s, limit=%s, query=%s, value=%s", offsetStr, limitStr, queryStr, valueStr)
+	category := c.DefaultQuery("category", "")
+	subtype1 := c.DefaultQuery("subtype1", "")
+	subtype2 := c.DefaultQuery("subtype2", "")
+	subtype3 := c.DefaultQuery("subtype3", "")
+	logger.Debugf("DictionaryAPI.List: offset=%s, limit=%s, query=%s, value=%s, category=%s, subtype1=%s, subtype2=%s, subtype3=%s", offsetStr, limitStr, queryStr, valueStr, category, subtype1, subtype2, subtype3)
 	if err != nil {
 		logger.Errorf("DictionaryAPI.List: invalid offset, offsetStr=%s, err=%v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -75,6 +88,39 @@ func (v *DictionaryAPI) List(c *gin.Context) {
 		logger.Debugf("DictionaryAPI.List: filter by value = %s", valueStr)
 		queryStr = fmt.Sprintf("value = '%s'", valueStr)
 	}
+	if category != "" {
+		logger.Debugf("DictionaryAPI.List: filter by category = %s", category)
+		if queryStr != "" {
+			queryStr = fmt.Sprintf("%s AND category = '%s'", queryStr, category)
+		} else {
+			queryStr = fmt.Sprintf("category = '%s'", category)
+		}
+	}
+	if subtype1 != "" {
+		logger.Debugf("DictionaryAPI.List: filter by subtype1 = %s", subtype1)
+		if queryStr != "" {
+			queryStr = fmt.Sprintf("%s AND subtype1 = '%s'", queryStr, subtype1)
+		} else {
+			queryStr = fmt.Sprintf("subtype1 = '%s'", subtype1)
+		}
+	}
+	if subtype2 != "" {
+		logger.Debugf("DictionaryAPI.List: filter by subtype2 = %s", subtype2)
+		if queryStr != "" {
+			queryStr = fmt.Sprintf("%s AND subtype2 = '%s'", queryStr, subtype2)
+		} else {
+			queryStr = fmt.Sprintf("subtype2 = '%s'", subtype2)
+		}
+	}
+	if subtype3 != "" {
+		logger.Debugf("DictionaryAPI.List: filter by subtype3 = %s", subtype3)
+		if queryStr != "" {
+			queryStr = fmt.Sprintf("%s AND subtype3 = '%s'", queryStr, subtype3)
+		} else {
+			queryStr = fmt.Sprintf("subtype3 = '%s'", subtype3)
+		}
+	}
+	logger.Debugf("DictionaryAPI.List: final query string: %s", queryStr)
 	total, dictionaries, err := dictionaryAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
 		logger.Errorf("DictionaryAPI.List: list error, err=%v", err)
@@ -122,7 +168,7 @@ func (v *DictionaryAPI) Create(c *gin.Context) {
 		return
 	}
 	var dictionary *model.Dictionary
-	dictionary, err = dictionaryAdmin.Create(ctx, payload.Category, payload.Name, payload.Value)
+	dictionary, err = dictionaryAdmin.Create(ctx, payload.Category, payload.Name, payload.Value, payload.ShortName, payload.SubType1, payload.SubType2, payload.SubType3)
 	if err != nil {
 		logger.Errorf("DictionaryAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create dictionary", err)
@@ -137,6 +183,7 @@ func (v *DictionaryAPI) Create(c *gin.Context) {
 	logger.Debugf("DictionaryAPI.Create: success, resp=%+v", dictionaryResp)
 	c.JSON(http.StatusOK, dictionaryResp)
 }
+
 func (v *DictionaryAPI) getDictionaryResponse(ctx context.Context, dictionary *model.Dictionary) (dictionaryResp *DictionaryResponse, err error) {
 	owner := orgAdmin.GetOrgName(ctx, dictionary.Owner)
 	dictionaryResp = &DictionaryResponse{
@@ -147,8 +194,12 @@ func (v *DictionaryAPI) getDictionaryResponse(ctx context.Context, dictionary *m
 			CreatedAt: dictionary.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: dictionary.UpdatedAt.Format(TimeStringForMat),
 		},
-		Category: dictionary.Category,
-		Value:    dictionary.Value,
+		ShortName: dictionary.ShortName,
+		Category:  dictionary.Category,
+		Value:     dictionary.Value,
+		SubType1:  dictionary.SubType1,
+		SubType2:  dictionary.SubType2,
+		SubType3:  dictionary.SubType3,
 	}
 	return
 }
@@ -241,7 +292,7 @@ func (v *DictionaryAPI) Patch(c *gin.Context) {
 		return
 	}
 	var dictionary *model.Dictionary
-	dictionary, err = dictionaryAdmin.Update(ctx, dictionaries, payload.Category, payload.Name, payload.Value)
+	dictionary, err = dictionaryAdmin.Update(ctx, dictionaries, payload.Category, payload.Name, payload.Value, payload.ShortName, payload.SubType1, payload.SubType2, payload.SubType3)
 	if err != nil {
 		logger.Errorf("DictionaryAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update dictionary", err)
