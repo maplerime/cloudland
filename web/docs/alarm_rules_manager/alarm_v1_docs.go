@@ -3933,9 +3933,33 @@ const docTemplatealarm_v1 = `{
             ],
             "properties": {
                 "category": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
                 },
                 "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "shortname": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "subtype1": {
+                    "description": "data center",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "subtype2": {
+                    "description": "ddos/ ddospro / siteip",
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
+                },
+                "subtype3": {
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
@@ -3961,6 +3985,18 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "shortname": {
+                    "type": "string"
+                },
+                "subtype1": {
+                    "type": "string"
+                },
+                "subtype2": {
+                    "type": "string"
+                },
+                "subtype3": {
                     "type": "string"
                 },
                 "updated_at": {

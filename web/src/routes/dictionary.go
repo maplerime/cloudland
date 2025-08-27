@@ -17,8 +17,8 @@ var dictionaryAdmin = &DictionaryAdmin{}
 
 type DictionaryAdmin struct{}
 
-func (a *DictionaryAdmin) Create(ctx context.Context, category, name, value, subtype1, subtype2, subtype3 string) (dictionary *model.Dictionary, err error) {
-	logger.Debugf("Enter DictionaryAdmin.Create, category=%s, name=%s, value=%s, subtype1=%s, subtype2=%s, subtype3=%s", category, name, value, subtype1, subtype2, subtype3)
+func (a *DictionaryAdmin) Create(ctx context.Context, category, name, value, shortname, subtype1, subtype2, subtype3 string) (dictionary *model.Dictionary, err error) {
+	logger.Debugf("Enter DictionaryAdmin.Create, category=%s, name=%s, value=%s, shortname=%s, subtype1=%s, subtype2=%s, subtype3=%s", category, name, value, shortname, subtype1, subtype2, subtype3)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
@@ -39,12 +39,13 @@ func (a *DictionaryAdmin) Create(ctx context.Context, category, name, value, sub
 		return
 	}
 	dictionary = &model.Dictionary{
-		Category: category,
-		Name:     name,
-		Value:    value,
-		SubType1: subtype1,
-		SubType2: subtype2,
-		SubType3: subtype3,
+		Category:  category,
+		Name:      name,
+		Value:     value,
+		ShortName: shortname,
+		SubType1:  subtype1,
+		SubType2:  subtype2,
+		SubType3:  subtype3,
 	}
 	err = db.Create(dictionary).Error
 	return
@@ -108,8 +109,8 @@ func (a *DictionaryAdmin) GetDictionaryByUUID(ctx context.Context, uuID string) 
 	return
 }
 
-func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictionary, category, name, value, subtype1, subtype2, subtype3 string) (dictionary *model.Dictionary, err error) {
-	logger.Debugf("Enter DictionaryAdmin.Update, id=%d, category=%s, name=%s, value=%s, subtype1=%s, subtype2=%s, subtype3=%s", dictionaries.ID, category, name, value, subtype1, subtype2, subtype3)
+func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictionary, category, name, value, shortname, subtype1, subtype2, subtype3 string) (dictionary *model.Dictionary, err error) {
+	logger.Debugf("Enter DictionaryAdmin.Update, id=%d, category=%s, name=%s, value=%s, shortname=%s, subtype1=%s, subtype2=%s, subtype3=%s", dictionaries.ID, category, name, value, shortname, subtype1, subtype2, subtype3)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -132,6 +133,9 @@ func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictio
 	}
 	if value != "" && dictionaries.Value != value {
 		dictionaries.Value = value
+	}
+	if shortname != "" && dictionaries.ShortName != shortname {
+		dictionaries.ShortName = shortname
 	}
 	if subtype1 != "" && dictionaries.SubType1 != subtype1 {
 		dictionaries.SubType1 = subtype1
@@ -238,12 +242,13 @@ func (v *DictionaryView) Create(c *macaron.Context, store session.Store) {
 	category := c.QueryTrim("category")
 	name := c.QueryTrim("name")
 	value := c.QueryTrim("value")
+	shortname := c.QueryTrim("shortname")
 	subtype1 := c.QueryTrim("subtype1")
 	subtype2 := c.QueryTrim("subtype2")
 	subtype3 := c.QueryTrim("subtype3")
 
 	var err error
-	_, err = dictionaryAdmin.Create(ctx, category, name, value, subtype1, subtype2, subtype3)
+	_, err = dictionaryAdmin.Create(ctx, category, name, value, shortname, subtype1, subtype2, subtype3)
 	if err != nil {
 		logger.Error("Failed to create dictionary, %v", err)
 		c.HTML(500, "500")
@@ -298,6 +303,7 @@ func (v *DictionaryView) Patch(c *macaron.Context, store session.Store) {
 	category := c.QueryTrim("category")
 	name := c.QueryTrim("name")
 	value := c.QueryTrim("value")
+	shortname := c.QueryTrim("shortname")
 	subtype1 := c.QueryTrim("subtype1")
 	subtype2 := c.QueryTrim("subtype2")
 	subtype3 := c.QueryTrim("subtype3")
@@ -306,7 +312,7 @@ func (v *DictionaryView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	_, err = dictionaryAdmin.Update(ctx, dictionaries, category, name, value, subtype1, subtype2, subtype3)
+	_, err = dictionaryAdmin.Update(ctx, dictionaries, category, name, value, shortname, subtype1, subtype2, subtype3)
 	if err != nil {
 		c.HTML(500, err.Error())
 		return

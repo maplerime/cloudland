@@ -76,18 +76,30 @@ definitions:
   apis.DictionaryPayload:
     properties:
       category:
+        maxLength: 64
+        minLength: 2
         type: string
       name:
-        maxLength: 32
+        maxLength: 64
+        minLength: 2
+        type: string
+      shortname:
+        maxLength: 64
         minLength: 2
         type: string
       subtype1:
         description: data center
+        maxLength: 32
+        minLength: 2
         type: string
       subtype2:
         description: ddos/ ddospro / siteip
+        maxLength: 32
+        minLength: 2
         type: string
       subtype3:
+        maxLength: 32
+        minLength: 2
         type: string
       value:
         type: string
@@ -106,6 +118,8 @@ definitions:
       name:
         type: string
       owner:
+        type: string
+      shortname:
         type: string
       subtype1:
         type: string

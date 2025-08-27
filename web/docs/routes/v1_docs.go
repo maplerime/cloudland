@@ -3872,23 +3872,36 @@ const docTemplatev1 = `{
             ],
             "properties": {
                 "category": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
                 },
                 "name": {
                     "type": "string",
-                    "maxLength": 32,
+                    "maxLength": 64,
+                    "minLength": 2
+                },
+                "shortname": {
+                    "type": "string",
+                    "maxLength": 64,
                     "minLength": 2
                 },
                 "subtype1": {
                     "description": "data center",
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "subtype2": {
                     "description": "ddos/ ddospro / siteip",
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "subtype3": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 32,
+                    "minLength": 2
                 },
                 "value": {
                     "type": "string"
@@ -3911,6 +3924,9 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "shortname": {
                     "type": "string"
                 },
                 "subtype1": {

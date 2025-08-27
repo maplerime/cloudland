@@ -18,11 +18,13 @@ var dictionaryAPI = &DictionaryAPI{}
 
 type DictionaryResponse struct {
 	*ResourceReference
-	Category string `json:"category"`
-	Value    string `json:"value"`
-	SubType1 string `json:"subtype1"`
-	SubType2 string `json:"subtype2"`
-	SubType3 string `json:"subtype3"`
+	Category  string `json:"category"`
+	Value     string `json:"value"`
+	Name      string `json:"name"`
+	ShortName string `json:"shortname"`
+	SubType1  string `json:"subtype1"`
+	SubType2  string `json:"subtype2"`
+	SubType3  string `json:"subtype3"`
 }
 type DictionaryListResponse struct {
 	Offset       int                   `json:"offset"`
@@ -31,12 +33,13 @@ type DictionaryListResponse struct {
 	Dictionaries []*DictionaryResponse `json:"dictionaries"`
 }
 type DictionaryPayload struct {
-	Name     string `json:"name" binding:"required,min=2,max=32"`
-	Category string `json:"category" binding:"omitempty"`
-	Value    string `json:"value" binding:"required"`
-	SubType1 string `json:"subtype1" binding:"omitempty"` // data center
-	SubType2 string `json:"subtype2" binding:"omitempty"` // ddos/ ddospro / siteip
-	SubType3 string `json:"subtype3" binding:"omitempty"` //
+	Name      string `json:"name" binding:"required,min=2,max=64"`
+	ShortName string `json:"shortname" binding:"omitempty,min=2,max=64"`
+	Category  string `json:"category" binding:"omitempty,min=2,max=64"`
+	Value     string `json:"value" binding:"required"`
+	SubType1  string `json:"subtype1" binding:"omitempty,min=2,max=32"` // data center
+	SubType2  string `json:"subtype2" binding:"omitempty,min=2,max=32"` // ddos/ ddospro / siteip
+	SubType3  string `json:"subtype3" binding:"omitempty,min=2,max=32"` //
 }
 
 type DictionaryAPI struct{}
@@ -165,7 +168,7 @@ func (v *DictionaryAPI) Create(c *gin.Context) {
 		return
 	}
 	var dictionary *model.Dictionary
-	dictionary, err = dictionaryAdmin.Create(ctx, payload.Category, payload.Name, payload.Value, payload.SubType1, payload.SubType2, payload.SubType3)
+	dictionary, err = dictionaryAdmin.Create(ctx, payload.Category, payload.Name, payload.Value, payload.ShortName, payload.SubType1, payload.SubType2, payload.SubType3)
 	if err != nil {
 		logger.Errorf("DictionaryAPI.Create: create error, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create dictionary", err)
@@ -191,11 +194,12 @@ func (v *DictionaryAPI) getDictionaryResponse(ctx context.Context, dictionary *m
 			CreatedAt: dictionary.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: dictionary.UpdatedAt.Format(TimeStringForMat),
 		},
-		Category: dictionary.Category,
-		Value:    dictionary.Value,
-		SubType1: dictionary.SubType1,
-		SubType2: dictionary.SubType2,
-		SubType3: dictionary.SubType3,
+		ShortName: dictionary.ShortName,
+		Category:  dictionary.Category,
+		Value:     dictionary.Value,
+		SubType1:  dictionary.SubType1,
+		SubType2:  dictionary.SubType2,
+		SubType3:  dictionary.SubType3,
 	}
 	return
 }
@@ -288,7 +292,7 @@ func (v *DictionaryAPI) Patch(c *gin.Context) {
 		return
 	}
 	var dictionary *model.Dictionary
-	dictionary, err = dictionaryAdmin.Update(ctx, dictionaries, payload.Category, payload.Name, payload.Value, payload.SubType1, payload.SubType2, payload.SubType3)
+	dictionary, err = dictionaryAdmin.Update(ctx, dictionaries, payload.Category, payload.Name, payload.Value, payload.ShortName, payload.SubType1, payload.SubType2, payload.SubType3)
 	if err != nil {
 		logger.Errorf("DictionaryAPI.Patch: update error, uuID=%s, err=%v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update dictionary", err)
