@@ -75,6 +75,9 @@ type SubnetPayload struct {
 }
 
 type SubnetPatchPayload struct {
+	Name  string         `json:"name" binding:"omitempty,min=2,max=64"`
+	Group *BaseReference `json:"group" binding:"omitempty"`
+	Type  SubnetType     `json:"type" binding:"omitempty,oneof=public internal site"`
 }
 
 // @Summary get a subnet
@@ -113,7 +116,53 @@ func (v *SubnetAPI) Get(c *gin.Context) {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /subnets/{id} [patch]
 func (v *SubnetAPI) Patch(c *gin.Context) {
-	subnetResp := &SubnetResponse{}
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := &SubnetPatchPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind json: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Patching subnet %s with %+v", uuID, payload)
+
+	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get subnet, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet query", err)
+		return
+	}
+	if payload.Name != "" {
+		subnet.Name = payload.Name
+	}
+	if payload.Type != "" {
+		subnet.Type = string(payload.Type)
+	}
+	if payload.Group != nil {
+		if payload.Group.ID != "" {
+			subnet.Group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
+			if err != nil {
+				logger.Errorf("Failed to get ipGroup by UUID %s, %+v", payload.Group.ID, err)
+				ErrorResponse(c, http.StatusBadRequest, "Invalid group ID", err)
+				return
+			}
+		} else {
+			subnet.Group = nil
+		}
+	}
+	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group)
+	if err != nil {
+		logger.Errorf("Failed to update subnet %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to update subnet", err)
+		return
+	}
+	subnetResp, err := v.getSubnetResponse(ctx, subnet)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet response", err)
+		return
+	}
+	logger.Debugf("Patch subnet successfully, %s, %+v", uuID, subnetResp)
 	c.JSON(http.StatusOK, subnetResp)
 }
 

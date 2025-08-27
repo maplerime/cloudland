@@ -46,7 +46,13 @@ func AttachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Failed to get interface", err)
 		return
 	}
-	err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{"hyper": instance.Hyper}).Error
+	hyperID, err := strconv.Atoi(args[3])
+	if err != nil {
+		logger.Error("Invalid hyper ID", err)
+		return
+	}
+	iface.Hyper = int32(hyperID)
+	err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{"hyper": int32(hyperID)}).Error
 	if err != nil {
 		logger.Error("Failed to update interface", err)
 		return

@@ -43,6 +43,9 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, instIface *mode
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
 	hyperNode := instance.Hyper
+	if instIface != nil {
+		hyperNode = instIface.Hyper
+	}
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
 	if err != nil || hyper.Hostid < 0 {

@@ -107,6 +107,19 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Error("Failed to get metadata")
 			return
 		}
+		var bootVolume *model.Volume
+		for _, volume := range instance.Volumes {
+			if volume.Booting {
+				bootVolume = volume
+				break
+			}
+		}
+		if bootVolume == nil {
+			logger.Error("Instance has no boot volume")
+			err = fmt.Errorf("Corrupted instance")
+			return
+		}
+		poolID := bootVolume.GetVolumePoolID()
 		control := fmt.Sprintf("inter=%d", tgtHyper)
 		if tgtHyper == -1 {
 			var hyperGroup string
@@ -139,7 +152,11 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			memory = flavor.Memory
 			disk = flavor.Disk
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		bootLoader := "bios"
+		if instance.Image != nil {
+			bootLoader = instance.Image.BootLoader
+		}
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, bootLoader, poolID, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Target migration command execution failed", err)

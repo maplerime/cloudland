@@ -129,8 +129,8 @@ function sync_instance()
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
     sudo iptables -N secgroup-chain && sudo iptables -A secgroup-chain -j ACCEPT
     for bridge in $bridges; do
-	sudo iptables -D FORWARD -i $bridge -o $bridge -j ACCEPT
-	sudo iptables -I FORWARD -i $bridge -o $bridge -j ACCEPT
+	sudo iptables -C FORWARD -i $bridge -o $bridge -j ACCEPT
+	[ $? -ne 0 ] && sudo iptables -I FORWARD 2 -i $bridge -o $bridge -j ACCEPT
     done
     insts=$(ls $xml_dir)
     for inst in $insts; do

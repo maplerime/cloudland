@@ -139,6 +139,11 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 			EndTransaction(ctx, err)
 		}
 	}()
+	_, err = secruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
+	if err == nil {
+		logger.Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+		return
+	}
 	if protocol == "icmp" {
 		portMin = -1
 		portMax = -1
@@ -168,9 +173,9 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	return
 }
 
-func (a *SecruleAdmin) DeleteRule(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+func (a *SecruleAdmin) GetRule(ctx context.Context, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
 	memberShip := GetMemberShip(ctx)
-	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
+	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = fmt.Errorf("Not authorized")
@@ -194,16 +199,6 @@ func (a *SecruleAdmin) DeleteRule(ctx context.Context, remoteIp, direction, prot
 	err = db.Where(secrule).Take(secrule).Error
 	if err != nil {
 		logger.Error("Failed to query secrule", err)
-		return
-	}
-	err = db.Delete(secrule).Error
-	if err != nil {
-		logger.Error("DB failed to delete security rule", err)
-		return
-	}
-	err = a.ApplySecgroup(ctx, secgroup)
-	if err != nil {
-		logger.Error("Failed to apply security rule", err)
 		return
 	}
 	return
