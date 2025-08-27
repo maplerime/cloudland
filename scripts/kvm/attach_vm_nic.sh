@@ -21,8 +21,9 @@ virsh domiflist $vm_ID | grep $mac
 if [ $? -ne 0 ]; then
     template=$template_dir/interface.xml
     interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    let queue_num=($(virsh dominfo $vm_ID | grep 'CPU(s)' | awk '{print $2}')+1)/2
     cp $template $interface_xml
-    sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g" $interface_xml
+    sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
     virsh attach-device $vm_ID $interface_xml --config
     virsh attach-device $vm_ID $interface_xml --live --persistent
 fi
