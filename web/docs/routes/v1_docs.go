@@ -3879,6 +3879,17 @@ const docTemplatev1 = `{
                     "maxLength": 32,
                     "minLength": 2
                 },
+                "subtype1": {
+                    "description": "data center",
+                    "type": "string"
+                },
+                "subtype2": {
+                    "description": "ddos/ ddospro / siteip",
+                    "type": "string"
+                },
+                "subtype3": {
+                    "type": "string"
+                },
                 "value": {
                     "type": "string"
                 }
@@ -3900,6 +3911,15 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "subtype1": {
+                    "type": "string"
+                },
+                "subtype2": {
+                    "type": "string"
+                },
+                "subtype3": {
                     "type": "string"
                 },
                 "updated_at": {
