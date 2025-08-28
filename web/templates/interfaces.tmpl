@@ -61,9 +61,9 @@
 						      {{ end }}
                                                     {{ end }}
                                                 </td>
-				                <td>{{.Address.Address}}</td>
+				                <td><a href="{{$Link}}/{{.ID}}">{{.Address.Address}}</a></td>
                                     		<td>
-                                                    <a href="{{$Link}}/../subnets/{{.ID}}">{{ .Address.Subnet.ID }}-{{ .Address.Subnet.Network }}</a><br>
+                                                    <a href="{{$Link}}/../../../subnets/{{.Address.Subnet.ID}}">{{ .Address.Subnet.ID }}-{{ .Address.Subnet.Network }}</a><br>
                                     		</td>
 			                        <td>{{ range .SecondAddresses }}
                                                         {{ .Address }}<br>

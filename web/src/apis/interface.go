@@ -364,7 +364,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 // @Success 204
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instance/{id}/interfaces/{id} [delete]
+// @Router /instance/{id}/interfaces/{interface_id} [delete]
 func (v *InterfaceAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")

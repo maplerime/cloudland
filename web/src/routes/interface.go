@@ -302,11 +302,17 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 		err = fmt.Errorf("Can not create interfaces more than 8")
 		return
 	}
+	routerID := instance.RouterID
 	ifname := fmt.Sprintf("eth%d", ifaceLen)
 	for _, subnet := range subnets {
 		if subnet.Type == "site" {
 			logger.Error("Not allowed to create interface in site subnet")
-			err = fmt.Errorf("Bad request")
+			err = fmt.Errorf("Not allowed to create interface in site subnet")
+			return
+		}
+		if routerID > 0 && subnet.RouterID != routerID {
+			logger.Error("Subnets can not belong to different router")
+			err = fmt.Errorf("Subnets can not belong to different router")
 			return
 		}
 		if iface == nil {
@@ -331,7 +337,7 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 		}
 		return
 	}
-	if instance.RouterID == 0 {
+	if routerID == 0 {
 		instance.RouterID = iface.Address.Subnet.RouterID
 	}
 	err = ApplyInterface(ctx, instance, iface, false)

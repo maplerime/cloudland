@@ -1150,7 +1150,7 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
-        "/instance/{id}/interfaces/{id}": {
+        "/instance/{id}/interfaces/{interface_id}": {
             "delete": {
                 "description": "delete a interface",
                 "consumes": [
@@ -4704,6 +4704,8 @@ const docTemplatealarm_v1 = `{
                 },
                 "secondary_interfaces": {
                     "type": "array",
+                    "maxItems": 7,
+                    "minItems": 0,
                     "items": {
                         "$ref": "#/definitions/apis.InterfacePayload"
                     }
