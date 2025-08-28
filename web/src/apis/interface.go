@@ -368,12 +368,6 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 func (v *InterfaceAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
-	payload := &InterfacePayload{}
-	err := c.ShouldBindJSON(payload)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
-		return
-	}
 	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
 	if err != nil {
 		logger.Errorf("Failed to get instance: %+v", err)
