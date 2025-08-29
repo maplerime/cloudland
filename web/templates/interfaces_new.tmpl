@@ -1,0 +1,66 @@
+{{template "_head" .}}
+<div class="user signup">
+	<div class="ui middle very relaxed page grid">
+        <div class="column" >
+            <form class="ui form" action="{{.Link}}" method="post">
+                <h3 class="ui top attached header">
+                    {{.i18n.Tr "Create Interface"}}
+                </h3>
+                <div class="ui attached segment">
+                    <div class="inline field">
+                        <label for="subnets">{{.i18n.Tr "Subnets"}}</label>
+                        <select name="subnets" id="subnets" multiple="" class="ui multiple selection dropdown">
+                            {{ range .Subnets }}
+                               {{ if ne .Type "site" }}
+                                  <option value="{{ .ID }}">{{.Name}}--{{.Network}}/{{.Netmask}}</option>
+                               {{ end }}
+                            {{ end }}
+                        </select>
+                    </div>
+                    <div class="inline field">
+                        <label for="address">{{.i18n.Tr "IP Address"}}</label>
+                        <input id="address" name="address" value="{{ .Interface.Address.Address }}">
+                    </div>
+                    <div class="inline field">
+                        <label for="macaddr">{{.i18n.Tr "Mac Address"}}</label>
+                        <input id="macaddr" name="macaddr" value="{{ .Interface.MacAddr }}">
+                    </div>
+                    <div class="inline field">
+                    	<label for="inbound">{{.i18n.Tr "Inbound Bandwidth"}}</label>
+                    	<input id="inbound" name="inbound" value="{{ .Interface.Inbound }}">
+                    </div>
+                    <div class="inline field">
+                    	<label for="outbound">{{.i18n.Tr "Outbound Bandwidth"}}</label>
+                    	<input id="outbound" name="outbound" value="{{ .Interface.Outbound }}">
+                    </div>
+                    <div class="inline field">
+                    	<label for="allow_spoofing">{{.i18n.Tr "Allow Spoofing"}}</label>
+                    	<div class="ui selection dropdown">
+                    	  <input id="allow_spoofing" name="allow_spoofing" type="hidden">
+                    	  <i class="dropdown icon"></i>
+                    	  <div class="default text">{{.i18n.Tr "no"}}</div>
+                    	  <div class="menu">
+                    		<div class="item" data-value="yes" data-text="yes">{{.i18n.Tr "yes"}}</div>
+                    		<div class="item" data-value="no" data-text="no">{{.i18n.Tr "no"}}</div>
+                    	  </div>
+                    	</div>
+                    </div>
+                    <div class="inline field">
+                        <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>
+                        <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">
+            		    {{ range .SecurityGroups }}
+                                  <option value="{{ .ID }}">{{ .ID }}-{{ .Name }}</option>
+                            {{ end }}
+                        </select>
+		    </div>
+                    <div class="inline field">
+                        <label></label>
+                        <button class="ui green button">{{.i18n.Tr "Create Interface"}}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+	</div>
+</div>
+{{template "_footer" .}}
+

@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-	"strings"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -92,6 +91,28 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 	return
 }
 
+func (a *InterfaceAdmin) Delete(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
+	if iface.PrimaryIf {
+		err = fmt.Errorf("Primary interface can not be deleted")
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.ValidateOwner(model.Writer, iface.Owner)
+	if !permit {
+		logger.Error("Not authorized to delete the subnet")
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_vm_nic.sh '%d' '%d' '%d' '%s' '%s'", instance.ID, iface.ID, iface.Address.Subnet.Vlan, iface.Address.Address, iface.MacAddr)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Detach vm nic command execution failed", err)
+		return
+	}
+	return
+}
+
 func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order string, instance *model.Instance) (total int64, interfaces []*model.Interface, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
@@ -123,7 +144,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	if err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
-		logger.Debug("DB failed to query security rule(s), %v", err)
+		logger.Debug("DB failed to query interface(s), %v", err)
 		return
 	}
 
@@ -274,6 +295,70 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	return
 }
 
+func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, address, mac string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, subnets []*model.Subnet, secondAddrsCount int) (iface *model.Interface, err error) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	memberShip := GetMemberShip(ctx)
+	ifaceLen := len(instance.Interfaces)
+	if ifaceLen >= 8 {
+		err = fmt.Errorf("Can not create interfaces more than 8")
+		return
+	}
+	routerID := instance.RouterID
+	ifname := fmt.Sprintf("eth%d", ifaceLen)
+	for _, subnet := range subnets {
+		if subnet.Type == "site" {
+			logger.Error("Not allowed to create interface in site subnet")
+			err = fmt.Errorf("Not allowed to create interface in site subnet")
+			return
+		}
+		if routerID > 0 && subnet.RouterID != routerID {
+			logger.Error("Subnets can not belong to different router")
+			err = fmt.Errorf("Subnets can not belong to different router")
+			return
+		}
+		if iface == nil {
+			iface, err = CreateInterface(ctx, subnet, instance.ID, memberShip.OrgID, instance.Hyper, inbound, outbound, address, mac, ifname, "instance", secgroups, allowSpoofing)
+			if err == nil {
+				if subnet.Type == "public" {
+					_, err = floatingIpAdmin.createDummyFloatingIp(ctx, instance, iface.Address.Address)
+					if err != nil {
+						logger.Error("DB failed to create dummy floating ip", err)
+						return
+					}
+				}
+				break
+			} else {
+				logger.Errorf("Allocate address interface from subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
+			}
+		}
+	}
+	if iface == nil {
+		if err == nil {
+			err = fmt.Errorf("Failed to create interface")
+		}
+		return
+	}
+	if routerID == 0 {
+		instance.RouterID = iface.Address.Subnet.RouterID
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instance.ID)}}).Update(map[string]interface{}{
+			"router_id": instance.RouterID}).Error
+		if err != nil {
+			logger.Debug("Failed to update instance", err)
+			return
+		}
+	}
+	err = ApplyInterface(ctx, instance, iface, false)
+	if err != nil {
+		return
+	}
+	return
+}
+
 func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -325,7 +410,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 	}
 	changed := false
-	if iface.PrimaryIf && instance.RouterID == 0 {
+	if iface.PrimaryIf && iface.Address.Subnet.RouterID == 0 {
 		// valid := true
 		_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		// if !valid {
@@ -336,7 +421,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 
 		if changed {
 			var oldAddresses []string
-			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+			_, oldAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
@@ -377,31 +462,40 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 }
 
 func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
-	db := DB()
-	id := c.Params("id")
-	if id == "" {
+	ctx := c.Req.Context()
+	instID := c.Params("instid")
+	if instID == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	ifaceID, err := strconv.Atoi(id)
+	instanceID, err := strconv.Atoi(instID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	_, err = instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	interfaceID := c.Params("id")
+	if interfaceID == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	ifaceID, err := strconv.Atoi(interfaceID)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	permit, err := memberShip.CheckOwner(model.Writer, "interfaces", int64(ifaceID))
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at")
-	}).Preload("SecondAddresses.Subnet").Preload("SiteSubnets").Preload("SecurityGroups").Take(iface).Error
+	iface, err := interfaceAdmin.Get(ctx, int64(ifaceID))
 	if err != nil {
 		logger.Error("Interface query failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -452,104 +546,215 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 	c.HTML(200, "interfaces_patch")
 }
 
+func (v *InterfaceView) New(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	where := "interface = 0"
+	if instance.RouterID > 0 {
+		where = fmt.Sprintf("%s and router_id = %d", where, instance.RouterID)
+	}
+	_, subnets, err := subnetAdmin.List(ctx, 0, -1, "", "", where)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
+	_, secgroups, err := secgroupAdmin.List(ctx, 0, -1, "", "")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
+	c.Data["Subnets"] = subnets
+	c.Data["SecurityGroups"] = secgroups
+	c.HTML(200, "interfaces_new")
+}
+
 func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
-	memberShip := GetMemberShip(ctx)
-	subnetID := c.QueryInt64("subnet")
-	subnet, err := subnetAdmin.Get(ctx, subnetID)
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "Id is Empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instanceID, err := strconv.Atoi(id)
 	if err != nil {
-		logger.Error("Get subnet failed", err)
+		c.Data["ErrorMsg"] = err.Error()
+		logger.Error("Instance ID error ", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instanceID))
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = fmt.Sprintf("Instance query failed", err)
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	subnets := c.QueryStrings("subnets")
+	ifaceSubnets := []*model.Subnet{}
+	if len(subnets) > 0 {
+		for _, subnet := range subnets {
+			subnetID, err := strconv.Atoi(subnet)
+			if err != nil {
+				logger.Debug("Invalid site subnet ID, %v", err)
+				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			ifaceSubnet, err := subnetAdmin.Get(ctx, int64(subnetID))
+			if err != nil {
+				logger.Debug("Failed to query interface subnet, %v", err)
+				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			ifaceSubnets = append(ifaceSubnets, ifaceSubnet)
+		}
+	}
+	if len(ifaceSubnets) == 0 {
+		logger.Debug("No valid subnet")
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	instID := c.QueryInt64("instance")
-	if instID > 0 {
-		permit, _ := memberShip.CheckOwner(model.Writer, "instances", int64(instID))
-		if !permit {
-			logger.Error("Not authorized to access instance")
-			c.Data["ErrorMsg"] = "Not authorized to access instance"
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
-	}
 	address := c.QueryTrim("address")
 	mac := c.QueryTrim("mac")
-	ifname := c.QueryTrim("ifname")
-	sgList := c.QueryTrim("secgroups")
-	var sgIDs []int64
-	if sgList != "" {
-		sg := strings.Split(sgList, ",")
-		for i := 0; i < len(sg); i++ {
-			sgID, err := strconv.Atoi(sg[i])
-			if err != nil {
-				logger.Error("Invalid security group ID", err)
-				continue
-			}
-			permit, _ := memberShip.CheckOwner(model.Writer, "security_groups", int64(sgID))
-			if !permit {
-				logger.Error("Not authorized to access security group")
-				c.Data["ErrorMsg"] = "Not authorized to access security group"
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			sgIDs = append(sgIDs, int64(sgID))
-		}
-	} else {
-		sgID := store.Get("defsg").(int64)
-		permit, _ := memberShip.CheckOwner(model.Writer, "security_groups", int64(sgID))
-		if !permit {
-			logger.Error("Not authorized to access security group")
-			c.Data["ErrorMsg"] = "Not authorized to access security group"
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
-		sgIDs = append(sgIDs, sgID)
-	}
-	secgroups := []*model.SecurityGroup{}
-	if err = DB().Where(sgIDs).Find(&secgroups).Error; err != nil {
-		logger.Error("Security group query failed", err)
+	inbound := c.QueryInt("inbound")
+	outbound := c.QueryInt("outbound")
+	if inbound > 20000 || inbound < 0 {
+		logger.Errorf("Inbound out of range %d", inbound)
+		c.Data["ErrorMsg"] = "Invalid inbound range [0-20000]"
+		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	iface, err := CreateInterface(ctx, subnet, instID, memberShip.OrgID, -1, 0, 0, address, mac, ifname, "instance", secgroups, false)
-	if err != nil {
-		c.JSON(500, map[string]interface{}{
-			"error": err.Error(),
-		})
+	if outbound > 20000 || outbound < 0 {
+		logger.Errorf("Outbound out of range %d", outbound)
+		c.Data["ErrorMsg"] = "Inbound out of range [0-20000]"
+		c.HTML(http.StatusBadRequest, "error")
+		return
 	}
-	c.JSON(200, iface)
+	allowSpoofing := false
+	allowSpf := c.QueryTrim("allow_spoofing")
+	if allowSpf == "yes" {
+		allowSpoofing = true
+	}
+
+	sgs := c.QueryStrings("secgroups")
+	logger.Error("security groups: ", sgs)
+	secgroups, err := instanceView.getSecurityGroups(ctx, ifaceSubnets[0].RouterID, sgs)
+	if err != nil {
+		logger.Debug("Failed to get security groups", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+	}
+	_, err = interfaceAdmin.Create(ctx, instance, address, mac, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, 0)
+	if err != nil {
+		logger.Debug("Failed to update interface", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+	}
+	redirectTo := "../interfaces"
+	c.Redirect(redirectTo)
+}
+
+func (v *InterfaceView) List(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	offset := c.QueryInt64("offset")
+	limit := c.QueryInt64("limit")
+	if limit == 0 {
+		limit = 16
+	}
+	order := c.QueryTrim("order")
+	if order == "" {
+		order = "created_at"
+	}
+	instid := c.Params("instid")
+	if instid == "" {
+		logger.Error("Instance ID is empty")
+		c.Data["ErrorMsg"] = "Instance ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instID, err := strconv.Atoi(instid)
+	if err != nil {
+		logger.Error("Invalid instance ID", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, int64(instID))
+	if err != nil {
+		logger.Error("Failed to get instance", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	total, interfaces, err := interfaceAdmin.List(ctx, offset, limit, order, instance)
+	if err != nil {
+		logger.Error("Failed to list interface(s)", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
+	pages := GetPages(total, limit)
+	c.Data["Instance"] = instance
+	c.Data["Interfaces"] = interfaces
+	c.Data["Total"] = total
+	c.Data["Pages"] = pages
+	c.HTML(200, "interfaces")
 }
 
 func (v *InterfaceView) Delete(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
-	memberShip := GetMemberShip(ctx)
+	instID := c.ParamsInt64("instid")
+	instance, err := instanceAdmin.Get(ctx, instID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
 	id := c.ParamsInt64("id")
-	permit, err := memberShip.CheckOwner(model.Writer, "interfaces", id)
-	if !permit {
-		logger.Error("Not authorized for this operation")
-		c.Data["ErrorMsg"] = "Not authorized for this operation"
-		c.Error(http.StatusBadRequest)
-		return
-	}
-	iface := &model.Interface{Model: model.Model{ID: id}}
-	err = DB().Take(iface).Error
+	iface, err := interfaceAdmin.Get(ctx, id)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	err = DeleteInterface(ctx, iface)
+	err = interfaceAdmin.Delete(ctx, instance, iface)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	c.JSON(200, "ok")
+	c.JSON(200, map[string]interface{}{
+		"redirect": "interfaces",
+	})
 }
 
 func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
-	redirectTo := "../instances"
+	redirectTo := "../interfaces"
 	id := c.Params("id")
 	if id == "" {
 		c.Data["ErrorMsg"] = "Id is Empty"

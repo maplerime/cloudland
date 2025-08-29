@@ -153,7 +153,7 @@ while [ $i -lt $nvlan ]; do
     if [ ! -f "$interface_xml" ]; then
         template=$template_dir/interface.xml
         cp $template $interface_xml
-        sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g" $interface_xml
+        sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/1/g" $interface_xml
     fi
     virsh attach-device $vm_rescue $interface_xml --config --persistent
     let i=$i+1

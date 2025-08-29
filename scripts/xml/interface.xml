@@ -3,5 +3,5 @@
   <source bridge='VM_BRIDGE'/>
   <target dev='VM_VTEP'/>
   <model type='virtio'/>
-  <driver name='vhost' queues='2'/>
+  <driver name='vhost' queues='QUEUE_NUM'/>
 </interface>
