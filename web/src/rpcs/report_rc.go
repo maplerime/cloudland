@@ -79,5 +79,14 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to create or update hyper resource", err)
 		return
 	}
+	if cpu == 0 || memory == 0 || disk == 0 {
+		err = db.Model(&model.Resource{}).Where("hostid = ?", id).Updates(map[string]interface{}{
+			"cpu": cpu,
+			"memory": memory,
+			"disk": disk}).Error
+		if err != nil {
+			logger.Error("Failed to update hypervisor resource", err)
+		}
+	}
 	return
 }
