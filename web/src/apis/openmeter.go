@@ -145,6 +145,15 @@ type PrometheusTargetFilter struct {
 	cacheDuration          time.Duration
 }
 
+// AggregatedDataPoint represents aggregated traffic data from multiple network interfaces at a specific timestamp
+type AggregatedDataPoint struct {
+	Timestamp    string
+	TotalValue   int64
+	Host         string
+	EventCount   int
+	Devices      []string
+	OriginalTime string
+}
 var (
 	targetFilterCache *PrometheusTargetFilter
 	targetFilterMutex sync.Mutex
@@ -281,14 +290,16 @@ func (o *OpenMeterAPI) isValidTarget(target string, targetFilter *PrometheusTarg
 }
 
 // filterEventsByPrometheusTargets filters events based on Prometheus target configuration
-func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, targetFilter *PrometheusTargetFilter) []OpenMeterEvent {
+// Returns filtered events and a flag indicating if any events were filtered due to target mismatch
+func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, targetFilter *PrometheusTargetFilter) ([]OpenMeterEvent, bool) {
 	if len(targetFilter.NodeExporterTargets) == 0 && len(targetFilter.LibvirtExporterTargets) == 0 {
 		log.Printf("No Prometheus targets configured, returning all events")
-		return events
+		return events, false
 	}
 
 	var filteredEvents []OpenMeterEvent
 	filteredCount := 0
+	hasTargetMismatch := false
 
 	for _, event := range events {
 		// Extract instance/node information from event data
@@ -302,6 +313,7 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 						continue
 					}
 					filteredCount++
+					hasTargetMismatch = true
 					continue
 				}
 
@@ -312,6 +324,7 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 						continue
 					}
 					filteredCount++
+					hasTargetMismatch = true
 					continue
 				}
 
@@ -322,6 +335,7 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 						continue
 					}
 					filteredCount++
+					hasTargetMismatch = true
 					continue
 				}
 
@@ -347,7 +361,7 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 	log.Printf("Filtered events: %d kept, %d removed based on Prometheus targets",
 		len(filteredEvents), filteredCount)
 
-	return filteredEvents
+	return filteredEvents, hasTargetMismatch
 }
 
 // QueryOpenMeterMetrics queries metrics from OpenMeter with comprehensive processing
@@ -497,7 +511,27 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 			log.Printf("Failed to get Prometheus target Filter err: %v, targetFilter: %v", err, targetFilter)
 			// Continue without filtering rather than failing completely
 		} else {
-			filteredEvents = o.filterEventsByPrometheusTargets(events, targetFilter)
+			filteredEvents, hasTargetMismatch := o.filterEventsByPrometheusTargets(events, targetFilter)
+			// Check for target mismatch in two scenarios:
+			// 1. We have events but all were filtered out due to target mismatch
+			// 2. We have no events at all, but the instance_id is not in Prometheus targets
+			shouldReturnError := false
+			if len(events) > 0 && len(filteredEvents) == 0 && hasTargetMismatch {
+				shouldReturnError = true
+			} else if len(events) == 0 && req.InstanceID != "" && !o.isValidTarget(req.InstanceID, targetFilter) {
+				shouldReturnError = true
+			}
+			if shouldReturnError {
+				c.JSON(http.StatusBadRequest, gin.H{
+					"status":  "error",
+					"details": fmt.Sprintf("The target instance_id '%s' is not found in the current zone's Prometheus configuration. Please verify the instance_id is correct and belongs to this zone.", req.InstanceID),
+					"available_targets": map[string]interface{}{
+						"node_exporter_targets":    targetFilter.NodeExporterTargets,
+						"libvirt_exporter_targets": targetFilter.LibvirtExporterTargets,
+					},
+				})
+				return
+			}
 			log.Printf("Prometheus filtering applied - filter: %v, events: %d -> %d", targetFilter, len(events), len(filteredEvents))
 		}
 	} else {
@@ -720,7 +754,7 @@ func (o *OpenMeterAPI) processVMStateMetrics(events []OpenMeterEvent, queryStart
 			"total_uptime_minutes": 0,
 			"total_uptime_hours":   0,
 			"state_counts":         map[string]int{},
-			"total_segments":       0,
+			"monitoring_periods":   0,
 		}, nil
 	}
 
@@ -860,7 +894,7 @@ func (o *OpenMeterAPI) processVMStateMetrics(events []OpenMeterEvent, queryStart
 	summary := map[string]interface{}{
 		"state_counts":         stateCounts,
 		"state_durations":      stateDurations,
-		"total_segments":       len(stateSegments),
+		"monitoring_periods":   len(stateSegments),
 		"total_uptime_hours":   totalUptimeMinutes / 60,
 		"total_uptime_minutes": totalUptimeMinutes,
 		"query_period_minutes": queryPeriodMinutes,
@@ -871,10 +905,11 @@ func (o *OpenMeterAPI) processVMStateMetrics(events []OpenMeterEvent, queryStart
 
 // processTrafficMetrics processes network traffic metrics
 // Rules:
-// 1. Detect counter resets (when current value < previous value)
-// 2. Handle SDN restarts and host migrations
-// 3. Calculate incremental traffic for each segment
-// 4. Sum all increments to get total traffic
+// 1. Aggregate traffic from all network interfaces by timestamp
+// 2. Detect counter resets based on aggregated values
+// 3. Handle SDN restarts and host migrations
+// 4. Calculate incremental traffic for each segment
+// 5. Sum all increments to get total traffic
 func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject string, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
 	if len(events) == 0 {
 		return &TrafficCalculationResult{}, map[string]interface{}{
@@ -883,11 +918,42 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 		}, nil
 	}
 
-	// Sort events by time (oldest first)
-	sortedEvents := make([]OpenMeterEvent, len(events))
-	copy(sortedEvents, events)
-	sort.Slice(sortedEvents, func(i, j int) bool {
-		return sortedEvents[i].Time < sortedEvents[j].Time
+	// Group events by timestamp and aggregate traffic values from all network interfaces
+	timestampGroups := make(map[string][]OpenMeterEvent)
+	for _, event := range events {
+		timestampGroups[event.Time] = append(timestampGroups[event.Time], event)
+	}
+	// Create aggregated time series with total traffic per timestamp
+	var aggregatedSeries []AggregatedDataPoint
+	for timestamp, eventsAtTime := range timestampGroups {
+		var totalValue int64
+		var host string
+		var devices []string
+		// Sum traffic from all network interfaces at this timestamp
+		for _, event := range eventsAtTime {
+			value := o.extractTrafficValueFromEvent(event)
+			totalValue += value
+			// Get host info from first event (should be same for all interfaces)
+			if host == "" {
+				host = o.extractHostFromEvent(event)
+			}
+			// Collect device names for debugging
+			if device := o.extractTargetDeviceFromEvent(event); device != "" {
+				devices = append(devices, device)
+			}
+		}
+		aggregatedSeries = append(aggregatedSeries, AggregatedDataPoint{
+			Timestamp:    timestamp,
+			TotalValue:   totalValue,
+			Host:         host,
+			EventCount:   len(eventsAtTime),
+			Devices:      devices,
+			OriginalTime: timestamp,
+		})
+	}
+	// Sort aggregated series by time (oldest first)
+	sort.Slice(aggregatedSeries, func(i, j int) bool {
+		return aggregatedSeries[i].Timestamp < aggregatedSeries[j].Timestamp
 	})
 
 	result := &TrafficCalculationResult{
@@ -900,13 +966,14 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 	var totalBytes int64
 	var lastHost string
 
-	for i, event := range sortedEvents {
-		currentValue := o.extractTrafficValueFromEvent(event)
-		currentHost := o.extractHostFromEvent(event)
+	// Process aggregated time series
+	for i, dataPoint := range aggregatedSeries {
+		currentValue := dataPoint.TotalValue
+		currentHost := dataPoint.Host
 
 		// Detect host migration
 		if lastHost != "" && lastHost != currentHost {
-			eventTimestamp := o.parseTimestampFromEvent(event)
+			eventTimestamp := o.parseTimestampFromString(dataPoint.Timestamp)
 			result.HostMigrations = append(result.HostMigrations, HostMigrationDetected{
 				Timestamp:       eventTimestamp,
 				FromHost:        lastHost,
@@ -918,18 +985,18 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 			})
 			// Host migration causes counter reset
 			if currentSegmentStart < i {
-				segment := o.createTrafficSegment(sortedEvents, currentSegmentStart, i-1, queryStart, queryEnd)
+				segment := o.createTrafficSegmentFromAggregated(aggregatedSeries, currentSegmentStart, i-1, queryStart, queryEnd)
 				result.Segments = append(result.Segments, segment)
 				totalBytes += segment.IncrementBy
 			}
 			currentSegmentStart = i
 		}
 
-		// Detect counter reset (value decreased)
+		// Detect counter reset (aggregated value decreased)
 		if i > currentSegmentStart {
-			prevValue := o.extractTrafficValueFromEvent(sortedEvents[i-1])
+			prevValue := aggregatedSeries[i-1].TotalValue
 			if currentValue < prevValue {
-				eventTimestamp := o.parseTimestampFromEvent(event)
+				eventTimestamp := o.parseTimestampFromString(dataPoint.Timestamp)
 				result.Resets = append(result.Resets, TrafficReset{
 					Timestamp:               eventTimestamp,
 					BeforeValue:             prevValue,
@@ -940,7 +1007,7 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 
 				// Close current segment
 				if currentSegmentStart < i {
-					segment := o.createTrafficSegment(sortedEvents, currentSegmentStart, i-1, queryStart, queryEnd)
+					segment := o.createTrafficSegmentFromAggregated(aggregatedSeries, currentSegmentStart, i-1, queryStart, queryEnd)
 					result.Segments = append(result.Segments, segment)
 					totalBytes += segment.IncrementBy
 				}
@@ -952,8 +1019,8 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 	}
 
 	// Close final segment
-	if currentSegmentStart < len(sortedEvents) {
-		segment := o.createTrafficSegment(sortedEvents, currentSegmentStart, len(sortedEvents)-1, queryStart, queryEnd)
+	if currentSegmentStart < len(aggregatedSeries) {
+		segment := o.createTrafficSegmentFromAggregated(aggregatedSeries, currentSegmentStart, len(aggregatedSeries)-1, queryStart, queryEnd)
 		result.Segments = append(result.Segments, segment)
 		totalBytes += segment.IncrementBy
 	}
@@ -969,6 +1036,7 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 	dataQuality := map[string]interface{}{
 		"missing_intervals":     0, // Could be calculated based on expected vs actual data points
 		"continuous_monitoring": len(result.Resets) == 0 && len(result.HostMigrations) == 0,
+		"interface_aggregation": true, // Indicates multi-interface aggregation was used
 	}
 
 	// Add data quality to result
@@ -991,11 +1059,13 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 		"total_mb":          float64(totalBytes) / (1024 * 1024),
 		"total_gb":          float64(totalBytes) / (1024 * 1024 * 1024),
 		"total_kb":          float64(totalBytes) / 1024,
-		"total_segments":    len(result.Segments),
-		"total_resets":      len(result.Resets),
-		"host_migrations":   len(result.HostMigrations),
+		"monitoring_periods":     len(result.Segments),
+		"sdn_reset_count":        len(result.Resets),
+		"host_migrations_count":  len(result.HostMigrations),
 		"metric_type":       subject,
 		"average_rate_mbps": averageRateMbps,
+		"interface_aggregation":  true,
+		"unique_timestamps":      len(aggregatedSeries),
 	}
 
 	return result, summary, nil
@@ -1110,7 +1180,7 @@ func (o *OpenMeterAPI) processResourceMetrics(events []OpenMeterEvent, resourceT
 			"total_duration_minutes": 0,
 			"total_duration_hours":   0,
 			"resource_changes":       0,
-			"total_segments":         0,
+			"monitoring_periods":     0,
 			"value_distribution":     []map[string]interface{}{},
 			"resource_type":          resourceType,
 			"unit":                   unit,
@@ -1474,7 +1544,7 @@ func (o *OpenMeterAPI) processResourceMetrics(events []OpenMeterEvent, resourceT
 		"resource_type":          resourceType,
 		"total_duration_hours":   totalDurationMinutes / 60,
 		"total_duration_minutes": totalDurationMinutes,
-		"total_segments":         len(resourceSegments),
+		"monitoring_periods":     len(resourceSegments),
 		"unit":                   unit,
 		"value_distribution":     valueDistributionArray,
 	}
@@ -1616,6 +1686,14 @@ func (o *OpenMeterAPI) parseTimestampFromEvent(event OpenMeterEvent) int64 {
 	return time.Now().Unix()
 }
 
+// parseTimestampFromString extracts Unix timestamp from time string
+func (o *OpenMeterAPI) parseTimestampFromString(timeStr string) int64 {
+	layout := "2006-01-02 15:04:05"
+	if t, err := time.Parse(layout, timeStr); err == nil {
+		return t.Unix()
+	}
+	return time.Now().Unix()
+}
 // convertTimeStringToUnix converts time string to Unix timestamp
 func (o *OpenMeterAPI) convertTimeStringToUnix(timeStr string) int64 {
 	layout := "2006-01-02 15:04:05"
@@ -1702,6 +1780,46 @@ func (o *OpenMeterAPI) createTrafficSegment(events []OpenMeterEvent, startIdx, e
 	}
 }
 
+// createTrafficSegmentFromAggregated creates a traffic segment from aggregated data points
+func (o *OpenMeterAPI) createTrafficSegmentFromAggregated(aggregatedSeries []AggregatedDataPoint, startIdx, endIdx int, queryStart, queryEnd int64) TrafficSegment {
+	if startIdx > endIdx || endIdx >= len(aggregatedSeries) {
+		return TrafficSegment{}
+	}
+	startDataPoint := aggregatedSeries[startIdx]
+	endDataPoint := aggregatedSeries[endIdx]
+	startValue := startDataPoint.TotalValue
+	endValue := endDataPoint.TotalValue
+	increment := int64(0)
+	if endValue >= startValue {
+		increment = endValue - startValue
+	}
+	// Use query time range if available, otherwise use event timestamps
+	segmentStartTime := o.parseTimestampFromString(startDataPoint.Timestamp)
+	segmentEndTime := o.parseTimestampFromString(endDataPoint.Timestamp)
+	// For single data point or when query time range is specified, use query range for better time coverage
+	if queryStart > 0 && queryEnd > 0 {
+		// If we only have one data point, use the full query range
+		if startIdx == endIdx {
+			segmentStartTime = queryStart
+			segmentEndTime = queryEnd
+		} else {
+			// For multiple data points, extend to query boundaries if events are at the edges
+			if startIdx == 0 {
+				segmentStartTime = queryStart
+			}
+			if endIdx == len(aggregatedSeries)-1 {
+				segmentEndTime = queryEnd
+			}
+		}
+	}
+	return TrafficSegment{
+		StartTime:   segmentStartTime,
+		EndTime:     segmentEndTime,
+		StartValue:  startValue,
+		EndValue:    endValue,
+		IncrementBy: increment,
+	}
+}
 // calculateTimeDifference calculates time difference in minutes between two time strings
 func (o *OpenMeterAPI) calculateTimeDifference(startTime, endTime string) float64 {
 	layout := "2006-01-02 15:04:05"
