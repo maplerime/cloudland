@@ -296,6 +296,12 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 }
 
 func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, address, mac string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, subnets []*model.Subnet, secondAddrsCount int) (iface *model.Interface, err error) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	ifaceLen := len(instance.Interfaces)
 	if ifaceLen >= 8 {
@@ -339,6 +345,12 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	}
 	if routerID == 0 {
 		instance.RouterID = iface.Address.Subnet.RouterID
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instance.ID)}}).Update(map[string]interface{}{
+			"router_id": instance.RouterID}).Error
+		if err != nil {
+			logger.Debug("Failed to update instance", err)
+			return
+		}
 	}
 	err = ApplyInterface(ctx, instance, iface, false)
 	if err != nil {

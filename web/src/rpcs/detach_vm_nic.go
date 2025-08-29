@@ -55,12 +55,19 @@ func DetachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Failed to delete interface", err)
 		return
 	}
-	if err = db.Model(&model.Interface{}).Preload("Address").Preload("Address.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+	var tmpIfaces []*model.Interface
+	if err = db.Model(&model.Interface{}).Preload("Address").Preload("Address.Subnet").Where("instance = ? and router_id > 0", instance.ID).Find(&tmpIfaces).Error; err != nil {
 		logger.Debug("DB failed to query interface(s), %v", err)
 		return
 	}
-	if len(instance.Interfaces) == 1 && instance.Interfaces[0].Address.Subnet.Type == string(Public) {
+	if len(tmpIfaces) == 0 {
 		instance.RouterID = 0
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instance.ID)}}).Update(map[string]interface{}{
+			"router_id": instance.RouterID}).Error
+		if err != nil {
+			logger.Debug("Failed to update instance", err)
+			return
+		}
 	}
 	return
 }
