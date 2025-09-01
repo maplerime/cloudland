@@ -78,6 +78,12 @@
   roles:
     - {role: monitor_hyper, become: yes, tags: [monitor]}
 
+# add  monitor nginx rule for cland nodes
+- name: add  monitor nginx rule for cland nodes
+  hosts: cland
+  roles:
+    - {role: monitor_nginx, become: yes, tags: [monitor_nginx]}
+
 # delete tmp ssh key pair
 - name: generate ssh key pair
   hosts: localhost
