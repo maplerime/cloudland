@@ -55,10 +55,10 @@ curl -s "$METRICS_URL" | grep '^libvirt_domain_interface_meta{' | while read -r 
 
         # Query rx/tx bytes for this device from libvirt metrics
         # Query received bytes (inbound)
-        inbound=$(curl -s "$METRICS_URL" | grep "^libvirt_domain_interface_stats_receive_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" | grep -o 'receive_bytes_total{[^}]*} [0-9]*' | awk '{print $2}')
+        inbound=$(curl -s "$METRICS_URL" | grep "^libvirt_domain_interface_stats_receive_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" | awk '{printf "%.0f", $2}')
 
         # Query transmitted bytes (outbound)
-        outbound=$(curl -s "$METRICS_URL" | grep "^libvirt_domain_interface_stats_transmit_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" | grep -o 'transmit_bytes_total{[^}]*} [0-9]*' | awk '{print $2}')
+        outbound=$(curl -s "$METRICS_URL" | grep "^libvirt_domain_interface_stats_transmit_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" | awk '{printf "%.0f", $2}')
 
         # Set to 0 if query result is empty
         [ -z "$inbound" ] && inbound=0
