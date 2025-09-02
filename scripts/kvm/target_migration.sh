@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 10 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type> <instance_uuid>"
+[ $# -lt 12 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type> <boot_loader> <pool_ID> <instance_uuid>"
 
 migrate_ID=$1
 task_ID=$2
@@ -15,7 +15,9 @@ vm_mem=$6
 disk_size=$7
 source_hyper=$8
 migration_type=$9
-instance_uuid=${10:-$ID}
+boot_loader=${10}
+pool_ID=${11}
+instance_uuid=${12:-$ID}
 state=error
 
 if [ -z "$wds_address" ]; then
@@ -66,12 +68,51 @@ done
 [ -z "$vm_mem" ] && vm_mem='1024m'
 [ -z "$vm_cpu" ] && vm_cpu=1
 let vm_mem=${vm_mem%[m|M]}*1024
+vm_nested="disable"
+cpu_vendor=$(lscpu | grep "Vendor ID" | awk -F ':' '{print $2}' | tr -d ' ')
+if [ "$cpu_vendor" = "GenuineIntel" ]; then
+    vm_virt_feature="vmx"
+else
+    vm_virt_feature="svm"
+fi
 mkdir -p $xml_dir/$vm_ID
 vm_QA="$qemu_agent_dir/$vm_ID.agent"
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 template=$template_dir/wds_template_with_qa.xml
 cp $template $vm_xml
-sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_UNIX_SOCK#$boot_ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/INSTANCE_UUID/$instance_uuid/g" $vm_xml
+sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_UNIX_SOCK#$boot_ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/INSTANCE_UUID/$instance_uuid/g; s/VM_NESTED/$vm_nested/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
+vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+if [ "$boot_loader" = "uefi" ]; then
+    cp $nvram_template $vm_nvram
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$boot_ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s#VM_BOOT_LOADER#$uefi_boot_loader#g" \
+    -e "s#VM_NVRAM#$vm_nvram#g" \
+    -e "s/INSTANCE_UUID/$instance_uuid/g" \
+    $vm_xml
+else
+    sed -i \
+    -e "s/VM_ID/$vm_ID/g" \
+    -e "s/VM_MEM/$vm_mem/g" \
+    -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s#VM_IMG#$vm_img#g" \
+    -e "s#VM_UNIX_SOCK#$boot_ux_sock#g" \
+    -e "s#VM_META#$vm_meta#g" \
+    -e "s#VM_AGENT#$vm_QA#g" \
+    -e "s/VM_NESTED/$vm_nested/g" \
+    -e "s/VM_VIRT_FEATURE/$vm_virt_feature/g" \
+    -e "s/INSTANCE_UUID/$instance_uuid/g" \
+    $vm_xml
+fi
+
 if [ "$migration_type" = "cold" ]; then
     virsh define $vm_xml
     virsh autostart $vm_ID

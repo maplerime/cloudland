@@ -119,6 +119,10 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/api/v1/floating_ips/site_attach", floatingIpAPI.SiteAttach)
 		authGroup.POST("/api/v1/floating_ips/site_detach", floatingIpAPI.SiteDetach)
 
+		// Addresses
+		authGroup.PATCH("/api/v1/subnets/:id/addresses/:address_id", addressAPI.Patch)
+		authGroup.PATCH("/api/v1/subnets/:id/addresses/:address_id/update-lock", addressAPI.UpdateLock)
+
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)
 		authGroup.GET("/api/v1/keys/:id", keyAPI.Get)
@@ -193,6 +197,11 @@ func Register() (r *gin.Engine) {
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
 			authGroup.DELETE("/api/v1/node-alarm-rules/:uuid", alarmAPI.DeleteNodeAlarmRule)
+
+			// OpenMeter API routes
+			authGroup.GET("/api/v1/openmeter/metrics", openMeterAPI.QueryOpenMeterMetrics)
+			authGroup.GET("/api/v1/openmeter/metrics/:instance_id/:subject", openMeterAPI.QueryInstanceMetricsBySubject)
+			authGroup.GET("/api/v1/openmeter/subjects", openMeterAPI.GetAvailableSubjects)
 
 		}
 

@@ -24,10 +24,14 @@ fi
 ./create_veth.sh $router int-$suffix ti-$suffix
 [ -z "$system_packet_rate_limit" ] && system_packet_rate_limit=120
 system_packet_burst=$(( $system_packet_rate_limit / 2 ))
-ip netns exec $router iptables -I FORWARD -i ti-$suffix -j DROP
-ip netns exec $router iptables -I FORWARD -o ti-$suffix -j DROP
-ip netns exec $router iptables -I FORWARD -i ti-$suffix -m limit --limit $system_packet_rate_limit/second --limit-burst $system_packet_burst -j ACCEPT
-ip netns exec $router iptables -I FORWARD -o ti-$suffix -m limit --limit $system_packet_rate_limit/second --limit-burst $system_packet_burst -j ACCEPT
+ip netns exec $router iptables -C FORWARD -i ti-$suffix -j DROP
+[ $? -ne 0 ] && ip netns exec $router iptables -I FORWARD -i ti-$suffix -j DROP
+ip netns exec $router iptables -C FORWARD -o ti-$suffix -j DROP
+[ $? -ne 0 ] && ip netns exec $router iptables -I FORWARD -o ti-$suffix -j DROP
+ip netns exec $router iptables -C FORWARD -i ti-$suffix -m limit --limit $system_packet_rate_limit/second --limit-burst $system_packet_burst -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -I FORWARD -i ti-$suffix -m limit --limit $system_packet_rate_limit/second --limit-burst $system_packet_burst -j ACCEPT
+ip netns exec $router iptables -C FORWARD -o ti-$suffix -m limit --limit $system_packet_rate_limit/second --limit-burst $system_packet_burst -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -I FORWARD -o ti-$suffix -m limit --limit $system_packet_rate_limit/second --limit-burst $system_packet_burst -j ACCEPT
 remaineder=$(( $suffix % 64516 ))
 part2=$(( $remaineder / 254 ))
 part3=$(( $remaineder % 254 ))
@@ -47,7 +51,7 @@ ip netns exec router-0 ip link set int-$suffix up
 ip netns exec router-0 ip addr add ${peer_ip}/31 dev int-$suffix
 
 ip netns exec $router ipset create nonat nethash
-ip netns exec $router iptables -t nat -S | grep "to-source $local_ip\>"
+ip netns exec $router iptables -t nat -C POSTROUTING -m set --match-set nonat src -m set ! --match-set nonat dst -j SNAT --to-source $local_ip
 [ $? -ne 0 ] && ip netns exec $router iptables -t nat -A POSTROUTING -m set --match-set nonat src -m set ! --match-set nonat dst -j SNAT --to-source $local_ip
 
 ip netns exec $router bash -c "echo 1 >/proc/sys/net/ipv4/ip_forward"

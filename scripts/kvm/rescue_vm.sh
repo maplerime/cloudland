@@ -136,6 +136,7 @@ else
 fi
 
 virsh define $vm_xml
+./generate_vm_instance_map.sh add $vm_ID
 
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}.xml
 cp $disk_template $disk_xml

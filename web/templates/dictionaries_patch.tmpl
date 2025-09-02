@@ -28,6 +28,22 @@
                         <input id="value" name="value" type="text" value="{{ .Dictionary.Value }}">
                     </div>
                     <div class="inline field">
+                        <label for="shortname">{{.i18n.Tr "ShortName"}}</label>
+                        <input id="shortname" name="shortname" type="text" value="{{ .Dictionary.ShortName }}">
+                    </div>
+                    <div class="inline field">
+                        <label for="subtype1">{{.i18n.Tr "SubType1"}}</label>
+                        <input id="subtype1" name="subtype1" type="text" value="{{ .Dictionary.SubType1 }}">
+                    </div>
+                    <div class="inline field">
+                        <label for="subtype2">{{.i18n.Tr "SubType2"}}</label>
+                        <input id="subtype2" name="subtype2" type="text" value="{{ .Dictionary.SubType2 }}">
+                    </div>
+                    <div class="inline field">
+                        <label for="subtype3">{{.i18n.Tr "SubType3"}}</label>
+                        <input id="subtype3" name="subtype3" type="text" value="{{ .Dictionary.SubType3 }}">
+                    </div>
+                    <div class="inline field">
                         <label></label>
                         <button class="ui green button">{{.i18n.Tr "Update"}}</button>
                     </div>

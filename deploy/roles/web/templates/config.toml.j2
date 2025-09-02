@@ -25,9 +25,14 @@ debug = true
 open = 50
 lifetime = 30
 idle = 1
+
 [monitor]
 host = "{{ monitor_vip }}"
 port = "{{ monitor_access_port }}"
+
+[metering]
+host = "{{ metering_server_vip }}"
+port = "{{ metering_api_port }}"
 
 [admin]
 password = "{{ admin_passwd }}"

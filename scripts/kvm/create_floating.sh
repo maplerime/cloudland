@@ -39,20 +39,20 @@ ext_dev=te-$suffix
 ./create_veth.sh $router ext-$suffix te-$suffix
 
 ip netns exec $router ip addr add $ext_cidr dev $ext_dev
-ip netns exec $router ip route add default via $ext_gw table $table
+ip netns exec $router ip route replace default via $ext_gw table $table
 ip_net=$(ipcalc -b $int_addr | grep Network | awk '{print $2}')
 ip netns exec $router ip route add $ip_net dev ns-$int_vlan table $table
 ip netns exec $router ip rule add from $int_ip lookup $table
 ip netns exec $router ip rule add to $int_ip lookup $table
-ip netns exec $router iptables -t nat -D PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
-ip netns exec $router iptables -t nat -I PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
-ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
-ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
+ip netns exec $router iptables -t nat -C PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
+[ $? -ne 0 ] && ip netns exec $router iptables -t nat -I PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
+ip netns exec $router iptables -t nat -C POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
+[ $? -ne 0 ] && ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
 async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
 
 if [ "$inbound" -gt 0 ]; then
-    ip netns exec $router iptables -t mangle -D PREROUTING -d $ext_ip -j MARK --set-mark $mark_id
-    ip netns exec $router iptables -t mangle -I PREROUTING -d $ext_ip -j MARK --set-mark $mark_id
+    ip netns exec $router iptables -t mangle -C PREROUTING -d $ext_ip -j MARK --set-mark $mark_id
+    [ $? -ne 0 ] && ip netns exec $router iptables -t mangle -I PREROUTING -d $ext_ip -j MARK --set-mark $mark_id
     ip netns exec $router tc qdisc add dev ns-$int_vlan root handle 1: htb default 10
     ip netns exec $router tc class add dev ns-$int_vlan parent 1: classid 1:$mark_id htb rate ${inbound}mbit burst ${inbound}kbit
     ip netns exec $router tc filter add dev ns-$int_vlan protocol ip parent 1:0 prio $mark_id handle $mark_id fw flowid 1:$mark_id

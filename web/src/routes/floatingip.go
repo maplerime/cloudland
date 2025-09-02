@@ -521,6 +521,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return
 	}
+	db = db.Offset(0).Limit(-1)
 	for _, fip := range floatingIps {
 		if fip.InstanceID > 0 {
 			if fip.Instance != nil && fip.Instance.ID > 0 {
@@ -561,7 +562,6 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 	}
 	permit := memberShip.CheckPermission(model.Admin)
 	if permit {
-		db = db.Offset(0).Limit(-1)
 		for _, fip := range floatingIps {
 			fip.OwnerInfo = &model.Organization{Model: model.Model{ID: fip.Owner}}
 			if err = db.Take(fip.OwnerInfo).Error; err != nil {
