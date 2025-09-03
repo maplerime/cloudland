@@ -44,7 +44,8 @@ type ZonePayload struct {
 }
 
 type ZonePatchPayload struct {
-	Default bool `json:"default"`
+	Default bool   `json:"default"`
+	Remark  string `json:"remark" binding:"max=512"`
 }
 
 // @Summary get a zone

@@ -35,7 +35,7 @@
                                 {{ $Link := .Link }}
                                 {{ range .Zones }}
 		                        <tr>
-									<td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+									<td><a href="{{$Link}}/{{.ID}}/edit">{{.ID}}</a></td>
 			                        <td>{{.Name}}</td>
 			                        <!--td>{{ if .Default }}{{$.i18n.Tr "Yes"}}{{ else }}{{$.i18n.Tr "No"}}{{ end }}</td-->
 			                        <td><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>

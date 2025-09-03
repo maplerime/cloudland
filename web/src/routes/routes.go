@@ -106,7 +106,7 @@ func New() (m *macaron.Macaron) {
 	m.Post("/zones/new", zoneView.Create)
 	m.Delete("/zones/:id", zoneView.Delete)
 	m.Get("/zones/:id/edit", zoneView.Edit)
-	m.Post("/zones/:id", zoneView.Patch)
+	m.Post("/zones/:id/edit", zoneView.Patch)
 	m.Get("/hypers", hyperView.List)
 	m.Get("/hypers/edit", hyperView.Edit)
 	m.Post("/hypers/edit", hyperView.Patch)
