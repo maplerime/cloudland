@@ -38,7 +38,7 @@ func (a *KeyAdmin) CreateKeyPair(ctx context.Context) (publicKey, fingerPrint, p
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized to create keys")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create keys", nil)
 		return
 	}
 	// generate key
@@ -53,7 +53,7 @@ func (a *KeyAdmin) CreateKeyPair(ctx context.Context) (publicKey, fingerPrint, p
 	pub, er := ssh.NewPublicKey(&private.PublicKey)
 	if er != nil {
 		logger.Error("failed to create publicKey")
-		err = er
+		err = NewCLError(ErrSSHKeyGenerateFailed, "Failed to create public key", er)
 		return
 	}
 	temp := ssh.MarshalAuthorizedKey(pub)
@@ -67,13 +67,13 @@ func (a *KeyAdmin) Create(ctx context.Context, name, publicKey, uuid string) (ke
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized to create keys")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create keys", nil)
 		return
 	}
 	pub, _, _, _, puberr := ssh.ParseAuthorizedKey([]byte(publicKey))
 	if puberr != nil {
 		logger.Error("Invalid public key")
-		err = puberr
+		err = NewCLError(ErrInvalidParameter, "Invalid public key", puberr)
 		return
 	}
 	fingerPrint := ssh.FingerprintLegacyMD5(pub)
@@ -91,6 +91,7 @@ func (a *KeyAdmin) Create(ctx context.Context, name, publicKey, uuid string) (ke
 	err = db.Create(key).Error
 	if err != nil {
 		logger.Error("DB failed to create key, %v", err)
+		err = NewCLError(ErrSSHKeyCreateFailed, "Failed to create key", err)
 		return
 	}
 	return
@@ -107,27 +108,30 @@ func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
 	permit := memberShip.ValidateOwner(model.Writer, key.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the key")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the key", nil)
 		return
 	}
 	err = db.Model(key).Related(&key.Instances, "Instances").Error
 	if err != nil {
 		logger.Error("Failed to count the number of instances using the key", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count the number of instances using the key", err)
 		return
 	}
 	if len(key.Instances) > 0 {
 		logger.Error("Key can not be deleted if there are instances using it")
-		err = fmt.Errorf("The key can not be deleted if there are instances using it")
+		err = NewCLError(ErrSSHKeyInUse, "Key can not be deleted if there are instances using it", nil)
 		return
 	}
 	key.Name = fmt.Sprintf("%s-%d", key.Name, key.CreatedAt.Unix())
 	err = db.Model(key).Update("name", key.Name).Error
 	if err != nil {
 		logger.Error("DB failed to update key name", err)
+		err = NewCLError(ErrSSHKeyUpdateFailed, "Failed to update key name", err)
 		return
 	}
 	if err = db.Delete(key).Error; err != nil {
 		logger.Error("DB failed to delete key ", err)
+		err = NewCLError(ErrSSHKeyDeleteFailed, "Failed to delete key", err)
 		return
 	}
 	return
@@ -135,7 +139,7 @@ func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
 
 func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid key ID: %d", id)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid key ID: %d", id), nil)
 		logger.Error(err)
 		return
 	}
@@ -146,6 +150,7 @@ func (a *KeyAdmin) Get(ctx context.Context, id int64) (key *model.Key, err error
 	err = db.Where(where).Take(key).Error
 	if err != nil {
 		logger.Error("Failed to query key, %v", err)
+		err = NewCLError(ErrSSHKeyNotFound, "Failed to query key", err)
 		return
 	}
 	return
@@ -179,7 +184,7 @@ func (a *KeyAdmin) GetKeyByName(ctx context.Context, name string) (key *model.Ke
 
 func (a *KeyAdmin) GetKey(ctx context.Context, reference *BaseReference) (key *model.Key, err error) {
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
-		err = fmt.Errorf("Key base reference must be provided with either uuid or name")
+		err = NewCLError(ErrInvalidParameter, "Key base reference must be provided with either uuid or name", nil)
 		return
 	}
 	if reference.ID != "" {
@@ -211,11 +216,13 @@ func (a *KeyAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	keys = []*model.Key{}
 	if err = db.Model(&model.Key{}).Where(where).Where(query).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count keys, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count keys", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Where(where).Where(query).Find(&keys).Error; err != nil {
 		logger.Error("DB failed to query keys, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query keys", err)
 		return
 	}
 	permit := memberShip.CheckPermission(model.Admin)
