@@ -6226,6 +6226,10 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 512
                 }
             }
         },
@@ -6245,6 +6249,9 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "remark": {
                     "type": "string"
                 },
                 "updated_at": {
