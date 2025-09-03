@@ -3748,6 +3748,50 @@ const docTemplatev1 = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "patch a zone",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Zone"
+                ],
+                "summary": "patch a zone",
+                "parameters": [
+                    {
+                        "description": "Zone patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZonePatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZoneResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
             }
         }
     },
@@ -6210,6 +6254,18 @@ const docTemplatev1 = `{
                     "items": {
                         "$ref": "#/definitions/apis.ZoneResponse"
                     }
+                }
+            }
+        },
+        "apis.ZonePatchPayload": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "boolean"
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 512
                 }
             }
         },

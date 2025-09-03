@@ -141,7 +141,10 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 
 	zone.Default = isDefault
 	zone.Remark = remark
-	err = db.Model(zone).Updates(zone).Error
+	err = db.Model(zone).Updates(map[string]interface{}{
+		"remark":  remark,
+		"default": isDefault,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to update zone", err)
 		return
@@ -291,7 +294,7 @@ func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	redirectTo := "../zones"
+	redirectTo := "/zones"
 	id := c.Params(":id")
 	isDefault := c.QueryBool("default")
 	zoneID, err := strconv.Atoi(id)

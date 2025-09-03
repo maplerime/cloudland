@@ -1674,6 +1674,14 @@ definitions:
           $ref: '#/definitions/apis.ZoneResponse'
         type: array
     type: object
+  apis.ZonePatchPayload:
+    properties:
+      default:
+        type: boolean
+      remark:
+        maxLength: 512
+        type: string
+    type: object
   apis.ZonePayload:
     properties:
       default:
@@ -4308,6 +4316,35 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: get a zone
+      tags:
+      - Zone
+    patch:
+      consumes:
+      - application/json
+      description: patch a zone
+      parameters:
+      - description: Zone patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ZonePatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ZoneResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a zone
       tags:
       - Zone
 swagger: "2.0"

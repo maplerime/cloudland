@@ -197,6 +197,49 @@ func (v *ZoneAPI) Delete(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// @Summary patch a zone
+// @Description patch a zone
+// @tags Zone
+// @Accept  json
+// @Produce json
+// @Param   message	body   ZonePatchPayload  true   "Zone patch payload"
+// @Success 200 {object} ZoneResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /zones/{name} [patch]
+func (v *ZoneAPI) Patch(c *gin.Context) {
+	ctx := c.Request.Context()
+	name := c.Param("name")
+	payload := &ZonePatchPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Invalid input JSON %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	zone, err := zoneAdmin.GetZoneByName(ctx, name)
+	if err != nil {
+		logger.Errorf("Failed to get zone %s, %+v", name, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+		return
+	}
+	logger.Debugf("Patch zone with payload %+v", payload)
+	err = zoneAdmin.Update(ctx, zone, payload.Default, payload.Remark)
+	if err != nil {
+		logger.Errorf("Patch zone failed, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Patch zone failed", err)
+		return
+	}
+	zoneResp, err := v.getZoneResponse(ctx, zone)
+	if err != nil {
+		logger.Errorf("Failed to create zone response %+v", err)
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	logger.Debugf("Patch zone success, response: %+v", zoneResp)
+	c.JSON(http.StatusOK, zoneResp)
+}
+
 func (v *ZoneAPI) getZoneResponse(ctx context.Context, zone *model.Zone) (zoneResp *ZoneResponse, err error) {
 	zoneResp = &ZoneResponse{
 		ResourceReference: &ResourceReference{
