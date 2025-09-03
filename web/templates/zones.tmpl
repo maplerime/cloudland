@@ -27,6 +27,7 @@
 			                        <!--th>{{.i18n.Tr "Default"}}</th-->
 			                        <th>{{.i18n.Tr "Created_At"}}</th>
 			                        <th>{{.i18n.Tr "Updated_At"}}</th>
+			                        <th>{{.i18n.Tr "Remark"}}</th>
                                     <th>{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
@@ -39,6 +40,7 @@
 			                        <!--td>{{ if .Default }}{{$.i18n.Tr "Yes"}}{{ else }}{{$.i18n.Tr "No"}}{{ end }}</td-->
 			                        <td><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
 			                        <td><span title="{{.UpdatedAt}}">{{.UpdatedAt}}</span></td>
+			                        <td>{{.Remark}}</td>
 									<td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 								</tr>
                                 {{ end }}

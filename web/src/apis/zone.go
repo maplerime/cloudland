@@ -26,7 +26,8 @@ type ZoneAPI struct{}
 
 type ZoneResponse struct {
 	*ResourceReference
-	Default bool `json:"default"`
+	Default bool   `json:"default"`
+	Remark  string `json:"remark"`
 }
 
 type ZoneListResponse struct {
@@ -39,6 +40,7 @@ type ZoneListResponse struct {
 type ZonePayload struct {
 	Name    string `json:"name" binding:"required,min=2,max=32"`
 	Default bool   `json:"default"`
+	Remark  string `json:"remark" binding:"max=512"`
 }
 
 type ZonePatchPayload struct {
@@ -150,7 +152,7 @@ func (v *ZoneAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating zone with payload %+v", payload)
-	zone, err := zoneAdmin.Create(ctx, payload.Name, payload.Default)
+	zone, err := zoneAdmin.Create(ctx, payload.Name, payload.Default, payload.Remark)
 	if err != nil {
 		logger.Errorf("Not able to create zone %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -203,6 +205,7 @@ func (v *ZoneAPI) getZoneResponse(ctx context.Context, zone *model.Zone) (zoneRe
 			UpdatedAt: zone.UpdatedAt.Format(TimeStringForMat),
 		},
 		Default: zone.Default,
+		Remark:  zone.Remark,
 	}
 	return
 }
