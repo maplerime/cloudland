@@ -3809,6 +3809,50 @@ const docTemplatealarm_v1 = `{
                         }
                     }
                 }
+            },
+            "patch": {
+                "description": "patch a zone",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Zone"
+                ],
+                "summary": "patch a zone",
+                "parameters": [
+                    {
+                        "description": "Zone patch payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZonePatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ZoneResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
             }
         }
     },
@@ -6274,6 +6318,18 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.ZonePatchPayload": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "boolean"
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 512
+                }
+            }
+        },
         "apis.ZonePayload": {
             "type": "object",
             "required": [
@@ -6287,6 +6343,10 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "remark": {
+                    "type": "string",
+                    "maxLength": 512
                 }
             }
         },
@@ -6306,6 +6366,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "owner": {
+                    "type": "string"
+                },
+                "remark": {
                     "type": "string"
                 },
                 "updated_at": {

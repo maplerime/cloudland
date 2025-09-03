@@ -75,7 +75,7 @@ func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model
 	return
 }
 
-func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zone *model.Zone, err error) {
+func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool, remark string) (zone *model.Zone, err error) {
 	logger.Debugf("Creating zone %s, default: %t", name, isDefault)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -102,6 +102,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	zone = &model.Zone{
 		Name:    name,
 		Default: isDefault,
+		Remark:  remark,
 	}
 
 	err = db.Create(zone).Error
@@ -115,7 +116,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	return
 }
 
-func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool) (err error) {
+func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool, remark string) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -139,7 +140,11 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 	}
 
 	zone.Default = isDefault
-	err = db.Model(zone).Updates(zone).Error
+	zone.Remark = remark
+	err = db.Model(zone).Updates(map[string]interface{}{
+		"remark":  remark,
+		"default": isDefault,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to update zone", err)
 		return
@@ -243,7 +248,8 @@ func (v *ZoneView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "../zones"
 	name := c.QueryTrim("name")
 	isDefault := c.QueryBool("default")
-	_, err := zoneAdmin.Create(c.Req.Context(), name, isDefault)
+	remark := c.QueryTrim("remark")
+	_, err := zoneAdmin.Create(c.Req.Context(), name, isDefault, remark)
 	if err != nil {
 		logger.Error("Create zone failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -288,7 +294,7 @@ func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	redirectTo := "../zones"
+	redirectTo := "/zones"
 	id := c.Params(":id")
 	isDefault := c.QueryBool("default")
 	zoneID, err := strconv.Atoi(id)
@@ -303,7 +309,8 @@ func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	err = zoneAdmin.Update(c.Req.Context(), zone, isDefault)
+	remark := c.QueryTrim("remark")
+	err = zoneAdmin.Update(c.Req.Context(), zone, isDefault, remark)
 	if err != nil {
 		logger.Error("Failed to update zone", err)
 		c.Data["ErrorMsg"] = err.Error()
