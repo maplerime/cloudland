@@ -122,7 +122,10 @@ if [ "$migration_type" = "cold" ]; then
 fi
 os_code=$(jq -r '.os_code' <<< $metadata)
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
-[ "$migration_type" = "cold" ] && virsh start $vm_ID
 state="target_prepared"
+if [ "$migration_type" = "cold" ]; then
+    virsh start $vm_ID
+    [ $? -ne 0 ] && state="failed"
+fi
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
 async_exec ./async_job/complete_migration.sh "$migrate_ID" "$task_ID" "$ID" "$source_hyper"

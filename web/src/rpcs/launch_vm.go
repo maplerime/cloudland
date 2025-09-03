@@ -35,18 +35,28 @@ type FdbRule struct {
 	Router   int64  `json:"router"`
 }
 
-func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript string) (err error) {
+func sendFdbRules(ctx context.Context, instance *model.Instance, instIface *model.Interface) (err error) {
+	if instance.RouterID == 0 {
+		return
+	}
 	db := DB()
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
 	hyperNode := instance.Hyper
+	if instIface != nil {
+		hyperNode = instIface.Hyper
+	}
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
 	if err != nil || hyper.Hostid < 0 {
 		logger.Error("Failed to query hypervisor")
 		return
 	}
-	for _, iface := range instance.Interfaces {
+	interfaces := instance.Interfaces
+	if instIface != nil {
+		interfaces = []*model.Interface{instIface}
+	}
+	for _, iface := range interfaces {
 		if iface.Address.Subnet.Type != "public" {
 			spreadRules = append(spreadRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
 		}
@@ -88,7 +98,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 			}
 			fdbJson, _ := json.Marshal(spreadRules)
 			control := "toall=" + hyperList
-			command := fmt.Sprintf("%s <<EOF\n%s\nEOF", fdbScript, fdbJson)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Add_fwrule execution failed", err)
@@ -99,7 +109,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, fdbScript strin
 	if len(localRules) > 0 {
 		fdbJson, _ := json.Marshal(localRules)
 		control := fmt.Sprintf("inter=%d", hyperNode)
-		command := fmt.Sprintf("%s <<EOF\n%s\nEOF", fdbScript, fdbJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Add_fwrule execution failed", err)
@@ -182,30 +192,22 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	}
-	if serverStatus == "running" {
-		if reason == "init" {
-			err = sendFdbRules(ctx, instance, "/opt/cloudland/scripts/backend/add_fwrule.sh")
+	if serverStatus == "running" && reason == "sync" {
+		err = syncMigration(ctx, instance)
+		if err != nil {
+			logger.Error("Failed to sync migrationinfo", err)
+			return
+		}
+		err = syncNicInfo(ctx, instance)
+		if err != nil {
+			logger.Error("Failed to sync nic info", err)
+			return
+		}
+		if instance.RouterID > 0 {
+			err = syncFloatingIp(ctx, instance)
 			if err != nil {
-				logger.Error("Failed to send fdb rules", err)
+				logger.Error("Failed to sync floating ip", err)
 				return
-			}
-		} else if reason == "sync" {
-			err = syncMigration(ctx, instance)
-			if err != nil {
-				logger.Error("Failed to sync migrationinfo", err)
-				return
-			}
-			err = syncNicInfo(ctx, instance)
-			if err != nil {
-				logger.Error("Failed to sync nic info", err)
-				return
-			}
-			if instance.RouterID > 0 {
-				err = syncFloatingIp(ctx, instance)
-				if err != nil {
-					logger.Error("Failed to sync floating ip", err)
-					return
-				}
 			}
 		}
 	}

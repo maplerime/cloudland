@@ -134,6 +134,15 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 		logger.Error("Failed to create or update hyper resource", err)
 		return
 	}
+	if availCpu == 0 || availMem == 0 || availDisk == 0 {
+		err = db.Model(&model.Resource{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
+			"cpu": availCpu,
+			"memory": availMem,
+			"disk": availDisk}).Error
+		if err != nil {
+			logger.Error("Failed to update hypervisor resource", err)
+		}
+	}
 	if hyper.RouteIP == "" {
 		_, err = SystemRouter(ctx, []string{args[0], args[1], args[2]})
 		if err != nil {

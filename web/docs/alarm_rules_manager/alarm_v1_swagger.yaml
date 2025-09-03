@@ -635,6 +635,8 @@ definitions:
       secondary_interfaces:
         items:
           $ref: '#/definitions/apis.InterfacePayload'
+        maxItems: 7
+        minItems: 0
         type: array
       userdata:
         type: string
@@ -2565,7 +2567,7 @@ paths:
       summary: create a interface
       tags:
       - Network
-  /instance/{id}/interfaces/{id}:
+  /instance/{id}/interfaces/{interface_id}:
     delete:
       consumes:
       - application/json

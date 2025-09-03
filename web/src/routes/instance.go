@@ -830,12 +830,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	}
 	vlan := iface.Address.Subnet.Vlan
 	interfaces = append(interfaces, iface)
-	var moreAddresses []string
-	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
-	if err != nil {
-		logger.Errorf("Failed to get instance networks, %v", err)
-		return
-	}
 	instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 	err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
 	if err != nil {
@@ -858,7 +852,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		IpAddr:        iface.Address.Address,
 		MacAddr:       iface.MacAddr,
 		SecRules:      securityData,
-		MoreAddresses: moreAddresses,
 	})
 	for i, ifaceInfo := range secondaryIfaces {
 		var subnet *model.Subnet
@@ -871,11 +864,6 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			return
 		}
 		interfaces = append(interfaces, iface)
-		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, i+1)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
-		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		err = secgroupAdmin.AllowInstanceLoginPort(ctx, int32(loginPort), iface)
 		if err != nil {
@@ -898,9 +886,15 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			IpAddr:        iface.Address.Address,
 			MacAddr:       iface.MacAddr,
 			SecRules:      securityData,
-			MoreAddresses: moreAddresses,
 		})
 	}
+	var moreAddresses []string
+	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, interfaces)
+	if err != nil {
+		logger.Errorf("Failed to get instance networks, %v", err)
+		return
+	}
+	vlans[0].MoreAddresses = moreAddresses
 	var instKeys []string
 	for _, key := range keys {
 		instKeys = append(instKeys, key.PublicKey)
@@ -948,15 +942,15 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	dns := ""
-	for i, iface := range instance.Interfaces {
+	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, nil)
+	if err != nil {
+		logger.Errorf("Failed to get instance networks, %v", err)
+		return
+	}
+	for _, iface := range instance.Interfaces {
 		subnet := iface.Address.Subnet
 		if iface.PrimaryIf {
 			dns = subnet.NameServer
-		}
-		instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, i)
-		if err != nil {
-			logger.Errorf("Failed to get instance networks, %v", err)
-			return
 		}
 		instLinks = append(instLinks, &NetworkLink{MacAddr: iface.MacAddr, Mtu: uint(iface.Mtu), ID: iface.Name, Type: "phy"})
 		vlans = append(vlans, &VlanInfo{
@@ -1018,7 +1012,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 			logger.Error("Ignore the failure of removing login port for interface security groups ", err)
 		}
 		if iface.PrimaryIf {
-			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, iface, 0)
+			_, moreAddresses, err = GetInstanceNetworks(ctx, instance, []*model.Interface{iface})
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
@@ -2023,6 +2017,61 @@ func (v *InstanceView) checkNetparam(subnets []*model.Subnet, IP, mac string) (m
 	return
 }
 
+func (v *InstanceView) getSecurityGroups(ctx context.Context, routerID int64, sgs []string) (securityGroups []*model.SecurityGroup, err error) {
+	if len(sgs) > 0 {
+		for _, sg := range sgs {
+			var sgID int
+			sgID, err = strconv.Atoi(sg)
+			if err != nil {
+				logger.Debug("Invalid security group ID, %v", err)
+				return
+			}
+			if sgID > 0 {
+				var secgroup *model.SecurityGroup
+				secgroup, err = secgroupAdmin.Get(ctx, int64(sgID))
+				if err != nil {
+					logger.Error("Get security groups failed", err)
+					return
+				}
+				if secgroup.RouterID != routerID {
+					logger.Error("Security group is not the same router with subnet")
+					return
+				}
+				securityGroups = append(securityGroups, secgroup)
+			}
+		}
+	} else {
+		var sgID int64
+		var secGroup *model.SecurityGroup
+		if routerID > 0 {
+			var router *model.Router
+			router, err = routerAdmin.Get(ctx, routerID)
+			if err != nil {
+				logger.Error("Get router failed", err)
+				return
+			}
+			sgID = router.DefaultSG
+			secGroup, err = secgroupAdmin.Get(ctx, int64(sgID))
+			if err != nil {
+				logger.Error("Get security group failed", err)
+				return
+			}
+		} else {
+			secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+			if err != nil {
+				logger.Error("Get default security group failed", err)
+				return
+			}
+		}
+		securityGroups = append(securityGroups, secGroup)
+	}
+	if len(securityGroups) == 0 {
+		err = fmt.Errorf("No valid security groups")
+		return
+	}
+	return
+}
+
 func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	memberShip := GetMemberShip(c.Req.Context())
@@ -2124,8 +2173,8 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		if vlan == 0 {
 			vlan = pSubnet.Vlan
 		} else if vlan != pSubnet.Vlan {
-			logger.Error("All subnets including sites must be in the same vlan")
-			c.Data["ErrorMsg"] = "All subnets including sites must be in the same vlan"
+			logger.Error("All subnets for primary including sites must be in the same vlan")
+			c.Data["ErrorMsg"] = "All subnets for primary including sites must be in the same vlan"
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
@@ -2224,62 +2273,12 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		routerID = primarySubnets[0].RouterID
 	}
 	sgs := c.QueryStrings("secgroups")
-	var securityGroups []*model.SecurityGroup
-	if len(sgs) > 0 {
-		for _, sg := range sgs {
-			sgID, err := strconv.Atoi(sg)
-			if err != nil {
-				logger.Debug("Invalid security group ID, %v", err)
-				c.Data["ErrorMsg"] = err.Error()
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			var secgroup *model.SecurityGroup
-			secgroup, err = secgroupAdmin.Get(ctx, int64(sgID))
-			if err != nil {
-				logger.Error("Get security groups failed", err)
-				c.Data["ErrorMsg"] = "Get security groups failed"
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			if secgroup.RouterID != routerID {
-				logger.Error("Security group is not the same router with subnet")
-				c.Data["ErrorMsg"] = "Security group is not in subnet vpc"
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			securityGroups = append(securityGroups, secgroup)
-		}
-	} else {
-		var sgID int64
-		var secGroup *model.SecurityGroup
-		if routerID > 0 {
-			var router *model.Router
-			router, err = routerAdmin.Get(ctx, routerID)
-			if err != nil {
-				logger.Error("Get router failed", err)
-				c.Data["ErrorMsg"] = "Get router failed"
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			sgID = router.DefaultSG
-			secGroup, err = secgroupAdmin.Get(ctx, int64(sgID))
-			if err != nil {
-				logger.Error("Get security group failed", err)
-				c.Data["ErrorMsg"] = "Get security group failed"
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-		} else {
-			secGroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
-			if err != nil {
-				logger.Error("Get default security group failed", err)
-				c.Data["ErrorMsg"] = "Get security group failed"
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-		}
-		securityGroups = append(securityGroups, secGroup)
+	securityGroups, err := v.getSecurityGroups(ctx, routerID, sgs)
+	if err != nil {
+		logger.Debug("No valid security groups for primary interface, %v", err)
+		c.Data["ErrorMsg"] = "No valid security groups for primary interface"
+		c.HTML(http.StatusBadRequest, "error")
+		return
 	}
 	primaryIface := &InterfaceInfo{
 		Subnets:        primarySubnets,
@@ -2294,6 +2293,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 	}
 	subnets := c.QueryTrim("subnets")
 	var secondaryIfaces []*InterfaceInfo
+	secondSecgroups := securityGroups
 	s = strings.Split(subnets, ",")
 	for i := 0; i < len(s); i++ {
 		sID, err := strconv.Atoi(s[i])
@@ -2310,6 +2310,16 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
+		if routerID == 0 {
+			routerID = subnet.RouterID
+			secondSecgroups, err = v.getSecurityGroups(ctx, routerID, nil)
+			if err != nil {
+				logger.Debug("Failed to get security groups for secondary interfaces, %v", err)
+				c.Data["ErrorMsg"] = "Failed to get security groups for secondary interfaces"
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+		}
 		if subnet.RouterID != routerID {
 			logger.Error("All subnets must be in the same vpc", err)
 			c.Data["ErrorMsg"] = "All subnets must be in the same vpc"
@@ -2321,7 +2331,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			IpAddress:      "",
 			MacAddress:     "",
 			Count:          1,
-			SecurityGroups: securityGroups,
+			SecurityGroups: secondSecgroups,
 			Inbound:        1000,
 			Outbound:       1000,
 		})
