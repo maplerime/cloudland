@@ -9,7 +9,7 @@ migrate_ID=$1
 task_ID=$2
 ID=$3
 vm_ID=inst-$ID
-state="error"
+state="failed"
 
 for i in {1..1800}; do
     vm_state=$(virsh domstate $vm_ID)
