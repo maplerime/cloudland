@@ -541,7 +541,7 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	var secondaryIfaces []*routes.InterfaceInfo
 	for _, ifacePayload := range payload.SecondaryInterfaces {
 		var ifaceInfo *routes.InterfaceInfo
-		_, ifaceInfo, err = interfaceAPI.getInterfaceInfo(ctx, router, ifacePayload)
+		router, ifaceInfo, err = interfaceAPI.getInterfaceInfo(ctx, router, ifacePayload)
 		if err != nil {
 			logger.Errorf("Failed to get secondary interface %+v, %+v", ifacePayload, err)
 			ErrorResponse(c, http.StatusBadRequest, "Invalid secondary interfaces", err)
