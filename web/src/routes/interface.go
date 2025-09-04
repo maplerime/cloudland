@@ -634,6 +634,7 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 	}
 	if len(ifaceSubnets) == 0 {
 		logger.Debug("No valid subnet")
+		err = fmt.Errorf("No valid subnet")
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
