@@ -65,6 +65,7 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 	err = db.Take(secrules).Error
 	if err != nil {
 		logger.Error("DB failed to query security rules ", err)
+		err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
 		return
 	}
 	if remoteIp != "" {
@@ -94,18 +95,18 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 				secrules.PortMax = int32(portMax)
 			} else if portMax > 65535 {
 				logger.Error("it's out of range, please input less than 65536")
-				err = fmt.Errorf("it's invalid port for PortMax, please fill a valid port")
+				err = NewCLError(ErrInvalidParameter, "Invalid PortMax", nil)
 				return
 			} else {
 				secrules.PortMax = -1
 			}
 		} else if portMin < -1 || portMin == 0 {
 			logger.Error("it's out of range,please fill a valid port")
-			err = fmt.Errorf("it's invalid port for PortMin, please fill a valid port")
+			err = NewCLError(ErrInvalidParameter, "Invalid PortMin", nil)
 			return
 		} else if portMin > 65535 {
 			logger.Error("it's out of range, please input less than 65537")
-			err = fmt.Errorf("it's invalid port for PortMin, please fill a valid port")
+			err = NewCLError(ErrInvalidParameter, "Invalid PortMin", nil)
 			return
 		} else {
 			secrules.PortMin = -1
@@ -113,12 +114,13 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 
 	} else {
 		logger.Error("PortMax should be greater than PortMin")
-		err = fmt.Errorf("PortMax should be greater than PortMin")
+		err = NewCLError(ErrInvalidParameter, "PortMax should be greater than PortMin", nil)
 		return
 	}
 	err = db.Model(secrule).Updates(secrules).Error
 	if err != nil {
-		logger.Error("DB failed to save sucurity rule ", err)
+		logger.Error("DB failed to save security rule ", err)
+		err = NewCLError(ErrSecurityRuleUpdateFailed, "Failed to update security rule", err)
 		return
 	}
 	return
@@ -130,7 +132,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -163,6 +165,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	err = db.Create(secrule).Error
 	if err != nil {
 		logger.Error("DB failed to create security rule", err)
+		err = NewCLError(ErrSecurityRuleCreateFailed, "Failed to create security rule", err)
 		return
 	}
 	err = a.ApplySecgroup(ctx, secgroup)
@@ -178,7 +181,7 @@ func (a *SecruleAdmin) GetRule(ctx context.Context, remoteIp, direction, protoco
 	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -199,6 +202,7 @@ func (a *SecruleAdmin) GetRule(ctx context.Context, remoteIp, direction, protoco
 	err = db.Where(secrule).Take(secrule).Error
 	if err != nil {
 		logger.Error("Failed to query secrule", err)
+		err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
 		return
 	}
 	return
@@ -215,11 +219,12 @@ func (a *SecruleAdmin) Delete(ctx context.Context, secrule *model.SecurityRule, 
 	permit := memberShip.ValidateOwner(model.Writer, secrule.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the router")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	if err = db.Delete(secrule).Error; err != nil {
 		logger.Error("DB failed to delete security rule, %v", err)
+		err = NewCLError(ErrSecurityRuleDeleteFailed, "Failed to delete security rule", err)
 		return
 	}
 	err = a.ApplySecgroup(ctx, secgroup)
@@ -235,7 +240,7 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 	permit := memberShip.ValidateOwner(model.Reader, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -255,11 +260,13 @@ func (a *SecruleAdmin) List(ctx context.Context, offset, limit int64, order stri
 	secrules = []*model.SecurityRule{}
 	if err = db.Model(&model.SecurityRule{}).Where(where).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count security rule(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count security rule(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Where(where).Find(&secrules).Error; err != nil {
 		logger.Error("DB failed to query security rule(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query security rule(s)", err)
 		return
 	}
 

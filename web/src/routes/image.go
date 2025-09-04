@@ -10,11 +10,12 @@ package routes
 import (
 	"context"
 	"fmt"
-	"github.com/spf13/viper"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/viper"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -53,12 +54,12 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		err = db.Preload("Image").Preload("Volumes").Take(instance).Error
 		if err != nil {
 			logger.Error("DB failed to query instance", err)
-			return
+			return nil, NewCLError(ErrInstanceNotFound, "Instance not found", err)
 		}
 		if instance.Status != model.InstanceStatusShutoff {
 			err = fmt.Errorf("instance [%s] is running, shut it down first before capturing", instance.Hostname)
 			logger.Error(err)
-			return
+			return nil, NewCLError(ErrInstanceInvalidState, "Instance is running", err)
 		}
 		image = instance.Image.Clone()
 		image.Model = model.Model{Creater: memberShip.UserID}
@@ -95,6 +96,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 	err = db.Create(image).Error
 	if err != nil {
 		logger.Error("DB create image failed, %v", err)
+		return nil, NewCLError(ErrImageCreateFailed, "Failed to create image record", err)
 	}
 
 	// create default storage
@@ -109,7 +111,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		}
 		if err = db.Create(storage).Error; err != nil {
 			logger.Error("Failed to create default image storage", err)
-			return
+			return nil, NewCLError(ErrImageStorageCreateFailed, "Failed to create default image storage", err)
 		}
 		storageID = storage.ID
 	}
@@ -145,13 +147,13 @@ func (a *ImageAdmin) GetImageByUUID(ctx context.Context, uuID string) (image *mo
 	err = db.Where("uuid = ?", uuID).Take(image).Error
 	if err != nil {
 		logger.Error("Failed to query image, %v", err)
-		return
+		return nil, NewCLError(ErrImageNotFound, "Image not found", err)
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
 		logger.Error("Not authorized to get image")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
 		return
 	}
 	return
@@ -163,13 +165,13 @@ func (a *ImageAdmin) GetImageByName(ctx context.Context, name string) (image *mo
 	err = db.Where("name = ?", name).Take(image).Error
 	if err != nil {
 		logger.Error("Failed to query image, %v", err)
-		return
+		return nil, NewCLError(ErrImageNotFound, "Image not found", err)
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
 		logger.Error("Not authorized to get image")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
 		return
 	}
 	return
@@ -177,7 +179,7 @@ func (a *ImageAdmin) GetImageByName(ctx context.Context, name string) (image *mo
 
 func (a *ImageAdmin) Get(ctx context.Context, id int64) (image *model.Image, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid image ID: %d", id)
+		err = NewCLError(ErrInvalidParameter, "Invalid image ID", nil)
 		logger.Error(err)
 		return
 	}
@@ -186,13 +188,13 @@ func (a *ImageAdmin) Get(ctx context.Context, id int64) (image *model.Image, err
 	err = db.Take(image).Error
 	if err != nil {
 		logger.Error("DB failed to query image, %v", err)
-		return
+		return nil, NewCLError(ErrImageNotFound, "Image not found", err)
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
 		logger.Error("Not authorized to get image")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get image", nil)
 		return
 	}
 	return
@@ -200,7 +202,7 @@ func (a *ImageAdmin) Get(ctx context.Context, id int64) (image *model.Image, err
 
 func (a *ImageAdmin) GetImage(ctx context.Context, reference *BaseReference) (image *model.Image, err error) {
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
-		err = fmt.Errorf("Image base reference must be provided with either uuid or name")
+		err = NewCLError(ErrInvalidParameter, "Image base reference must be provided with either uuid or name", nil)
 		return
 	}
 	if reference.ID != "" {
@@ -225,18 +227,18 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 	permit := memberShip.ValidateOwner(model.Writer, image.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete image")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete image", nil)
 		return
 	}
 	refCount := 0
 	err = db.Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&refCount).Error
 	if err != nil {
 		logger.Error("Failed to count the number of instances using the image", err)
-		return
+		return NewCLError(ErrSQLSyntaxError, "Failed to count instances using the image", err)
 	}
 	if refCount > 0 {
 		logger.Error("Image can not be deleted if there are instances using it")
-		err = fmt.Errorf("The image can not be deleted if there are instances using it")
+		err = NewCLError(ErrImageInUse, "The image can not be deleted if there are instances using it", nil)
 		return
 	}
 	prefix := strings.Split(image.UUID, "-")[0]
@@ -265,10 +267,10 @@ func (a *ImageAdmin) Delete(ctx context.Context, image *model.Image) (err error)
 		}
 	}
 	if err = db.Delete(image).Error; err != nil {
-		return
+		return NewCLError(ErrImageDeleteFailed, "Failed to delete image record", err)
 	}
 	if err = db.Where("image_id = ?", image.ID).Delete(&model.ImageStorage{}).Error; err != nil {
-		return
+		return NewCLError(ErrImageStorageDeleteFailed, "Failed to delete image storage records", err)
 	}
 	return
 }
@@ -288,11 +290,11 @@ func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query
 	}
 	images = []*model.Image{}
 	if err = db.Model(&model.Image{}).Where(query).Count(&total).Error; err != nil {
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count images", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Where(query).Find(&images).Error; err != nil {
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to find images", err)
 	}
 
 	return
@@ -309,7 +311,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to update image")
-		err = fmt.Errorf("Not Authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update image", nil)
 		return
 	}
 	if osCode != "" {
@@ -327,14 +329,14 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 
 	if image.Status != "available" {
 		logger.Error("Image status is not available, cannot update")
-		err = fmt.Errorf("Image status is not available, cannot update")
+		err = NewCLError(ErrImageNotAvailable, "Image status is not available, cannot update", nil)
 		return
 	}
 
 	err = db.Model(image).Updates(image).Error
 	if err != nil {
 		logger.Error("Failed to save image", err)
-		return
+		return NewCLError(ErrImageUpdateFailed, "Failed to save image", err)
 	}
 
 	driver := GetVolumeDriver()
@@ -365,7 +367,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		storage.Status = model.StorageStatusSyncing
 		if err = db.Model(storage).Updates(storage).Error; err != nil {
 			logger.Error("Failed to update image storage status", err)
-			return
+			return NewCLError(ErrImageStorageUpdateFailed, "Failed to update image storage status", err)
 		}
 		err = HyperExecute(ctx, control, command)
 		if err != nil {

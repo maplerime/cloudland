@@ -37,7 +37,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -51,11 +51,12 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		err = db.Where(targetHyper).Take(targetHyper).Error
 		if err != nil {
 			logger.Error("Failed to query hyper", err)
+			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
 			return
 		}
 		if targetHyper.Status != 1 {
-			err = fmt.Errorf("Target hypvervisor is in wrong state")
-			logger.Error("Target hypvervisor is in wrong state")
+			err = NewCLError(ErrHypervisorInvalidState, "Target hypervisor is in wrong state", nil)
+			logger.Error("Target hypervisor is in wrong state")
 			return
 		}
 	}
@@ -67,6 +68,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		err = db.Where(sourceHyper).Take(sourceHyper).Error
 		if err != nil {
 			logger.Error("Failed to query hyper", err)
+			err = NewCLError(ErrHypervisorNotFound, "Failed to query source hypervisor", err)
 			return
 		}
 		status := "in_progress"
@@ -99,6 +101,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		err = db.Create(migration).Error
 		if err != nil {
 			logger.Error("DB create migration failed, %v", err)
+			err = NewCLError(ErrMigrationCreateFailed, "DB create migration failed", err)
 			return
 		}
 		var metadata string
@@ -116,7 +119,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 		if bootVolume == nil {
 			logger.Error("Instance has no boot volume")
-			err = fmt.Errorf("Corrupted instance")
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 			return
 		}
 		poolID := bootVolume.GetVolumePoolID()
@@ -131,6 +134,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				mErr := db.Model(migration).Save(migration).Error
 				if mErr != nil {
 					logger.Error("Failed to update save migration, %v", mErr)
+					err = NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
 					return
 				}
 				err = nil
@@ -141,6 +145,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to migrating, %v", err)
+			err = NewCLError(ErrInstanceUpdateFailed, "Failed to update instance status", err)
 			return
 		}
 		cpu := instance.Cpu
@@ -173,13 +178,14 @@ func (a *MigrationAdmin) GetMigrationByUUID(ctx context.Context, uuID string) (m
 	err = db.Preload("Instance").Preload("Phases").Where("uuid = ?", uuID).Take(migration).Error
 	if err != nil {
 		logger.Error("Failed to query migration, %v", err)
+		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to get migration")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
 	return
@@ -191,13 +197,14 @@ func (a *MigrationAdmin) GetMigrationByName(ctx context.Context, name string) (m
 	err = db.Where("name = ?", name).Take(migration).Error
 	if err != nil {
 		logger.Error("Failed to query migration, %v", err)
+		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to get migration")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
 	return
@@ -214,13 +221,14 @@ func (a *MigrationAdmin) Get(ctx context.Context, id int64) (migration *model.Mi
 	err = db.Take(migration).Error
 	if err != nil {
 		logger.Error("DB failed to query migration, %v", err)
+		err = NewCLError(ErrMigrationNotFound, "Failed to find migration", err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to get migration")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get migration", nil)
 		return
 	}
 	return
@@ -257,10 +265,12 @@ func (a *MigrationAdmin) List(ctx context.Context, offset, limit int64, order, q
 	}
 	migrations = []*model.Migration{}
 	if err = db.Model(&model.Migration{}).Where(query).Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count migrations", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Instance").Preload("Phases").Where(query).Find(&migrations).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query migrations", err)
 		return
 	}
 

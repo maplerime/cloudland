@@ -10,14 +10,15 @@ package routes
 import (
 	"context"
 	"fmt"
-	"github.com/go-macaron/session"
-	"github.com/spf13/viper"
-	"gopkg.in/macaron.v1"
 	"net/http"
 	"strconv"
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
+
+	"github.com/go-macaron/session"
+	"github.com/spf13/viper"
+	"gopkg.in/macaron.v1"
 )
 
 var (
@@ -44,10 +45,12 @@ func (a *ImageStorageAdmin) List(offset, limit int64, order string, image *model
 
 	storages = []*model.ImageStorage{}
 	if err = db.Model(&model.ImageStorage{}).Where("image_id = ?", image.ID).Where(query).Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count image storage(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Where("image_id = ?", image.ID).Where(query).Find(&storages).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query image storage(s)", err)
 		return
 	}
 
@@ -85,6 +88,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 	var storages []*model.ImageStorage
 	if err = db.Where("image_id = ?", image.ID).Find(&storages).Error; err != nil {
 		logger.Errorf("Failed to list image storage data, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to list image storage data", err)
 		return
 	}
 
@@ -99,6 +103,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 				storage.Status = model.StorageStatusUnknown
 				if err = db.Save(&storage).Error; err != nil {
 					logger.Error("Update image storage failed", err)
+					err = NewCLError(ErrImageStorageCreateFailed, "Failed to Create image storage", err)
 					return
 				}
 			}
@@ -112,6 +117,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 			}
 			if err = db.Create(newStorage).Error; err != nil {
 				logger.Error("Create new image storage failed", err)
+				err = NewCLError(ErrImageStorageCreateFailed, "Failed to Create image storage", err)
 				return
 			}
 			storagesResp = append(storagesResp, newStorage)
