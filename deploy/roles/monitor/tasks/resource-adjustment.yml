@@ -1,6 +1,13 @@
 ---
 # 资源自动调整相关的Ansible任务
 
+- name: Install jq on compute nodes for VM metrics migration
+  become: true
+  package:
+    name: jq
+    state: present
+  tags: [monitor, resource_adjustment, jq]
+
 - name: Create resource adjustment directories
   delegate_to: "{{ prometheus_server_ip }}"
   become: true

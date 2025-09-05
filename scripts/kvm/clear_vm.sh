@@ -13,6 +13,10 @@ vm_xml=$(virsh dumpxml $vm_ID)
 virsh undefine $vm_ID
 cmd="virsh destroy $vm_ID"
 result=$(eval "$cmd")
+
+# Clean up VM adjust custom metrics
+./cleanup_vm_custom_metrics.sh $ID
+
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)

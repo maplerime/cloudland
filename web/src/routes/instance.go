@@ -946,6 +946,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 }
 
 func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (instance *model.Instance, err error) {
+	fmt.Printf("wngzhe GetInstanceByUUID - UUID: %s\n", uuID)
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
@@ -954,7 +955,6 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 		logger.Errorf("Failed to query instance, %v", err)
 		return
 	}
-
 	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return
@@ -978,6 +978,7 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 		err = fmt.Errorf("Not authorized")
 		return
 	}
+	fmt.Printf("wngzhe GetInstanceByUUID - Instance: %+v\n", instance)
 	return
 }
 

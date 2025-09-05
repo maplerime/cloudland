@@ -675,17 +675,6 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 	})
 }
 
-// 从数据库获取冷却时间配置
-func (a *AdjustAPI) getAdjustmentCooldownConfig(ctx context.Context, actionType string, ruleGroupUUID string) int {
-	log.Printf("[ADJUST-DEBUG] Getting resource adjustment cooldown configuration: actionType=%s, ruleGroupUUID=%s", actionType, ruleGroupUUID)
-
-	// 使用AdjustOperator中的方法获取规则特定的冷却期
-	cooldownSeconds := a.operator.GetAdjustmentCooldownConfig(ctx, actionType, ruleGroupUUID)
-
-	log.Printf("[ADJUST-DEBUG] Resource adjustment cooldown: %d seconds", cooldownSeconds)
-	return cooldownSeconds
-}
-
 // 处理单个告警的调整逻辑
 func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.AdjustAlert, requestID string) bool {
 	startTime := time.Now()
@@ -695,10 +684,10 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 	ruleID := alert.Labels["rule_id"]
 	actionType := alert.Labels["action_type"]
 	ruleGroup := alert.Labels["rule_group"]
-	adjustEnabled := alert.Labels["adjust_enabled"] == "true"
+	instanceID := alert.Labels["instance_id"] // 提取instance_id
 
-	log.Printf("[ADJUST-%s] Processing alert: domain=%s, ruleID=%s, actionType=%s, adjustEnabled=%v",
-		requestID, domain, ruleID, actionType, adjustEnabled)
+	log.Printf("[ADJUST-%s] Processing alert: domain=%s, ruleID=%s, actionType=%s, instanceID=%s",
+		requestID, domain, ruleID, actionType, instanceID)
 
 	// 参数验证
 	if domain == "" || ruleID == "" || actionType == "" {
@@ -718,24 +707,6 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 	log.Printf("[ADJUST-%s] Alert annotations:", requestID)
 	for key, value := range alert.Annotations {
 		log.Printf("[ADJUST-%s]   %s = %s", requestID, key, value)
-	}
-
-	// 如果调整未启用，则跳过
-	if !adjustEnabled {
-		log.Printf("[ADJUST-%s] Resource adjustment is not enabled, skipping processing", requestID)
-		return true
-	}
-
-	// 获取冷却期配置
-	cooldownSeconds := a.getAdjustmentCooldownConfig(ctx, actionType, ruleGroup)
-
-	// 检查是否处于冷却期
-	inCooldown, cooldownErr := a.operator.IsInCooldown(ctx, domain, ruleID, actionType, cooldownSeconds)
-	if cooldownErr != nil {
-		log.Printf("[ADJUST-%s] Failed to check cooldown: %v", requestID, cooldownErr)
-	} else if inCooldown {
-		log.Printf("[ADJUST-%s] Resource is in cooldown, skipping processing", requestID)
-		return true
 	}
 
 	// 创建调整记录
@@ -775,23 +746,23 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 	case "limit_cpu":
 		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Executing CPU limit operation for domain: %s\n", domain)
 		log.Printf("[ADJUST-%s] Executing CPU limit operation", requestID)
-		err = a.operator.AdjustCPUResource(ctx, record, domain, true)
+		err = a.operator.AdjustCPUResource(ctx, record, domain, true, instanceID)
 	case "restore_cpu":
 		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Executing CPU restore operation for domain: %s\n", domain)
 		log.Printf("[ADJUST-%s] Executing CPU restore operation", requestID)
-		err = a.operator.RestoreCPUResource(ctx, record, domain)
+		err = a.operator.RestoreCPUResource(ctx, record, domain, instanceID)
 	case "limit_in_bw":
 		log.Printf("[ADJUST-%s] Executing inbound bandwidth limit operation, device: %s", requestID, record.TargetDevice)
-		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true)
+		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID)
 	case "restore_in_bw":
 		log.Printf("[ADJUST-%s] Executing inbound bandwidth restore operation, device: %s", requestID, record.TargetDevice)
-		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice)
+		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
 	case "limit_out_bw":
 		log.Printf("[ADJUST-%s] Executing outbound bandwidth limit operation, device: %s", requestID, record.TargetDevice)
-		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true)
+		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID)
 	case "restore_out_bw":
 		log.Printf("[ADJUST-%s] Executing outbound bandwidth restore operation, device: %s", requestID, record.TargetDevice)
-		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice)
+		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
 	default:
 		log.Printf("[ADJUST-%s] Unknown adjustment type: %s", requestID, actionType)
 		history.Status = "failed"

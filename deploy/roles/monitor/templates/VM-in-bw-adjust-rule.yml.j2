@@ -6,24 +6,28 @@ groups:
   - record: vm_in_bw_usage_raw_{{ rule_group }}
     expr: |
       sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m]))
-      
+
   # 平滑入站带宽使用率
   - record: vm_in_bw_usage_{{ rule_group }}
     expr: |
       avg_over_time(vm_in_bw_usage_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
-      
+
   # 与规则组关联的VM的入站带宽
   - record: vm_in_bw_usage_by_rule_{{ rule_group }}
     expr: |
-      vm_in_bw_usage_{{ rule_group }} * on(domain) group_right() 
+      vm_in_bw_usage_{{ rule_group }} * on(domain) group_right()
       up{job="vm-group-metadata", rule_id=~".*-{{ rule_group_original }}"}
-  
-  # 需要限制入站带宽的VM
+
+  # 需要限制入站带宽的VM (仅当状态为normal时)
   - record: vm_requires_in_bw_limit_{{ rule_group }}
     expr: |
-      vm_in_bw_usage_by_rule_{{ rule_group }} > {{ in_high_threshold }}
-  
-  # 可以恢复入站带宽的VM
+      (vm_in_bw_usage_by_rule_{{ rule_group }} > {{ in_high_threshold }})
+      and on(domain, rule_id)
+      (vm_bandwidth_adjustment_status == 0 or absent(vm_bandwidth_adjustment_status))
+
+  # 可以恢复入站带宽的VM (仅当状态为limited时)
   - record: vm_ready_for_in_bw_restore_{{ rule_group }}
     expr: |
-      vm_in_bw_usage_by_rule_{{ rule_group }} < {{ in_low_threshold }} 
+      (vm_in_bw_usage_by_rule_{{ rule_group }} < {{ in_low_threshold }})
+      and on(domain, rule_id)
+      (vm_bandwidth_adjustment_status == 1)
