@@ -320,12 +320,15 @@ func (a *InterfaceAdmin) checkSubnets(ctx context.Context, subnets []*model.Subn
 }
 
 func (a *InterfaceAdmin) CheckIfaceSubnets(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo) (err error) {
-	err = a.checkSubnets(ctx, primaryIface.Subnets, 0)
-	if err != nil {
-		logger.Error("Failed to check primary subnets", err)
-		return
+	checkVlan := int64(0)
+	if len(primaryIface.Subnets) > 0 {
+		err = a.checkSubnets(ctx, primaryIface.Subnets, 0)
+		if err != nil {
+			logger.Error("Failed to check primary subnets", err)
+			return
+		}
+		checkVlan = primaryIface.Subnets[0].Vlan
 	}
-	checkVlan := primaryIface.Subnets[0].Vlan
 	if len(primaryIface.SiteSubnets) > 0 {
 		err = a.checkSubnets(ctx, primaryIface.SiteSubnets, checkVlan)
 		if err != nil {
