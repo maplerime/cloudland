@@ -6320,8 +6320,10 @@ const docTemplatev1 = `{
         "common.APIError": {
             "type": "object",
             "properties": {
+                "error_code": {
+                    "type": "integer"
+                },
                 "error_message": {
-                    "description": "InternalErr error\n\tErrorCode int ` + "`" + `json:\"error_code\"` + "`" + `",
                     "type": "string"
                 }
             }

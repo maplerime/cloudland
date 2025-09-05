@@ -34,7 +34,7 @@ func (a *FlavorAdmin) Create(ctx context.Context, name string, cpu, memory, disk
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -50,32 +50,36 @@ func (a *FlavorAdmin) Create(ctx context.Context, name string, cpu, memory, disk
 		Memory: memory,
 	}
 	err = db.Create(flavor).Error
-	return
+	if err != nil {
+		logger.Error("Failed to create flavor, %v", err)
+		return nil, NewCLError(ErrFlavorCreateFailed, "Failed to create flavor", err)
+	}
+	return flavor, nil
 }
 
 func (a *FlavorAdmin) GetFlavorByName(ctx context.Context, name string) (flavor *model.Flavor, err error) {
-	ctx, db := GetContextDB(ctx)
+	_, db := GetContextDB(ctx)
 	flavor = &model.Flavor{}
 	err = db.Where("name = ?", name).Take(flavor).Error
 	if err != nil {
 		logger.Error("Failed to query flavor, %v", err)
-		return
+		return nil, NewCLError(ErrFlavorNotFound, "Flavor not found", err)
 	}
 	return
 }
 
 func (a *FlavorAdmin) Get(ctx context.Context, id int64) (flavor *model.Flavor, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid flavor ID: %d", id)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid flavor ID: %d", id), nil)
 		logger.Error(err)
-		return
+		return nil, err
 	}
-	ctx, db := GetContextDB(ctx)
+	_, db := GetContextDB(ctx)
 	flavor = &model.Flavor{Model: model.Model{ID: id}}
 	err = db.Take(flavor).Error
 	if err != nil {
 		logger.Error("DB failed to query flavor, err", err)
-		return
+		return nil, NewCLError(ErrFlavorNotFound, "Flavor not found", err)
 	}
 	return
 }
@@ -85,7 +89,7 @@ func (a *FlavorAdmin) Delete(ctx context.Context, flavor *model.Flavor) (err err
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -98,16 +102,16 @@ func (a *FlavorAdmin) Delete(ctx context.Context, flavor *model.Flavor) (err err
 	err = db.Model(&model.Instance{}).Where("flavor_id = ?", flavor.ID).Count(&refCount).Error
 	if err != nil {
 		logger.Error("Failed to count the number of instances using the flavor", err)
-		return
+		return NewCLError(ErrSQLSyntaxError, "Failed to count instances using the flavor", err)
 	}
 	if refCount > 0 {
 		logger.Error("Flavor can not be deleted if there are instances using it")
-		err = fmt.Errorf("The flavor can not be deleted if there are instances using it")
-		return
+		err = NewCLError(ErrFlavorInUse, "The flavor can not be deleted if there are instances using it", nil)
+		return err
 	}
 	if err = db.Delete(flavor).Error; err != nil {
 		logger.Error("Failed to delete flavor", err)
-		return
+		return NewCLError(ErrFlavorDeleteFailed, "Failed to delete flavor", err)
 	}
 	return
 }
@@ -127,11 +131,11 @@ func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, quer
 
 	flavors = []*model.Flavor{}
 	if err = db.Model(&model.Flavor{}).Where(query).Count(&total).Error; err != nil {
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count flavors", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Where(query).Find(&flavors).Error; err != nil {
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to list flavors", err)
 	}
 
 	return

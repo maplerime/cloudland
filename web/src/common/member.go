@@ -88,7 +88,7 @@ func (m *MemberShip) CheckOwner(reqRole model.Role, table string, id int64) (isO
 	err = db.Table(table).Select("owner").Where("id = ?", id).Scan(&result).Error
 	if err != nil {
 		logger.Error("Failed to query resource owner", err)
-		return
+		return false, NewCLError(ErrOwnerNotFound, "Failed to query resource owner", err)
 	}
 	if m.OrgID == result.Owner || m.Role == model.Admin {
 		isOwner = true
@@ -142,7 +142,7 @@ func GetDBMemberShip(userID, orgID int64) (m *MemberShip, err error) {
 	err = db.Where("user_id = ? and org_id = ?", userID, orgID).Take(member).Error
 	if err != nil || member.ID == 0 {
 		logger.Error("Failed to query member", err)
-		return
+		return nil, NewCLError(ErrMemberNotFound, "Member not found", err)
 	}
 	m.UserName = member.UserName
 	m.OrgName = member.OrgName

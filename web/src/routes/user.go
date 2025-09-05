@@ -42,7 +42,7 @@ func (a *UserAdmin) Create(ctx context.Context, username, password, uuid string)
 	permit := memberShip.CheckPermission(model.Admin)
 	if username != "admin" && !permit {
 		logger.Error("Not authorized to create the user")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create the user", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -68,6 +68,7 @@ func (a *UserAdmin) Create(ctx context.Context, username, password, uuid string)
 		err = db.Create(member).Error
 		if err != nil {
 			logger.Error("DB failed to create organization member ", err)
+			err = NewCLError(ErrMemberCreationFailed, "DB failed to create organization member", err)
 			return
 		}
 	}
@@ -87,12 +88,13 @@ func (a *UserAdmin) Get(ctx context.Context, id int64) (user *model.User, err er
 	err = db.Where(where).Take(user).Error
 	if err != nil {
 		logger.Error("Failed to query user, %v", err)
+		err = NewCLError(ErrUserNotFound, "Failed to query user", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, user.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the user")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the user", nil)
 		return
 	}
 	return
@@ -106,12 +108,13 @@ func (a *UserAdmin) GetUserByUUID(ctx context.Context, uuID string) (user *model
 	err = db.Where(where).Where("uuid = ?", uuID).Take(user).Error
 	if err != nil {
 		logger.Error("Failed to query user, %v", err)
+		err = NewCLError(ErrUserNotFound, "User not found", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, user.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the user")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the user", nil)
 		return
 	}
 	return
@@ -122,6 +125,7 @@ func (a *UserAdmin) GetUserByName(name string) (user *model.User, err error) {
 	user = &model.User{}
 	if err = db.Where("username = ?", name).Take(user).Error; err != nil {
 		logger.Error("DB failed to get user", err)
+		err = NewCLError(ErrUserNotFound, "User not found", err)
 		return
 	}
 	return
@@ -132,7 +136,7 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to delete the user")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the user", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -145,14 +149,17 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 	err = db.Model(user).Update("username", user.Username).Error
 	if err != nil {
 		logger.Error("DB failed to update user name", err)
+		err = NewCLError(ErrUserUpdateFailed, "Failed to update user name", err)
 		return
 	}
 	if err = db.Where("user_id = ?", user.ID).Delete(&model.Member{}).Error; err != nil {
 		logger.Error("DB failed to delete members", err)
+		err = NewCLError(ErrMemberDeleteFailed, "Failed to delete organization members", err)
 		return
 	}
 	if err = db.Delete(user).Error; err != nil {
-		logger.Error("DB failed to delete members", err)
+		logger.Error("DB failed to delete user", err)
+		err = NewCLError(ErrUserDeleteFailed, "Failed to delete user", err)
 		return
 	}
 	return
@@ -164,6 +171,7 @@ func (a *UserAdmin) Update(ctx context.Context, id int64, password string, membe
 	err = db.Set("gorm:auto_preload", true).Take(user).Error
 	if err != nil {
 		logger.Error("DB failed to query user", err)
+		err = NewCLError(ErrUserNotFound, "User not found", err)
 		return
 	}
 	password = strings.TrimSpace(password)
@@ -174,6 +182,7 @@ func (a *UserAdmin) Update(ctx context.Context, id int64, password string, membe
 		err = db.Model(user).Update("password", password).Error
 		if err != nil {
 			logger.Error("DB failed to update user password", err)
+			err = NewCLError(ErrUserUpdateFailed, "Failed to update user password", err)
 			return
 		}
 	}
@@ -189,6 +198,7 @@ func (a *UserAdmin) Update(ctx context.Context, id int64, password string, membe
 			err = db.Where("user_name = ? and org_name = ?", user.Username, em.OrgName).Delete(&model.Member{}).Error
 			if err != nil {
 				logger.Error("DB failed to delete member", err)
+				err = NewCLError(ErrMemberDeleteFailed, "Failed to delete organization members", err)
 				return
 			}
 		}
@@ -216,6 +226,7 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 		org := &model.Organization{Model: model.Model{ID: memberShip.OrgID}}
 		if err = db.Set("gorm:auto_preload", true).Take(org).Error; err != nil {
 			logger.Error("Failed to query organization", err)
+			err = NewCLError(ErrOrgNotFound, "Failed to query organization", err)
 			return
 		}
 		var userIDs []int64
@@ -226,20 +237,26 @@ func (a *UserAdmin) List(ctx context.Context, offset, limit int64, order, query 
 			}
 		}
 		if err = db.Model(&model.User{}).Where(userIDs).Where(query).Count(&total).Error; err != nil {
+			logger.Error("DB failed to count users", err)
+			err = NewCLError(ErrDatabaseError, "Failed to count users", err)
 			return
 		}
 		db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 		if err = db.Where(userIDs).Where(query).Find(&users).Error; err != nil {
 			logger.Error("DB failed to get user list, %v", err)
+			err = NewCLError(ErrDatabaseError, "Failed to get user list", err)
 			return
 		}
 	} else {
 		if err = db.Model(&model.User{}).Where(query).Count(&total).Error; err != nil {
+			logger.Error("DB failed to count users", err)
+			err = NewCLError(ErrDatabaseError, "Failed to count users", err)
 			return
 		}
 		db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 		if err = db.Where(query).Find(&users).Error; err != nil {
 			logger.Error("DB failed to get user list, %v", err)
+			err = NewCLError(ErrDatabaseError, "Failed to get user list", err)
 			return
 		}
 	}
@@ -264,10 +281,11 @@ func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, username, organi
 	err = db.Take(member, "user_name = ? and org_name = ?", username, organization).Error
 	if err != nil {
 		logger.Error("DB failed to get membership, %v", err)
+		err = NewCLError(ErrMemberNotFound, "Membership not found", err)
 		return
 	}
 	if member.Role == model.None {
-		err = fmt.Errorf("user %s has no role under organization %s", username, organization)
+		err = NewCLError(ErrNoRoleOnUser, fmt.Sprintf("user %s has no role under organization %s", username, organization), err)
 		return
 	}
 	oid = member.OrgID
@@ -279,9 +297,11 @@ func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, username, organi
 		Model: model.Model{ID: uid},
 	}
 	if err = db.First(orgInstance).Error; err != nil {
+		err = NewCLError(ErrOrgNotFound, "Organization not found", err)
 		return
 	}
 	if err = db.First(userInstance).Error; err != nil {
+		err = NewCLError(ErrUserNotFound, "User not found", err)
 		return
 	}
 	token, issueAt, expiresAt, err = NewToken(username, organization, userInstance.UUID, orgInstance.UUID, role)
@@ -292,6 +312,7 @@ func (a *UserAdmin) AccessToken(ctx context.Context, uid int64, username, organi
 func (a *UserAdmin) GenerateFromPassword(password string) (hash string, err error) {
 	b, err := bcrypt.GenerateFromPassword([]byte(password), 8)
 	if err != nil {
+		err = NewCLError(ErrPasswordHashFailed, "Failed to generate password hash", err)
 		return
 	}
 	hash = string(b)
@@ -301,6 +322,9 @@ func (a *UserAdmin) GenerateFromPassword(password string) (hash string, err erro
 // CompareHashAndPassword is slow by design, do not call it too offen.
 func (a *UserAdmin) CompareHashAndPassword(hash, password string) (err error) {
 	err = bcrypt.CompareHashAndPassword([]byte(hash), []byte(password))
+	if err != nil {
+		err = NewCLError(ErrPasswordMismatch, "Failed to compare password hash", err)
+	}
 	return
 }
 

@@ -23,7 +23,7 @@ func (a *DictionaryAdmin) Create(ctx context.Context, category, name, value, sho
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Errorf("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -35,7 +35,7 @@ func (a *DictionaryAdmin) Create(ctx context.Context, category, name, value, sho
 	}()
 	if value == "" {
 		logger.Errorf("Value cannot be empty")
-		err = fmt.Errorf("value cannot be empty")
+		err = NewCLError(ErrInvalidParameter, "Value cannot be empty", nil)
 		return
 	}
 	dictionary = &model.Dictionary{
@@ -60,7 +60,7 @@ func (a *DictionaryAdmin) Get(ctx context.Context, id int64) (*model.Dictionary,
 	if err := db.Where(where).First(dictionary, id).Error; err != nil {
 		logger.Debugf("DictionaryAdmin.Get: failed to get dictionary, id=%d, err=%v", id, err)
 		logger.Debugf("Exit DictionaryAdmin.Get with error")
-		return nil, fmt.Errorf("failed to get dictionary: %w", err)
+		return nil, NewCLError(ErrDictionaryRecordsNotFound, "Dictionary not found", err)
 	}
 	logger.Debugf("DictionaryAdmin.Get: success, uuid=%s, dictionary=%+v", dictionary.UUID, dictionary)
 	return dictionary, nil
@@ -83,12 +83,12 @@ func (a *DictionaryAdmin) List(ctx context.Context, offset, limit int64, order s
 	if err = db.Model(&model.Dictionary{}).Where(where).Where(query).Count(&total).Error; err != nil {
 		logger.Debugf("DictionaryAdmin.List: count error, err=%v", err)
 		logger.Debugf("Exit DictionaryAdmin.List with error")
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count dictionaries", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Where(where).Where(query).Find(&dictionaries).Error; err != nil {
 		logger.Errorf("DictionaryAdmin.List: find error, err=%v", err)
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to find dictionaries", err)
 	}
 	logger.Debugf("DictionaryAdmin.List: success, total=%d, count=%d", total, len(dictionaries))
 	return
@@ -103,7 +103,7 @@ func (a *DictionaryAdmin) GetDictionaryByUUID(ctx context.Context, uuID string) 
 	err = db.Where(where).Where("uuid = ?", uuID).Take(dictionaries).Error
 	if err != nil {
 		logger.Errorf("DictionaryAdmin.GetDictionaryByUUID: failed, uuID=%s, err=%v", uuID, err)
-		return
+		return nil, NewCLError(ErrDictionaryRecordsNotFound, "Dictionary records not found", err)
 	}
 	logger.Debugf("DictionaryAdmin.GetDictionaryByUUID: success, dictionary=%+v", dictionaries)
 	return
@@ -122,7 +122,7 @@ func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictio
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to update the dictionary")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the dictionary", nil)
 		return
 	}
 	if category != "" && dictionaries.Category != category {
@@ -149,7 +149,7 @@ func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictio
 	err = db.Model(dictionaries).Updates(dictionaries).Error
 	if err != nil {
 		logger.Errorf("DictionaryAdmin.Update: save error, err=%v", err)
-		return nil, err
+		return nil, NewCLError(ErrDictionaryUpdateFailed, "Failed to update dictionary", err)
 	}
 	dictionary = dictionaries
 	logger.Debugf("DictionaryAdmin.Update: success, uuid=%s, dictionary=%+v", dictionary.UUID, dictionary)
@@ -162,7 +162,7 @@ func (a *DictionaryAdmin) Find(ctx context.Context, category, value string) (dic
 	err = db.Where("category = ? AND value = ?", category, value).Take(dictionary).Error
 	if err != nil {
 		logger.Error("DictionaryAdmin.Find: failed to get dictionary", err)
-		return
+		return nil, NewCLError(ErrDictionaryRecordsNotFound, "Dictionary records not found", err)
 	}
 	return
 }
@@ -179,19 +179,19 @@ func (a *DictionaryAdmin) Delete(ctx context.Context, dictionaries *model.Dictio
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
-		logger.Error("Not authorized to delete the dictinary")
-		err = fmt.Errorf("Not authorized")
+		logger.Error("Not authorized to delete the dictionary")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the dictionary", nil)
 		return
 	}
 	dictionaries.Value = fmt.Sprintf("%s-%d", dictionaries.Value, dictionaries.CreatedAt.Unix())
 	err = db.Model(dictionaries).Update("value", dictionaries.Value).Error
 	if err != nil {
 		logger.Error("DB failed to update dictionary value", err)
-		return
+		return NewCLError(ErrDictionaryUpdateFailed, "Failed to update dictionary value", err)
 	}
 	if err = db.Delete(dictionaries).Error; err != nil {
 		logger.Errorf("DictionaryAdmin.Delete: db delete error, err=%v", err)
-		return
+		return NewCLError(ErrDictionaryDeleteFailed, "Failed to delete dictionary", err)
 	}
 	return
 }
@@ -318,7 +318,6 @@ func (v *DictionaryView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
-	return
 }
 
 func (v *DictionaryView) Delete(c *macaron.Context, store session.Store) {
@@ -353,5 +352,4 @@ func (v *DictionaryView) Delete(c *macaron.Context, store session.Store) {
 	c.JSON(200, map[string]interface{}{
 		"redirect": "/dictionaries",
 	})
-	return
 }

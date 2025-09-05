@@ -40,7 +40,7 @@ func GetVolumeDriver() (driver string) {
 
 func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid subnet ID: %d", id)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume ID: %d", id), nil)
 		logger.Error(err)
 		return
 	}
@@ -50,12 +50,13 @@ func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, 
 	volume = &model.Volume{Model: model.Model{ID: id}}
 	if err = db.Preload("Instance").Where(where).Take(volume).Error; err != nil {
 		logger.Error("Failed to query volume, %v", err)
+		err = NewCLError(ErrVolumeNotFound, "Failed to query volume", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the volume")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the volume", nil)
 		return
 	}
 	return
@@ -69,12 +70,13 @@ func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume 
 	err = db.Preload("Instance").Where(where).Where("uuid = ?", uuID).Take(volume).Error
 	if err != nil {
 		logger.Error("DB: query volume failed", err)
+		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the volume")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the volume", nil)
 		return
 	}
 	return
@@ -127,6 +129,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	err = db.Create(volume).Error
 	if err != nil {
 		logger.Error("DB failed to create volume", err)
+		err = NewCLError(ErrVolumeCreationFailed, "Failed to create volume", err)
 		return
 	}
 	return
@@ -139,7 +142,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized to create volume")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create volume", nil)
 		return
 	}
 
@@ -166,6 +169,7 @@ func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
+		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
 	return a.Update(ctx, volume.ID, name, instID)
@@ -181,6 +185,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	volume = &model.Volume{Model: model.Model{ID: id}}
 	if err = db.Preload("Instance").Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
+		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
 	// check the permission
@@ -188,12 +193,12 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to update the volume")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the volume", nil)
 		return
 	}
 
 	if volume.InstanceID > 0 && instID > 0 && volume.InstanceID != instID {
-		err = fmt.Errorf("Pease detach volume before attach it to new instance")
+		err = NewCLError(ErrVolumeIsInUse, "Please detach volume before attach it to new instance", nil)
 		return
 	}
 	if name != "" {
@@ -208,7 +213,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	if volume.InstanceID > 0 && instID == 0 && volume.Status == model.VolumeStatusAttached {
 		if volume.Booting {
 			logger.Error("Boot volume can not be detached")
-			err = fmt.Errorf("Boot volume can not be detached")
+			err = NewCLError(ErrBootVolumeCannotDetach, "Boot volume can not be detached", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
@@ -226,6 +231,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		instance := &model.Instance{Model: model.Model{ID: instID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
+			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
@@ -243,6 +249,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	}
 	if err = db.Model(volume).Updates(volume).Error; err != nil {
 		logger.Error("DB: update volume failed", err)
+		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
 	}
 	return
@@ -260,17 +267,18 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the volume")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the volume", nil)
 		return
 	}
 
 	if volume.Status == model.VolumeStatusAttached {
 		logger.Error("Please detach volume before delete it")
-		err = fmt.Errorf("Please detach volume[%s] before delete it", volume.Name)
+		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Please detach volume[%s] before delete it", volume.Name), nil)
 		return
 	}
 	if err = db.Model(volume).Delete(volume).Error; err != nil {
 		logger.Error("DB: delete volume failed", err)
+		err = NewCLError(ErrVolumeDeleteFailed, "Failed to delete volume", err)
 		return
 	}
 	control := fmt.Sprintf("inter=")
@@ -286,10 +294,13 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		logger.Error("Delete volume execution failed", err)
 		return
 	}
-	if err = db.Delete(volume).Error; err != nil {
-		logger.Error("DB: delete volume failed", err)
-		return
-	}
+	// seems the volume is already deleted
+	/*
+		if err = db.Delete(volume).Error; err != nil {
+			logger.Error("DB: delete volume failed", err)
+			return
+		}
+	*/
 	return
 }
 
@@ -298,6 +309,7 @@ func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err 
 	volume := &model.Volume{}
 	if err = db.Where("uuid = ?", uuID).Take(volume).Error; err != nil {
 		logger.Error("DB: query volume failed", err)
+		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
 	return a.Delete(ctx, volume)
@@ -319,17 +331,17 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	}
 	if !permit {
 		logger.Error("Not authorized to delete the instance")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the instance", nil)
 		return
 	}
 	if volume.Status == "resizing" || volume.Status == "error" {
 		logger.Error("Volume is already resizing or in error status")
-		err = fmt.Errorf("Volume is already resizing or in error status")
+		err = NewCLError(ErrVolumeInvalidState, "Volume is already resizing or in error status", nil)
 		return
 	}
 	if size <= volume.Size {
 		logger.Error("The size must be greater than the original size")
-		err = fmt.Errorf("the size must be greater than the original size")
+		err = NewCLError(ErrVolumeInvalidSize, "The size must be greater than the original size", nil)
 		return
 	}
 	if err = db.Model(volume).Updates(map[string]interface{}{
@@ -337,12 +349,14 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		"status": model.VolumeStatusResizing,
 	}).Error; err != nil {
 		logger.Error("update volume failed", err)
+		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
 	}
 	if volume.Booting {
 		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
+			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
 		cpu, memory := instance.Cpu, instance.Memory
@@ -351,6 +365,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			flavor, err = flavorAdmin.Get(ctx, instance.FlavorID)
 			if err != nil {
 				logger.Errorf("Failed to get flavor %+v, %+v", instance.FlavorID, err)
+				err = NewCLError(ErrFlavorNotFound, "Flavor not found", err)
 				return
 			}
 			cpu, memory = flavor.Cpu, flavor.Memory
@@ -361,6 +376,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 			"disk":   size,
 		}).Error; err != nil {
 			logger.Error("DB: update instance failed", err)
+			err = NewCLError(ErrInstanceUpdateFailed, "Failed to update instance", err)
 			return
 		}
 	}
@@ -410,22 +426,25 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	} else if volume_type == "all" {
 		booting_where = ""
 	} else {
-		err = fmt.Errorf("Invalid volume type %s", volume_type)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume type %s", volume_type), nil)
 		return
 	}
 
 	volumes = []*model.Volume{}
 	if booting_where != "" {
 		if err = db.Model(&model.Volume{}).Where(where).Where(query).Where(booting_where).Count(&total).Error; err != nil {
+			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	} else {
 		if err = db.Model(&model.Volume{}).Where(where).Where(query).Count(&total).Error; err != nil {
+			err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
 			return
 		}
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Instance").Where(where).Where(query).Find(&volumes).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
 		return
 	}
 	permit := memberShip.CheckPermission(model.Admin)
@@ -435,6 +454,7 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 			vol.OwnerInfo = &model.Organization{Model: model.Model{ID: vol.Owner}}
 			if err = db.Take(vol.OwnerInfo).Error; err != nil {
 				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Owner organization not found", err)
 				return
 			}
 		}

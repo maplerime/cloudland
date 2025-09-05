@@ -85,11 +85,11 @@ func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyp
 	where := fmt.Sprintf("zone_id = %d and status = 1 and hostid <> %d", zoneID, skipHyper)
 	if err = db.Where(where).Find(&hypers).Error; err != nil {
 		logger.Error("Hypers query failed", err)
-		return
+		return "", NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
 	}
 	if len(hypers) == 0 {
 		logger.Error("No qualified hypervisor")
-		return
+		return "", NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", nil)
 	}
 	hyperGroup = fmt.Sprintf("group-zone-%d", zoneID)
 	for i, h := range hypers {
@@ -108,7 +108,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t, poolID %s",
 		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, nestedEnable, poolID)
 	if count > 1 && len(primaryIface.PublicIps) > 0 {
-		err = fmt.Errorf("Public addresses are not allowed to set when count > 1")
+		err = NewCLError(ErrInvalidParameter, "Public addresses are not allowed to set when count > 1", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -119,12 +119,12 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}()
 	memberShip := GetMemberShip(ctx)
 	if image.Status != "available" {
-		err = fmt.Errorf("Image status not available")
+		err = NewCLError(ErrImageNotAvailable, "Image status not available", nil)
 		logger.Error("Image status not available")
 		return
 	}
 	if image.Size > int64(disk)*1024*1024*1024 {
-		err = fmt.Errorf("Flavor disk size is not enough for the image")
+		err = NewCLError(ErrDiskTooSmall, "Flavor disk size is not enough for the image", nil)
 		logger.Error(err)
 		return
 	}
@@ -134,11 +134,11 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 		if err != nil {
 			logger.Error("Failed to query hypervisor", err)
-			return
+			return nil, NewCLError(ErrHypervisorNotFound, "Failed to find the specified hypervisor", err)
 		}
 		if hyper.ZoneID != zone.ID {
 			logger.Errorf("Hypervisor %v is not in zone %d, %v", hyper, zoneID, err)
-			err = fmt.Errorf("Hypervisor is not in this zone")
+			err = NewCLError(ErrInvalidParameter, "Hypervisor is not in this zone", nil)
 			return
 		}
 	}
@@ -170,7 +170,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
 			if err != nil {
 				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
-				err = fmt.Errorf("Image storage not found")
+				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
 				return
 			}
 		}
@@ -189,7 +189,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if driver == "local" {
 			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 				logger.Error("Failed to query total instances with the image", err)
-				return
+				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
 			}
 		} else {
 			if err = db.Model(&model.Instance{}).
@@ -223,7 +223,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		err = db.Create(instance).Error
 		if err != nil {
 			logger.Error("DB create instance failed", err)
-			return
+			return nil, NewCLError(ErrInstanceCreationFailed, "Failed to create instance record", err)
 		}
 		instance.Image = image
 		instance.Zone = zone
@@ -244,7 +244,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			instancePasswd, err = encrpt.Mkpasswd(rootPasswd, "sha512")
 			if err != nil {
 				logger.Errorf("Failed to encrypt admin password, %v", err)
-				return
+				return nil, NewCLError(ErrEncryptionFailed, "Failed to encrypt admin password", err)
 			}
 		}
 		err = interfaceAdmin.CheckIfaceSubnets(ctx, primaryIface, secondaryIfaces)
@@ -284,13 +284,13 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		}
 	}()
 	if instance.Status == "rescuing" {
-		err = fmt.Errorf("Instance is already in rescue status")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
 		return
 	}
 	image := instance.Image
 	if rescueImage == nil {
 		if image.RescueImage <= 0 {
-			err = fmt.Errorf("No rescue image specified for the instance image")
+			err = NewCLError(ErrRescueImageNotFound, "No rescue image specified for the instance image", nil)
 			return
 		}
 		rescueImage, err = imageAdmin.Get(ctx, image.RescueImage)
@@ -301,14 +301,14 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 	err = db.Model(instance).Update("status", "rescuing").Error
 	if err != nil {
 		logger.Error("Update instance status to rescuing failed", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to update instance status to rescuing", err)
 	}
 	logger.Debugf("Rescue image is %s", rescueImage.Name)
 	imagePrefix := fmt.Sprintf("image-%d-%s", rescueImage.ID, strings.Split(rescueImage.UUID, "-")[0])
 	bootVolume := &model.Volume{}
 	if err = db.Where("instance_id = ? and booting = true", instance.ID).Take(bootVolume).Error; err != nil {
 		logger.Error("Failed to query boot volume, %v", err)
-		return
+		return NewCLError(ErrBootVolumeNotFound, "Failed to query boot volume", err)
 	}
 	metadata := ""
 	metadata, err = a.GetMetadata(ctx, instance, rootPasswd)
@@ -335,13 +335,13 @@ func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance)
 		}
 	}()
 	if instance.Status != "rescuing" {
-		err = fmt.Errorf("Instance is not in rescue status")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in rescue status", nil)
 		return
 	}
 	err = db.Model(instance).Update("status", "shut_off").Error
 	if err != nil {
 		logger.Error("Update instance status to rescuing failed", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to update instance status to rescuing", err)
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/end_rescue.sh '%d'", instance.ID)
@@ -387,8 +387,8 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 		return
 	}
 	if !permit {
-		logger.Error("Not authorized to delete the instance")
-		err = fmt.Errorf("Not authorized")
+		logger.Error("Not authorized to update the instance")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the instance", nil)
 		return
 	}
 
@@ -402,7 +402,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 		permit, err = memberShip.CheckAdmin(model.Admin, "instances", instance.ID)
 		if !permit {
 			logger.Error("Not authorized to migrate VM")
-			err = fmt.Errorf("Not authorized to migrate VM")
+			err = NewCLError(ErrPermissionDenied, "Not authorized to migrate VM", nil)
 			return
 		}
 		// TODO: migrate VM
@@ -412,7 +412,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 	}
 	if err = db.Model(instance).Updates(instance).Error; err != nil {
 		logger.Error("Failed to save instance", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
 	if string(action) != "" {
 		err = instanceAdmin.ChangeInstanceStatus(ctx, instance, string(action))
@@ -452,13 +452,13 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	}
 	if bootVolume == nil {
 		logger.Error("Instance has no boot volume")
-		err = fmt.Errorf("Corrupted instance")
+		err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 		return
 	}
 	status := model.InstanceStatusResizing
 	if instance.Status == status {
 		logger.Error("Instance is already resizing")
-		err = fmt.Errorf("Instance is already resizing")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is already resizing", nil)
 		return
 	}
 	instance.Status = status
@@ -469,14 +469,14 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	}
 	if err = db.Save(&instance).Error; err != nil {
 		logger.Error("Failed to save instance", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
 		"flavor_id": 0,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
 
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
@@ -492,7 +492,7 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance, image *model.Image, rootPasswd string, keys []*model.Key, cpu int32, memory int32, disk int32, loginPort int) (err error) {
 	logger.Debugf("Reinstall instance %d with image %d, cpu %d, memory %d, disk %d", instance.ID, image.ID, cpu, memory, disk)
 	if instance.Status == "rescuing" {
-		err = fmt.Errorf("Instance is not in the right state")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in the right state", nil)
 		logger.Error("Instance is not in the right state")
 		return
 	}
@@ -510,7 +510,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	}
 	if !permit {
 		logger.Error("Not authorized to reinstall the instance")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
 		return
 	}
 	var bootVolume *model.Volume
@@ -522,7 +522,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	}
 	if bootVolume == nil {
 		logger.Error("Instance has no boot volume")
-		err = fmt.Errorf("Corrupted instance")
+		err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 		return
 	}
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
@@ -533,14 +533,14 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if driver == "local" {
 		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 			logger.Error("Failed to query total instances with the image", err)
-			return
+			return NewCLError(ErrInstanceNotFound, "Failed to query total instances with the image", err)
 		}
 	} else {
 		if poolID != defaultPoolID {
 			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
 			if err != nil {
 				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
-				err = fmt.Errorf("Image storage not found")
+				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
 				return
 			}
 		}
@@ -554,7 +554,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		}
 	}
 	if image.Size > int64(disk)*1024*1024*1024 {
-		err = fmt.Errorf("Flavor disk size is not enough for the image")
+		err = NewCLError(ErrDiskTooSmall, "Flavor disk size is not enough for the image", nil)
 		logger.Error(err)
 		return
 	}
@@ -605,18 +605,18 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	instance.Keys = keys
 	if err = db.Save(&instance).Error; err != nil {
 		logger.Error("Failed to save instance", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
 		"flavor_id": 0,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
 	if err = db.Model(&instance).Association("Keys").Replace(keys).Error; err != nil {
 		logger.Errorf("Failed to update keys association: %v", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to update keys association", err)
 	}
 
 	// change volume status to reinstalling
@@ -624,7 +624,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	bootVolume.Size = disk
 	if err = db.Save(&bootVolume).Error; err != nil {
 		logger.Error("Failed to save volume", err)
-		return
+		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to save volume", err)
 	}
 
 	// rebuild metadata
@@ -633,7 +633,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		instancePasswd, err = encrpt.Mkpasswd(rootPasswd, "sha512")
 		if err != nil {
 			logger.Errorf("Failed to encrypt admin password, %v", err)
-			return
+			return NewCLError(ErrEncryptionFailed, "Failed to encrypt admin password", err)
 		}
 	}
 	metadata, err := a.GetMetadata(ctx, instance, instancePasswd)
@@ -659,7 +659,7 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	instance := &model.Instance{Model: model.Model{ID: id}}
 	if err = db.Preload("Image").Take(instance).Error; err != nil {
 		logger.Error("Failed to get instance ", err)
-		return
+		return NewCLError(ErrInstanceNotFound, "Failed to get instance", err)
 	}
 	memberShip := GetMemberShip(ctx)
 	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
@@ -669,16 +669,16 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	}
 	if !permit {
 		logger.Error("Not authorized to set password for the instance")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to set password for the instance", nil)
 		return
 	}
 	if !instance.Image.QAEnabled {
-		err = fmt.Errorf("Guest Agent is not enabled for the image of instance")
+		err = NewCLError(ErrImageNoQA, "Guest Agent is not enabled for the image of instance", nil)
 		logger.Error(err)
 		return
 	}
 	if instance.Status != model.InstanceStatusRunning {
-		err = fmt.Errorf("Instance must be running")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running state", nil)
 		logger.Error(err)
 		return
 	}
@@ -705,7 +705,7 @@ func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.In
 			"interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to update subnet", err)
-			return
+			return NewCLError(ErrSubnetUpdateFailed, "Failed to update subnet", err)
 		}
 	}
 	return
@@ -741,7 +741,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		if len(ifaceInfo.SecurityGroups) > 0 {
 			if err = db.Model(iface).Association("Security_Groups").Replace(ifaceInfo.SecurityGroups).Error; err != nil {
 				logger.Debug("Failed to save interface", err)
-				return
+				return nil, nil, NewCLError(ErrAssociateSG2InterfaceFailed, "Failed to associate security groups with interface", err)
 			}
 			iface.SecurityGroups = ifaceInfo.SecurityGroups
 		}
@@ -755,7 +755,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		}).Error
 		if err != nil {
 			logger.Debug("Failed to update interface", err)
-			return
+			return nil, nil, NewCLError(ErrInterfaceUpdateFailed, "Failed to update interface", err)
 		}
 	} else {
 		subnets := ifaceInfo.Subnets
@@ -769,7 +769,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		for i, subnet := range subnets {
 			if subnet.Type == "site" {
 				logger.Error("Not allowed to create interface in site subnet")
-				err = fmt.Errorf("Bad request")
+				err = NewCLError(ErrNotAllowInterfaceInSiteSubnet, "Not allowed to create interface in site subnet", nil)
 				return
 			}
 			if iface == nil {
@@ -791,7 +791,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		}
 		if iface == nil {
 			if err == nil {
-				err = fmt.Errorf("Failed to create interface")
+				err = NewCLError(ErrInterfaceCreateFailed, "Failed to create interface", nil)
 			}
 			return
 		}
@@ -805,7 +805,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 		if err != nil {
 			logger.Error("Failed to update site subnet", err)
-			return
+			return nil, nil, NewCLError(ErrSubnetUpdateFailed, "Failed to update site subnet", err)
 		}
 		iface.SiteSubnets = append(iface.SiteSubnets, site)
 	}
@@ -923,7 +923,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
 		logger.Errorf("Failed to marshal instance json data, %v", err)
-		return
+		return nil, "", NewCLError(ErrJSONMarshalFailed, "Failed to marshal instance json data", err)
 	}
 	return interfaces, string(jsonData), nil
 }
@@ -987,14 +987,14 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
 		logger.Errorf("Failed to marshal instance json data, %v", err)
-		return
+		return "", NewCLError(ErrJSONMarshalFailed, "Failed to marshal instance json data", err)
 	}
 	return string(jsonData), nil
 }
 
 func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (err error) {
 	if instance.Status == model.InstanceStatusMigrating {
-		err = fmt.Errorf("Instance is not in a valid state")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in a valid state", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -1007,7 +1007,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	permit := memberShip.ValidateOwner(model.Writer, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the instance")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the instance", nil)
 		return
 	}
 	var moreAddresses []string
@@ -1032,7 +1032,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	}
 	if err = db.Preload("Group").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
-		return
+		return NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 	}
 	if instance.FloatingIps != nil {
 		for _, fip := range instance.FloatingIps {
@@ -1046,8 +1046,8 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		instance.FloatingIps = nil
 	}
 	if err = db.Where("instance_id = ?", instance.ID).Find(&instance.Volumes).Error; err != nil {
-		logger.Errorf("Failed to query floating ip(s), %v", err)
-		return
+		logger.Errorf("Failed to query volumes, %v", err)
+		return NewCLError(ErrSQLSyntaxError, "Failed to query volumes for instance", err)
 	}
 	bootVolumeUUID := ""
 	if instance.Volumes != nil {
@@ -1056,8 +1056,8 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 				bootVolumeUUID = volume.GetOriginVolumeID()
 				// delete the boot volume directly
 				if err = db.Delete(volume).Error; err != nil {
-					logger.Error("DB: delete volume failed", err)
-					return
+					logger.Error("DB: delete boot volume failed", err)
+					return NewCLError(ErrBootVolumeDeleteFailed, "Delete boot volume failed", err)
 				}
 			} else {
 				_, err = volumeAdmin.Update(ctx, volume.ID, "", 0)
@@ -1076,7 +1076,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	moreAddrsJson, err := json.Marshal(moreAddresses)
 	if err != nil {
 		logger.Errorf("Failed to marshal sites info, %v", err)
-		return
+		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
@@ -1088,7 +1088,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	err = db.Model(instance).Updates(instance).Error
 	if err != nil {
 		logger.Errorf("Failed to mark vm as deleting ", err)
-		return
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
 	}
 	return
 }
@@ -1105,23 +1105,23 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 	instance = &model.Instance{Model: model.Model{ID: id}}
 	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Take(instance).Error; err != nil {
 		logger.Errorf("Failed to query instance, %v", err)
-		return
+		return nil, NewCLError(ErrInstanceNotFound, "Instance not found", err)
 	}
 
 	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
 		logger.Errorf("Failed to query floating ip(s), %v", err)
-		return
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 	}
 	if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
-		return
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
 	}
 	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the instance")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the instance", nil)
 		return
 	}
 	permit = memberShip.CheckPermission(model.Admin)
@@ -1129,7 +1129,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
 		if err = db.Take(instance.OwnerInfo).Error; err != nil {
 			logger.Error("Failed to query owner info", err)
-			return
+			return nil, NewCLError(ErrOwnerNotFound, "Failed to query owner info for instance", err)
 		}
 	}
 
@@ -1138,38 +1138,13 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 
 func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (instance *model.Instance, err error) {
 	ctx, db := GetContextDB(ctx)
-	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
-	instance = &model.Instance{}
-	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Where("uuid = ?", uuID).Take(instance).Error; err != nil {
-		logger.Errorf("Failed to query instance, %v", err)
-		return
-	}
 
-	if err = db.Preload("Group").Preload("Subnet").Where("instance_id = ?", instance.ID).Order("updated_at").Find(&instance.FloatingIps).Error; err != nil {
-		logger.Errorf("Failed to query floating ip(s), %v", err)
-		return
+	instance = &model.Instance{}
+	if err = db.Where("uuid = ?", uuID).Take(instance).Error; err != nil {
+		logger.Errorf("Failed to query instance, %v", err)
+		return nil, NewCLError(ErrInstanceNotFound, "Instance not found", err)
 	}
-	if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at")
-	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
-		logger.Errorf("Failed to query interfaces %v", err)
-		return
-	}
-	if instance.RouterID > 0 {
-		instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
-		if err = db.Take(instance.Router).Error; err != nil {
-			logger.Errorf("Failed to query floating ip(s), %v", err)
-			return
-		}
-	}
-	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
-	if !permit {
-		logger.Error("Not authorized to read the instance")
-		err = fmt.Errorf("Not authorized")
-		return
-	}
-	return
+	return a.Get(ctx, instance.ID)
 }
 
 func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
@@ -1184,10 +1159,10 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "Instance not found"})
 			fmt.Printf("Instance not found: %s\n", uuid)
-			return -1, fmt.Errorf("instance %s not found: %w", uuid, err)
+			return -1, NewCLError(ErrInstanceNotFound, "Instance not found", err)
 		}
 		logger.Error("Database error for UUID %s: %v", uuid, err)
-		return -1, fmt.Errorf("database error: %v", err)
+		return -1, NewCLError(ErrDatabaseError, "Database error", err)
 	}
 
 	return int(instance.ID), nil
@@ -1196,14 +1171,16 @@ func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error) {
 	// Parse domain format, example: inst-12345 -> ID=12345
 	if !strings.HasPrefix(domain, "inst-") {
-		return "", fmt.Errorf("invalid domain format, must start with 'inst-'")
+		logger.Error("Invalid domain format, must start with 'inst-'")
+		err := NewCLError(ErrInvalidDomainFormat, "Invalid domain format, must start with 'inst-'", nil)
+		return "", err
 	}
 
 	idStr := strings.TrimPrefix(domain, "inst-")
 	instanceID, err := strconv.Atoi(idStr)
 	if err != nil {
 		logger.Error("Domain conversion failed domain=%s error=%v", domain, err)
-		return "", fmt.Errorf("invalid instance ID in domain format")
+		return "", NewCLError(ErrInvalidDomainFormat, "Invalid domain format, ID part is not an integer", err)
 	}
 
 	var instance model.Instance
@@ -1211,10 +1188,10 @@ func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error)
 	if err := db.Where("id = ?", instanceID).First(&instance).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			logger.Error("Instance not found domain=%s id=%d", domain, instanceID)
-			return "", fmt.Errorf("instance not found")
+			return "", NewCLError(ErrInstanceNotFound, "Instance not found", err)
 		}
 		logger.Error("Database query failed domain=%s error=%v", domain, err)
-		return "", fmt.Errorf("database error")
+		return "", NewCLError(ErrDatabaseError, "Database error", err)
 	}
 
 	return instance.UUID, nil
@@ -1225,7 +1202,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	permit := memberShip.CheckPermission(model.Reader)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	db := DB()
@@ -1241,11 +1218,13 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	where := memberShip.GetWhere()
 	instances = []*model.Instance{}
 	if err = db.Model(&model.Instance{}).Where(where).Where(query).Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count instance(s)", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Where(where).Where(query).Find(&instances).Error; err != nil {
 		logger.Errorf("Failed to query instance(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query instance(s)", err)
 		return
 	}
 	db = db.Offset(0).Limit(-1)
@@ -1254,11 +1233,13 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			return db.Order("addresses.updated_at")
 		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 			return
 		}
 
 		if err = db.Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 			return
 		}
 
@@ -1266,6 +1247,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
 			if err = db.Take(instance.Router).Error; err != nil {
 				logger.Errorf("Failed to query floating ip(s), %v", err)
+				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
 				return
 			}
 		}
@@ -1274,6 +1256,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
 			if err = db.Take(instance.OwnerInfo).Error; err != nil {
 				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info for instance", err)
 				return
 			}
 		}

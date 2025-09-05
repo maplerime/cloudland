@@ -47,8 +47,8 @@ type InterfaceView struct{}
 
 func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interface, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid interface ID: %d", id)
-		logger.Debug(err)
+		err = NewCLError(ErrInvalidParameter, "Invalid interface ID", nil)
+		logger.Error(err)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
@@ -59,12 +59,13 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 	}).Preload("SecondAddresses.Subnet").Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
+		err = NewCLError(ErrInterfaceNotFound, "Interface not found", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, iface.Owner)
 	if !permit {
-		logger.Debug("Not authorized to read the subnet")
-		err = fmt.Errorf("Not authorized")
+		logger.Debug("Not authorized to read the interface")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the interface", nil)
 		return
 	}
 	return
@@ -80,12 +81,13 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 	}).Preload("SecondAddresses.Subnet").Where(where).Where("uuid = ?", uuID).Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
+		err = NewCLError(ErrInterfaceNotFound, "Interface not found", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, iface.Owner)
 	if !permit {
 		logger.Debug("Not authorized to read the subnet")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the interface", nil)
 		return
 	}
 	return
@@ -93,14 +95,14 @@ func (a *InterfaceAdmin) GetInterfaceByUUID(ctx context.Context, uuID string) (i
 
 func (a *InterfaceAdmin) Delete(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
 	if iface.PrimaryIf {
-		err = fmt.Errorf("Primary interface can not be deleted")
+		err = NewCLError(ErrCannotDeletePrimaryInterface, "Primary interface can not be deleted", nil)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, iface.Owner)
 	if !permit {
-		logger.Error("Not authorized to delete the subnet")
-		err = fmt.Errorf("Not authorized")
+		logger.Error("Not authorized to delete the interface")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the interface", nil)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
@@ -118,7 +120,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
 	if !permit {
 		logger.Debug("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -138,6 +140,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 	interfaces = []*model.Interface{}
 	if err = db.Model(&model.Interface{}).Where(where).Count(&total).Error; err != nil {
 		logger.Debug("DB failed to count security rule(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count interfaces", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
@@ -145,6 +148,7 @@ func (a *InterfaceAdmin) List(ctx context.Context, offset, limit int64, order st
 		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where(where).Find(&interfaces).Error; err != nil {
 		logger.Debug("DB failed to query interface(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 		return
 	}
 
@@ -237,7 +241,7 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *
 		}
 	}
 	if cnt < secondAddrsCount {
-		err = fmt.Errorf("Only %d addresses can be allocated", cnt)
+		err = NewCLError(ErrInsufficientAddress, fmt.Sprintf("Only %d addresses can be allocated", cnt), nil)
 		return
 	}
 	return
@@ -249,6 +253,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to update site subnets", err)
+			err = NewCLError(ErrSiteSubnetUpdateFailed, "Failed to update site subnets", err)
 			return
 		}
 	}
@@ -257,6 +262,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
 		if err != nil {
 			logger.Error("Failed to update interface", err)
+			err = NewCLError(ErrSiteSubnetUpdateFailed, "Failed to update interface", err)
 			return
 		}
 		iface.SiteSubnets = append(iface.SiteSubnets, site)
@@ -279,7 +285,8 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 			for i := 0; i < -cnt; i++ {
 				err = db.Model(&iface.SecondAddresses[i]).Updates(map[string]interface{}{"second_interface": 0, "allocated": false}).Error
 				if err != nil {
-					logger.Error("Update interface ", err)
+					logger.Errorf("Failed to update second address of interface %d, %+v", iface.ID, err)
+					err = NewCLError(ErrAddressUpdateFailed, "Failed to update second address of interface", err)
 					return
 				}
 			}
@@ -289,6 +296,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	err = db.Preload("Subnet").Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
 	if err != nil {
 		logger.Error("Second addresses query failed", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query second addresses of interface", err)
 		return
 	}
 
@@ -358,7 +366,7 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	memberShip := GetMemberShip(ctx)
 	ifaceLen := len(instance.Interfaces)
 	if ifaceLen >= 8 {
-		err = fmt.Errorf("Can not create interfaces more than 8")
+		err = NewCLError(ErrTooManyInterfaces, "Can not create interfaces more than 8", nil)
 		return
 	}
 	routerID := instance.RouterID
@@ -378,12 +386,12 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	for _, subnet := range subnets {
 		if subnet.Type == "site" {
 			logger.Error("Not allowed to create interface in site subnet")
-			err = fmt.Errorf("Not allowed to create interface in site subnet")
+			err = NewCLError(ErrNotAllowInterfaceInSiteSubnet, "Not allowed to create interface in site subnet", nil)
 			return
 		}
 		if routerID > 0 && subnet.RouterID != routerID {
 			logger.Error("Subnets can not belong to different router")
-			err = fmt.Errorf("Subnets can not belong to different router")
+			err = NewCLError(ErrSubnetsCrossVPCInOneInstance, "Subnets can not belong to different router", nil)
 			return
 		}
 		if iface == nil {
@@ -404,7 +412,7 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	}
 	if iface == nil {
 		if err == nil {
-			err = fmt.Errorf("Failed to create interface")
+			err = NewCLError(ErrInterfaceCreateFailed, "Failed to create interface", nil)
 		}
 		return
 	}
@@ -414,6 +422,7 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 			"router_id": instance.RouterID}).Error
 		if err != nil {
 			logger.Debug("Failed to update instance", err)
+			err = NewCLError(ErrInstanceUpdateFailed, "Failed to update instance", err)
 			return
 		}
 	}
@@ -455,12 +464,13 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 	if len(secgroups) > 0 {
 		if err = db.Model(iface).Association("Security_Groups").Replace(secgroups).Error; err != nil {
 			logger.Debug("Failed to save interface", err)
+			err = NewCLError(ErrInterfaceUpdateFailed, "Failed to update interface security groups", err)
 			return
 		}
 		iface.SecurityGroups = secgroups
 		needRemoteUpdate = true
 	} else {
-		err = fmt.Errorf("At least one security group is needed")
+		err = NewCLError(ErrAtLeastOneSGRequired, "At least one security group is needed", nil)
 		return
 	}
 	if needUpdate || needRemoteUpdate {
@@ -471,6 +481,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			"name":           iface.Name}).Error
 		if err != nil {
 			logger.Debug("Failed to save interface", err)
+			err = NewCLError(ErrInterfaceUpdateFailed, "Failed to update interface", err)
 			return
 		}
 	}
@@ -495,6 +506,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			oldAddrsJson, err = json.Marshal(oldAddresses)
 			if err != nil {
 				logger.Errorf("Failed to marshal instance json data, %v", err)
+				err = NewCLError(ErrJSONMarshalFailed, "Failed to marshal instance json data", err)
 				return
 			}
 			// 1. Get old addresses 2. Change addresses 3. Remote execute

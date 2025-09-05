@@ -47,6 +47,7 @@ func createRouterIface(ctx context.Context, rtype string, router *model.Router, 
 	err = db.Where("type = ?", rtype).Find(&subnets).Error
 	if err != nil {
 		logger.Error("Failed to query subnets", err)
+		err = NewCLError(ErrDatabaseError, "Failed to query subnets", err)
 		return
 	}
 	name := ""
@@ -75,7 +76,7 @@ func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Ro
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized to create routers")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create routers", nil)
 		return
 	}
 	owner := memberShip.OrgID
@@ -89,6 +90,7 @@ func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Ro
 	err = db.Create(router).Error
 	if err != nil {
 		logger.Error("DB failed to create router ", err)
+		err = NewCLError(ErrRouterCreateFailed, "Failed to create router", err)
 		return
 	}
 	secGroup, err := secgroupAdmin.Create(ctx, name+"-native", true, router)
@@ -99,6 +101,7 @@ func (a *RouterAdmin) Create(ctx context.Context, name string) (router *model.Ro
 	router.DefaultSG = secGroup.ID
 	if err = db.Model(router).Update("default_sg", router.DefaultSG).Error; err != nil {
 		logger.Error("Failed to save router", err)
+		err = NewCLError(ErrRouterUpdateDefaultSGFailed, "Failed to update router default security group", err)
 		return
 	}
 	return
@@ -115,12 +118,13 @@ func (a *RouterAdmin) Get(ctx context.Context, id int64) (router *model.Router, 
 	router = &model.Router{Model: model.Model{ID: id}}
 	if err = db.Preload("Subnets").Where(where).Take(router).Error; err != nil {
 		logger.Error("Failed to query router", err)
+		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the router")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the router", nil)
 		return
 	}
 	return
@@ -134,12 +138,13 @@ func (a *RouterAdmin) GetRouterByUUID(ctx context.Context, uuID string) (router 
 	err = db.Preload("Subnets").Where(where).Where("uuid = ?", uuID).Take(router).Error
 	if err != nil {
 		logger.Error("Failed to query router, %v", err)
+		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the router")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the router", nil)
 		return
 	}
 	return
@@ -153,12 +158,13 @@ func (a *RouterAdmin) GetRouterByName(ctx context.Context, name string) (router 
 	err = db.Preload("Subnets").Where(where).Where("name = ?", name).Take(router).Error
 	if err != nil {
 		logger.Error("Failed to query router, %v", err)
+		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the router")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to read the router", nil)
 		return
 	}
 	return
@@ -166,7 +172,7 @@ func (a *RouterAdmin) GetRouterByName(ctx context.Context, name string) (router 
 
 func (a *RouterAdmin) GetRouter(ctx context.Context, reference *BaseReference) (router *model.Router, err error) {
 	if reference == nil || (reference.ID == "" && reference.Name == "") {
-		err = fmt.Errorf("Router base reference must be provided with either uuid or name")
+		err = NewCLError(ErrInvalidParameter, "Router base reference must be provided with either uuid or name", nil)
 		return
 	}
 	if reference.ID != "" {
@@ -185,12 +191,14 @@ func (a *RouterAdmin) Update(ctx context.Context, id int64, name string, pubID i
 	router = &model.Router{Model: model.Model{ID: id}}
 	if err = db.Find(router).Error; err != nil {
 		logger.Error("Failed to query router", err)
+		err = NewCLError(ErrRouterNotFound, "Failed to find router", err)
 		return
 	}
 	if router.Name != name {
 		router.Name = name
 		if err = db.Model(router).Update("name", router.Name).Error; err != nil {
 			logger.Error("Failed to save router", err)
+			err = NewCLError(ErrRouterUpdateFailed, "Failed to update router", err)
 			return
 		}
 	}
@@ -208,41 +216,42 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 	permit := memberShip.ValidateOwner(model.Writer, router.Owner)
 	if !permit {
 		logger.Error("Not authorized to delete the router")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
 	count := 0
 	err = db.Model(&model.FloatingIp{}).Where("router_id = ?", router.ID).Count(&count).Error
 	if err != nil {
 		logger.Error("Failed to count floating ip")
-		err = fmt.Errorf("Failed to count floating ip")
+		err = NewCLError(ErrDatabaseError, "Failed to count floating ip in the router", err)
 		return
 	}
 	if count > 0 {
 		logger.Error("There are floating ips")
-		err = fmt.Errorf("There areassociated floating ips")
+		err = NewCLError(ErrRouterHasFloatingIPs, "There are associated floating ips", nil)
 		return
 	}
 	count = 0
 	err = db.Model(&model.Subnet{}).Where("router_id = ?", router.ID).Count(&count).Error
 	if err != nil {
 		logger.Error("Failed to count subnet")
-		err = fmt.Errorf("Failed to count subnet")
+		err = NewCLError(ErrDatabaseError, "Failed to count subnet in the router", err)
 		return
 	}
 	if count > 0 {
 		logger.Error("There are associated subnets")
-		err = fmt.Errorf("There are associated subnets")
+		err = NewCLError(ErrRouterHasSubnets, "There are associated subnets", nil)
 		return
 	}
 	err = db.Model(&model.Portmap{}).Where("router_id = ?", router.ID).Count(&count).Error
 	if err != nil {
 		logger.Error("Failed to count portmap")
+		err = NewCLError(ErrDatabaseError, "Failed to count portmap in the router", err)
 		return
 	}
 	if count > 0 {
 		logger.Error("There are associated portmaps")
-		err = fmt.Errorf("There are associated portmaps")
+		err = NewCLError(ErrRouterHasPortmaps, "There are associated portmaps", nil)
 		return
 	}
 	control := "toall="
@@ -256,22 +265,26 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 	err = db.Model(router).Update("name", router.Name).Error
 	if err != nil {
 		logger.Error("DB failed to update router name", err)
+		err = NewCLError(ErrRouterUpdateFailed, "Failed to update router name", err)
 		return
 	}
 	if err = db.Delete(router).Error; err != nil {
 		logger.Error("DB failed to delete router", err)
+		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete router", err)
 		return
 	}
 	secgroups := []*model.SecurityGroup{}
 	err = db.Where("router_id = ?", router.ID).Find(&secgroups).Error
 	if err != nil {
 		logger.Error("DB failed to query security groups", err)
+		err = NewCLError(ErrDatabaseError, "Failed to query security groups in the router", err)
 		return
 	}
 	for _, sg := range secgroups {
 		err = secgroupAdmin.Delete(ctx, sg)
 		if err != nil {
 			logger.Error("Can not delete security group", err)
+			err = NewCLError(ErrSecurityGroupDeleteFailed, "Failed to delete security group", err)
 			return
 		}
 	}
@@ -296,11 +309,13 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	routers = []*model.Router{}
 	if err = db.Model(&model.Router{}).Where(where).Where(query).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count router, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count router", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Subnets").Where(where).Where(query).Find(&routers).Error; err != nil {
 		logger.Error("DB failed to query routers, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query routers", err)
 		return
 	}
 	permit := memberShip.CheckPermission(model.Admin)
@@ -310,6 +325,7 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 			router.OwnerInfo = &model.Organization{Model: model.Model{ID: router.Owner}}
 			if err = db.Take(router.OwnerInfo).Error; err != nil {
 				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
 				return
 			}
 		}
