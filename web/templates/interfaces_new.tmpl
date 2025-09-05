@@ -7,7 +7,7 @@
                     {{.i18n.Tr "Create Interface"}}
                 </h3>
                 <div class="ui attached segment">
-                    <div class="inline field">
+                    <div class="required inline field">
                         <label for="subnets">{{.i18n.Tr "Subnets"}}</label>
                         <select name="subnets" id="subnets" multiple="" class="ui multiple selection dropdown">
                             {{ range .Subnets }}

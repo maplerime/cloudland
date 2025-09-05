@@ -303,6 +303,59 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	return
 }
 
+func (a *InterfaceAdmin) checkSubnets(ctx context.Context, subnets []*model.Subnet, vlan int64) (err error) {
+	if len(subnets) == 0 {
+		err = fmt.Errorf("At least one subnet must be specified")
+		return
+	}
+	for _, subnet := range subnets {
+		if vlan == 0 {
+			vlan = subnet.Vlan
+		} else if vlan != subnet.Vlan {
+			err = fmt.Errorf("Subnets are not all in the same vlan")
+			return
+		}
+	}
+	return
+}
+
+func (a *InterfaceAdmin) CheckIfaceSubnets(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo) (err error) {
+	err = a.checkSubnets(ctx, primaryIface.Subnets, 0)
+	if err != nil {
+		logger.Error("Failed to check primary subnets", err)
+		return
+	}
+	checkVlan := primaryIface.Subnets[0].Vlan
+	if len(primaryIface.SiteSubnets) > 0 {
+		err = a.checkSubnets(ctx, primaryIface.SiteSubnets, checkVlan)
+		if err != nil {
+			logger.Error("Failed to check site subnets", err)
+			return
+		}
+	}
+	for _, iface := range secondaryIfaces {
+		err = a.checkSubnets(ctx, iface.Subnets, 0)
+		if err != nil {
+			logger.Error("Failed to check site subnets", err)
+			return
+		}
+		if iface.Subnets[0].Vlan == checkVlan {
+			err = fmt.Errorf("Second interfaces can not use same vlan with primary")
+			return
+		}
+	}
+	for i, iface := range secondaryIfaces {
+		checkVlan = iface.Subnets[0].Vlan
+		for _, rest := range secondaryIfaces[i+1:] {
+			if rest.Subnets[0].Vlan == checkVlan {
+				err = fmt.Errorf("Different interfaces can not use same vlan")
+				return
+			}
+		}
+	}
+	return
+}
+
 func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, address, mac string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, subnets []*model.Subnet, secondAddrsCount int) (iface *model.Interface, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -318,6 +371,18 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	}
 	routerID := instance.RouterID
 	ifname := fmt.Sprintf("eth%d", ifaceLen)
+	err = a.checkSubnets(ctx, subnets, 0)
+	if err != nil {
+		logger.Error("Failed to check subnets", err)
+		return
+	}
+	for _, instIface := range instance.Interfaces {
+		if instIface.Address.Subnet.Vlan == subnets[0].Vlan {
+			logger.Error("New interface can not use the same vlan of existing interfaces")
+			err = NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", nil)
+			return
+		}
+	}
 	for _, subnet := range subnets {
 		if subnet.Type == "site" {
 			logger.Error("Not allowed to create interface in site subnet")
@@ -646,6 +711,7 @@ func (v *InterfaceView) Create(c *macaron.Context, store session.Store) {
 	}
 	if len(ifaceSubnets) == 0 {
 		logger.Debug("No valid subnet")
+		err = fmt.Errorf("No valid subnet")
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
