@@ -250,12 +250,12 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		err = interfaceAdmin.CheckIfaceSubnets(ctx, primaryIface, secondaryIfaces)
 		if err != nil {
 			logger.Error("Invalid or duplicate subnets for interfaces", err)
-			return
+			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
 		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, userdata, routerID, zoneID, "")
 		if err != nil {
 			logger.Error("Build instance metadata failed", err)
-			return
+			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
 		}
 		instance.Interfaces = ifaces
 		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, instance.Disk*1024*1024, 0)

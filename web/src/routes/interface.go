@@ -379,7 +379,7 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	for _, instIface := range instance.Interfaces {
 		if instIface.Address.Subnet.Vlan == subnets[0].Vlan {
 			logger.Error("New interface can not use the same vlan of existing interfaces")
-			err = fmt.Errorf("New interface can not use the same vlan of existing interfaces")
+			err = NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", nil)
 			return
 		}
 	}

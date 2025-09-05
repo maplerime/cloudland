@@ -65,6 +65,7 @@ const (
 	ErrConsoleCreateFailed        = 111012
 	ErrConsoleNotFound            = 111013
 	ErrInvalidConsoleToken        = 111014
+	ErrInvalidMetadata            = 111015
 
 	// Flavor related errors (1119xx)
 	ErrFlavorNotFound     = 111901
@@ -125,6 +126,7 @@ const (
 	ErrInterfaceDeleteFailed         = 131205
 	ErrCannotDeletePrimaryInterface  = 131206
 	ErrTooManyInterfaces             = 131207
+	ErrInterfaceInvalidSubnet        = 131208
 
 	// Floating IP related errors (1312xx)
 	ErrFIPNotFound               = 131201
