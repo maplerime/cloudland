@@ -12,6 +12,28 @@ vol_PATH=$3
 wds_volume_id=$4
 
 get_wds_token
+
+# check existing vhost and uss binding first, if exists remove them
+vhost_str=$(wds_curl GET /api/v2/block/volumes/$wds_volume_id/vhost)
+count=$(echo $vhost_str | jq -r '.count')
+ret_code=$(echo $vhost_str | jq -r '.ret_code')
+vhost_id=$(echo $vhost_str | jq -r '.vhosts[0].id')
+if [ "$ret_code" == "0" ] && [ "$count" -gt 0 ]; then
+    if [ "$vhost_id" != "" ]; then
+        log_debug $ID "Found existing vhost($vhost_id) for volume($vol_ID), proceeding to unbind and delete"
+        # query /api/v2/sync/block/vhost/{vhost_id}/vhost_binded_uss get binded uss_id
+        uss_id=$(wds_curl GET "api/v2/sync/block/vhost/$vhost_id/vhost_binded_uss" | jq -r '.uss.id')
+        if [ -n "$uss_id" ]; then
+            # unbind existing vhost from uss
+            delete_vhost $vol_ID $vhost_id $uss_id
+        else
+            delete_vhost $vol_ID $vhost_id
+        fi
+    else
+        log_debug $ID "No existing vhost found for volume($vol_ID)"
+    fi
+fi
+
 count=$(virsh dumpxml $vm_ID | grep -c "<disk type='vhostuser' device='disk'")
 let letter=97+$count
 vhost_name=instance-$ID-vol-$vol_ID

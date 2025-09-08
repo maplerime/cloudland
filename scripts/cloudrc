@@ -158,6 +158,48 @@ function get_uss_gateway()
     [ -n "$uss_id" ] && echo $uss_id
 }
 
+function delete_vhost()
+{
+    [ $# -lt 2 ] && return
+    vol_ID=$1
+    vhost_id=$2
+    uss_unbinded="true"
+    [ $# -eq 3 ] && uss_id=$3 && uss_unbinded="false"
+
+    if [ "$uss_unbinded" == "false" ]; then
+        # add retry logic
+        for i in {1..5}; do
+            log_debug $vol_ID "Attempting to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
+            ret_code=$(wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}" | jq -r '.ret_code')
+            if [ "$ret_code" == "0" ]; then
+            log_debug $vol_ID "Successfully unbound volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
+            uss_unbinded="true"
+            break
+        fi
+        sleep 1
+    done
+    if [ "$uss_unbinded" == "true" ]; then
+        vhost_deleted="false"
+        log_debug $vol_ID "Proceeding to delete volume($vol_ID)'s vhost $vhost_id"
+        for i in {1..5}; do
+            ret_code=$(wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id" | jq -r '.ret_code')
+            if [ "$ret_code" == "0" ]; then
+                log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
+                vhost_deleted="true"
+                break
+            fi
+            sleep 1
+        done
+        if [ "$vhost_deleted" == "true" ]; then
+            log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
+        else
+            log_debug $vol_ID "Failed to delete volume($vol_ID)'s vhost $vhost_id after multiple attempts"
+        fi
+    else
+        log_debug $vol_ID "Failed to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id after multiple attempts; skipping deletion of vhost"
+    fi
+}
+
 function async_exec()
 {
     exec 3<&0
