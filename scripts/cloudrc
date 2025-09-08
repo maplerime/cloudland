@@ -170,23 +170,32 @@ function delete_vhost()
         # add retry logic
         for i in {1..5}; do
             log_debug $vol_ID "Attempting to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
-            ret_code=$(wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}" | jq -r '.ret_code')
+            unbind_ret=$(wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}")
+            ret_code=$(echo $unbind_ret | jq -r '.ret_code')
             if [ "$ret_code" == "0" ]; then
-            log_debug $vol_ID "Successfully unbound volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
-            uss_unbinded="true"
-            break
-        fi
-        sleep 1
-    done
+                log_debug $vol_ID "Successfully unbound volume($vol_ID)'s vhost $vhost_id from uss $uss_id"
+                uss_unbinded="true"
+                break
+            else
+                err_message=$(echo $unbind_ret | jq -r '.message')
+                log_debug $vol_ID "Failed to unbind volume($vol_ID)'s vhost $vhost_id from uss $uss_id, error message: $err_message"
+            fi
+            sleep 1
+        done
+    fi
     if [ "$uss_unbinded" == "true" ]; then
         vhost_deleted="false"
         log_debug $vol_ID "Proceeding to delete volume($vol_ID)'s vhost $vhost_id"
         for i in {1..5}; do
-            ret_code=$(wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id" | jq -r '.ret_code')
+            delete_ret=$(wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id")
+            ret_code=$(echo $delete_ret | jq -r '.ret_code')
             if [ "$ret_code" == "0" ]; then
                 log_debug $vol_ID "Successfully deleted volume($vol_ID)'s vhost $vhost_id"
                 vhost_deleted="true"
                 break
+            else
+                err_message=$(echo $delete_ret | jq -r '.message')
+                log_debug $vol_ID "Failed to delete volume($vol_ID)'s vhost $vhost_id, error message: $err_message"
             fi
             sleep 1
         done

@@ -22,7 +22,7 @@ if [ "$ret_code" == "0" ] && [ "$count" -gt 0 ]; then
     if [ "$vhost_id" != "" ]; then
         log_debug $ID "Found existing vhost($vhost_id) for volume($vol_ID), proceeding to unbind and delete"
         # query /api/v2/sync/block/vhost/{vhost_id}/vhost_binded_uss get binded uss_id
-        uss_id=$(wds_curl GET "api/v2/sync/block/vhost/$vhost_id/vhost_binded_uss" | jq -r '.uss.id')
+        uss_id=$(wds_curl GET "api/v2/sync/block/vhost/$vhost_id/vhost_binded_uss" | jq -r '.uss[0].id')
         if [ -n "$uss_id" ]; then
             # unbind existing vhost from uss
             delete_vhost $vol_ID $vhost_id $uss_id
@@ -55,8 +55,7 @@ virsh attach-device $vm_ID $vol_xml --config --persistent
 if [ $? -eq 0 ]; then
     echo "|:-COMMAND-:| $(basename $0) '$1' '$vol_ID' '$device'"
 else
-    wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}"
-    wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id"
+    delete_vhost $vol_ID $vhost_id $uss_id
     echo "|:-COMMAND-:| $(basename $0) '' '$vol_ID' ''"
 fi
 vm_xml=$xml_dir/$vm_ID/$vm_ID.xml
