@@ -175,13 +175,8 @@ fi
 # Write metrics to target node
 echo "=== Writing Metrics to Target Node ==="
 
-# Write CPU adjustment status (use default rule_id if none found)
-if [[ -z "$cpu_rule_id" ]]; then
-    cpu_rule_id="default"
-    echo "Using default CPU rule_id: $cpu_rule_id"
-fi
-
-if [[ "$cpu_status" != "" ]]; then
+# Write CPU adjustment status if we have data
+if [[ -n "$cpu_rule_id" && "$cpu_status" != "" ]]; then
     echo "Writing CPU adjustment metric..."
     if /opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain "$DOMAIN" --rule-id "$cpu_rule_id" --status "$cpu_status"; then
         echo "Successfully wrote CPU adjustment status: $cpu_status"
@@ -189,7 +184,7 @@ if [[ "$cpu_status" != "" ]]; then
         echo "Warning: Failed to write CPU adjustment status" >&2
     fi
 else
-    echo "Skipping CPU adjustment metric (no status data)"
+    echo "Skipping CPU adjustment metric (no data or rule_id)"
 fi
 
 # Write Bandwidth adjustment status if we have data

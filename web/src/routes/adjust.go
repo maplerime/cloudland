@@ -448,7 +448,7 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 		status = 1 // 限制状态
 	}
 	updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status %d",
-		domain, record.RuleGroupUUID, status)
+		domain, fmt.Sprintf("%s-%s", domain, record.RuleGroupUUID), status)
 	fmt.Printf("wngzhe AdjustCPUResource - Updating CPU adjustment metric: %s\n", updateCommand)
 
 	err = common.HyperExecute(ctx, control, updateCommand)
@@ -524,7 +524,7 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 	// 成功恢复CPU后，更新自定义指标状态
 	status := 0
 	updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status %d",
-		domain, record.RuleGroupUUID, status)
+		domain, fmt.Sprintf("%s-%s", domain, record.RuleGroupUUID), status)
 	fmt.Printf("wngzhe RestoreCPUResource - Updating CPU adjustment metric: %s\n", updateCommand)
 
 	err = common.HyperExecute(ctx, control, updateCommand)

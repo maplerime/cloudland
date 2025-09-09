@@ -275,6 +275,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 				"smooth_window":    detail.SmoothWindow,
 				"trigger_duration": detail.TriggerDuration,
 				"restore_duration": detail.RestoreDuration,
+				"limit_percent":    detail.LimitPercent,
 			})
 		}
 
