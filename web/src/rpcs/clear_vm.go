@@ -157,15 +157,5 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to delete instance, %v", err)
 		return
 	}
-	// update attached volumes status to available
-	err = db.Model(&model.Volume{}).Where("instance_id = ? and booting = false", instance.ID).Updates(map[string]interface{}{
-		"status":      model.VolumeStatusAvailable,
-		"target":      "",
-		"instance_id": 0,
-	}).Error
-	if err != nil {
-		logger.Error("Failed to update attached volumes", err)
-		return
-	}
 	return
 }
