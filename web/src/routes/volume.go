@@ -226,8 +226,8 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		volume.Status = model.VolumeStatusDetaching
 		// PET-224: we should not set the instance ID to 0 here
 		// the instance ID should be set to 0 after the volume is detached successfully (after script executed successfully)
-		// volume.Instance = nil
-		// volume.InstanceID = 0
+		//volume.Instance = nil
+		//volume.InstanceID = 0
 	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == model.VolumeStatusAvailable {
 		instance := &model.Instance{Model: model.Model{ID: instID}}
 		if err = db.Model(instance).Take(instance).Error; err != nil {
