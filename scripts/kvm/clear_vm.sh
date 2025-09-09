@@ -47,7 +47,7 @@ else
            vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$vhost_name" | jq -r '.vhosts[0].id')
            uss_id=$(get_uss_gateway)
            # get volume ID from vhost name
-           vol_ID=$(echo $vhost_name | awk -F'-' '{print $NF}')
+           vol_ID=$(echo $vhost_name | awk -F'-' '{print $4}')
            async_exec ./async_job/delete_wds_vhost.sh  $vol_ID $vhost_id $uss_id
         fi
     done
