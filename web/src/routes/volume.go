@@ -254,12 +254,6 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
 		return
 	}
-	if err = db.Model(volume).Updates(volume).Error; err != nil {
-		logger.Error("DB: update volume failed", err)
-		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
-		return
-	}
-
 	return
 }
 
