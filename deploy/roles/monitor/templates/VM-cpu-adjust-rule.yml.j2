@@ -17,18 +17,18 @@ groups:
   - record: vm_cpu_usage_by_rule_{{ rule_group }}
     expr: |
       vm_cpu_usage_percent_{{ rule_group }} * on(domain) group_right()
-      up{job="vm-group-metadata", rule_id=~".*{{ rule_group_original }}.*"}
+      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group_original }}"}
 
   # 需要限制CPU的VM (CPU高且未被限制)
   - record: vm_requires_cpu_limit_{{ rule_group }}
     expr: |
       (vm_cpu_usage_by_rule_{{ rule_group }} > {{ high_threshold }})
       unless on(domain, rule_id)
-      (vm_cpu_adjustment_status{rule_id=~".*{{ rule_group_original }}.*"} == 1)
+      (vm_cpu_adjustment_status{rule_id=~".*-{{ rule_group_original }}"} == 1)
 
   # 可以恢复CPU的VM (仅当状态为limited时)
   - record: vm_ready_for_cpu_restore_{{ rule_group }}
     expr: |
       (vm_cpu_usage_by_rule_{{ rule_group }} < {{ low_threshold }})
       and on(domain, rule_id)
-      (vm_cpu_adjustment_status{rule_id=~".*{{ rule_group_original }}.*"} == 1)
+      (vm_cpu_adjustment_status{rule_id=~".*-{{ rule_group_original }}"} == 1)
