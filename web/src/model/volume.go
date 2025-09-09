@@ -17,6 +17,8 @@ const (
 	VolumeStatusResizing  VolumeStatus = "resizing"
 	VolumeStatusAvailable VolumeStatus = "available"
 	VolumeStatusAttached  VolumeStatus = "attached"
+	VolumeStatusAttaching VolumeStatus = "attaching"
+	VolumeStatusDetaching VolumeStatus = "detaching"
 )
 
 func (s VolumeStatus) String() string {
