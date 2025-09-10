@@ -223,6 +223,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			logger.Error("Detach volume execution failed", err)
 			return
 		}
+		volume.Status = model.VolumeStatusDetaching
 		// PET-224: we should not set the instance ID to 0 here
 		// the instance ID should be set to 0 after the volume is detached successfully (after script executed successfully)
 		//volume.Instance = nil
@@ -242,6 +243,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			logger.Error("Create volume execution failed", err)
 			return
 		}
+		volume.Status = model.VolumeStatusAttaching
 		// PET-224: we should not set the instance ID to instID here
 		// the instance ID should be set to instID after the volume is attached successfully (after script executed successfully)
 		//volume.InstanceID = instID

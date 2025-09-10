@@ -63,8 +63,8 @@ else
     old_vhost_name=$(basename $(ls /var/run/wds/instance-$ID-volume-$vol_ID-*))
     vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$old_vhost_name" | jq -r '.vhosts[0].id')
     uss_id=$(get_uss_gateway)
-    wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}"
-    wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id"
+    delete_vhost $vol_ID $vhost_id $uss_id
+    # delete old volume
     wds_curl DELETE "api/v2/sync/block/volumes/$old_volume_id?force=true"
     if [ -z "$pool_ID" ]; then
         pool_ID=$wds_pool_id
