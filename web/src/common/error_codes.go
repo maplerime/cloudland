@@ -96,6 +96,7 @@ const (
 	ErrBootVolumeDeleteFailed = 121011
 	ErrVolumeIsInUse          = 121012
 	ErrBootVolumeCannotDetach = 121013
+	ErrVolumeIsBusy           = 121014
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
