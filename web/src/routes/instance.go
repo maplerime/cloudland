@@ -546,8 +546,8 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		}
 		if err = db.Model(&model.Instance{}).
 			Unscoped().
-			Joins("LEFT JOIN volumes b ON instances.id = b.instance_id AND b.booting = ?", true).
-			Where(fmt.Sprintf("b.path like '%%%s%%'", poolID)).
+			Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
+			Where("v.pool_id = ?", poolID).
 			Where("instances.image_id = ?", image.ID).
 			Count(&total).Error; err != nil {
 			logger.Error("Failed to count instances with volumes matching pool_id", err)
@@ -644,7 +644,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)

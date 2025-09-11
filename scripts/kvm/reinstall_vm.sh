@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 11 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <instance_uuid>"
+[ $# -lt 12 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <boot_loader> <instance_uuid>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -16,7 +16,8 @@ vm_cpu=$7
 vm_mem=$8
 disk_size=$9
 vm_name=${10}
-instance_uuid=${11:-$ID}
+boot_loader=${11}
+instance_uuid=${12:-$ID}
 state=error
 vol_state=error
 
@@ -26,9 +27,15 @@ metadata=$(echo $md | base64 -d)
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
-virsh undefine $vm_ID
+
+# Try to undefine the domain, handle NVRAM case
+virsh undefine $vm_ID 2>/dev/null
 if [ $? -ne 0 ]; then
+    # If normal undefine fails, try with --nvram (for UEFI VMs)
     virsh undefine --nvram $vm_ID
+    if [ $? -ne 0 ]; then
+        echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
+    fi
 fi
 virsh destroy $vm_ID
 let fsize=$disk_size*1024*1024*1024
@@ -119,6 +126,77 @@ fi
 [ -z "$vm_mem" ] && vm_mem='1024m'
 [ -z "$vm_cpu" ] && vm_cpu=1
 let vm_mem=${vm_mem%[m|M]}*1024
+
+# Check if we need to switch boot mode
+is_uefi_current=$(grep -c "loader.*type=.pflash" $vm_xml)
+should_be_uefi=0
+[ "$boot_loader" = "uefi" ] && should_be_uefi=1
+
+if [ "$is_uefi_current" != "$should_be_uefi" ]; then
+
+    log_debug $vm_ID "Switching boot mode to $boot_loader"
+
+    if [ "$boot_loader" = "uefi" ]; then
+        # Switch from BIOS to UEFI
+        log_debug $vm_ID "Converting BIOS configuration to UEFI"
+
+        # Create NVRAM file
+        vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+        cp $nvram_template $vm_nvram
+        
+        # Add UEFI loader and nvram to <os> section
+        sed -i '/<\/os>/i\    <loader readonly='\''yes'\'' type='\''pflash'\''>'$uefi_boot_loader'</loader>' $vm_xml
+        sed -i '/<\/os>/i\    <nvram>'$vm_nvram'</nvram>' $vm_xml
+        
+        # Change metadata disk from IDE to SCSI for UEFI
+        if grep -q 'target.*bus="ide".*dev="hdd"' $vm_xml && grep -q '/meta/' $vm_xml; then
+            # Change metadata disk from IDE to SCSI
+            sed -i '/<source.*\/meta\/>/,/<\/disk>/ {
+                s/target.*dev="hdd".*bus="ide"/target dev="hdb" bus="scsi"/
+                s/<driver name="qemu" type="raw" cache="none"\/>/<driver name="qemu" type="raw"\/>/
+            }' $vm_xml
+            
+            # Remove IDE controller and add SCSI controller if not exists
+            sed -i '/<controller type='\''ide'\'' index='\''0'\''>/,/<\/controller>/d' $vm_xml
+            if ! grep -q 'controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''' $vm_xml; then
+                sed -i '/<\/devices>/i\    <controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''>
+    </controller>' $vm_xml
+            fi
+        fi
+        
+    else
+        # Switch from UEFI to BIOS
+        log_debug $vm_ID "Converting UEFI configuration to BIOS"
+
+        # Remove UEFI loader and nvram from <os> section - use line-by-line approach
+        # Remove loader lines
+        sed -i '/^[[:space:]]*<loader.*type=.*pflash/d' $vm_xml
+        sed -i '/^[[:space:]]*<\/loader>/d' $vm_xml  
+        # Remove nvram lines
+        sed -i '/^[[:space:]]*<nvram>/d' $vm_xml
+        
+        # Change metadata disk from SCSI to IDE for BIOS
+        if grep -q 'target.*dev="hdb".*bus="scsi"' $vm_xml && grep -q '/meta/' $vm_xml; then
+            # Change metadata disk from SCSI to IDE
+            sed -i '/<source.*\/meta\/>/,/<\/disk>/ {
+                s/target dev="hdb" bus="scsi"/target bus="ide" dev="hdd"/
+                s/<driver name="qemu" type="raw"\/>/<driver name="qemu" type="raw" cache="none"\/>/
+            }' $vm_xml
+            
+            # Remove SCSI controller and add IDE controller if not exists  
+            sed -i '/<controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''>/,/<\/controller>/d' $vm_xml
+            if ! grep -q 'controller type='\''ide'\'' index='\''0'\''' $vm_xml; then
+                sed -i '/<\/devices>/i\    <controller type='\''ide'\'' index='\''0'\''>
+      <address type='\''pci'\'' domain='\''0x0000'\'' bus='\''0x00'\'' slot='\''0x01'\'' function='\''0x1'\''/>    </controller>' $vm_xml
+            fi
+        fi
+        
+        # Clean up NVRAM file if exists
+        [ -f "$image_dir/${vm_ID}_VARS.fd" ] && rm -f "$image_dir/${vm_ID}_VARS.fd"
+    fi
+fi
+
+# Update basic parameters (memory, CPU, instance UUID, and vhost name for WDS)
 sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g"
 if [ -n "$wds_address" ]; then
   sed_cmd="$sed_cmd; s#$old_vhost_name#$vhost_name#g"
