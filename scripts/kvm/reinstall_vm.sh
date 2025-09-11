@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 11 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <instance_uuid>"
+[ $# -lt 11 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <instance_uuid> <boot_loader>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -17,6 +17,7 @@ vm_mem=$8
 disk_size=$9
 vm_name=${10}
 instance_uuid=${11:-$ID}
+boot_loader=${12}
 state=error
 vol_state=error
 
@@ -26,6 +27,9 @@ metadata=$(echo $md | base64 -d)
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
+# keep a copy of current XML to preserve devices and cpu config
+source_xml=${vm_xml}.source
+cp $vm_xml $source_xml
 virsh undefine $vm_ID
 if [ $? -ne 0 ]; then
     virsh undefine --nvram $vm_ID
@@ -119,13 +123,42 @@ fi
 [ -z "$vm_mem" ] && vm_mem='1024m'
 [ -z "$vm_cpu" ] && vm_cpu=1
 let vm_mem=${vm_mem%[m|M]}*1024
-sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g"
-if [ -n "$wds_address" ]; then
+
+# Determine boot loader: prefer arg, then metadata, default to bios
+[ -z "$boot_loader" -o "$boot_loader" = "null" ] && boot_loader=$(jq -r '.boot_loader // "bios"' <<< $metadata)
+
+# Update memory/cpu/instance_uuid on existing XML; keep all devices unchanged
+sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g; s#<instance_id>.*</instance_id>#<instance_id>$instance_uuid</instance_id>#g"
+if [ -n "$wds_address" ] && [ -n "$old_vhost_name" ] && [ -n "$vhost_name" ]; then
   sed_cmd="$sed_cmd; s#$old_vhost_name#$vhost_name#g"
 fi
-# Add replacement for instance UUID in metadata
-sed_cmd="$sed_cmd; s#<instance_id>.*</instance_id>#<instance_id>$instance_uuid</instance_id>#g"
 sed -i "$sed_cmd" $vm_xml
+
+# Switch BIOS/UEFI in-place inside <os> section
+vm_nvram="$image_dir/${vm_ID}_VARS.fd"
+if [ "$boot_loader" = "uefi" ]; then
+    # ensure loader/nvram present and updated
+    cp $nvram_template $vm_nvram
+    # remove existing loader/nvram in <os>
+    sed -i '/<os>/,/<\/os>/{ /<loader /d; /<nvram>/d }' $vm_xml
+    # insert after <type ...> line in <os>
+    awk -v nvram="$vm_nvram" -v loader="$uefi_boot_loader" '
+    BEGIN{in_os=0}
+    /<os>/{in_os=1}
+    {print}
+    in_os==1 && /<type[[:space:]][^>]*>/{
+        print "    <loader readonly=\"yes\" type=\"pflash\">" loader "</loader>"
+        print "    <nvram>" nvram "</nvram>"
+        in_os=2
+    }
+    /<\/os>/{in_os=0}
+    ' $vm_xml > ${vm_xml}.tmp && mv ${vm_xml}.tmp $vm_xml
+else
+    # remove loader/nvram and stale nvram file
+    sed -i '/<os>/,/<\/os>/{ /<loader /d; /<nvram>/d }' $vm_xml
+    [ -f "$vm_nvram" ] && rm -f "$vm_nvram"
+fi
+
 virsh define $vm_xml
 virsh autostart $vm_ID
 virsh start $vm_ID
