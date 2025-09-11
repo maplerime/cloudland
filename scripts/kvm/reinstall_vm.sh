@@ -156,8 +156,7 @@ if [ "$is_uefi_current" != "$should_be_uefi" ]; then
                 s/<driver name="qemu" type="raw" cache="none"\/>/<driver name="qemu" type="raw"\/>/
             }' $vm_xml
             
-            # Remove IDE controller and add SCSI controller if not exists
-            sed -i '/<controller type='\''ide'\'' index='\''0'\''>/,/<\/controller>/d' $vm_xml
+            # Add SCSI controller if not exists (never remove IDE - other disks might use it)
             if ! grep -q 'controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''' $vm_xml; then
                 sed -i '/<\/devices>/i\    <controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''>
     </controller>' $vm_xml
@@ -183,11 +182,11 @@ if [ "$is_uefi_current" != "$should_be_uefi" ]; then
                 s/<driver name="qemu" type="raw"\/>/<driver name="qemu" type="raw" cache="none"\/>/
             }' $vm_xml
             
-            # Remove SCSI controller and add IDE controller if not exists  
-            sed -i '/<controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''>/,/<\/controller>/d' $vm_xml
+            # Add IDE controller if not exists (never remove SCSI - other disks might use it)  
             if ! grep -q 'controller type='\''ide'\'' index='\''0'\''' $vm_xml; then
                 sed -i '/<\/devices>/i\    <controller type='\''ide'\'' index='\''0'\''>
-      <address type='\''pci'\'' domain='\''0x0000'\'' bus='\''0x00'\'' slot='\''0x01'\'' function='\''0x1'\''/>    </controller>' $vm_xml
+      <address type='\''pci'\'' domain='\''0x0000'\'' bus='\''0x00'\'' slot='\''0x01'\'' function='\''0x1'\''/>
+    </controller>' $vm_xml
             fi
         fi
         
