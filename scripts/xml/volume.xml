@@ -1,8 +1,5 @@
-<disk type='network' device='disk'>
+<disk type='file' device='disk'>
    <driver name='qemu' type='qcow2' cache='none'/>
-   <source protocol='gluster' name='VOLUME_SOURCE'>
-     <host name='localhost' port='24007'/>
-   </source>
-   <backingStore/>
+   <source file='VOLUME_SOURCE'/>
    <target dev='VOLUME_TARGET' bus='virtio'/>
 </disk>

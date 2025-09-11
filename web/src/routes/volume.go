@@ -209,6 +209,12 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	if vol_driver != "local" {
 		uuid = volume.GetOriginVolumeID()
 	}
+	if volume.InstanceID != instID && volume.Status != model.VolumeStatusAvailable && volume.Status != model.VolumeStatusAttached {
+		// no change
+		logger.Error("Volume is busy, cannot be updated", volume.Status)
+		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume is busy, cannot be updated, status: %s", volume.Status), nil)
+		return
+	}
 	// RN-156: append the volume UUID to the command
 	if volume.InstanceID > 0 && instID == 0 && volume.Status == model.VolumeStatusAttached {
 		if volume.Booting {
@@ -223,6 +229,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			logger.Error("Detach volume execution failed", err)
 			return
 		}
+		volume.Status = model.VolumeStatusDetaching
 		// PET-224: we should not set the instance ID to 0 here
 		// the instance ID should be set to 0 after the volume is detached successfully (after script executed successfully)
 		//volume.Instance = nil
@@ -242,6 +249,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			logger.Error("Create volume execution failed", err)
 			return
 		}
+		volume.Status = model.VolumeStatusAttaching
 		// PET-224: we should not set the instance ID to instID here
 		// the instance ID should be set to instID after the volume is attached successfully (after script executed successfully)
 		//volume.InstanceID = instID
@@ -271,8 +279,8 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 
-	if volume.Status == model.VolumeStatusAttached {
-		logger.Error("Please detach volume before delete it")
+	if volume.Status != model.VolumeStatusAvailable {
+		logger.Errorf("Volume is in use, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Please detach volume[%s] before delete it", volume.Name), nil)
 		return
 	}
