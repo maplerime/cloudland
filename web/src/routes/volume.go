@@ -197,6 +197,11 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		return
 	}
 
+	if volume.IsError() {
+		err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Volume %s is in error state, cannot update now", volume.UUID), nil)
+		return
+	}
+
 	if volume.InstanceID > 0 && instID > 0 && volume.InstanceID != instID {
 		err = NewCLError(ErrVolumeIsInUse, "Please detach volume before attach it to new instance", nil)
 		return
@@ -209,14 +214,14 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	if vol_driver != "local" {
 		uuid = volume.GetOriginVolumeID()
 	}
-	if volume.InstanceID != instID && volume.Status != model.VolumeStatusAvailable && volume.Status != model.VolumeStatusAttached {
+	if volume.InstanceID != instID && volume.IsBusy() {
 		// no change
 		logger.Error("Volume is busy, cannot be updated", volume.Status)
 		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume is busy, cannot be updated, status: %s", volume.Status), nil)
 		return
 	}
 	// RN-156: append the volume UUID to the command
-	if volume.InstanceID > 0 && instID == 0 && volume.Status == model.VolumeStatusAttached {
+	if volume.InstanceID > 0 && instID == 0 && volume.IsAttached() {
 		if volume.Booting {
 			logger.Error("Boot volume can not be detached")
 			err = NewCLError(ErrBootVolumeCannotDetach, "Boot volume can not be detached", nil)
@@ -353,11 +358,17 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the instance", nil)
 		return
 	}
-	if volume.Status == "resizing" || volume.Status == "error" {
-		logger.Error("Volume is already resizing or in error status")
-		err = NewCLError(ErrVolumeInvalidState, "Volume is already resizing or in error status", nil)
+	if volume.IsError() {
+		logger.Error("Volume is in error status")
+		err = NewCLError(ErrVolumeInvalidState, "Volume is in error status", nil)
 		return
 	}
+	if volume.IsBusy() {
+		logger.Error("Volume is busy")
+		err = NewCLError(ErrVolumeIsBusy, "Volume is busy", nil)
+		return
+	}
+
 	if size <= volume.Size {
 		logger.Error("The size must be greater than the original size")
 		err = NewCLError(ErrVolumeInvalidSize, "The size must be greater than the original size", nil)
