@@ -1118,6 +1118,14 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		logger.Errorf("Failed to query interfaces %v", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
 	}
+	if instance.RouterID > 0 {
+		instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
+		if err = db.Take(instance.Router).Error; err != nil {
+			logger.Errorf("Failed to query router, %v", err)
+			err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
+			return
+		}
+	}
 	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
 	if !permit {
 		logger.Error("Not authorized to read the instance")
@@ -1246,7 +1254,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		if instance.RouterID > 0 {
 			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
 			if err = db.Take(instance.Router).Error; err != nil {
-				logger.Errorf("Failed to query floating ip(s), %v", err)
+				logger.Errorf("Failed to query router, %v", err)
 				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
 				return
 			}
