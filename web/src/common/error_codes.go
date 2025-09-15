@@ -98,6 +98,13 @@ const (
 	ErrBootVolumeCannotDetach = 121013
 	ErrVolumeIsBusy           = 121014
 
+	// Snapshot/Backup related errors (1251xx)
+	ErrSnapshotNotFound       = 125100
+	ErrSnapshotCreationFailed = 125101
+	ErrSnapshotUpdateFailed   = 125102
+	ErrSnapshotDeleteFailed   = 125103
+	ErrSnapshotInUse          = 125104
+
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
 	ErrAddressNotFound     = 131001
