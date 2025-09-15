@@ -19,6 +19,8 @@ const (
 	VolumeStatusAttached  VolumeStatus = "attached"
 	VolumeStatusAttaching VolumeStatus = "attaching"
 	VolumeStatusDetaching VolumeStatus = "detaching"
+	VolumeStatusRestoring VolumeStatus = "restoring"
+	VolumeStatusError     VolumeStatus = "error"
 )
 
 func (s VolumeStatus) String() string {
@@ -52,6 +54,25 @@ type Volume struct {
 	BpsLimit   int32
 	BpsBurst   int32
 	PoolID     string `gorm:"type:varchar(128)"`
+}
+
+func (v *Volume) IsBusy() bool {
+	if v.Status == VolumeStatusResizing || v.Status == VolumeStatusAttaching || v.Status == VolumeStatusDetaching || v.Status == VolumeStatusRestoring {
+		return true
+	}
+	return false
+}
+
+func (v *Volume) IsError() bool {
+	return v.Status == VolumeStatusError
+}
+
+func (v *Volume) IsAvailable() bool {
+	return v.Status == VolumeStatusAvailable
+}
+
+func (v *Volume) IsAttached() bool {
+	return v.Status == VolumeStatusAttached
 }
 
 func (v *Volume) ParsePath() []string {

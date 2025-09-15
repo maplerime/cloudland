@@ -8,7 +8,7 @@ import (
 )
 
 func init() {
-	Add("vol_snapshot_wds_vhost", BackupVolumeWDSVhost)
+	Add("create_snapshot_wds_vhost", BackupVolumeWDSVhost)
 }
 
 func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, err error) {
