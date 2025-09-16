@@ -13,222 +13,226 @@ import "fmt"
 // 0 represents success
 
 // IaaS Resource Related Error Codes (1xxxxx)
+//
+//go:generate stringer -type ErrCode -trimprefix Err -output error_codes_str.go
+type ErrCode int
+
 const (
 	// common errors (1000xx)
-	ErrUnknown              = 100000
-	ErrInsufficientResource = 100001
-	ErrResourceNotFound     = 100002
-	ErrInvalidParameter     = 100003
-	ErrPermissionDenied     = 100004
-	ErrExecuteOnHyperFailed = 100005
-	ErrOwnerNotFound        = 100006
-	ErrEncryptionFailed     = 100008
-	ErrJSONMarshalFailed    = 100009
-	ErrResourcesInOrg       = 100010
-	ErrInvalidCIDR          = 100011
-	ErrCIDRTooBig           = 100012
+	ErrUnknown              ErrCode = 100000
+	ErrInsufficientResource ErrCode = 100001
+	ErrResourceNotFound     ErrCode = 100002
+	ErrInvalidParameter     ErrCode = 100003
+	ErrPermissionDenied     ErrCode = 100004
+	ErrExecuteOnHyperFailed ErrCode = 100005
+	ErrOwnerNotFound        ErrCode = 100006
+	ErrEncryptionFailed     ErrCode = 100008
+	ErrJSONMarshalFailed    ErrCode = 100009
+	ErrResourcesInOrg       ErrCode = 100010
+	ErrInvalidCIDR          ErrCode = 100011
+	ErrCIDRTooBig           ErrCode = 100012
 
 	// database related errors (1001xx)
-	ErrDatabaseError  = 100100
-	ErrSQLSyntaxError = 100101
+	ErrDatabaseError  ErrCode = 100100
+	ErrSQLSyntaxError ErrCode = 100101
 
 	// User, Organization, Member related errors (1002xx)
-	ErrUserNotFound       = 100200
-	ErrUserCreationFailed = 100201
-	ErrUserUpdateFailed   = 100202
-	ErrUserDeleteFailed   = 100203
-	ErrOrgNotFound        = 100204
-	ErrOrgCreationFailed  = 100205
-	ErrOrgUpdateFailed    = 100206
-	ErrOrgDeleteFailed    = 100207
-	ErrNoRoleOnUser       = 100208
-	ErrPasswordHashFailed = 100209
-	ErrPasswordMismatch   = 100210
+	ErrUserNotFound       ErrCode = 100200
+	ErrUserCreationFailed ErrCode = 100201
+	ErrUserUpdateFailed   ErrCode = 100202
+	ErrUserDeleteFailed   ErrCode = 100203
+	ErrOrgNotFound        ErrCode = 100204
+	ErrOrgCreationFailed  ErrCode = 100205
+	ErrOrgUpdateFailed    ErrCode = 100206
+	ErrOrgDeleteFailed    ErrCode = 100207
+	ErrNoRoleOnUser       ErrCode = 100208
+	ErrPasswordHashFailed ErrCode = 100209
+	ErrPasswordMismatch   ErrCode = 100210
 
 	// Member related errors (1003xx)
-	ErrMemberNotFound       = 100300
-	ErrMemberCreationFailed = 100301
-	ErrMemberUpdateFailed   = 100302
-	ErrMemberDeleteFailed   = 100303
+	ErrMemberNotFound       ErrCode = 100300
+	ErrMemberCreationFailed ErrCode = 100301
+	ErrMemberUpdateFailed   ErrCode = 100302
+	ErrMemberDeleteFailed   ErrCode = 100303
 
 	// Instance related errors (111xxx)
-	ErrInstanceNotFound           = 111001
-	ErrInstanceCreationFailed     = 111002
-	ErrInstanceUpdateFailed       = 111003
-	ErrInstanceDeleteFailed       = 111004
-	ErrInstanceInvalidState       = 111005
-	ErrInstanceInvalidConfig      = 111007
-	ErrInstancePowerActionFail    = 111008
-	ErrInstanceNoRouter           = 111009
-	ErrInstanceNoPrimaryInterface = 111010
-	ErrInvalidDomainFormat        = 111011
-	ErrConsoleCreateFailed        = 111012
-	ErrConsoleNotFound            = 111013
-	ErrInvalidConsoleToken        = 111014
-	ErrInvalidMetadata            = 111015
+	ErrInstanceNotFound           ErrCode = 111001
+	ErrInstanceCreationFailed     ErrCode = 111002
+	ErrInstanceUpdateFailed       ErrCode = 111003
+	ErrInstanceDeleteFailed       ErrCode = 111004
+	ErrInstanceInvalidState       ErrCode = 111005
+	ErrInstanceInvalidConfig      ErrCode = 111007
+	ErrInstancePowerActionFail    ErrCode = 111008
+	ErrInstanceNoRouter           ErrCode = 111009
+	ErrInstanceNoPrimaryInterface ErrCode = 111010
+	ErrInvalidDomainFormat        ErrCode = 111011
+	ErrConsoleCreateFailed        ErrCode = 111012
+	ErrConsoleNotFound            ErrCode = 111013
+	ErrInvalidConsoleToken        ErrCode = 111014
+	ErrInvalidMetadata            ErrCode = 111015
 
 	// Flavor related errors (1119xx)
-	ErrFlavorNotFound     = 111901
-	ErrFlavorCreateFailed = 111902
-	ErrFlavorUpdateFailed = 111903
-	ErrFlavorDeleteFailed = 111904
-	ErrFlavorInUse        = 111905
-	ErrDiskTooSmall       = 111906
+	ErrFlavorNotFound     ErrCode = 111901
+	ErrFlavorCreateFailed ErrCode = 111902
+	ErrFlavorUpdateFailed ErrCode = 111903
+	ErrFlavorDeleteFailed ErrCode = 111904
+	ErrFlavorInUse        ErrCode = 111905
+	ErrDiskTooSmall       ErrCode = 111906
 
 	// migration related errors (1118xx)
-	ErrMigrationNotFound     = 111801
-	ErrMigrationCreateFailed = 111802
-	ErrMigrationUpdateFailed = 111803
-	ErrMigrationDeleteFailed = 111804
-	ErrMigrationInProgress   = 111805
+	ErrMigrationNotFound     ErrCode = 111801
+	ErrMigrationCreateFailed ErrCode = 111802
+	ErrMigrationUpdateFailed ErrCode = 111803
+	ErrMigrationDeleteFailed ErrCode = 111804
+	ErrMigrationInProgress   ErrCode = 111805
 
 	// Volume related errors (121xxx)
-	ErrVolumeNotFound         = 121001
-	ErrVolumeCreationFailed   = 121002
-	ErrVolumeUpdateFailed     = 121003
-	ErrVolumeDeleteFailed     = 121004
-	ErrVolumeAttachFailed     = 121005
-	ErrVolumeDetachFailed     = 121006
-	ErrVolumeInvalidState     = 121007
-	ErrVolumeInvalidSize      = 121008
-	ErrBootVolumeNotFound     = 121009
-	ErrBootVolumeUpdateFailed = 121010
-	ErrBootVolumeDeleteFailed = 121011
-	ErrVolumeIsInUse          = 121012
-	ErrBootVolumeCannotDetach = 121013
-	ErrVolumeIsBusy           = 121014
-	ErrVolumeIsRestoring      = 121015
+	ErrVolumeNotFound         ErrCode = 121001
+	ErrVolumeCreationFailed   ErrCode = 121002
+	ErrVolumeUpdateFailed     ErrCode = 121003
+	ErrVolumeDeleteFailed     ErrCode = 121004
+	ErrVolumeAttachFailed     ErrCode = 121005
+	ErrVolumeDetachFailed     ErrCode = 121006
+	ErrVolumeInvalidState     ErrCode = 121007
+	ErrVolumeInvalidSize      ErrCode = 121008
+	ErrBootVolumeNotFound     ErrCode = 121009
+	ErrBootVolumeUpdateFailed ErrCode = 121010
+	ErrBootVolumeDeleteFailed ErrCode = 121011
+	ErrVolumeIsInUse          ErrCode = 121012
+	ErrBootVolumeCannotDetach ErrCode = 121013
+	ErrVolumeIsBusy           ErrCode = 121014
+	ErrVolumeIsRestoring      ErrCode = 121015
 
 	// Snapshot/Backup related errors (1251xx)
-	ErrBackupNotFound                      = 125100
-	ErrBackupCreationFailed                = 125101
-	ErrBackupUpdateFailed                  = 125102
-	ErrBackupDeleteFailed                  = 125103
-	ErrBackupInUse                         = 125104
-	ErrCannotRestoreWhileInstanceIsRunning = 125105
+	ErrBackupNotFound                      ErrCode = 125100
+	ErrBackupCreationFailed                ErrCode = 125101
+	ErrBackupUpdateFailed                  ErrCode = 125102
+	ErrBackupDeleteFailed                  ErrCode = 125103
+	ErrBackupInUse                         ErrCode = 125104
+	ErrCannotRestoreWhileInstanceIsRunning ErrCode = 125105
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
-	ErrAddressNotFound     = 131001
-	ErrAddressUpdateFailed = 131002
-	ErrAddressDeleteFailed = 131003
-	ErrInsufficientAddress = 131004
-	ErrAddressCreateFailed = 131005
-	ErrAddressInUse        = 131006
+	ErrAddressNotFound     ErrCode = 131001
+	ErrAddressUpdateFailed ErrCode = 131002
+	ErrAddressDeleteFailed ErrCode = 131003
+	ErrInsufficientAddress ErrCode = 131004
+	ErrAddressCreateFailed ErrCode = 131005
+	ErrAddressInUse        ErrCode = 131006
 
 	// Subnet related errors (1311xx)
-	ErrSubnetNotFound               = 131101
-	ErrSubnetCreateFailed           = 131102
-	ErrSubnetUpdateFailed           = 131103
-	ErrSubnetDeleteFailed           = 131104
-	ErrSubnetShouldBePublic         = 131105
-	ErrSubnetShouldBeSite           = 131106
-	ErrPublicSubnetNotFound         = 131107
-	ErrSiteSubnetUpdateFailed       = 131108
-	ErrSubnetsCrossVPCInOneInstance = 131109
-	ErrPublicSubnetCannotInVPC      = 131110
+	ErrSubnetNotFound               ErrCode = 131101
+	ErrSubnetCreateFailed           ErrCode = 131102
+	ErrSubnetUpdateFailed           ErrCode = 131103
+	ErrSubnetDeleteFailed           ErrCode = 131104
+	ErrSubnetShouldBePublic         ErrCode = 131105
+	ErrSubnetShouldBeSite           ErrCode = 131106
+	ErrPublicSubnetNotFound         ErrCode = 131107
+	ErrSiteSubnetUpdateFailed       ErrCode = 131108
+	ErrSubnetsCrossVPCInOneInstance ErrCode = 131109
+	ErrPublicSubnetCannotInVPC      ErrCode = 131110
 
 	// Interface related errors (1312xx)
-	ErrInterfaceNotFound             = 131201
-	ErrInterfaceCreateFailed         = 131202
-	ErrInterfaceUpdateFailed         = 131203
-	ErrNotAllowInterfaceInSiteSubnet = 131204
-	ErrInterfaceDeleteFailed         = 131205
-	ErrCannotDeletePrimaryInterface  = 131206
-	ErrTooManyInterfaces             = 131207
-	ErrInterfaceInvalidSubnet        = 131208
+	ErrInterfaceNotFound             ErrCode = 131201
+	ErrInterfaceCreateFailed         ErrCode = 131202
+	ErrInterfaceUpdateFailed         ErrCode = 131203
+	ErrNotAllowInterfaceInSiteSubnet ErrCode = 131204
+	ErrInterfaceDeleteFailed         ErrCode = 131205
+	ErrCannotDeletePrimaryInterface  ErrCode = 131206
+	ErrTooManyInterfaces             ErrCode = 131207
+	ErrInterfaceInvalidSubnet        ErrCode = 131208
 
 	// Floating IP related errors (1312xx)
-	ErrFIPNotFound               = 131201
-	ErrFIPCreateFailed           = 131202
-	ErrFIPUpdateFailed           = 131203
-	ErrDeleteNativeFIPFailed     = 131204
-	ErrUpdatePublicIPFailed      = 131205
-	ErrUpdateInstIDOfFIPFailed   = 131206
-	ErrUpdateSubnetIDOfFIPFailed = 131207
-	ErrFIPDeleteFailed           = 131208
-	ErrFIPInUse                  = 131209
-	ErrDummyFIPCreateFailed      = 131210
-	ErrUpdateGroupIDFailed       = 131211
+	ErrFIPNotFound               ErrCode = 131201
+	ErrFIPCreateFailed           ErrCode = 131202
+	ErrFIPUpdateFailed           ErrCode = 131203
+	ErrDeleteNativeFIPFailed     ErrCode = 131204
+	ErrUpdatePublicIPFailed      ErrCode = 131205
+	ErrUpdateInstIDOfFIPFailed   ErrCode = 131206
+	ErrUpdateSubnetIDOfFIPFailed ErrCode = 131207
+	ErrFIPDeleteFailed           ErrCode = 131208
+	ErrFIPInUse                  ErrCode = 131209
+	ErrDummyFIPCreateFailed      ErrCode = 131210
+	ErrUpdateGroupIDFailed       ErrCode = 131211
 
 	// VPC/Router related errors (1313xx)
-	ErrRouterNotFound              = 131306
-	ErrRouterCreateFailed          = 131307
-	ErrRouterUpdateFailed          = 131308
-	ErrRouterUpdateDefaultSGFailed = 131309
-	ErrRouterDeleteFailed          = 131310
-	ErrRouterInUse                 = 131311
-	ErrRouterHasFloatingIPs        = 131312
-	ErrRouterHasSubnets            = 131313
-	ErrRouterHasPortmaps           = 131314
+	ErrRouterNotFound              ErrCode = 131306
+	ErrRouterCreateFailed          ErrCode = 131307
+	ErrRouterUpdateFailed          ErrCode = 131308
+	ErrRouterUpdateDefaultSGFailed ErrCode = 131309
+	ErrRouterDeleteFailed          ErrCode = 131310
+	ErrRouterInUse                 ErrCode = 131311
+	ErrRouterHasFloatingIPs        ErrCode = 131312
+	ErrRouterHasSubnets            ErrCode = 131313
+	ErrRouterHasPortmaps           ErrCode = 131314
 
 	// IP Group related errors (1314xx)
-	ErrIpGroupNotFound     = 131401
-	ErrIpGroupCreateFailed = 131402
-	ErrIpGroupUpdateFailed = 131403
-	ErrIpGroupDeleteFailed = 131404
-	ErrIpGroupInUse        = 131405
+	ErrIpGroupNotFound     ErrCode = 131401
+	ErrIpGroupCreateFailed ErrCode = 131402
+	ErrIpGroupUpdateFailed ErrCode = 131403
+	ErrIpGroupDeleteFailed ErrCode = 131404
+	ErrIpGroupInUse        ErrCode = 131405
 
 	// Security related errors (141xxx)
-	ErrSecurityGroupNotFound       = 141001
-	ErrSecurityGroupCreateFailed   = 141002
-	ErrSecurityGroupUpdateFailed   = 141003
-	ErrSecurityGroupDeleteFailed   = 141004
-	ErrAssociateSG2InterfaceFailed = 141005
-	ErrAtLeastOneSGRequired        = 141006
-	ErrCannotDeleteDefaultSG       = 141007
-	ErrSGHasInterfaces             = 141008
-	ErrSecurityRuleNotFound        = 141009
-	ErrSecurityRuleInvalid         = 141010
-	ErrSecurityRuleDeleteFailed    = 141011
-	ErrSecurityRuleCreateFailed    = 141012
-	ErrSecurityRuleUpdateFailed    = 141013
+	ErrSecurityGroupNotFound       ErrCode = 141001
+	ErrSecurityGroupCreateFailed   ErrCode = 141002
+	ErrSecurityGroupUpdateFailed   ErrCode = 141003
+	ErrSecurityGroupDeleteFailed   ErrCode = 141004
+	ErrAssociateSG2InterfaceFailed ErrCode = 141005
+	ErrAtLeastOneSGRequired        ErrCode = 141006
+	ErrCannotDeleteDefaultSG       ErrCode = 141007
+	ErrSGHasInterfaces             ErrCode = 141008
+	ErrSecurityRuleNotFound        ErrCode = 141009
+	ErrSecurityRuleInvalid         ErrCode = 141010
+	ErrSecurityRuleDeleteFailed    ErrCode = 141011
+	ErrSecurityRuleCreateFailed    ErrCode = 141012
+	ErrSecurityRuleUpdateFailed    ErrCode = 141013
 
 	// Image related errors (151xxx)
-	ErrImageNotFound            = 151000
-	ErrImageInUse               = 151001
-	ErrImageNoQA                = 151002
-	ErrImageCreateFailed        = 151003
-	ErrImageUpdateFailed        = 151004
-	ErrImageDeleteFailed        = 151005
-	ErrImageNotAvailable        = 151006
-	ErrImageStorageCreateFailed = 151007
-	ErrImageStorageDeleteFailed = 151008
-	ErrImageStorageUpdateFailed = 151009
-	ErrImageStorageNotFound     = 151010
-	ErrRescueImageNotFound      = 151011
+	ErrImageNotFound            ErrCode = 151000
+	ErrImageInUse               ErrCode = 151001
+	ErrImageNoQA                ErrCode = 151002
+	ErrImageCreateFailed        ErrCode = 151003
+	ErrImageUpdateFailed        ErrCode = 151004
+	ErrImageDeleteFailed        ErrCode = 151005
+	ErrImageNotAvailable        ErrCode = 151006
+	ErrImageStorageCreateFailed ErrCode = 151007
+	ErrImageStorageDeleteFailed ErrCode = 151008
+	ErrImageStorageUpdateFailed ErrCode = 151009
+	ErrImageStorageNotFound     ErrCode = 151010
+	ErrRescueImageNotFound      ErrCode = 151011
 
 	// ssh key related errors (161xxx)
-	ErrSSHKeyNotFound       = 161001
-	ErrSSHKeyCreateFailed   = 161002
-	ErrSSHKeyUpdateFailed   = 161003
-	ErrSSHKeyDeleteFailed   = 161004
-	ErrSSHKeyGenerateFailed = 161005
-	ErrSSHKeyInUse          = 161006
+	ErrSSHKeyNotFound       ErrCode = 161001
+	ErrSSHKeyCreateFailed   ErrCode = 161002
+	ErrSSHKeyUpdateFailed   ErrCode = 161003
+	ErrSSHKeyDeleteFailed   ErrCode = 161004
+	ErrSSHKeyGenerateFailed ErrCode = 161005
+	ErrSSHKeyInUse          ErrCode = 161006
 
 	// hypervisor/zone related errors (161xxx)
-	ErrNoQualifiedHypervisor  = 161001
-	ErrHypervisorNotFound     = 161002
-	ErrHypervisorUpdateFailed = 161003
-	ErrHypervisorDeleteFailed = 161004
-	ErrHypervisorInvalidState = 161005
-	ErrZoneNotFound           = 161006
-	ErrUnsetDefaultZoneFailed = 161007
-	ErrZoneCreationFailed     = 161008
-	ErrZoneUpdateFailed       = 161009
-	ErrZoneDeleteFailed       = 161010
-	ErrHypersInZone           = 161011
+	ErrNoQualifiedHypervisor  ErrCode = 161001
+	ErrHypervisorNotFound     ErrCode = 161002
+	ErrHypervisorUpdateFailed ErrCode = 161003
+	ErrHypervisorDeleteFailed ErrCode = 161004
+	ErrHypervisorInvalidState ErrCode = 161005
+	ErrZoneNotFound           ErrCode = 161006
+	ErrUnsetDefaultZoneFailed ErrCode = 161007
+	ErrZoneCreationFailed     ErrCode = 161008
+	ErrZoneUpdateFailed       ErrCode = 161009
+	ErrZoneDeleteFailed       ErrCode = 161010
+	ErrHypersInZone           ErrCode = 161011
 
 	// dictionary related errors (1998xx)
-	ErrDictionaryRecordsNotFound = 199801
-	ErrDictionaryCreateFailed    = 199802
-	ErrDictionaryUpdateFailed    = 199803
-	ErrDictionaryDeleteFailed    = 199804
+	ErrDictionaryRecordsNotFound ErrCode = 199801
+	ErrDictionaryCreateFailed    ErrCode = 199802
+	ErrDictionaryUpdateFailed    ErrCode = 199803
+	ErrDictionaryDeleteFailed    ErrCode = 199804
 )
 
 type CLError struct {
 	Err     error
-	Code    int
+	Code    ErrCode
 	Message string
 }
 
@@ -243,7 +247,7 @@ func (e *CLError) Unwrap() error {
 	return e.Err
 }
 
-func NewCLError(code int, message string, err error) *CLError {
+func NewCLError(code ErrCode, message string, err error) *CLError {
 	return &CLError{
 		Code:    code,
 		Message: message,
