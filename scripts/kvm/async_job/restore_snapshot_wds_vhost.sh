@@ -1,7 +1,7 @@
 #!/bin/bash
 
 cd $(dirname $0)
-source ../cloudrc
+source ../../cloudrc
 
 [ $# -ne 7 ] && echo "$0 <backup_id> <volume_id> <instance_id> <volume_wds_uuid> <snapshot_wds_uuid> <volume_pool_id> <snapshot_pool_id>" && exit -1
 
@@ -19,7 +19,7 @@ get_wds_token
 if [ "$volume_pool_id" == "$snapshot_pool_id" ]; then
     # Restore volume from snapshot in the same pool, just call WDS API volume recovery directly
     log_debug "Restoring volume $volume_wds_uuid from snapshot $snapshot_wds_uuid in the same pool $volume_pool_id"
-    restore_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_wds_uuid/recovery" -d "{\"snap_id\": \"$snapshot_wds_uuid\"}")
+    restore_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_wds_uuid/recovery" "{\"snap_id\": \"$snapshot_wds_uuid\"}")
 
     read -d'\n' -r ret_code message < <(jq -r ".ret_code, .message" <<<$restore_ret)
     if [ "$ret_code" != "0" ]; then
@@ -37,7 +37,7 @@ else
 
     log_debug "Restoring volume $volume_wds_uuid from snapshot $snapshot_wds_uuid in different pool, from $snapshot_pool_id to $volume_pool_id"
     new_vol_name="restored-from-$snapshot_wds_uuid"
-    clone_ret=$(wds_curl POST "api/v2/sync/block/volumes/$snapshot_wds_uuid/copy_clone" -d "{\"name\": \"$new_vol_name\", \"phy_pool_id\": \"$volume_pool_id\"}")
+    clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$snapshot_wds_uuid/copy_clone" "{\"name\": \"$new_vol_name\", \"phy_pool_id\": \"$volume_pool_id\"}")
     read -d'\n' -r ret_code message task_id < <(jq -r ".ret_code, .message, .task_id" <<<$clone_ret)
     if [ "$ret_code" != "0" ]; then
         log_debug "failed to clone volume from $snapshot_wds_uuid: $message"
@@ -82,8 +82,7 @@ else
         old_vhost_name=$(basename $(ls /var/run/wds/instance-$instance_id-volume-$origin_vol_ID-*))
         vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$old_vhost_name" | jq -r '.vhosts[0].id')
         uss_id=$(get_uss_gateway)
-        wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}"
-        wds_curl DELETE "api/v2/sync/block/vhost/$vhost_id"
+        delete_vhost $origin_vol_ID $vhost_id $uss_id
 
         # bind the new volume to a new vhost
         for i in {1..20}; do

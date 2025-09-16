@@ -97,14 +97,6 @@
             <p>{{.i18n.Tr "Volume_Restore_Confirm"}} <span id="restore-backup-name"></span>?</p>
             <form class="ui form" id="restore-form" method="post" action="/restore">
                 <input type="hidden" name="backup" id="restore-backup-id">
-                <div class="field">
-                    <label>{{.i18n.Tr "Volume"}}</label>
-                    <select name="volume" class="ui dropdown">
-                        {{range .Volumes}}
-                        <option value="{{.ID}}">{{.Name}}</option>
-                        {{end}}
-                    </select>
-                </div>
             </form>
 	    </div>
 	    <div class="actions">

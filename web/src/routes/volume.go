@@ -428,6 +428,19 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	return
 }
 
+func (a *VolumeAdmin) GetVolumesByInstanceID(ctx context.Context, instanceID int64) (volumes []*model.Volume, err error) {
+	ctx, db := GetContextDB(ctx)
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
+	volumes = []*model.Volume{}
+	if err = db.Preload("Instance").Where(where).Where("instance_id = ?", instanceID).Find(&volumes).Error; err != nil {
+		logger.Error("Failed to query volumes, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
+		return
+	}
+	return
+}
+
 // list data volumes
 func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, volumes []*model.Volume, err error) {
 	return a.ListVolume(ctx, offset, limit, order, query, "all")

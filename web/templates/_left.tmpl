@@ -22,10 +22,7 @@
         </a>
         <a {{ if eq .Link "/backups" }} class="active item" {{ else }} class="item" {{ end }} href="/backups">
             {{.i18n.Tr "Backups"}}
-        </a>
-        <a {{ if eq .Link "/scheduled_tasks" }} class="active item" {{ else }} class="item" {{ end }} href="/scheduled_tasks">
-            {{.i18n.Tr "Scheduled Tasks"}}
-        </a>        
+        </a>   
         <a {{ if eq .Link "/flavors" }} class="active item" {{ else }} class="item" {{ end }} href="/flavors">
             {{.i18n.Tr "Flavors"}}
         </a>

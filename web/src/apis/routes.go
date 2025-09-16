@@ -174,13 +174,6 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Patch)
 
-		authGroup.GET("/api/v1/scheduled_tasks", scheduledTaskAPI.List)
-		authGroup.POST("/api/v1/scheduled_tasks", scheduledTaskAPI.Create)
-		authGroup.GET("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Get)
-		authGroup.DELETE("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Delete)
-		authGroup.PATCH("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Patch)
-		authGroup.GET("/api/v1/scheduled_tasks/:id/history", scheduledTaskAPI.ListHistory)
-
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{
 			metricsGroup.POST("/instances/cpu/his_data", monitorAPI.GetCPU)

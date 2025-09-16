@@ -78,6 +78,18 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		err = NewCLError(ErrDatabaseError, "Failed to create backup record", err)
 		return
 	}
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	err = db.Model(&volume).Updates(map[string]interface{}{"status": model.VolumeStatusRestoring}).Error
+	if err != nil {
+		logger.Error("Update volume status failed", err)
+		err = NewCLError(ErrDatabaseError, "Failed to update volume status", err)
+		return
+	}
 	control := fmt.Sprintf("inter=")
 	vol_driver := GetVolumeDriver()
 	if vol_driver != "local" {
@@ -85,7 +97,7 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		wdsOriginPoolID := volume.GetVolumePoolID()
 		if poolID != "" && poolID != wdsOriginPoolID {
 			logger.Debugf("Backup volume %s from pool %s to pool %s", volume.UUID, wdsOriginPoolID, poolID)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%s' '%s' '%s' '%s' '%s' '%s' '%s'", vol_driver, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID, poolID)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%s' '%s' '%d' '%s' '%s' '%s'", vol_driver, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID, poolID)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Backup volume execution failed", err)
@@ -94,7 +106,7 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 			return
 		} else {
 			logger.Debugf("Backup volume %s to same pool %s, use snapshot", volume.UUID, poolID)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%s' '%s' '%s' '%s' '%s' '%s'", vol_driver, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%s' '%s' '%d' '%s' '%s'", vol_driver, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Backup volume execution failed", err)
@@ -151,7 +163,7 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 	if vol_driver != "local" {
 		wdsUUID := volume.GetOriginVolumeID()
 		wdsOriginPoolID := volume.GetVolumePoolID()
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%s' '%s' '%s' '%s'", vol_driver, backup.ID, backup.UUID, wdsUUID, wdsOriginPoolID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%s' '%s' '%d' '%s' '%s'", vol_driver, snapshot.ID, snapshot.UUID, snapshot.Name, volume.ID, wdsUUID, wdsOriginPoolID)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Backup volume execution failed", err)
@@ -200,11 +212,10 @@ func (a *BackupAdmin) GetBackupByID(ctx context.Context, backupID int64) (backup
 	}
 	db := DB()
 	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
 	backup = &model.VolumeBackup{Model: model.Model{ID: backupID}}
-	if err = db.Preload("Volume").Where(where).Take(backup).Error; err != nil {
-		logger.Error("Failed to query volume, %v", err)
-		err = NewCLError(ErrBackupNotFound, "Volume not found", err)
+	if err = db.Preload("Volume").Take(backup).Error; err != nil {
+		logger.Errorf("Failed to query backup/snapshot, %v", err)
+		err = NewCLError(ErrBackupNotFound, "Backup/Snapshot not found", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, backup.Owner)
@@ -261,11 +272,13 @@ func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (e
 	vol_driver := GetVolumeDriver()
 	control := fmt.Sprintf("inter=")
 	wdsUUID := backup.GetOriginBackupID()
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_snapshot_%s.sh '%s'", vol_driver, wdsUUID)
-	err = HyperExecute(ctx, control, command)
-	if err != nil {
-		logger.Error("Delete snapshot execution failed", err)
-		return
+	if wdsUUID != "" {
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_snapshot_%s.sh '%s'", vol_driver, wdsUUID)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Delete snapshot execution failed", err)
+			return
+		}
 	}
 	return
 }
@@ -313,8 +326,9 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (err error) {
 	}
 	// check if the instance is running, if so, ask the user to stop it first
 	if volume.InstanceID > 0 && volume.Instance.Status != "stopped" {
-		logger.Errorf("Volume %s is attached to a running instance, please stop the instance %s first", volume.Name, volume.Instance.Hostname)
-		err = fmt.Errorf("volume %s is attached to a running instance, please stop the instance %s first", volume.Name, volume.Instance.Hostname)
+		msg := fmt.Sprintf("Volume %s is attached to a running instance, please stop the instance %s first", volume.Name, volume.Instance.Hostname)
+		logger.Errorf(msg)
+		err = NewCLError(ErrCannotRestoreWhileInstanceIsRunning, msg, nil)
 		return
 	}
 	// update volume status to restoring
@@ -340,8 +354,7 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (err error) {
 		snapshot_wds_uuid := backup.GetOriginBackupID()
 		volume_pool_id := volume.GetVolumePoolID()
 		snapshot_pool_id := backup.GetBackupPoolID()
-		origin_status := volume.Status
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_snapshot_%s.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' '%s'", vol_driver, backupID, volume.ID, volume.InstanceID, volume_wds_uuid, snapshot_wds_uuid, volume_pool_id, snapshot_pool_id, origin_status)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_snapshot_%s.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", vol_driver, backupID, volume.ID, volume.InstanceID, volume_wds_uuid, snapshot_wds_uuid, volume_pool_id, snapshot_pool_id)
 		if volume_pool_id == snapshot_pool_id {
 			logger.Debugf("Restoring volume %s from snapshot %s in the same pool %s", volume.UUID, backup.UUID, volume_pool_id)
 		} else {
@@ -490,16 +503,7 @@ func (v *BackupView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusInternalServerError, "error")
 		return
 	}
-	db := DB()
-	where := memberShip.GetWhere()
-	volumes := []*model.Volume{}
-	err = db.Where(where).Find(&volumes).Error
-	if err != nil {
-		logger.Error("Failed to query volumes %v", err)
-		return
-	}
 
-	c.Data["Volumes"] = volumes
 	pages := GetPages(total, limit)
 	c.Data["Backups"] = backups
 	c.Data["Total"] = total
@@ -525,9 +529,20 @@ func (v *BackupView) New(c *macaron.Context, store session.Store) {
 		logger.Error("Failed to query volumes %v", err)
 		return
 	}
-
+	total, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, 50, "name", "category='storage_pool'")
+	if err != nil {
+		logger.Error("Failed to query storage pools %v", err)
+		return
+	}
+	if total == 0 {
+		logger.Error("No storage pool found, please create a storage pool first")
+		c.Data["ErrorMsg"] = "No storage pool found, please create a storage pool first"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Data["Pools"] = pools
 	c.Data["Volumes"] = volumes
-	c.HTML(200, "vol_backup_new")
+	c.HTML(200, "backup_new")
 }
 
 func (v *BackupView) Create(c *macaron.Context, store session.Store) {
@@ -542,6 +557,7 @@ func (v *BackupView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "../backups"
 	backupType := c.QueryTrim("backup_type")
 	volumeID := c.QueryInt64("volume")
+	poolID := c.QueryTrim("storage_pool")
 	name := c.QueryTrim("name")
 	if name == "" {
 		logger.Error("Backup name is empty")
@@ -554,7 +570,7 @@ func (v *BackupView) Create(c *macaron.Context, store session.Store) {
 	if backupType == "snapshot" {
 		_, err = backupAdmin.CreateSnapshotByID(c.Req.Context(), volumeID, name)
 	} else if backupType == "backup" {
-		_, err = backupAdmin.CreateBackupByID(c.Req.Context(), volumeID, "", name)
+		_, err = backupAdmin.CreateBackupByID(c.Req.Context(), volumeID, poolID, name)
 	} else {
 		err = fmt.Errorf("Unknown backup type %s", backupType)
 	}
@@ -608,12 +624,12 @@ func (v *BackupView) Restore(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	redirectTo := "../volumes"
+	redirectTo := "/backups"
 	backupID := c.QueryInt64("backup")
 	err := backupAdmin.Restore(c.Req.Context(), backupID)
 	if err != nil {
 		logger.Error("Failed to restore volume %v", err)
-		c.Data["ErrorMsg"] = "Failed to restore volume"
+		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusInternalServerError, "error")
 		return
 	}

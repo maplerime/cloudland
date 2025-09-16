@@ -20,6 +20,7 @@ const (
 	VolumeStatusAttaching VolumeStatus = "attaching"
 	VolumeStatusDetaching VolumeStatus = "detaching"
 	VolumeStatusRestoring VolumeStatus = "restoring"
+	VolumeStatusBackuping VolumeStatus = "backuping"
 	VolumeStatusError     VolumeStatus = "error"
 )
 
@@ -57,7 +58,7 @@ type Volume struct {
 }
 
 func (v *Volume) IsBusy() bool {
-	if v.Status == VolumeStatusResizing || v.Status == VolumeStatusAttaching || v.Status == VolumeStatusDetaching || v.Status == VolumeStatusRestoring {
+	if v.Status == VolumeStatusResizing || v.Status == VolumeStatusAttaching || v.Status == VolumeStatusDetaching || v.Status == VolumeStatusRestoring || v.Status == VolumeStatusBackuping {
 		return true
 	}
 	return false
@@ -133,7 +134,7 @@ func (v *VolumeBackup) GetBackupPoolID() string {
 }
 
 func (v *VolumeBackup) GetOriginBackupID() string {
-	return parseOriginID(v.Path, v.UUID)
+	return parseOriginID(v.Path, "")
 }
 
 func parse(path string) []string {
