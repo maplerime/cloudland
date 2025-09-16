@@ -149,17 +149,14 @@ if [ "$is_uefi_current" != "$should_be_uefi" ]; then
         sed -i '/<\/os>/i\    <nvram>'$vm_nvram'</nvram>' $vm_xml
         
         # Change metadata disk from IDE to SCSI for UEFI
-        if grep -q 'target.*bus="ide".*dev="hdd"' $vm_xml && grep -q '/meta/' $vm_xml; then
-            # Change metadata disk from IDE to SCSI
-            sed -i '/<source.*\/meta\/>/,/<\/disk>/ {
-                s/target.*dev="hdd".*bus="ide"/target dev="hdb" bus="scsi"/
-                s/<driver name="qemu" type="raw" cache="none"\/>/<driver name="qemu" type="raw"\/>/
-            }' $vm_xml
+        if grep -q 'target.*dev=.hdd.*bus=.ide' $vm_xml && grep -q '/meta/' $vm_xml; then
+            # Change metadata disk from IDE to SCSI and remove old address
+            sed -i 's/dev=.hdd./dev="hdb"/g; s/bus=.ide./bus="scsi"/g' $vm_xml
+            sed -i '/<target.*hdb.*scsi/,/<\/disk>/ { /<address type=.drive/d }' $vm_xml
             
             # Add SCSI controller if not exists (never remove IDE - other disks might use it)
-            if ! grep -q 'controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''' $vm_xml; then
-                sed -i '/<\/devices>/i\    <controller type='\''scsi'\'' index='\''0'\'' model='\''virtio-scsi'\''>
-    </controller>' $vm_xml
+            if ! grep -q 'controller.*scsi' $vm_xml; then
+                sed -i '/<\/devices>/i\    <controller type="scsi" index="0" model="virtio-scsi"/>' $vm_xml
             fi
         fi
         
@@ -175,18 +172,14 @@ if [ "$is_uefi_current" != "$should_be_uefi" ]; then
         sed -i '/^[[:space:]]*<nvram>/d' $vm_xml
         
         # Change metadata disk from SCSI to IDE for BIOS
-        if grep -q 'target.*dev="hdb".*bus="scsi"' $vm_xml && grep -q '/meta/' $vm_xml; then
-            # Change metadata disk from SCSI to IDE
-            sed -i '/<source.*\/meta\/>/,/<\/disk>/ {
-                s/target dev="hdb" bus="scsi"/target bus="ide" dev="hdd"/
-                s/<driver name="qemu" type="raw"\/>/<driver name="qemu" type="raw" cache="none"\/>/
-            }' $vm_xml
+        if grep -q 'target.*dev=.hdb.*bus=.scsi' $vm_xml && grep -q '/meta/' $vm_xml; then
+            # Change metadata disk from SCSI to IDE and remove old address
+            sed -i 's/dev=.hdb./dev="hdd"/g; s/bus=.scsi./bus="ide"/g' $vm_xml
+            sed -i '/<target.*hdd.*ide/,/<\/disk>/ { /<address type=.pci/d }' $vm_xml
             
             # Add IDE controller if not exists (never remove SCSI - other disks might use it)  
-            if ! grep -q 'controller type='\''ide'\'' index='\''0'\''' $vm_xml; then
-                sed -i '/<\/devices>/i\    <controller type='\''ide'\'' index='\''0'\''>
-      <address type='\''pci'\'' domain='\''0x0000'\'' bus='\''0x00'\'' slot='\''0x01'\'' function='\''0x1'\''/>
-    </controller>' $vm_xml
+            if ! grep -q 'controller.*ide' $vm_xml; then
+                sed -i '/<\/devices>/i\    <controller type="ide" index="0"/>' $vm_xml
             fi
         fi
         
