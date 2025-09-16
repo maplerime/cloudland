@@ -61,7 +61,7 @@ func Run() (err error) {
 	logger.Debugf("cert: %s, key: %s\n", cert, key)
 	listen := viper.GetString("base.listen")
 	if cert != "" && key != "" {
-		logger.Infof("Running https service isten on %s\n", listen)
+		logger.Infof("Running https service on %s\n", listen)
 		http.ListenAndServeTLS(listen, cert, key, m)
 	} else {
 		logger.Infof("Running http service on %s\n", listen)
@@ -233,14 +233,8 @@ func New() (m *macaron.Macaron) {
 	m.Get("/backups/new", backupView.New)
 	m.Post("/backups/new", backupView.Create)
 	m.Delete("/backups/:id", backupView.Delete)
-	m.Get("/scheduled_tasks", scheduledTaskView.List)
-	m.Get("/scheduled_tasks/new", scheduledTaskView.New)
-	m.Post("/scheduled_tasks/new", scheduledTaskView.Create)
-	m.Get("/scheduled_tasks/:id", scheduledTaskView.Edit)
-	m.Post("/scheduled_tasks/:id", scheduledTaskView.Patch)
-	m.Delete("/scheduled_tasks/:id", scheduledTaskView.Delete)
-	m.Get("/scheduled_tasks/:id/history", scheduledTaskView.ListHistory)
-	m.Get("/scheduled_task_history", scheduledTaskHistoryView.List)
+	m.Post("/restore", backupView.Restore)
+
 	m.Get("/error", func(c *macaron.Context) {
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")
 		c.HTML(500, "error")

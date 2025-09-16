@@ -97,13 +97,15 @@ const (
 	ErrVolumeIsInUse          = 121012
 	ErrBootVolumeCannotDetach = 121013
 	ErrVolumeIsBusy           = 121014
+	ErrVolumeIsRestoring      = 121015
 
 	// Snapshot/Backup related errors (1251xx)
-	ErrBackupNotFound       = 125100
-	ErrBackupCreationFailed = 125101
-	ErrBackupUpdateFailed   = 125102
-	ErrBackupDeleteFailed   = 125103
-	ErrBackupInUse          = 125104
+	ErrBackupNotFound                      = 125100
+	ErrBackupCreationFailed                = 125101
+	ErrBackupUpdateFailed                  = 125102
+	ErrBackupDeleteFailed                  = 125103
+	ErrBackupInUse                         = 125104
+	ErrCannotRestoreWhileInstanceIsRunning = 125105
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
