@@ -82,7 +82,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 				for _, subnet := range subnets {
 					if subnet.Interface != primaryInterfaceID {
 						subnet.Interface = primaryInterfaceID
-						if err := db.Save(subnet).Error; err != nil {
+						if err := db.Model(subnet).Update("interface", primaryInterfaceID).Error; err != nil {
 							logger.Error("Failed to update subnet interface", err)
 							return nil, NewCLError(ErrSubnetUpdateFailed, "Failed to update subnet interface", err)
 						}
@@ -395,7 +395,14 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		floatingIp.InstanceID = 0
 		floatingIp.IntAddress = ""
 		floatingIp.Type = string(PublicFloating)
-		err = db.Save(floatingIp).Error
+		err = db.Model(floatingIp).Updates(map[string]interface{}{
+			"instance":    nil,
+			"interface":   nil,
+			"router":      nil,
+			"instance_id": 0,
+			"int_address": "",
+			"type":        string(PublicFloating),
+		}).Error
 		if err != nil {
 			logger.Errorf("Failed to update public ip, %v", err)
 			return NewCLError(ErrUpdatePublicIPFailed, "Failed to update public ip", err)

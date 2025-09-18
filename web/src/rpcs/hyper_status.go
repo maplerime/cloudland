@@ -115,7 +115,18 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	hyper.VirtType = "kvm-x86_64"
 	hyper.Zone = zone
 	hyper.HostIP = hostIP
-	err = db.Save(hyper).Error
+	// 构建需要更新的字段映射
+	updateFields := make(map[string]interface{})
+	updateFields["cpu_over_rate"] = hyper.CpuOverRate
+	updateFields["mem_over_rate"] = hyper.MemOverRate
+	updateFields["disk_over_rate"] = hyper.DiskOverRate
+	updateFields["hostname"] = hyper.Hostname
+	updateFields["status"] = hyper.Status
+	updateFields["virt_type"] = hyper.VirtType
+	updateFields["zone_id"] = hyper.ZoneID
+	updateFields["host_ip"] = hyper.HostIP
+
+	err = db.Model(hyper).Updates(updateFields).Error
 	if err != nil {
 		logger.Error("Failed to save hypervisor", err)
 		return
@@ -136,9 +147,9 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	}
 	if availCpu == 0 || availMem == 0 || availDisk == 0 {
 		err = db.Model(&model.Resource{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
-			"cpu": availCpu,
+			"cpu":    availCpu,
 			"memory": availMem,
-			"disk": availDisk}).Error
+			"disk":   availDisk}).Error
 		if err != nil {
 			logger.Error("Failed to update hypervisor resource", err)
 		}

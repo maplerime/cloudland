@@ -56,7 +56,11 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 			sysIface, err = CreateInterface(ctx, subnet, 0, 0, int32(hyperID), 0, 0, "", "", hyperName, "system", nil, false)
 			if err == nil && sysIface != nil {
 				hyper.RouteIP = sysIface.Address.Address
-				err = db.Save(hyper).Error
+				// 构建需要更新的字段映射
+				updateFields := make(map[string]interface{})
+				updateFields["route_ip"] = hyper.RouteIP
+
+				err = db.Model(hyper).Updates(updateFields).Error
 				if err != nil {
 					logger.Error("Failed to save hyper address", err)
 					return

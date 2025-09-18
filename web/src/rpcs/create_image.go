@@ -47,7 +47,13 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		return
 	}
 	image.Size = int64(imageSize)
-	err = db.Save(image).Error
+	// 构建需要更新的字段映射
+	updateFields := make(map[string]interface{})
+	updateFields["status"] = image.Status
+	updateFields["format"] = image.Format
+	updateFields["size"] = image.Size
+
+	err = db.Model(image).Updates(updateFields).Error
 	if err != nil {
 		logger.Error("Update image failed", err)
 		return
@@ -71,7 +77,12 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		} else {
 			storage.Status = model.StorageStatusError
 		}
-		err = db.Save(storage).Error
+		// 构建需要更新的字段映射
+		updateFields := make(map[string]interface{})
+		updateFields["volume_id"] = storage.VolumeID
+		updateFields["status"] = storage.Status
+
+		err = db.Model(storage).Updates(updateFields).Error
 		if err != nil {
 			logger.Error("Update image storage failed", err)
 			return
