@@ -44,5 +44,18 @@ done
 ./clear_local_router.sh $router
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
+
+# Clean up old format rule_id metrics after successful migration
+echo "=== Starting rule_id metrics cleanup ==="
+if [ -f "/opt/cloudland/scripts/kvm/cleanup_old_rule_id_metrics.sh" ]; then
+    echo "Cleaning up old format rule_id metrics for migrated VM: $vm_ID"
+    /opt/cloudland/scripts/kvm/cleanup_old_rule_id_metrics.sh --force || {
+        echo "Warning: Rule_id metrics cleanup failed, but migration completed successfully"
+    }
+else
+    echo "Warning: Rule_id metrics cleanup script not found, skipping metrics cleanup"
+fi
+echo "=== Rule_id metrics cleanup completed ==="
+
 state="source_prepared"
 echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"

@@ -6,7 +6,7 @@ groups:
   - record: vm_in_bw_usage_percent_raw_{{ rule_group }}
     expr: |
       sum by (domain) (rate(libvirt_domain_block_stats_read_bytes_total[1m]) + rate(libvirt_domain_interface_stats_receive_bytes_total[1m])) * 8
-      / on (domain) group_left() (vm_in_bw_limit{rule_id=~".*-{{ rule_group_original }}"} * 1024 * 1024) * 100
+      / on (domain) group_left() (vm_in_bw_limit{rule_id=~"bw-.*-{{ rule_group_original }}"} * 1024 * 1024) * 100
 
   # 平滑入站带宽使用率(5分钟移动平均)
   - record: vm_in_bw_usage_percent_{{ rule_group }}
@@ -17,7 +17,7 @@ groups:
   - record: vm_in_bw_usage_by_rule_{{ rule_group }}
     expr: |
       vm_in_bw_usage_percent_{{ rule_group }} * on(domain) group_right()
-      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group_original }}"}
+      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group_original }}"}
 
   # 需要限制入站带宽的VM (仅当状态为normal时)
   - record: vm_requires_in_bw_limit_{{ rule_group }}
@@ -25,8 +25,8 @@ groups:
       (vm_in_bw_usage_by_rule_{{ rule_group }} > {{ high_threshold }})
       and on(domain, rule_id)
       (
-        (vm_bandwidth_adjustment_status{rule_id=~".*-{{ rule_group_original }}", type="in"} == 0) or
-        (absent(vm_bandwidth_adjustment_status{rule_id=~".*-{{ rule_group_original }}", type="in"}) * on(domain) group_right() up{job="vm-group-metadata", rule_id=~".*-{{ rule_group_original }}"})
+        (vm_bandwidth_adjustment_status{rule_id=~"bw-.*-{{ rule_group_original }}", type="in"} == 0) or
+        (absent(vm_bandwidth_adjustment_status{rule_id=~"bw-.*-{{ rule_group_original }}", type="in"}) * on(domain) group_right() up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group_original }}"})
       )
 
   # 可以恢复入站带宽的VM (仅当状态为limited时)
@@ -34,4 +34,4 @@ groups:
     expr: |
       (vm_in_bw_usage_by_rule_{{ rule_group }} < {{ low_threshold }})
       and on(domain, rule_id)
-      (vm_bandwidth_adjustment_status{rule_id=~".*-{{ rule_group_original }}", type="in"} == 1)
+      (vm_bandwidth_adjustment_status{rule_id=~"bw-.*-{{ rule_group_original }}", type="in"} == 1)

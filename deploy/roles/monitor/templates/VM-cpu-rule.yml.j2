@@ -9,7 +9,7 @@ groups:
           / on (domain) group_left() libvirt_domain_info_virtual_cpus
         ) * 100 > {{ over }}
       ) or ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+      up{job="vm-group-metadata", rule_id=~"cpu-.*-{{ rule_group }}"}
     for: {{ duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
@@ -31,7 +31,7 @@ groups:
           / on (domain) group_left() libvirt_domain_info_virtual_cpus
         ) * 100 < {{ down_to }}
       ) and ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+      up{job="vm-group-metadata", rule_id=~"cpu-.*-{{ rule_group }}"}
     for: {{ down_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'

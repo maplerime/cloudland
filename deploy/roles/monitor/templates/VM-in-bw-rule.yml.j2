@@ -6,7 +6,7 @@ groups:
       (
         sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])) > {{ in_threshold }}
       ) or ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group }}"}
     for: {{ in_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
@@ -26,7 +26,7 @@ groups:
       (
         sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])) < {{ in_down_to }}
       ) and ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~".*-{{ rule_group }}"}
+      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group }}"}
     for: {{ in_down_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'

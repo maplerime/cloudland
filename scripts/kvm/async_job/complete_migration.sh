@@ -24,9 +24,9 @@ for i in {1..1800}; do
 
         # Migrate VM custom metrics after successful migration
         echo "=== Starting VM Metrics Migration ==="
-        if [ -n "$prometheus_host" ] && [ -n "$prometheus_port" ] && [ -f "../query_and_migrate_vm_metrics.sh" ]; then
+        if [ -n "$prometheus_host" ] && [ -n "$prometheus_port" ] && [ -f "/opt/cloudland/scripts/kvm/query_and_migrate_vm_metrics.sh" ]; then
             echo "Migrating custom metrics for VM: $vm_ID to Prometheus: $prometheus_host:$prometheus_port"
-            ../query_and_migrate_vm_metrics.sh --domain "$vm_ID" --prometheus-host "$prometheus_host" --prometheus-port "$prometheus_port" || {
+            /opt/cloudland/scripts/kvm/query_and_migrate_vm_metrics.sh --domain "$vm_ID" --prometheus-host "$prometheus_host" --prometheus-port "$prometheus_port" || {
                 echo "Warning: VM metrics migration failed, but VM migration completed successfully"
             }
         else

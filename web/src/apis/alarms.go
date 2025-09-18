@@ -40,7 +40,8 @@ var alarmAPI = &AlarmAPI{
 //   - vmUUIDs: list of VM UUIDs
 //   - groupUUID: rule group UUID
 //   - operation: operation type, "add" for add/update, "remove" for delete
-func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation string) error {
+//   - ruleType: rule type ("cpu" or "bw") for generating typed rule_id
+func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string) error {
 	// Path to matched_vms.json file
 	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
 
@@ -70,12 +71,22 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 				continue
 			}
 
-			// Create new entry with instance_id field
+			// Create new entry with instance_id field and typed rule_id
+			var ruleID string
+			if ruleType == "cpu" {
+				ruleID = fmt.Sprintf("cpu-%s-%s", domain, groupUUID)
+			} else if ruleType == "bw" {
+				ruleID = fmt.Sprintf("bw-%s-%s", domain, groupUUID)
+			} else {
+				// Fallback to original format for compatibility
+				ruleID = fmt.Sprintf("%s-%s", domain, groupUUID)
+			}
+
 			newEntry := map[string]interface{}{
 				"targets": []string{"localhost:9090"},
 				"labels": map[string]interface{}{
 					"domain":      domain,
-					"rule_id":     fmt.Sprintf("%s-%s", domain, groupUUID),
+					"rule_id":     ruleID,
 					"instance_id": instanceid,
 				},
 			}
@@ -89,10 +100,10 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 				}
 
 				domainVal, hasDomain := labels["domain"].(string)
-				ruleID, hasRuleID := labels["rule_id"].(string)
-				expectedRuleID := fmt.Sprintf("%s-%s", domain, groupUUID)
+				existingRuleID, hasRuleID := labels["rule_id"].(string)
+				expectedRuleID := ruleID
 
-				if hasDomain && hasRuleID && domainVal == domain && ruleID == expectedRuleID {
+				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == expectedRuleID {
 					// Update existing entry
 					entryExists = true
 					matchedVMs[i] = newEntry
@@ -192,10 +203,10 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	// Update VM matching information
 	if len(req.VMUUIDs) > 0 {
 		// Update matched_vms.json with VM information
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.VMUUIDs, group.UUID, "add")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.VMUUIDs, group.UUID, "add", group.Type)
 	} else {
 		// If no VMs, remove related entries from matched_vms.json
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", group.Type)
 	}
 
 	// Query latest linked VMs
@@ -265,7 +276,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
 
 		// Update matched_vms.json with VM information
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "cpu")
 	}
 	// 校验：一次只能创建一个规则
 	if len(req.Rules) != 1 {
@@ -433,7 +444,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 
 	// Remove related entries from matched_vms.json
 	mappingFile := ""
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove")
+	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "cpu")
 
 	// 删除软链和规则文件（路径与创建时一致）
 	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
@@ -1097,7 +1108,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	if len(req.LinkedVMs) > 0 {
 		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
 		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "bw")
 	}
 	// Render templates for in/out directions
 	for _, rule := range req.Rules {
@@ -1285,7 +1296,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	}
 
 	// Remove related entries from matched_vms.json
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove")
+	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "bw")
 
 	// 删除软链和规则文件（路径与创建时一致）
 	// 记录删除的文件路径
