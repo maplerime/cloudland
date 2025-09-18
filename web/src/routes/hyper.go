@@ -127,7 +127,7 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 		hyperInDB.DiskOverRate = hyper.DiskOverRate
 		callScript = true
 	}
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["remark"] = hyperInDB.Remark
 	updateFields["status"] = hyperInDB.Status

@@ -131,7 +131,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				task1.Summary = "No qualified target"
 				task1.Status = "not_doing"
 				migration.Status = "not_doing"
-				// 构建需要更新的字段映射
+
 				updateFields := make(map[string]interface{})
 				updateFields["status"] = migration.Status
 

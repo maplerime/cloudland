@@ -101,7 +101,7 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 		if storage, exists := storageMap[poolID]; exists {
 			if storage.Status != model.StorageStatusSynced && storage.Status != model.StorageStatusSyncing {
 				storage.Status = model.StorageStatusUnknown
-				// 构建需要更新的字段映射
+				
 				updateFields := make(map[string]interface{})
 				updateFields["status"] = storage.Status
 

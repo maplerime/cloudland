@@ -30,7 +30,7 @@ func updateInstance(volume *model.Volume, status string, reason string) (err err
 
 		instance.Status = model.InstanceStatus(status)
 		instance.Reason = reason
-		// 构建需要更新的字段映射
+
 		updateFields := make(map[string]interface{})
 		updateFields["status"] = instance.Status
 		updateFields["reason"] = instance.Reason

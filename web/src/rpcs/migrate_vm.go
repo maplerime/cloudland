@@ -211,7 +211,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Errorf("Migration status: %s, new status: %s", migration.Status, status)
 		migration.Status = status
 	}
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["status"] = migration.Status
 

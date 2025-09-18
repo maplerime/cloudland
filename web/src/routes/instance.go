@@ -467,7 +467,7 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	if instance.Disk == 0 {
 		instance.Disk = bootVolume.Size
 	}
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["status"] = instance.Status
 	updateFields["cpu"] = instance.Cpu
@@ -610,7 +610,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	instance.Memory = memory
 	instance.Disk = disk
 	instance.Keys = keys
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["status"] = instance.Status
 	updateFields["login_port"] = instance.LoginPort
@@ -639,7 +639,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	// change volume status to reinstalling
 	bootVolume.Status = "reinstalling"
 	bootVolume.Size = disk
-	// 构建需要更新的字段映射
+
 	updateFields = make(map[string]interface{})
 	updateFields["status"] = bootVolume.Status
 	updateFields["size"] = bootVolume.Size

@@ -58,7 +58,7 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		}
 		image.Size = int64(imageSize)
 	}
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["status"] = image.Status
 	if volDriver == "local" {
@@ -91,7 +91,7 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		} else {
 			storage.Status = model.StorageStatusError
 		}
-		// 构建需要更新的字段映射
+
 		updateFields := make(map[string]interface{})
 		updateFields["volume_id"] = storage.VolumeID
 		updateFields["status"] = storage.Status

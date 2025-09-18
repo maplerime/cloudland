@@ -149,7 +149,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	instance.Status = model.InstanceStatusDeleted
 	instance.Reason = reason
 	instance.Interfaces = nil
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["hostname"] = instance.Hostname
 	updateFields["status"] = instance.Status

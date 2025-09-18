@@ -43,7 +43,6 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", err)
 	}
 
-	// 构建需要更新的字段映射
 	updateFields := make(map[string]interface{})
 	updateFields["address"] = addr.Address
 	updateFields["netmask"] = addr.Netmask

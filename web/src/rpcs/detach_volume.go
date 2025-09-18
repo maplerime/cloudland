@@ -49,12 +49,12 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 	volume.InstanceID = 0
 	volume.Target = ""
 	volume.Status = model.VolumeStatusAvailable
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["instance_id"] = volume.InstanceID
 	updateFields["target"] = volume.Target
 	updateFields["status"] = volume.Status
-	
+
 	err = db.Model(volume).Updates(updateFields).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)

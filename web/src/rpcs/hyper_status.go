@@ -115,7 +115,7 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	hyper.VirtType = "kvm-x86_64"
 	hyper.Zone = zone
 	hyper.HostIP = hostIP
-	// 构建需要更新的字段映射
+
 	updateFields := make(map[string]interface{})
 	updateFields["cpu_over_rate"] = hyper.CpuOverRate
 	updateFields["mem_over_rate"] = hyper.MemOverRate
