@@ -162,7 +162,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	}
 	if idleCountTotal < int64(activationCount) {
 		logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d, pubSubnets: %v", idleCountTotal, activationCount, pubSubnets)
-		return nil, NewCLError(ErrInsufficientResource, "Not enough idle addresses for public subnets", nil)
+		return nil, NewCLError(ErrInsufficientAddress, "Not enough idle addresses for public subnets", nil)
 	}
 
 	if len(siteSubnets) > 0 {
