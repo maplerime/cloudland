@@ -287,6 +287,11 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
 		return
 	}
+	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
+	if err != nil {
+		logger.Error("Instance has volume restoring", err)
+		return
+	}
 	image := instance.Image
 	if rescueImage == nil {
 		if image.RescueImage <= 0 {
@@ -349,6 +354,19 @@ func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance)
 	if err != nil {
 		logger.Error("Delete vm command execution failed", err)
 		return
+	}
+	return
+}
+
+func (a *InstanceAdmin) CheckVolumeIsRestoring(ctx context.Context, instanceID int64) (err error) {
+	vols, err := volumeAdmin.GetVolumesByInstanceID(ctx, instanceID)
+	if err != nil {
+		return
+	}
+	for _, vol := range vols {
+		if vol.Status == model.VolumeStatusRestoring {
+			return NewCLError(ErrVolumeIsRestoring, fmt.Sprintf("Volume %d is restoring", vol.ID), nil)
+		}
 	}
 	return
 }
@@ -461,6 +479,11 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already resizing", nil)
 		return
 	}
+	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
+	if err != nil {
+		logger.Error("Instance has volume restoring", err)
+		return
+	}
 	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory
@@ -511,6 +534,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if !permit {
 		logger.Error("Not authorized to reinstall the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
+		return
+	}
+	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
+	if err != nil {
+		logger.Error("Instance has volume restoring, cannot proceed", err)
 		return
 	}
 	var bootVolume *model.Volume
