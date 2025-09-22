@@ -343,7 +343,9 @@ int RoutingList::setRecoverChildren()
         rit = routers.find(hndl);
         if ((rit == routers.end()) || (rit->second.stream == NULL)) {
             gCtrlBlock->setRecover(hndl);
-        }
+        } else {
+            gCtrlBlock->clearRecover(hndl);
+	}
     }
 
     return 0;

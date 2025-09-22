@@ -12,13 +12,13 @@ vm_ID=inst-$ID
 router=$4
 target_hyper=$5
 migration_type=$6
-state=error
+state=failed
 
 vm_xml=$(virsh dumpxml $vm_ID)
 if [ "$migration_type" = "warm" ]; then
     virsh migrate --persistent --live $vm_ID qemu+ssh://$target_hyper/system
     if [ $? -ne 0 ]; then
-	state="failed"
+        ./clear_source_vhost.sh
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
 	exit 1
     fi
@@ -34,6 +34,9 @@ else
     fi
 fi
 virsh undefine $vm_ID
+if [ $? -ne 0 ]; then
+    virsh undefine --nvram $vm_ID
+fi
 ./clear_source_vhost.sh
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)

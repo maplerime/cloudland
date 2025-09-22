@@ -51,7 +51,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicFloating), GroupID: groupID}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
-			return nil, err
+			return nil, NewCLError(ErrFIPCreateFailed, "Failed to create floating ip", err)
 		}
 		logger.Debugf("fip: %v, subnets: %v, publicIp: %s", fip, subnets, publicIp)
 		fipIface, err := AllocateFloatingIp(ctx, fip.ID, memberShip.OrgID, subnets, publicIp)
@@ -82,9 +82,9 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 				for _, subnet := range subnets {
 					if subnet.Interface != primaryInterfaceID {
 						subnet.Interface = primaryInterfaceID
-						if err := db.Save(subnet).Error; err != nil {
+						if err := db.Model(subnet).Update("interface", primaryInterfaceID).Error; err != nil {
 							logger.Error("Failed to update subnet interface", err)
-							return nil, err
+							return nil, NewCLError(ErrSubnetUpdateFailed, "Failed to update subnet interface", err)
 						}
 					}
 				}
@@ -92,7 +92,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		}
 		if err := db.Model(fip).Updates(fip).Error; err != nil {
 			logger.Error("DB failed to update floating ip", err)
-			return nil, err
+			return nil, NewCLError(ErrFIPUpdateFailed, "Failed to update floating ip", err)
 		}
 		floatingIps = append(floatingIps, fip)
 	}
@@ -106,7 +106,7 @@ func (a *FloatingIpAdmin) createDummyFloatingIp(ctx context.Context, instance *m
 	fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: 0, Outbound: 0, FipAddress: publicIp, IntAddress: publicIp, InstanceID: instance.ID, Type: string(PublicNative)}
 	if err = db.Create(fip).Error; err != nil {
 		logger.Error("DB failed to create floating ip", err)
-		return
+		return nil, NewCLError(ErrDummyFIPCreateFailed, "Failed to create floating ip", err)
 	}
 	return
 }
@@ -116,14 +116,14 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	logger.Debugf("instance: %v, pubSubnets: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, siteSubnets: %v", instance, pubSubnets, publicIp, name, inbound, outbound, activationCount, siteSubnets)
 
 	if publicIp != "" && (activationCount > 1 || len(siteSubnets) > 0) {
 		logger.Error("Public ip and subnets cannot be specified at the same time")
-		err = fmt.Errorf("Public ip and subnets cannot be specified at the same time")
+		err = NewCLError(ErrInvalidParameter, "Public ip and subnets cannot be specified at the same time", nil)
 		return
 	}
 
@@ -138,18 +138,18 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 		err = db.Where("type = ?", "public").Find(&pubSubnets).Error
 		if err != nil {
 			logger.Error("Failed to query public subnets ", err)
-			return
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query public subnets", err)
 		}
 		if len(pubSubnets) == 0 {
 			logger.Error("No public subnets available")
-			return nil, fmt.Errorf("No public subnets available")
+			return nil, NewCLError(ErrSubnetNotFound, "No public subnets available", nil)
 		}
 	}
 	idleCountTotal := int64(0)
 	for _, subnet := range pubSubnets {
 		if subnet.Type != "public" {
 			logger.Error("Subnet must be public", err)
-			err = fmt.Errorf("Subnet must be public")
+			err = NewCLError(ErrSubnetShouldBePublic, "Subnet must be public", nil)
 			return
 		}
 		var idleCount int64
@@ -162,14 +162,14 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	}
 	if idleCountTotal < int64(activationCount) {
 		logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d, pubSubnets: %v", idleCountTotal, activationCount, pubSubnets)
-		return nil, fmt.Errorf("Not enough idle addresses for public subnets")
+		return nil, NewCLError(ErrInsufficientAddress, "Not enough idle addresses for public subnets", nil)
 	}
 
 	if len(siteSubnets) > 0 {
 		for _, subnet := range siteSubnets {
 			if subnet.Type != "site" {
 				logger.Error("Subnet must be site", err)
-				err = fmt.Errorf("Subnet must be site")
+				err = NewCLError(ErrSubnetShouldBeSite, "Subnet must be site", nil)
 				return
 			}
 			var idleCount int64
@@ -180,7 +180,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 			}
 			if idleCount == 0 {
 				logger.Errorf("No idle addresses for site subnet %s", subnet.Name)
-				err = fmt.Errorf("No idle addresses for site subnet")
+				err = NewCLError(ErrInsufficientAddress, "No idle addresses for site subnet", nil)
 				return
 			}
 			subnet.IdleCount = idleCount
@@ -213,34 +213,34 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance) (err error) {
 	if floatingIp.Type != string(PublicFloating) && floatingIp.Type != string(PublicSite) {
 		logger.Infof("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type)
-		err = fmt.Errorf("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Cannot attach floating IP of type %s, only PublicFloating and PublicSite types are supported for attachment", floatingIp.Type), nil)
 		return
 	}
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized for this operation")
-		err = fmt.Errorf("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
 	ctx, db := GetContextDB(ctx)
 	if instance == nil || (instance.Status == "pending") {
 		logger.Error("Instance is not running")
-		err = fmt.Errorf("Instance must be running")
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not running", nil)
 		return
 	}
 	instID := instance.ID
 	routerID := instance.RouterID
 	if routerID == 0 {
 		logger.Error("Instance has no router")
-		err = fmt.Errorf("Instance has no router")
+		err = NewCLError(ErrInstanceNoRouter, "Instance has no router", nil)
 		return
 	}
 	router := &model.Router{Model: model.Model{ID: routerID}}
 	err = db.Take(router).Error
 	if err != nil {
 		logger.Error("DB failed to query router", err)
-		return
+		return NewCLError(ErrRouterNotFound, "DB failed to query router", err)
 	}
 	var primaryIface *model.Interface
 	for i, iface := range instance.Interfaces {
@@ -250,7 +250,7 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 		}
 	}
 	if primaryIface == nil {
-		err = fmt.Errorf("No primary interface for the instance, %d", instID)
+		err = NewCLError(ErrInstanceNoPrimaryInterface, fmt.Sprintf("No primary interface for the instance, %d", instID), nil)
 		return
 	}
 	floatingIp.IntAddress = primaryIface.Address.Address
@@ -259,7 +259,7 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 	err = db.Model(floatingIp).Updates(floatingIp).Error
 	if err != nil {
 		logger.Error("DB failed to update floating ip", err)
-		return
+		return NewCLError(ErrFIPUpdateFailed, "DB failed to update floating ip", err)
 	}
 
 	err = a.EnsureSubnetID(ctx, floatingIp)
@@ -281,7 +281,7 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 
 func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.FloatingIp, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid floatingIp ID: %d", id)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid floatingIp ID: %d", id), nil)
 		logger.Error(err)
 		return
 	}
@@ -292,28 +292,30 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("DB failed to query floatingIp ", err)
-		return
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query floatingIp", err)
 	}
 	if floatingIp.InstanceID > 0 {
 		floatingIp.Instance = &model.Instance{Model: model.Model{ID: floatingIp.InstanceID}}
 		err = db.Take(floatingIp.Instance).Error
 		if err != nil {
-			logger.Error("DB failed to query instance ", err)
-			return
+			msg := fmt.Sprintf("Failed to query instance: %d", floatingIp.InstanceID)
+			logger.Error(msg, err)
+			return nil, NewCLError(ErrInstanceNotFound, msg, err)
 		}
 		instance := floatingIp.Instance
 		err = db.Preload("Address").Preload("Address.Subnet").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
 		if err != nil {
 			logger.Error("Failed to query interfaces %v", err)
-			return
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 		}
 	}
 	if floatingIp.RouterID > 0 {
 		floatingIp.Router = &model.Router{Model: model.Model{ID: floatingIp.RouterID}}
 		err = db.Take(floatingIp.Router).Error
 		if err != nil {
-			logger.Error("DB failed to query instance ", err)
-			return
+			msg := fmt.Sprintf("Failed to query router: %d", floatingIp.RouterID)
+			logger.Error(msg, err)
+			return nil, NewCLError(ErrRouterNotFound, msg, err)
 		}
 	}
 
@@ -334,28 +336,31 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 	err = db.Preload("Interface").Preload("Interface.SecurityGroups").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Preload("Group").Where(where).Where("uuid = ?", uuID).Take(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to query floatingIp, %v", err)
-		return
+		return nil, NewCLError(ErrDatabaseError, "Failed to query floatingIp", err)
 	}
 	if floatingIp.InstanceID > 0 {
 		floatingIp.Instance = &model.Instance{Model: model.Model{ID: floatingIp.InstanceID}}
 		err = db.Take(floatingIp.Instance).Error
 		if err != nil {
-			logger.Error("DB failed to query instance ", err)
-			return
+			msg := fmt.Sprintf("Failed to query instance: %d", floatingIp.InstanceID)
+			logger.Error(msg, err)
+			return nil, NewCLError(ErrInstanceNotFound, msg, err)
 		}
 		instance := floatingIp.Instance
 		err = db.Preload("Address").Preload("Address.Subnet").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
 		if err != nil {
-			logger.Error("Failed to query interfaces %v", err)
-			return
+			msg := fmt.Sprintf("Failed to query interfaces for instance: %d", instance.ID)
+			logger.Error(msg, err)
+			return nil, NewCLError(ErrSQLSyntaxError, msg, err)
 		}
 	}
 	if floatingIp.RouterID > 0 {
 		floatingIp.Router = &model.Router{Model: model.Model{ID: floatingIp.RouterID}}
 		err = db.Take(floatingIp.Router).Error
 		if err != nil {
-			logger.Error("DB failed to query instance ", err)
-			return
+			msg := fmt.Sprintf("Failed to query router: %d", floatingIp.RouterID)
+			logger.Error(msg, err)
+			return nil, NewCLError(ErrRouterNotFound, msg, err)
 		}
 	}
 
@@ -378,7 +383,7 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 	if floatingIp.Type == string(PublicNative) {
 		if err = db.Delete(floatingIp).Error; err != nil {
 			logger.Error("DB: delete native fip failed", err)
-			return
+			return NewCLError(ErrDeleteNativeFIPFailed, "Failed to delete native floating IP", err)
 		}
 		floatingIp.Instance = nil
 		return
@@ -390,10 +395,16 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		floatingIp.InstanceID = 0
 		floatingIp.IntAddress = ""
 		floatingIp.Type = string(PublicFloating)
-		err = db.Save(floatingIp).Error
+
+		updateFields := make(map[string]interface{})
+		updateFields["instance_id"] = 0
+		updateFields["int_address"] = ""
+		updateFields["type"] = string(PublicFloating)
+
+		err = db.Model(floatingIp).Updates(updateFields).Error
 		if err != nil {
 			logger.Errorf("Failed to update public ip, %v", err)
-			return
+			return NewCLError(ErrUpdatePublicIPFailed, "Failed to update public ip", err)
 		}
 		return
 	}
@@ -414,13 +425,13 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 			return
 		}
 	}
-	logger.Errorf("Floating ip: %v\n", floatingIp)
+	logger.Debugf("Floating ip: %v\n", floatingIp)
 	floatingIp.InstanceID = 0
 	floatingIp.Instance = nil
 	err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update(map[string]interface{}{"instance_id": 0}).Error
 	if err != nil {
 		logger.Error("Failed to update instance ID for floating ip", err)
-		return
+		return NewCLError(ErrUpdateInstIDOfFIPFailed, "Failed to update instance ID for floating ip", err)
 	}
 	return
 }
@@ -456,7 +467,7 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 		err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("group_id", groupID).Error
 		if err != nil {
 			logger.Error("Failed to update floating ip group_id", err)
-			return
+			return nil, NewCLError(ErrUpdateGroupIDFailed, "Failed to update floating ip group_id", err)
 		}
 	}
 
@@ -471,8 +482,9 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
 	if floatingIp.Type != string(PublicFloating) {
-		logger.Infof("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
-		err = fmt.Errorf("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
+		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
+		logger.Info(errorStr)
+		err = NewCLError(ErrInvalidParameter, errorStr, nil)
 		return
 	}
 	ctx, _, newTransaction := StartTransaction(ctx)
@@ -509,17 +521,17 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		query = fmt.Sprintf("fip_address like '%%%s%%' or int_address like '%%%s%%' or name like '%%%s%%'", query, query)
 	}
 
-	ctx, db := GetContextDB(ctx)
+	_, db := GetContextDB(ctx)
 	where := memberShip.GetWhere()
 	floatingIps = []*model.FloatingIp{}
 	if err = db.Model(&model.FloatingIp{}).Where(where).Where(query).Where(intQuery).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count floating ip(s), %v", err)
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count floating IPs", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, fip := range floatingIps {
@@ -566,7 +578,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 			fip.OwnerInfo = &model.Organization{Model: model.Model{ID: fip.Owner}}
 			if err = db.Take(fip.OwnerInfo).Error; err != nil {
 				logger.Error("Failed to query owner info", err)
-				return
+				return 0, nil, NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
 			}
 		}
 	}
@@ -1040,11 +1052,11 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 		err = db.Where("type = ?", "public").Find(&subnets).Error
 		if err != nil {
 			logger.Error("Failed to query public subnets ", err)
-			return
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query public subnets", err)
 		}
 		if len(subnets) == 0 {
 			logger.Error("No public subnets available")
-			return nil, fmt.Errorf("No public subnets available")
+			return nil, NewCLError(ErrPublicSubnetNotFound, "No public subnets available", nil)
 		}
 	}
 	name := "fip"
@@ -1067,7 +1079,7 @@ func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID
 	err = db.Delete(floatingIp).Error
 	if err != nil {
 		logger.Error("Failed to delete floating ip, %v", err)
-		return
+		return NewCLError(ErrFIPDeleteFailed, "Failed to delete floating ip", err)
 	}
 	return
 }
@@ -1079,7 +1091,7 @@ func (a *FloatingIpAdmin) EnsureSubnetID(ctx context.Context, floatingIp *model.
 		err := db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("subnet_id", floatingIp.SubnetID).Error
 		if err != nil {
 			logger.Errorf("Failed to update floating ip subnet_id: %v", err)
-			return err
+			return NewCLError(ErrUpdateSubnetIDOfFIPFailed, "Failed to update floating ip subnet_id", err)
 		}
 		logger.Debugf("Updated floating ip %d subnet_id to %d", floatingIp.ID, floatingIp.SubnetID)
 	}
@@ -1089,7 +1101,7 @@ func (a *FloatingIpAdmin) EnsureSubnetID(ctx context.Context, floatingIp *model.
 		err := db.Take(subnet).Error
 		if err != nil {
 			logger.Errorf("Failed to load subnet for floating ip %d: %v", floatingIp.ID, err)
-			return err
+			return NewCLError(ErrSubnetNotFound, "Failed to load subnet for floating ip", err)
 		}
 		floatingIp.Subnet = subnet
 		logger.Debugf("Loaded subnet for floating ip %d", floatingIp.ID)

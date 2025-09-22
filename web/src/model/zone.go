@@ -15,6 +15,7 @@ import (
 type Zone struct {
 	ID        int64  `gorm:"primary_key"`
 	Name      string `gorm:"unique_index"`
+	Remark    string `gorm:"type:varchar(512);default:''"`
 	Default   bool
 	CreatedAt time.Time
 	UpdatedAt time.Time

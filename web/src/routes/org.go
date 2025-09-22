@@ -41,8 +41,8 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if name != "admin" && !permit {
-		logger.Error("Not authorized to delete the user")
-		err = fmt.Errorf("Not authorized")
+		logger.Error("Not authorized to create organization")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create organization", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -55,6 +55,7 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 	err = db.Where(user).Take(user).Error
 	if err != nil {
 		logger.Error("Failed to query user", err)
+		err = NewCLError(ErrUserNotFound, "Failed to find user", err)
 		return
 	}
 	org = &model.Organization{
@@ -69,18 +70,21 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 	err = db.Create(org).Error
 	if err != nil {
 		logger.Error("DB failed to create organization ", err)
+		err = NewCLError(ErrOrgCreationFailed, "Failed to create organization", err)
 		return
 	}
 	member := &model.Member{UserID: user.ID, UserName: owner, OrgID: org.ID, OrgName: name, Role: model.Owner}
 	err = db.Create(member).Error
 	if err != nil {
 		logger.Error("DB failed to create organization member ", err)
+		err = NewCLError(ErrMemberCreationFailed, "Failed to create organization member", err)
 		return
 	}
 	user.Owner = org.ID
 	err = db.Model(user).Updates(user).Error
 	if err != nil {
 		logger.Error("DB failed to update user owner", err)
+		err = NewCLError(ErrUserUpdateFailed, "Failed to update user owner", err)
 		return
 	}
 	return
@@ -93,6 +97,7 @@ func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []str
 	err = db.Set("gorm:auto_preload", true).Take(org).Take(org).Error
 	if err != nil {
 		logger.Error("Failed to query organization", err)
+		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
 	for _, name := range members {
@@ -172,7 +177,7 @@ func (a *OrgAdmin) Update(ctx context.Context, orgID int64, members, users []str
 
 func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, err error) {
 	if id <= 0 {
-		err = fmt.Errorf("Invalid org ID: %d", id)
+		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid org ID: %d", id), nil)
 		logger.Error("%v", err)
 		return
 	}
@@ -180,7 +185,8 @@ func (a *OrgAdmin) Get(ctx context.Context, id int64) (org *model.Organization, 
 	org = &model.Organization{Model: model.Model{ID: id}}
 	err = db.Take(org).Error
 	if err != nil {
-		logger.Error("Failed to query user, %v", err)
+		logger.Error("Failed to query org, %v", err)
+		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
 	return
@@ -192,6 +198,7 @@ func (a *OrgAdmin) GetOrgByUUID(ctx context.Context, uuID string) (org *model.Or
 	err = db.Preload("Members").Where("uuid = ?", uuID).Take(org).Error
 	if err != nil {
 		logger.Error("Failed to query org, %v", err)
+		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
 	return
@@ -201,6 +208,11 @@ func (a *OrgAdmin) GetOrgByName(ctx context.Context, name string) (org *model.Or
 	org = &model.Organization{}
 	ctx, db := GetContextDB(ctx)
 	err = db.Take(org, &model.Organization{Name: name}).Error
+	if err != nil {
+		logger.Error("Failed to query org, %v", err)
+		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
+		return
+	}
 	return
 }
 
@@ -210,6 +222,7 @@ func (a *OrgAdmin) GetOrgName(ctx context.Context, id int64) (name string) {
 	err := db.Take(org, &model.Organization{Name: name}).Error
 	if err != nil {
 		logger.Error("DB failed to query org", err)
+		err = NewCLError(ErrOrgNotFound, "Failed to find organization", err)
 		return
 	}
 	name = org.Name
@@ -220,8 +233,8 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
-		logger.Error("Not authorized to delete the user")
-		err = fmt.Errorf("Not authorized")
+		logger.Error("Not authorized to delete the org")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the org", nil)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -239,24 +252,27 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	}
 	if count > 0 {
 		logger.Error("There are resources in this org", err)
-		err = fmt.Errorf("There are resources in this org")
+		err = NewCLError(ErrResourcesInOrg, "There are resources in this org", nil)
 		return
 	}
 	err = db.Delete(&model.Member{}, `org_id = ?`, org.ID).Error
 	if err != nil {
 		logger.Error("DB failed to delete member, %v", err)
+		err = NewCLError(ErrMemberDeleteFailed, "Failed to delete organization member", err)
 		return
 	}
 	keys := []*model.Key{}
 	err = db.Where("owner = ?", org.ID).Find(&keys).Error
 	if err != nil {
 		logger.Error("DB failed to query keys", err)
+		err = NewCLError(ErrDatabaseError, "Failed to query keys", err)
 		return
 	}
 	for _, key := range keys {
 		err = keyAdmin.Delete(ctx, key)
 		if err != nil {
 			logger.Error("Can not delete key", err)
+			err = NewCLError(ErrSSHKeyDeleteFailed, "Failed to delete SSH key", err)
 			return
 		}
 	}
@@ -264,23 +280,27 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	err = db.Model(org).Update("name", org.Name).Error
 	if err != nil {
 		logger.Error("DB failed to update org name", err)
+		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
 		return
 	}
 	err = db.Delete(org).Error
 	if err != nil {
 		logger.Error("DB failed to delete organization, %v", err)
+		err = NewCLError(ErrOrgDeleteFailed, "Failed to delete organization", err)
 		return
 	}
 	secgroups := []*model.SecurityGroup{}
 	err = db.Where("owner = ?", org.ID).Find(&secgroups).Error
 	if err != nil {
 		logger.Error("DB failed to security groups", err)
+		err = NewCLError(ErrDatabaseError, "Failed to query security groups", err)
 		return
 	}
 	for _, secgroup := range secgroups {
 		err = secgroupAdmin.Delete(ctx, secgroup)
 		if err != nil {
 			logger.Error("Can not delete security group", err)
+			err = NewCLError(ErrSecurityGroupDeleteFailed, "Failed to delete security group", err)
 			return
 		}
 	}
@@ -305,6 +325,7 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	err = db.Take(user).Error
 	if err != nil {
 		logger.Error("DB failed to query user, %v", err)
+		err = NewCLError(ErrUserNotFound, "Failed to find user", err)
 		return
 	}
 	where := ""
@@ -314,12 +335,14 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 	orgs = []*model.Organization{}
 	if err = db.Model(&orgs).Where(where).Where(query).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count organizations, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count organizations", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	err = db.Preload("Members").Where(where).Where(query).Find(&orgs).Error
 	if err != nil {
 		logger.Error("DB failed to query organizations, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query organizations", err)
 		return
 	}
 

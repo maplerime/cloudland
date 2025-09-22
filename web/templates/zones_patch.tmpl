@@ -12,6 +12,10 @@
                         <input id="name" name="name" value="{{ .Zone.Name }}" autocomplete="off" readonly>
                         <small>{{.i18n.Tr "Zone name cannot be modified after creation"}}</small>
                     </div>
+                    <div class="inline field">
+                        <label for="remark">{{.i18n.Tr "Remark"}}</label>
+                        <textarea id="remark" name="remark" rows="3" placeholder="">{{ .Zone.Remark }}</textarea>
+                    </div>
                     <!--div class="inline field">
                         <div class="ui checkbox">
                             <input type="checkbox" name="default" id="default" {{ if .Zone.Default }}checked{{ end }}>

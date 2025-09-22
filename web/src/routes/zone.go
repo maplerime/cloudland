@@ -44,10 +44,12 @@ func (a *ZoneAdmin) List(ctx context.Context, offset, limit int64, order, query 
 
 	zones = []*model.Zone{}
 	if err = db.Model(&model.Zone{}).Where(query).Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count zones", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Model(&model.Zone{}).Where(query).Find(&zones).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query zones", err)
 		return
 	}
 	db = db.Offset(0).Limit(-1)
@@ -59,6 +61,7 @@ func (a *ZoneAdmin) Get(ctx context.Context, id int64) (zone *model.Zone, err er
 	zone = &model.Zone{ID: id}
 	if err = db.Take(zone).Error; err != nil {
 		logger.Error("Failed to query zone", err)
+		err = NewCLError(ErrZoneNotFound, "Zone not found", err)
 		return
 	}
 	return
@@ -70,12 +73,13 @@ func (a *ZoneAdmin) GetZoneByName(ctx context.Context, name string) (zone *model
 	err = db.Where("name = ?", name).Take(zone).Error
 	if err != nil {
 		logger.Error("Failed to query zone, %v", err)
+		err = NewCLError(ErrZoneNotFound, "Zone not found", err)
 		return
 	}
 	return
 }
 
-func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zone *model.Zone, err error) {
+func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool, remark string) (zone *model.Zone, err error) {
 	logger.Debugf("Creating zone %s, default: %t", name, isDefault)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -87,7 +91,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to create zone")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create zone", nil)
 		return
 	}
 
@@ -95,6 +99,7 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 		err = db.Model(&model.Zone{}).Where(`"default" = ?`, true).Update("default", false).Error
 		if err != nil {
 			logger.Error("Failed to unset existing default zone", err)
+			err = NewCLError(ErrUnsetDefaultZoneFailed, "Failed to unset existing default zone", err)
 			return
 		}
 	}
@@ -102,20 +107,21 @@ func (a *ZoneAdmin) Create(ctx context.Context, name string, isDefault bool) (zo
 	zone = &model.Zone{
 		Name:    name,
 		Default: isDefault,
+		Remark:  remark,
 	}
 
 	err = db.Create(zone).Error
 	if err != nil {
 		logger.Error("DB create zone failed, %v", err)
+		err = NewCLError(ErrZoneCreationFailed, "Failed to create zone", err)
 		return
-
 	}
 
 	logger.Debugf("Zone created successfully: %+v", zone)
 	return
 }
 
-func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool) (err error) {
+func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool, remark string) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -126,7 +132,7 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to update zone")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update zone", nil)
 		return
 	}
 
@@ -134,14 +140,20 @@ func (a *ZoneAdmin) Update(ctx context.Context, zone *model.Zone, isDefault bool
 		err = db.Model(&model.Zone{}).Where(`"default" = ? AND id != ?`, true, zone.ID).Update("default", false).Error
 		if err != nil {
 			logger.Error("Failed to unset existing default zone", err)
+			err = NewCLError(ErrUnsetDefaultZoneFailed, "Failed to unset existing default zone", err)
 			return
 		}
 	}
 
 	zone.Default = isDefault
-	err = db.Model(zone).Updates(zone).Error
+	zone.Remark = remark
+	err = db.Model(zone).Updates(map[string]interface{}{
+		"remark":  remark,
+		"default": isDefault,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to update zone", err)
+		err = NewCLError(ErrZoneUpdateFailed, "Failed to update zone", err)
 		return
 	}
 
@@ -160,7 +172,7 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
 		logger.Error("Not authorized to delete zone")
-		err = fmt.Errorf("Not authorized")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete zone", nil)
 		return
 	}
 
@@ -172,13 +184,14 @@ func (a *ZoneAdmin) Delete(ctx context.Context, zone *model.Zone) (err error) {
 	}
 	if hyperCount > 0 {
 		logger.Error("Zone cannot be deleted while hypervisors belong to this zone")
-		err = fmt.Errorf("Zone cannot be deleted while hypervisors belong to this zone")
+		err = NewCLError(ErrHypersInZone, "Zone cannot be deleted while hypervisors belong to this zone", nil)
 		return
 	}
 
 	err = db.Delete(zone).Error
 	if err != nil {
 		logger.Error("Failed to delete zone", err)
+		err = NewCLError(ErrZoneDeleteFailed, "Failed to delete zone", err)
 		return
 	}
 
@@ -243,7 +256,8 @@ func (v *ZoneView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "../zones"
 	name := c.QueryTrim("name")
 	isDefault := c.QueryBool("default")
-	_, err := zoneAdmin.Create(c.Req.Context(), name, isDefault)
+	remark := c.QueryTrim("remark")
+	_, err := zoneAdmin.Create(c.Req.Context(), name, isDefault, remark)
 	if err != nil {
 		logger.Error("Create zone failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -288,7 +302,7 @@ func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	redirectTo := "../zones"
+	redirectTo := "/zones"
 	id := c.Params(":id")
 	isDefault := c.QueryBool("default")
 	zoneID, err := strconv.Atoi(id)
@@ -303,7 +317,8 @@ func (v *ZoneView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	err = zoneAdmin.Update(c.Req.Context(), zone, isDefault)
+	remark := c.QueryTrim("remark")
+	err = zoneAdmin.Update(c.Req.Context(), zone, isDefault, remark)
 	if err != nil {
 		logger.Error("Failed to update zone", err)
 		c.Data["ErrorMsg"] = err.Error()

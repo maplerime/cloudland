@@ -22,7 +22,7 @@ func (a *AddressAdmin) GetAddressByUUID(ctx context.Context, uuID string, subnet
 	err = db.Preload("Subnet").Where("uuid = ? and subnet_id = ?", uuID, subnet.ID).Take(addr).Error
 	if err != nil {
 		logger.Error("Failed to query address, %v", err)
-		return
+		return nil, NewCLError(ErrAddressNotFound, "Address not found", err)
 	}
 	return
 }
@@ -40,12 +40,12 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 	if !permit {
 		err = fmt.Errorf("Not authorized for this operation")
 		logger.Error("Not authorized for this operation", err)
-		return
+		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", err)
 	}
 
 	if err = db.Model(addr).Save(addr).Error; err != nil {
 		logger.Error("Failed to update address, %v", err)
-		return
+		return NewCLError(ErrAddressUpdateFailed, "Failed to update address", err)
 	}
 
 	return

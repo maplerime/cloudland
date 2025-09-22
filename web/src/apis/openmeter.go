@@ -503,6 +503,22 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	// Debug logging
 	log.Printf("Parsed events count: %d\n", len(events))
 
+	if len(events) == 0 {
+		log.Printf("No data found for instance_id: %s, subject: %s", req.InstanceID, req.Subject)
+		c.JSON(http.StatusNotFound, gin.H{
+			"status":  "error",
+			"code":    "NO_DATA_FOUND",
+			"message": "No metric data found for the specified criteria",
+			"details": fmt.Sprintf("No data found for instance_id '%s' and subject '%s'. Please verify the instance_id exists and has data for the specified time range.", req.InstanceID, req.Subject),
+			"query_params": gin.H{
+				"instance_id": req.InstanceID,
+				"subject":     req.Subject,
+				"start_time":  req.Start,
+				"end_time":    req.End,
+			},
+		})
+		return
+	}
 	// Apply Prometheus target filtering if enabled
 	filteredEvents := events
 	if c.Query("disable_prometheus_filter") != "true" {
@@ -1055,17 +1071,17 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 	}
 
 	summary := map[string]interface{}{
-		"total_bytes":       totalBytes,
-		"total_mb":          float64(totalBytes) / (1024 * 1024),
-		"total_gb":          float64(totalBytes) / (1024 * 1024 * 1024),
-		"total_kb":          float64(totalBytes) / 1024,
-		"monitoring_periods":     len(result.Segments),
-		"sdn_reset_count":        len(result.Resets),
-		"host_migrations_count":  len(result.HostMigrations),
-		"metric_type":       subject,
-		"average_rate_mbps": averageRateMbps,
-		"interface_aggregation":  true,
-		"unique_timestamps":      len(aggregatedSeries),
+		"total_bytes":           totalBytes,
+		"total_mb":              float64(totalBytes) / (1024 * 1024),
+		"total_gb":              float64(totalBytes) / (1024 * 1024 * 1024),
+		"total_kb":              float64(totalBytes) / 1024,
+		"monitoring_periods":    len(result.Segments),
+		"sdn_reset_count":       len(result.Resets),
+		"host_migrations_count": len(result.HostMigrations),
+		"metric_type":           subject,
+		"average_rate_mbps":     averageRateMbps,
+		"interface_aggregation": true,
+		"unique_timestamps":     len(aggregatedSeries),
 	}
 
 	return result, summary, nil

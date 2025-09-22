@@ -57,6 +57,6 @@ else
     done
     rm -f ${image}
     volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$image_name" | jq -r '.volumes[0].id')
-    [ -n "$volume_id" ] && state=available
+    [ -n "$volume_id" -a "$state" = "uploaded" ] && state=available
 fi
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '$image_size' '$volume_id' '$storage_ID'"

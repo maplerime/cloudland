@@ -43,11 +43,11 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 
 	hypers = []*model.Hyper{}
 	if err = db.Model(&model.Hyper{}).Where("hostid >= 0").Where(query).Count(&total).Error; err != nil {
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count hypervisors", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
 	if err = db.Preload("Zone").Where("hostid >= 0").Where(query).Find(&hypers).Error; err != nil {
-		return
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to retrieve hypervisors", err)
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, hyper := range hypers {
@@ -61,7 +61,7 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 func (a *HyperAdmin) SetStatus(ctx context.Context, hostID int32, status int32) (err error) {
 	hyper, err := a.GetHyperByHostid(ctx, hostID)
 	if err != nil {
-		return fmt.Errorf("Failed to get hypervisor by hostID %d: %v", hostID, err)
+		return
 	}
 	if hyper.Status == status {
 		return nil // No change needed
@@ -79,7 +79,7 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
-		err = fmt.Errorf("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		logger.Error("Not authorized for this operation", err)
 		return
 	}
@@ -87,7 +87,7 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 	hyperInDB := &model.Hyper{ID: hyper.ID}
 	if err = db.Preload("Zone").Take(hyperInDB).Error; err != nil {
 		logger.Error("Specified hypervisor not found", err)
-		return
+		return NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
 	}
 	// Update the hypervisor status, remark, or zone
 	callScript := false
@@ -150,7 +150,7 @@ func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper 
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
-		err = fmt.Errorf("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		logger.Error("Not authorized for this operation", err)
 		return
 	}
@@ -158,7 +158,7 @@ func (a *HyperAdmin) GetHyperByHostid(ctx context.Context, hostid int32) (hyper 
 	hyper = &model.Hyper{}
 	if err = db.Preload("Zone").Where("hostid = ?", hostid).Take(hyper).Error; err != nil {
 		logger.Error("Failed to query hypervisor", err)
-		return
+		return nil, NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
 	}
 
 	// Load resource information
@@ -177,7 +177,7 @@ func (a *HyperAdmin) GetHyperByHostname(ctx context.Context, hostname string) (h
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
-		err = fmt.Errorf("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		logger.Error("Not authorized for this operation", err)
 		return
 	}
@@ -185,7 +185,7 @@ func (a *HyperAdmin) GetHyperByHostname(ctx context.Context, hostname string) (h
 	hyper = &model.Hyper{}
 	if err = db.Where("hostname = ?", hostname).Take(hyper).Error; err != nil {
 		logger.Error("Failed to query hypervisor", err)
-		return
+		return nil, NewCLError(ErrHypervisorNotFound, "Specified hypervisor not found", err)
 	}
 	return
 }

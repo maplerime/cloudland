@@ -3,25 +3,39 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 6 ] && echo "$0 <vm_ID> <vlan> <vm_ip> <vm_mac> <gateway> <router>" && exit -1
+[ $# -lt 4 ] && echo "$0 <vm_ID> <vm_name> <os_code> <update_meta>" && exit -1
 
 ID=$1
 vm_ID=inst-$ID
-vlan=$2
-vm_ip=$3
-vm_mac=$4
-gateway=$5
-router=$6
-nic_name=tap$(echo $vm_mac | cut -d: -f4- | tr -d :)
+vm_name=$2
+os_code=$3
+update_meta=$4
+
+vlan_info=$(cat)
+read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing < <(jq -r ".vlan, .ip_address, .mac_address, .gateway, .router, .inbound, .outbound, .allow_spoofing" <<<$vlan_info)
+nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./create_link.sh $vlan
 brctl setageing $vm_br 0
-virsh domiflist $vm_ID | grep $vm_mac
+virsh domiflist $vm_ID | grep $mac
 if [ $? -ne 0 ]; then
-    virsh attach-interface $vm_ID bridge $vm_br --model virtio --mac $vm_mac --target $nic_name --live
-    virsh attach-interface $vm_ID bridge $vm_br --model virtio --mac $vm_mac --target $nic_name --config
+    template=$template_dir/interface.xml
+    interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    let queue_num=($(virsh dominfo $vm_ID | grep 'CPU(s)' | awk '{print $2}')+1)/2
+    cp $template $interface_xml
+    sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
+    virsh attach-device $vm_ID $interface_xml --config
+    virsh attach-device $vm_ID $interface_xml --live --persistent
 fi
-./set_nic_speed "$ID" "$nic_name" "$inbound" "$outbound"
-./create_sg_chain.sh $nic_name $vm_ip $vm_mac
-./apply_sg_rule.sh $nic_name
-./set_subnet_gw.sh $router $vlan $gateway $ext_vlan
+udevadm settle
+async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
+./set_nic_speed.sh "$ID" "$nic_name" "$inbound" "$outbound"
+./reapply_secgroup.sh "$ip" "$mac" "$allow_spoofing" "$nic_name" <<< $vlan_info
+./set_subnet_gw.sh "$router" "$vlan" "$gateway" "$ext_vlan"
+./set_host.sh "$router" "$vlan" "$mac" "$vm_name" "$ip"
+more_addresses=$(jq -r .more_addresses <<< $vlan_info)
+if [ -n "$more_addresses" ]; then
+    echo "$more_addresses" | ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta"
+fi
+echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"

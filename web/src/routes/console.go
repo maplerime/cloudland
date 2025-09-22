@@ -9,7 +9,6 @@ package routes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -53,8 +52,7 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized to create interface in public subnet")
-		err = fmt.Errorf("Not authorized")
-		return
+		return "", NewCLError(ErrPermissionDenied, "Not authorized to create interface in public subnet", nil)
 	}
 	secret := RandomStr()
 	tkClaim := TokenClaim{
@@ -80,7 +78,7 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 	err = db.Where("instance = ?", instance.ID).Assign(console).FirstOrCreate(&model.Console{}).Error
 	if err != nil {
 		logger.Error("Failed to make console record ", err)
-		return
+		return "", NewCLError(ErrConsoleCreateFailed, "Failed to make console record", err)
 	}
 	tokenClaim := jwt.NewWithClaims(jwt.SigningMethodHS256, tkClaim)
 	token, err = tokenClaim.SignedString(SignedSeret)
@@ -96,14 +94,14 @@ func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, er
 	}
 	claims, ok := token.Claims.(*TokenClaim)
 	if !ok || !token.Valid {
-		return 0, nil, errors.New("invalid token")
+		return 0, nil, NewCLError(ErrInvalidConsoleToken, "Token is invalid", nil)
 	}
 	ctx, db := GetContextDB(ctx)
 	instanceID := claims.InstanceID
 	console := &model.Console{Instance: int64(instanceID)}
 	err = db.Where(console).Take(console).Error
 	if err != nil {
-		return 0, nil, err
+		return 0, nil, NewCLError(ErrConsoleNotFound, "Failed to retrieve console record", err)
 	}
 	tokenHash := make([]byte, 32)
 	data := sha3.NewShake256()
@@ -111,7 +109,7 @@ func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, er
 	data.Read(tokenHash)
 	hashSecret := fmt.Sprintf("%x", tokenHash)
 	if hashSecret != console.HashSecret {
-		return 0, nil, errors.New("Secret can not pass validation")
+		return 0, nil, NewCLError(ErrInvalidConsoleToken, "Secret can not pass validation", nil)
 	}
 	memberShip := &MemberShip{
 		OrgID: claims.OrgID,
