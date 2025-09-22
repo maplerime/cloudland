@@ -10,18 +10,25 @@ import (
 	"web/src/dbs"
 )
 
+type VrrpInstance struct {
+	Model
+	Owner        int64  `gorm:"unique_index:idx_account_vrrp;default:1"` /* The organization ID of the resource */
+	Hyper        int32  `gorm:"default:-1"`
+	Peer         int32  `gorm:"default:-1"`
+	VrrpSubnetID int64
+	VrrpSubnet   *Subnet       `gorm:"foreignkey:VrrpSubnetID"`
+}
+
 type LoadBalancer struct {
 	Model
 	Owner        int64  `gorm:"unique_index:idx_account_lb;default:1"` /* The organization ID of the resource */
 	Name         string `gorm:"unique_index:idx_account_lb;type:varchar(64)"`
 	Status       string `gorm:"type:varchar(32)"`
-	Hyper        int32  `gorm:"default:-1"`
-	Peer         int32  `gorm:"default:-1"`
-	VrrpSubnetID int64
-	VrrpSubnet   *Subnet       `gorm:"foreignkey:VrrpSubnetID"`
 	FloatingIps  []*FloatingIp `gorm:"foreignkey:LoadBalancerID"`
 	RouterID     int64         `gorm:"unique_index:idx_router_lb"`
 	Router       *Router
+	VrrpInstanceID int64
+	VrrpInstance *VrrpInstance `gorm:"foreignkey:VrrpInstanceID"`
 	Listeners    []*Listener `gorm:"foreignkey:LoadBalancerID"`
 }
 

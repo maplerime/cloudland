@@ -24,6 +24,7 @@ const (
 	Public   SubnetType = "public"
 	Internal SubnetType = "internal"
 	Site     SubnetType = "site"
+	Vrrp     SubnetType = "vrrp"
 
 	PublicNative   ElasticType = "native"
 	PublicReserved ElasticType = "reserved"

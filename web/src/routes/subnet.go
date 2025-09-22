@@ -700,7 +700,7 @@ func (v *SubnetView) New(c *macaron.Context, store session.Store) {
 	routers := []*model.Router{}
 	err := DB().Find(&routers).Error
 	if err != nil {
-		logger.Error("Database failed to query gateways", err)
+		logger.Error("Database failed to query routers", err)
 		return
 	}
 	groups := []*model.IpGroup{}

@@ -159,6 +159,20 @@ const (
 	ErrIpGroupDeleteFailed = 131404
 	ErrIpGroupInUse        = 131405
 
+	// load balancer related errors (1315xx)
+	ErrLoadBalancerNotFound              = 131501
+	ErrLoadBalancerCreateFailed          = 131502
+	ErrLoadBalancerUpdateFailed          = 131503
+	ErrLoadBalancerDeleteFailed          = 131504
+	ErrVrrpInstanceNotFound              = 131505
+	ErrVrrpInstanceCreateFailed          = 131506
+	ErrVrrpInstanceUpdateFailed          = 131507
+	ErrVrrpInstanceDeleteFailed          = 131508
+	ErrListenerNotFound                  = 131509
+	ErrListenerCreateFailed              = 131510
+	ErrListenerUpdateFailed              = 131511
+	ErrListenerDeleteFailed              = 131512
+
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       = 141001
 	ErrSecurityGroupCreateFailed   = 141002
