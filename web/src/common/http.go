@@ -35,6 +35,7 @@ type BaseID struct {
 
 type APIError struct {
 	ErrorCode    int    `json:"error_code"`
+	ErrorCodeStr string `json:"error_code_str,omitempty"`
 	ErrorMessage string `json:"error_message"`
 }
 
@@ -44,7 +45,8 @@ func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 		var clErr *CLError
 		if errors.As(err, &clErr) {
 			c.JSON(code, &APIError{
-				ErrorCode:    clErr.Code,
+				ErrorCode:    int(clErr.Code),
+				ErrorCodeStr: clErr.Code.String(),
 				ErrorMessage: clErr.Message,
 			})
 			return

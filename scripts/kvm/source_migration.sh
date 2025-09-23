@@ -34,6 +34,9 @@ else
     fi
 fi
 virsh undefine $vm_ID
+if [ $? -ne 0 ]; then
+    virsh undefine --nvram $vm_ID
+fi
 ./clear_source_vhost.sh
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)

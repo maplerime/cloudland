@@ -61,7 +61,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 	}
 	for _, instance := range instances {
-		if instance.Status == model.InstanceStatusMigrating || instance.Status == "reinstalling" || instance.Status == "rescuing" {
+		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
 			continue
 		}
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}

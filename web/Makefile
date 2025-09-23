@@ -8,7 +8,11 @@ version:
 setup:
 	go install github.com/swaggo/swag/cmd/swag@latest
 	go install golang.org/x/tools/cmd/goimports@latest
+	go install golang.org/x/tools/cmd/stringer@latest
 
+error_codes_string:
+	go generate src/common/error_codes.go
+	
 routes_docs:
 	swag i -g routes.go -dir src/apis,src/common --instanceName v1 -o docs/routes
 
