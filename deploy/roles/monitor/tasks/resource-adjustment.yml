@@ -27,7 +27,7 @@
   become: true
   copy:
     src: "{{ item }}"
-    dest: /etc/prometheus/adjustment_templates
+    dest: /etc/prometheus/node_templates
     owner: prometheus
     group: prometheus
     mode: 0644
@@ -48,34 +48,42 @@
     backup: yes
   tags: [monitor, resource_adjustment]
 
-- name: Update Alertmanager config for resource adjustment
+- name: Define resource-adjustment route block (no indent)
+  set_fact:
+    resource_adjustment_route_block: |
+      # For resource adjustment alerts
+      - match:
+          alert_type: resource_adjustment
+        group_by: ['alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
+        group_wait: 0s
+        group_interval: 30s  # Group alerts every 30s
+        repeat_interval: 30s  # Repeat alerts every 30s
+        receiver: 'resource-adjustment-webhook'
+        continue: true
+
+# ② 插入到 "  routes:" 之后，并整体右移 4 格（含首行）
+- name: Add resource adjustment route to existing routes in Alertmanager
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   blockinfile:
     path: /etc/alertmanager/alertmanager.yml
-    insertafter: "^route:"
-    block: |
-      # Resource adjustment special routes
-      routes:
-        # For resource adjustment alerts
-        - match:
-            alert_type: resource_adjustment
-          group_by: ['alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
-          group_wait: 0s
-          group_interval: 30s  # Group alerts every 30s
-          repeat_interval: 30s  # Repeat alerts every 30s
-          receiver: 'resource-adjustment-webhook'
-    marker: "# {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Routes"
+    insertafter: '^\s{2}routes:\s*$'
+    marker: "    # {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Route"
+    block: "{{ resource_adjustment_route_block | indent(4, true) }}"
+    create: yes
+    # 可选：如有 amtool 或用容器校验，打开 validate 以防写入坏配置
+    # validate: 'amtool check-config %s'
+    # 或（容器校验示例，若主机无 amtool）：
+    # validate: 'docker run --rm -v /etc/alertmanager:/etc/alertmanager quay.io/prometheus/alertmanager:v0.26.0 --config.file=%s --log.level=error --config.check'
   tags: [monitor, resource_adjustment]
 
-- name: Add resource adjustment webhook receiver to Alertmanager
+- name: Add resource adjustment webhook receiver to Alertmanager receivers list
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   blockinfile:
     path: /etc/alertmanager/alertmanager.yml
-    insertbefore: "^receivers:"
+    insertafter: "^receivers:"
     block: |
-      # Resource adjustment webhook receiver
       - name: 'resource-adjustment-webhook'
         webhook_configs:
         - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/resource-adjustment'
@@ -89,13 +97,11 @@
 - name: Reload Alertmanager configuration
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
-  systemd:
-    name: alertmanager
-    state: reloaded
+  command: docker restart alertmanager
   tags: [monitor, resource_adjustment]
 
 - name: Reload Prometheus configuration
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
-  command: sudo systemctl kill -s SIGHUP prometheus.service
-  tags: [monitor, resource_adjustment] 
+  command: systemctl reload prometheus.service
+  tags: [monitor, resource_adjustment]

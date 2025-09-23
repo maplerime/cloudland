@@ -402,6 +402,8 @@
             email_configs:
             - to: '{{ alert_recipient }}'
               send_resolved: true
+              headers:
+                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
               html: |-
                 {% raw %}
                 <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
@@ -413,13 +415,14 @@
                 <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
                 <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
                 {% endraw %}
-              headers:
-                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
+
 
           - name: 'instance-alarm-email-notification'
             email_configs:
             - to: '{% raw %}{{ .CommonLabels.email }}{% endraw %}'
               send_resolved: true
+              headers:
+                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
               html: |-
                 {% raw %}
                 <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
@@ -431,8 +434,7 @@
                 <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
                 <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
                 {% endraw %}
-              headers:
-                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
+
 
           - name: 'cpu-webhook'
             webhook_configs:
@@ -714,6 +716,7 @@
         group: prometheus
         remote_src: no
       when: not ansible_check_mode
+      ignore_errors: true
 
     - name: Create alarm_rules_manager service file
       delegate_to: "{{ prometheus_server_ip }}"
@@ -852,7 +855,7 @@
     url: http://localhost:3000/api/health
     method: GET
     status_code: 200
-    timeout: 10
+    timeout: 15
   register: grafana_health
   until: grafana_health.status == 200
   retries: 10
@@ -945,12 +948,9 @@
     - /etc/prometheus/lists
   tags: [monitor]
 
-- name: Add vm-group-metadata job to Prometheus
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  blockinfile:
-    path: /etc/prometheus/prometheus.yml
-    block: |
+- name: Define vm-group-metadata block (no indent, keep original text)
+  set_fact:
+    vm_group_block: |
       - job_name: 'vm-group-metadata'
         file_sd_configs:
           - files:
@@ -971,8 +971,16 @@
           - source_labels: [domain]
             target_label: instance
             action: replace
+
+# ② 使用 indent(2, true) 来正确处理第一行的缩进
+- name: Add vm-group-metadata job to Prometheus
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    block: "{{ vm_group_block | indent(2, true) }}"
     marker: "# {mark} ANSIBLE MANAGED BLOCK - VM Group Metadata"
-    insertafter: '^scrape_configs:'
+    insertafter: '^scrape_configs:\s*$'
     create: yes
   tags: [monitor]
 

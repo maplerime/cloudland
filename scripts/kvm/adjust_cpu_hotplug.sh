@@ -30,7 +30,10 @@ if [ "$limit_percent" = "restore" ]; then
     fi
 
     # 设置quota为核心数乘以period，相当于允许全速运行（100% × 核心数）
-    full_speed_quota=$((current_period * vcpu_count))
+    # full_speed_quota=$((current_period * vcpu_count))
+
+    # 恢复到真正的无限制状态（KVM无限制特殊值）
+    full_speed_quota=17592186044415
 
     echo "Setting full speed quota: $full_speed_quota (${current_period} * ${vcpu_count} cores = 100% per core)"
 

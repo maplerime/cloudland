@@ -84,7 +84,9 @@ if [[ ! -d "$METRICS_DIR" ]]; then
 fi
 
 # Build metric line
-METRIC_LINE="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\"} $STATUS"
+#METRIC_LINE="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\"} $STATUS"
+PROMETHEUS_RULE_ID="cpu-$RULE_ID"
+METRIC_LINE="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"} $STATUS"
 
 # Check if this is a recovery operation (status = 0)
 if [[ "$STATUS" == "0" ]]; then
@@ -96,9 +98,9 @@ if [[ "$STATUS" == "0" ]]; then
     fi
     
     # Check if the specific metric exists
-    PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\"}"
+    PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
     if ! grep -q "^$PATTERN" "$METRICS_FILE"; then
-        echo "Warning: No existing metric found for domain=$DOMAIN, rule_id=$RULE_ID"
+        echo "Warning: No existing metric found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
         echo "No action needed - VM is already in normal state"
         exit 0
     fi
@@ -116,11 +118,11 @@ if [[ ! -f "$METRICS_FILE" ]]; then
 fi
 
 # Check if metric with same domain and rule_id already exists
-PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\"}"
+PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
 
 if grep -q "^$PATTERN" "$METRICS_FILE"; then
     # Update existing metric
-    echo "Updating existing metric for domain=$DOMAIN, rule_id=$RULE_ID"
+    echo "Updating existing metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
     
     # For recovery (status=0), remove the metric line entirely
     if [[ "$STATUS" == "0" ]]; then
@@ -151,11 +153,11 @@ if grep -q "^$PATTERN" "$METRICS_FILE"; then
 else
     # Add new metric (only for status=1, limiting case)
     if [[ "$STATUS" == "1" ]]; then
-        echo "Adding new metric for domain=$DOMAIN, rule_id=$RULE_ID"
+        echo "Adding new metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
         echo "$METRIC_LINE" >> "$METRICS_FILE"
         echo "CPU adjustment status updated successfully (new metric added)"
     else
-        echo "No existing metric to recover for domain=$DOMAIN, rule_id=$RULE_ID"
+        echo "No existing metric to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
         echo "No action needed - VM is already in normal state"
     fi
 fi
