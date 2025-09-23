@@ -89,8 +89,8 @@ func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *mo
 	where := memberShip.GetWhere()
 	loadBalancer = &model.LoadBalancer{Model: model.Model{ID: id}}
 	if err = db.Preload("Router").Where(where).Take(loadBalancer).Error; err != nil {
-		logger.Error("Failed to query router", err)
-		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find router", err)
+		logger.Error("Failed to query load balancer", err)
+		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find load balancer", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, loadBalancer.Owner)
@@ -173,14 +173,12 @@ func (a *LoadBalancerAdmin) Update(ctx context.Context, loadBalancer *model.Load
 }
 
 func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
-	/*
-		ctx, db, newTransaction := StartTransaction(ctx)
-		defer func() {
-			if newTransaction {
-				EndTransaction(ctx, err)
-			}
-		}()
-	*/
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, loadBalancer.Owner)
 	if !permit {
@@ -188,77 +186,11 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
-	/*
-		count := 0
-		err = db.Model(&model.FloatingIp{}).Where("router_id = ?", router.ID).Count(&count).Error
-		if err != nil {
-			logger.Error("Failed to count floating ip")
-			err = NewCLError(ErrDatabaseError, "Failed to count floating ip in the router", err)
-			return
-		}
-		if count > 0 {
-			logger.Error("There are floating ips")
-			err = NewCLError(ErrRouterHasFloatingIPs, "There are associated floating ips", nil)
-			return
-		}
-		count = 0
-		err = db.Model(&model.Subnet{}).Where("router_id = ?", router.ID).Count(&count).Error
-		if err != nil {
-			logger.Error("Failed to count subnet")
-			err = NewCLError(ErrDatabaseError, "Failed to count subnet in the router", err)
-			return
-		}
-		if count > 0 {
-			logger.Error("There are associated subnets")
-			err = NewCLError(ErrRouterHasSubnets, "There are associated subnets", nil)
-			return
-		}
-		err = db.Model(&model.Portmap{}).Where("router_id = ?", router.ID).Count(&count).Error
-		if err != nil {
-			logger.Error("Failed to count portmap")
-			err = NewCLError(ErrDatabaseError, "Failed to count portmap in the router", err)
-			return
-		}
-		if count > 0 {
-			logger.Error("There are associated portmaps")
-			err = NewCLError(ErrRouterHasPortmaps, "There are associated portmaps", nil)
-			return
-		}
-		control := "toall="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_local_router.sh '%d'", router.ID)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Delete master failed")
-			return
-		}
-		router.Name = fmt.Sprintf("%s-%d", router.Name, router.CreatedAt.Unix())
-		err = db.Model(router).Update("name", router.Name).Error
-		if err != nil {
-			logger.Error("DB failed to update router name", err)
-			err = NewCLError(ErrRouterUpdateFailed, "Failed to update router name", err)
-			return
-		}
-		if err = db.Delete(router).Error; err != nil {
-			logger.Error("DB failed to delete router", err)
-			err = NewCLError(ErrRouterDeleteFailed, "Failed to delete router", err)
-			return
-		}
-		secgroups := []*model.SecurityGroup{}
-		err = db.Where("router_id = ?", router.ID).Find(&secgroups).Error
-		if err != nil {
-			logger.Error("DB failed to query security groups", err)
-			err = NewCLError(ErrDatabaseError, "Failed to query security groups in the router", err)
-			return
-		}
-		for _, sg := range secgroups {
-			err = secgroupAdmin.Delete(ctx, sg)
-			if err != nil {
-				logger.Error("Can not delete security group", err)
-				err = NewCLError(ErrSecurityGroupDeleteFailed, "Failed to delete security group", err)
-				return
-			}
-		}
-	*/
+	if err = db.Delete(loadBalancer).Error; err != nil {
+		logger.Error("DB failed to delete load balancer", err)
+		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete load balancer", err)
+		return
+	}
 	return
 }
 
@@ -370,7 +302,7 @@ func (v *LoadBalancerView) Delete(c *macaron.Context, store session.Store) (err 
 		return
 	}
 	c.JSON(200, map[string]interface{}{
-		"redirect": "loadbalancer",
+		"redirect": "loadbalancers",
 	})
 	return
 }
