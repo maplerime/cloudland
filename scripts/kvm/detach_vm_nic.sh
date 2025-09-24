@@ -22,7 +22,7 @@ if [ ! -f "$interface_xml" ]; then
     sed -i "s/VM_MAC/$vm_mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
 fi
 virsh detach-device $vm_ID $interface_xml --live --persistent
-virsh detach-device $vm_ID $interface_xml --config
+[ $? -ne 0 ] && virsh detach-device $vm_ID $interface_xml --config
 rm -f $interface_xml
 ./clear_sg_chain.sh $nic_name
 
