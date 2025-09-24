@@ -30,7 +30,7 @@ var (
 type LoadBalancerAdmin struct{}
 type LoadBalancerView struct{}
 
-func CreateVrrpInstance(ctx context.Context, name string, router *model.Router) (vrrp *model.VrrpInstance, err error) {
+func CreateVrrpInstance(ctx context.Context, name string, router *model.Router) (vrrpInstance *model.VrrpInstance, err error) {
 	ctx, db := GetContextDB(ctx)
 	name = fmt.Sprintf("%s-%d", name, time.Now().UnixNano())
 	vrrpSubnet, err := subnetAdmin.Create(ctx, 0, name, "192.168.196.0/27", "", "", "", "vrrp", "", "", false, router, nil)
@@ -39,7 +39,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router) 
 		return
 	}
 	memberShip := GetMemberShip(ctx)
-	vrrpInstance := &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID}
+	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID}
 	err = db.Create(vrrpInstance).Error
 	if err != nil {
 		logger.Error("DB failed to create vrrp instance ", err)

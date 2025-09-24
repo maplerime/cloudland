@@ -199,6 +199,7 @@ func New() (m *macaron.Macaron) {
 	m.Post("/loadbalancers/new", loadBalancerView.Create)
 	m.Get("/loadbalancers/:id", loadBalancerView.Edit)
 	m.Post("/loadbalancers/:id", loadBalancerView.Patch)
+	m.Delete("/loadbalancers/:id", loadBalancerView.Delete)
 	m.Get("/loadbalancers/:lbid/listeners/new", listenerView.New)
 	m.Post("/loadbalancers/:lbid/listeners/new", listenerView.Create)
 	m.Delete("/loadbalancers/:lbid/listeners/:id", listenerView.Delete)
