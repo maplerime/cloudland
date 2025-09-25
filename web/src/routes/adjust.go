@@ -616,14 +616,14 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 			// 只有原始入站带宽大于0时才需要实际限制
 			if originalInBw > 0 {
 				needActualLimit = true
-				// 限制入站带宽到规则定义的值 (从 bytes/s 转换为 Mbps)
-				inBw = details[0].LimitValue / (1024 * 1024 / 8) // 转换为 Mbps
+				// 限制入站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
+				inBw = details[0].LimitValue / 1024 // 转换为 MB/s
 				if inBw < 1 {
-					inBw = 1 // 最小1Mbps
+					inBw = 1 // 最小1MB/s
 				}
 				// 使用单向设置，不影响出站带宽
 				outBw = 0 // 占位符，实际不使用
-				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d Mbps (using single-direction mode)\n", originalInBw, inBw)
+				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalInBw, inBw)
 			} else {
 				fmt.Printf("wngzhe AdjustBandwidthResource - Original inbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
 			}
@@ -632,14 +632,14 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 			// 只有原始出站带宽大于0时才需要实际限制
 			if originalOutBw > 0 {
 				needActualLimit = true
-				// 限制出站带宽到规则定义的值 (从 bytes/s 转换为 Mbps)
-				outBw = details[0].LimitValue / (1024 * 1024 / 8) // 转换为 Mbps
+				// 限制出站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
+				outBw = details[0].LimitValue / 1024 // 转换为 MB/s
 				if outBw < 1 {
-					outBw = 1 // 最小1Mbps
+					outBw = 1 // 最小1MB/s
 				}
 				// 使用单向设置，不影响入站带宽
 				inBw = 0 // 占位符，实际不使用
-				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d Mbps (using single-direction mode)\n", originalOutBw, outBw)
+				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalOutBw, outBw)
 			} else {
 				fmt.Printf("wngzhe AdjustBandwidthResource - Original outbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
 			}
@@ -670,12 +670,12 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 			// 只限制入站带宽，使用单向模式
 			command = fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '%d' '0' --inbound-only",
 				vmID, nicName, inBw)
-			fmt.Printf("wngzhe AdjustBandwidthResource - Executing inbound bandwidth limit: %d Mbps\n", inBw)
+			fmt.Printf("wngzhe AdjustBandwidthResource - Executing inbound bandwidth limit: %d MB/s\n", inBw)
 		} else if bwType == "out" {
 			// 只限制出站带宽，使用单向模式
 			command = fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '0' '%d' --outbound-only",
 				vmID, nicName, outBw)
-			fmt.Printf("wngzhe AdjustBandwidthResource - Executing outbound bandwidth limit: %d Mbps\n", outBw)
+			fmt.Printf("wngzhe AdjustBandwidthResource - Executing outbound bandwidth limit: %d MB/s\n", outBw)
 		}
 
 		fmt.Printf("wngzhe AdjustBandwidthResource - Executing bandwidth limit command: %s\n", command)

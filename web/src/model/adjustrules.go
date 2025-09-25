@@ -58,14 +58,14 @@ type BWAdjustRuleDetail struct {
 	Model
 	GroupUUID        string `gorm:"column:group_uuid;type:varchar(64);index;not null;references:adjust_rule_group(uuid)"`
 	Name             string `gorm:"type:varchar(128)"`
-	InHighThreshold  int64  `gorm:"default:10485760"` // 10MB/s
-	InLowThreshold   int64  `gorm:"default:5242880"`  // 5MB/s
-	OutHighThreshold int64  `gorm:"default:10485760"` // 10MB/s
-	OutLowThreshold  int64  `gorm:"default:5242880"`  // 5MB/s
+	InHighThreshold  int64  `gorm:"default:10240"` // 10MB/s (单位: kB/s)
+	InLowThreshold   int64  `gorm:"default:5120"`  // 5MB/s (单位: kB/s)
+	OutHighThreshold int64  `gorm:"default:10240"` // 10MB/s (单位: kB/s)
+	OutLowThreshold  int64  `gorm:"default:5120"`  // 5MB/s (单位: kB/s)
 	SmoothWindow     int    `gorm:"default:5;check:smooth_window > 0"`
 	TriggerDuration  int    `gorm:"default:30;check:trigger_duration > 0"`
 	RestoreDuration  int    `gorm:"default:300;check:restore_duration > 0"`
-	LimitValue       int    `gorm:"default:1048576"` // 带宽限制值，默认1MB/s
+	LimitValue       int    `gorm:"default:1024"` // 带宽限制值，默认1MB/s (单位: kB/s)
 }
 
 // AdjustmentHistory 调整历史记录

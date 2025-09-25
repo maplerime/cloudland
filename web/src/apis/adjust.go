@@ -868,12 +868,13 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		}
 
 		// Create rule group
+		// When both in and out are enabled, we'll create a combined rule group
 		ruleType := model.RuleTypeAdjustInBW
 		if rule.OutEnabled && !rule.InEnabled {
 			ruleType = model.RuleTypeAdjustOutBW
 		} else if rule.OutEnabled && rule.InEnabled {
-			ruleType = model.RuleTypeAdjustInBW // If both are enabled, prioritize inbound type
-			log.Printf("[ADJUST-INFO] Both inbound and outbound bandwidth adjustment are enabled, but currently only inbound is supported. Outbound configuration will be ignored.")
+			ruleType = model.RuleTypeAdjustInBW // Use inbound as primary type for combined rules
+			log.Printf("[ADJUST-INFO] Both inbound and outbound bandwidth adjustment are enabled, will generate both rule files.")
 		}
 
 		group = &model.AdjustRuleGroup{
@@ -981,18 +982,26 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		}
 
 		// Generate record rules
-		var templateName string
-		if ruleType == model.RuleTypeAdjustOutBW {
-			templateName = OutBWAdjustRuleTemplate
-		} else {
-			templateName = InBWAdjustRuleTemplate
+		log.Printf("[ADJUST-INFO] Generating bandwidth adjustment rule files")
+
+		// Generate inbound rules if enabled
+		if rule.InEnabled {
+			log.Printf("[ADJUST-INFO] Generating inbound bandwidth adjustment rule file")
+			if err := routes.ProcessTemplate(InBWAdjustRuleTemplate, fmt.Sprintf("bw-in-adjust-%s-%s.yml", req.Owner, group.UUID), ruleData); err != nil {
+				log.Printf("[ADJUST-ERROR] Failed to render inbound BW adjust rule: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render inbound BW adjust rule"})
+				return
+			}
 		}
 
-		log.Printf("[ADJUST-INFO] Generating bandwidth adjustment rule file")
-		if err := routes.ProcessTemplate(templateName, fmt.Sprintf("bw-adjust-%s-%s.yml", req.Owner, group.UUID), ruleData); err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to render BW adjust rule: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render BW adjust rule"})
-			return
+		// Generate outbound rules if enabled
+		if rule.OutEnabled {
+			log.Printf("[ADJUST-INFO] Generating outbound bandwidth adjustment rule file")
+			if err := routes.ProcessTemplate(OutBWAdjustRuleTemplate, fmt.Sprintf("bw-out-adjust-%s-%s.yml", req.Owner, group.UUID), ruleData); err != nil {
+				log.Printf("[ADJUST-ERROR] Failed to render outbound BW adjust rule: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render outbound BW adjust rule"})
+				return
+			}
 		}
 
 		// Generate alert rules
@@ -1004,36 +1013,62 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		}
 
 		// Create symlinks for the generated files
-		var rulePath, alertPath string
+		var alertPath string
 		if req.Owner == "admin" {
-			rulePath = fmt.Sprintf("%s/bw-adjust-%s-%s.yml", routes.RulesGeneral, req.Owner, group.UUID)
 			alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, req.Owner, group.UUID)
 		} else {
-			rulePath = fmt.Sprintf("%s/bw-adjust-%s-%s.yml", routes.RulesSpecial, req.Owner, group.UUID)
 			alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, req.Owner, group.UUID)
 		}
 
-		// Create symlinks
-		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
-		alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
+		// Create symlinks for rule files
+		log.Printf("[ADJUST-INFO] Creating symlinks for bandwidth adjustment rules")
 
-		fmt.Printf("wngzhe CreateBWAdjustRule - rulePath: %s, ruleLinkPath: %s", rulePath, ruleLinkPath)
+		// Create symlink for inbound rules if enabled
+		if rule.InEnabled {
+			var inRulePath string
+			if req.Owner == "admin" {
+				inRulePath = fmt.Sprintf("%s/bw-in-adjust-%s-%s.yml", routes.RulesGeneral, req.Owner, group.UUID)
+			} else {
+				inRulePath = fmt.Sprintf("%s/bw-in-adjust-%s-%s.yml", routes.RulesSpecial, req.Owner, group.UUID)
+			}
+			inRuleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(inRulePath))
+
+			fmt.Printf("wngzhe CreateBWAdjustRule - inRulePath: %s, inRuleLinkPath: %s", inRulePath, inRuleLinkPath)
+			if err := routes.CreateSymlink(inRulePath, inRuleLinkPath); err != nil {
+				fmt.Printf("wngzhe CreateBWAdjustRule - Failed to create inbound rule symlink: %v", err)
+				log.Printf("[ADJUST-ERROR] Failed to create inbound rule symlink: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create inbound rule symlink"})
+				return
+			}
+		}
+
+		// Create symlink for outbound rules if enabled
+		if rule.OutEnabled {
+			var outRulePath string
+			if req.Owner == "admin" {
+				outRulePath = fmt.Sprintf("%s/bw-out-adjust-%s-%s.yml", routes.RulesGeneral, req.Owner, group.UUID)
+			} else {
+				outRulePath = fmt.Sprintf("%s/bw-out-adjust-%s-%s.yml", routes.RulesSpecial, req.Owner, group.UUID)
+			}
+			outRuleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(outRulePath))
+
+			fmt.Printf("wngzhe CreateBWAdjustRule - outRulePath: %s, outRuleLinkPath: %s", outRulePath, outRuleLinkPath)
+			if err := routes.CreateSymlink(outRulePath, outRuleLinkPath); err != nil {
+				fmt.Printf("wngzhe CreateBWAdjustRule - Failed to create outbound rule symlink: %v", err)
+				log.Printf("[ADJUST-ERROR] Failed to create outbound rule symlink: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create outbound rule symlink"})
+				return
+			}
+		}
+
+		// Create symlink for alert rules
+		alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
 		fmt.Printf("wngzhe CreateBWAdjustRule - alertPath: %s, alertLinkPath: %s", alertPath, alertLinkPath)
 		fmt.Printf("wngzhe CreateBWAdjustRule - isRemotePrometheus: %t", routes.IsRemotePrometheus())
-
-		log.Printf("[ADJUST-INFO] Creating symlinks for bandwidth adjustment rule")
-		if err := routes.CreateSymlink(rulePath, ruleLinkPath); err != nil {
-			fmt.Printf("wngzhe CreateBWAdjustRule - Failed to create rule symlink: %v", err)
-			log.Printf("[ADJUST-ERROR] Failed to create rule symlink: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule symlink"})
-			return
-		}
 
 		if err := routes.CreateSymlink(alertPath, alertLinkPath); err != nil {
 			fmt.Printf("wngzhe CreateBWAdjustRule - Failed to create alert symlink: %v", err)
 			log.Printf("[ADJUST-ERROR] Failed to create alert symlink: %v", err)
-			// 如果第二个链接失败，尝试清理第一个
-			routes.RemoveFile(ruleLinkPath)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create alert symlink"})
 			return
 		}
@@ -1268,12 +1303,12 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	// 确定文件路径
 	var inRulePath, outRulePath, alertPath string
 	if group.Owner == "admin" {
-		inRulePath = fmt.Sprintf("%s/in-bw-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, uuid)
-		outRulePath = fmt.Sprintf("%s/out-bw-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, uuid)
+		inRulePath = fmt.Sprintf("%s/bw-in-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, uuid)
+		outRulePath = fmt.Sprintf("%s/bw-out-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, uuid)
 		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, uuid)
 	} else {
-		inRulePath = fmt.Sprintf("%s/in-bw-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, uuid)
-		outRulePath = fmt.Sprintf("%s/out-bw-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, uuid)
+		inRulePath = fmt.Sprintf("%s/bw-in-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, uuid)
+		outRulePath = fmt.Sprintf("%s/bw-out-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, uuid)
 		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, group.Owner, uuid)
 	}
 
