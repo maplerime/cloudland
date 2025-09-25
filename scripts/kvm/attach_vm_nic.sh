@@ -24,8 +24,8 @@ if [ $? -ne 0 ]; then
     let queue_num=($(virsh dominfo $vm_ID | grep 'CPU(s)' | awk '{print $2}')+1)/2
     cp $template $interface_xml
     sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
-    virsh attach-device $vm_ID $interface_xml --config
     virsh attach-device $vm_ID $interface_xml --live --persistent
+    [ $? -ne 0 ] && virsh attach-device $vm_ID $interface_xml --config
 fi
 udevadm settle
 async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"

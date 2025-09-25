@@ -16,10 +16,13 @@ vm_br=br$vlan
 ./clear_link.sh $vlan
 interface_xml=$xml_dir/$vm_ID/$nic_name.xml
 if [ ! -f "$interface_xml" ]; then
+    template=$template_dir/interface.xml
     cp $template $interface_xml
-    sed -i "s/VM_MAC/$vm_mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g" $interface_xml
+    let queue_num=($(virsh dominfo $vm_ID | grep 'CPU(s)' | awk '{print $2}')+1)/2
+    sed -i "s/VM_MAC/$vm_mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
 fi
-virsh detach-device $vm_ID $interface_xml
+virsh detach-device $vm_ID $interface_xml --live --persistent
+[ $? -ne 0 ] && virsh detach-device $vm_ID $interface_xml --config
 rm -f $interface_xml
 ./clear_sg_chain.sh $nic_name
 

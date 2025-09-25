@@ -1,6 +1,7 @@
 #!/bin/bash
 
-cd `dirname $0`
+base_dir=$(dirname $0)
+cd $base_dir
 source ../cloudrc
 
 exec <&-
@@ -42,7 +43,7 @@ function daily_job()
         last_run_date=$(cat $daily_state_file)
     fi
     if [ "$last_run_date" != "$current_date" ]; then
-        sudo ./operation/cleanup_outdated_iptables.sh
+        sudo $base_dir/operation/cleanup_outdated_iptables.sh >>$log_dir/iptables_cleanup.log 2>&1
         echo "$current_date" >$daily_state_file
     fi
 }
