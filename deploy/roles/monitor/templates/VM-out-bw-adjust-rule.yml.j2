@@ -2,36 +2,35 @@ groups:
 - name: vm_out_bw_adjustment_{{ rule_group }}
   interval: 15s
   rules:
-  # 原始出站带宽使用率
-  - record: vm_out_bw_usage_percent_raw_{{ rule_group }}
+  # 原始出站带宽速度 (每个接口单独)
+  - record: vm_out_bw_speed_raw_{{ rule_group }}
     expr: |
-      sum by (domain) (rate(libvirt_domain_block_stats_write_bytes_total[1m]) + rate(libvirt_domain_interface_stats_transmit_bytes_total[1m])) * 8
-      / on (domain) group_left() (vm_out_bw_limit{rule_id=~"bw-.*-{{ rule_group_original }}"} * 1024 * 1024) * 100
+      rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) * 8
 
-  # 平滑出站带宽使用率(5分钟移动平均)
-  - record: vm_out_bw_usage_percent_{{ rule_group }}
+  # 平滑出站带宽速度(5分钟移动平均)
+  - record: vm_out_bw_speed_{{ rule_group }}
     expr: |
-      avg_over_time(vm_out_bw_usage_percent_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
+      avg_over_time(vm_out_bw_speed_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
 
-  # 与规则组关联的VM的出站带宽使用率
-  - record: vm_out_bw_usage_by_rule_{{ rule_group }}
+  # 与规则组关联的VM接口的出站带宽速度
+  - record: vm_out_bw_speed_by_rule_{{ rule_group }}
     expr: |
-      vm_out_bw_usage_percent_{{ rule_group }} * on(domain) group_right()
-      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group_original }}"}
+      vm_out_bw_speed_{{ rule_group }} * on(domain) group_right()
+      up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"}
 
-  # 需要限制出站带宽的VM (仅当状态为normal时)
+  # 需要限制出站带宽的VM接口 (仅当状态为normal时)
   - record: vm_requires_out_bw_limit_{{ rule_group }}
     expr: |
-      (vm_out_bw_usage_by_rule_{{ rule_group }} > {{ high_threshold }})
+      (vm_out_bw_speed_by_rule_{{ rule_group }} > {{ high_threshold }})
       and on(domain, rule_id)
       (
-        (vm_bandwidth_adjustment_status{rule_id=~"bw-.*-{{ rule_group_original }}", type="out"} == 0) or
-        (absent(vm_bandwidth_adjustment_status{rule_id=~"bw-.*-{{ rule_group_original }}", type="out"}) * on(domain) group_right() up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group_original }}"})
+        (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"} == 0) or
+        (absent(vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"}) * on(domain) group_right() up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"})
       )
 
-  # 可以恢复出站带宽的VM (仅当状态为limited时)
+  # 可以恢复出站带宽的VM接口 (仅当状态为limited时)
   - record: vm_ready_for_out_bw_restore_{{ rule_group }}
     expr: |
-      (vm_out_bw_usage_by_rule_{{ rule_group }} < {{ low_threshold }})
+      (vm_out_bw_speed_by_rule_{{ rule_group }} < {{ low_threshold }})
       and on(domain, rule_id)
-      (vm_bandwidth_adjustment_status{rule_id=~"bw-.*-{{ rule_group_original }}", type="out"} == 1)
+      (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"} == 1)

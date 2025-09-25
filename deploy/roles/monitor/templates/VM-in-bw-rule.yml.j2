@@ -4,9 +4,11 @@ groups:
   - alert: HighBWInUsage_{{ owner }}_{{ rule_group }}
     expr: |
       (
-        sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])) > {{ in_threshold }}
-      ) or ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group }}"}
+        rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) * 8 > {{ in_threshold }}
+      ) and on(domain, device) group_left(rule_id, instance_id, target_device)
+      (
+        label_replace(up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}, "device", "$1", "target_device", "(.*)")
+      )
     for: {{ in_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
@@ -16,17 +18,19 @@ groups:
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       action: "{{ action | default('false') }}"
-      target_device: "{{ target_device | default('') }}"
+      target_device: "{{ $labels.target_device | default($labels.device) }}"
     annotations:
-      summary: "High Network In Usage ({{ $value }})"
-      description: "VM {{ $labels.domain }} has high network in usage or is matched for {{ in_duration }} seconds"
+      summary: "High Network In Speed ({{ $value }} bps)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.device }} has high network in speed or is matched for {{ in_duration }} seconds"
 
   - alert: BWInUsageRecovered_{{ owner }}_{{ rule_group }}
     expr: |
       (
-        sum by (domain) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])) < {{ in_down_to }}
-      ) and ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group }}"}
+        rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) * 8 < {{ in_down_to }}
+      ) and on(domain, device) group_left(rule_id, instance_id, target_device)
+      (
+        label_replace(up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}, "device", "$1", "target_device", "(.*)")
+      )
     for: {{ in_down_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'
@@ -36,7 +40,7 @@ groups:
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       action: "{{ action | default('false') }}"
-      target_device: "{{ target_device | default('') }}"
+      target_device: "{{ $labels.target_device | default($labels.device) }}"
     annotations:
-      summary: "Network In Usage Recovered ({{ $value }})"
-      description: "VM {{ $labels.domain }} network in usage has dropped below threshold for {{ in_down_duration }} seconds"
+      summary: "Network In Speed Recovered ({{ $value }} bps)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.device }} network in speed has dropped below threshold for {{ in_down_duration }} seconds"

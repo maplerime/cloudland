@@ -41,7 +41,7 @@ var alarmAPI = &AlarmAPI{
 //   - groupUUID: rule group UUID
 //   - operation: operation type, "add" for add/update, "remove" for delete
 //   - ruleType: rule type ("cpu" or "bw") for generating typed rule_id
-func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string) error {
+func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) error {
 	// Path to matched_vms.json file
 	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
 
@@ -74,20 +74,27 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 			// Create new entry with instance_id field and typed rule_id
 			var ruleID string
 			if ruleType == "cpu" {
-				ruleID = fmt.Sprintf("cpu-%s-%s", domain, groupUUID)
+				ruleID = fmt.Sprintf("alarm-cpu-%s-%s", domain, groupUUID)
 			} else if ruleType == "bw" {
-				ruleID = fmt.Sprintf("bw-%s-%s", domain, groupUUID)
+				ruleID = fmt.Sprintf("alarm-bw-%s-%s", domain, groupUUID)
 			} else {
 				// Fallback to original format for compatibility
-				ruleID = fmt.Sprintf("%s-%s", domain, groupUUID)
+				ruleID = fmt.Sprintf("alarm-%s-%s", domain, groupUUID)
+			}
+
+			// Extract target_device value from variadic parameter
+			var targetDeviceValue string
+			if len(targetDevice) > 0 {
+				targetDeviceValue = targetDevice[0]
 			}
 
 			newEntry := map[string]interface{}{
 				"targets": []string{"localhost:9090"},
 				"labels": map[string]interface{}{
-					"domain":      domain,
-					"rule_id":     ruleID,
-					"instance_id": instanceid,
+					"domain":        domain,
+					"rule_id":       ruleID,
+					"instance_id":   instanceid,
+					"target_device": targetDeviceValue, // Add target_device field
 				},
 			}
 
@@ -120,9 +127,13 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 		}
 	} else if operation == "remove" {
 		log.Printf("Removing VM mappings for rule group %s", groupUUID)
-		// Delete entries related to the specified rule group
+		// 如果传入了 targetDevice（可选变参非空），则按三元组精确删除；
+		// 否则沿用原有“按 groupUUID 全量删除”的逻辑（保持不变）。
+		hasDeviceFilter := len(targetDevice) > 0
+
 		filteredVMs := []map[string]interface{}{}
 		removedCount := 0
+
 		for _, vm := range matchedVMs {
 			labels, ok := vm["labels"].(map[string]interface{})
 			if !ok {
@@ -131,15 +142,63 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 			}
 
 			ruleID, ok := labels["rule_id"].(string)
-			if !ok || !strings.HasSuffix(ruleID, "-"+groupUUID) {
+			if !ok {
 				filteredVMs = append(filteredVMs, vm)
-			} else {
-				domain := labels["domain"].(string)
-				instanceID, _ := labels["instance_id"].(string)
-				log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
-				removedCount++
+				continue
 			}
+
+			// 未带设备过滤：保持原逻辑，按 group 全量删除
+			if !hasDeviceFilter {
+				if strings.HasSuffix(ruleID, "-"+groupUUID) {
+					domain, _ := labels["domain"].(string)
+					instanceID, _ := labels["instance_id"].(string)
+					log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+					removedCount++
+					continue
+				}
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// 带设备过滤：要求同时命中
+			// 1) 属于该 group
+			// 2) instance_id 在 vmUUIDs 中
+			// 3) target_device 在 targetDevice 中
+			if !strings.HasSuffix(ruleID, "-"+groupUUID) {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			instanceID, _ := labels["instance_id"].(string)
+			devStr, _ := labels["target_device"].(string)
+
+			inVM := false
+			for _, id := range vmUUIDs {
+				if id == instanceID {
+					inVM = true
+					break
+				}
+			}
+			inDev := false
+			for _, d := range targetDevice {
+				if d == devStr {
+					inDev = true
+					break
+				}
+			}
+
+			if inVM && inDev {
+				domain, _ := labels["domain"].(string)
+				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
+					domain, ruleID, instanceID, devStr)
+				removedCount++
+				continue
+			}
+
+			// 未命中三元组条件，则保留
+			filteredVMs = append(filteredVMs, vm)
 		}
+
 		matchedVMs = filteredVMs
 		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
 	}

@@ -198,9 +198,20 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/adjust/cpu/rule/:uuid", adjustAPI.GetCPUAdjustRules)
 			metricsGroup.DELETE("/adjust/cpu/rule/:uuid", adjustAPI.DeleteCPUAdjustRule)
 
+			// 带宽自动调整路由
+			metricsGroup.POST("/adjust/bw/rules", adjustAPI.CreateBWAdjustRule)
+			metricsGroup.GET("/adjust/bw/rules", adjustAPI.GetBWAdjustRules)
+			metricsGroup.GET("/adjust/bw/rule/:uuid", adjustAPI.GetBWAdjustRules)
+			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
+
 			// 启用/禁用资源调整规则
 			authGroup.POST("/api/v1/adjust/:uuid/enable", adjustAPI.EnableAdjustRule)
 			authGroup.POST("/api/v1/adjust/:uuid/disable", adjustAPI.DisableAdjustRule)
+
+			// VM与调整规则链接管理
+			metricsGroup.POST("/adjust/link", adjustAPI.LinkAdjustRule)
+			metricsGroup.DELETE("/adjust/unlink", adjustAPI.UnlinkAdjustRule)
+			metricsGroup.GET("/adjust/links", adjustAPI.GetLinkAdjustRule)
 		}
 
 	}

@@ -4,9 +4,11 @@ groups:
   - alert: HighBWOutUsage_{{ owner }}_{{ rule_group }}
     expr: |
       (
-        sum by (domain) (rate(libvirt_domain_interface_stats_transmit_bytes_total[1m])) > {{ out_threshold }}
-      ) or ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group }}"}
+        rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) * 8 > {{ out_threshold }}
+      ) and on(domain, device) group_left(rule_id, instance_id, target_device)
+      (
+        label_replace(up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}, "device", "$1", "target_device", "(.*)")
+      )
     for: {{ out_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
@@ -16,17 +18,19 @@ groups:
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       action: "{{ action | default('false') }}"
-      target_device: "{{ target_device | default('') }}"
+      target_device: "{{ $labels.target_device | default($labels.device) }}"
     annotations:
-      summary: "High Network Out Usage ({{ $value }})"
-      description: "VM {{ $labels.domain }} has high network out usage or is matched for {{ out_duration }} seconds"
+      summary: "High Network Out Speed ({{ $value }} bps)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.device }} has high network out speed or is matched for {{ out_duration }} seconds"
 
   - alert: BWOutUsageRecovered_{{ owner }}_{{ rule_group }}
     expr: |
       (
-        sum by (domain) (rate(libvirt_domain_interface_stats_transmit_bytes_total[1m])) < {{ out_down_to }}
-      ) and ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~"bw-.*-{{ rule_group }}"}
+        rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) * 8 < {{ out_down_to }}
+      ) and on(domain, device) group_left(rule_id, instance_id, target_device)
+      (
+        label_replace(up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}, "device", "$1", "target_device", "(.*)")
+      )
     for: {{ out_down_duration }}s
     labels:
       severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'
@@ -36,7 +40,7 @@ groups:
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       action: "{{ action | default('false') }}"
-      target_device: "{{ target_device | default('') }}"
+      target_device: "{{ $labels.target_device | default($labels.device) }}"
     annotations:
-      summary: "Network Out Usage Recovered ({{ $value }})"
-      description: "VM {{ $labels.domain }} network out usage has dropped below threshold for {{ out_down_duration }} seconds" 
+      summary: "Network Out Speed Recovered ({{ $value }} bps)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.device }} network out speed has dropped below threshold for {{ out_down_duration }} seconds" 
