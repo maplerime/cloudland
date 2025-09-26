@@ -16,7 +16,7 @@ read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing < <(jq
 nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./create_link.sh $vlan
-brctl setageing $vm_br 0
+brctl setageing $vm_br 300
 virsh domiflist $vm_ID | grep $mac
 if [ $? -ne 0 ]; then
     template=$template_dir/interface.xml
