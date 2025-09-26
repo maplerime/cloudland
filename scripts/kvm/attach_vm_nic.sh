@@ -26,6 +26,7 @@ if [ $? -ne 0 ]; then
     sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
     virsh attach-device $vm_ID $interface_xml --live --persistent
     [ $? -ne 0 ] && virsh attach-device $vm_ID $interface_xml --config
+    echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 fi
 udevadm settle
 async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
@@ -37,5 +38,4 @@ more_addresses=$(jq -r .more_addresses <<< $vlan_info)
 if [ -n "$more_addresses" ]; then
     echo "$more_addresses" | ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta"
 fi
-echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"
