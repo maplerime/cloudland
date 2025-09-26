@@ -186,6 +186,13 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
+	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
+	err = db.Model(loadBalancer).Update("name", loadBalancer.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update loadBalancer name", err)
+		err = NewCLError(ErrRouterUpdateFailed, "Failed to update loadBalancer name", err)
+		return
+	}
 	if err = db.Delete(loadBalancer).Error; err != nil {
 		logger.Error("DB failed to delete load balancer", err)
 		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete load balancer", err)
