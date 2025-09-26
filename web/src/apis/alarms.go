@@ -72,15 +72,7 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 			}
 
 			// Create new entry with instance_id field and typed rule_id
-			var ruleID string
-			if ruleType == "cpu" {
-				ruleID = fmt.Sprintf("alarm-cpu-%s-%s", domain, groupUUID)
-			} else if ruleType == "bw" {
-				ruleID = fmt.Sprintf("alarm-bw-%s-%s", domain, groupUUID)
-			} else {
-				// Fallback to original format for compatibility
-				ruleID = fmt.Sprintf("alarm-%s-%s", domain, groupUUID)
-			}
+			ruleID := fmt.Sprintf("%s-%s-%s", ruleType, domain, groupUUID)
 
 			// Extract target_device value from variadic parameter
 			var targetDeviceValue string
@@ -262,10 +254,10 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	// Update VM matching information
 	if len(req.VMUUIDs) > 0 {
 		// Update matched_vms.json with VM information
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.VMUUIDs, group.UUID, "add", group.Type)
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.VMUUIDs, group.UUID, "add", "alarm-"+group.Type)
 	} else {
 		// If no VMs, remove related entries from matched_vms.json
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", group.Type)
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", "alarm-"+group.Type)
 	}
 
 	// Query latest linked VMs
@@ -335,7 +327,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
 
 		// Update matched_vms.json with VM information
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "cpu")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-cpu")
 	}
 	// 校验：一次只能创建一个规则
 	if len(req.Rules) != 1 {
@@ -503,7 +495,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 
 	// Remove related entries from matched_vms.json
 	mappingFile := ""
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "cpu")
+	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-cpu")
 
 	// 删除软链和规则文件（路径与创建时一致）
 	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
@@ -1167,7 +1159,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	if len(req.LinkedVMs) > 0 {
 		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
 		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "bw")
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-bw")
 	}
 	// Render templates for in/out directions
 	for _, rule := range req.Rules {
@@ -1355,7 +1347,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	}
 
 	// Remove related entries from matched_vms.json
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "bw")
+	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-bw")
 
 	// 删除软链和规则文件（路径与创建时一致）
 	// 记录删除的文件路径

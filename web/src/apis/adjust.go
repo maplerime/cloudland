@@ -192,7 +192,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 
 		// Update matched_vms.json
 		alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
-		_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "cpu")
+		_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "adjust-cpu")
 	}
 
 	// Reload Prometheus
@@ -353,7 +353,7 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 
 	// 更新matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
-	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, uuid, "remove", "cpu")
+	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, uuid, "remove", "adjust-cpu")
 
 	// 确定文件路径
 	var rulePath, alertPath string
@@ -1099,7 +1099,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		// Update matched_vms.json with target device for each VM
 		alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 		for _, vm := range req.LinkedVMs {
-			_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{vm.VMUUID}, group.UUID, "add", "bw", vm.TargetDevice)
+			_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{vm.VMUUID}, group.UUID, "add", "adjust-bw", vm.TargetDevice)
 		}
 	}
 
@@ -1298,7 +1298,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 
 	// 更新matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
-	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, uuid, "remove", "bw")
+	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, uuid, "remove", "adjust-bw")
 
 	// 确定文件路径
 	var inRulePath, outRulePath, alertPath string
