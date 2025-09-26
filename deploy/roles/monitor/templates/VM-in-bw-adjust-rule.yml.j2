@@ -22,15 +22,15 @@ groups:
   - record: vm_requires_in_bw_limit_{{ rule_group }}
     expr: |
       (vm_in_bw_speed_by_rule_{{ rule_group }} > {{ in_high_threshold }})
-      and on(domain, rule_id)
+      and on(domain, rule_id, target_device)
       (
         (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"} == 0) or
-        (absent(vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"}) * on(domain) group_right() up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"})
+        (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} unless vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"})
       )
 
   # 可以恢复入站带宽的VM接口 (仅当状态为limited时)
   - record: vm_ready_for_in_bw_restore_{{ rule_group }}
     expr: |
       (vm_in_bw_speed_by_rule_{{ rule_group }} < {{ in_low_threshold }})
-      and on(domain, rule_id)
+      and on(domain, rule_id, target_device)
       (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"} == 1)
