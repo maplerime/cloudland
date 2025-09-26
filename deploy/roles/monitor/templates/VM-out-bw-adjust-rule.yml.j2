@@ -15,7 +15,7 @@ groups:
   # 与规则组关联的VM接口的出站带宽速度
   - record: vm_out_bw_speed_by_rule_{{ rule_group }}
     expr: |
-      vm_out_bw_speed_{{ rule_group }} * on(domain) group_right()
+      vm_out_bw_speed_{{ rule_group }} * on(domain, target_device) group_right()
       up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"}
 
   # 需要限制出站带宽的VM接口 (仅当状态为normal时)

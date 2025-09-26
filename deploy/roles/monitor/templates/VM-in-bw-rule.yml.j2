@@ -5,9 +5,9 @@ groups:
     expr: |
       (
         rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 > {{ in_threshold }}
-      ) and on(domain, device) group_left(rule_id, instance_id, target_device)
+      ) and on(domain, target_device) group_left(rule_id, instance_id, target_device)
       (
-        label_replace(up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}, "device", "$1", "target_device", "(.*)")
+        up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}
       )
     for: {{ in_duration }}s
     labels:
@@ -18,18 +18,18 @@ groups:
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       action: "{{ action | default('false') }}"
-      target_device: "{{ $labels.target_device | default($labels.device) }}"
+      target_device: "{{ $labels.target_device }}"
     annotations:
       summary: "High Network In Speed ({{ $value }} kB/s)"
-      description: "VM {{ $labels.domain }} interface {{ $labels.device }} has high network in speed or is matched for {{ in_duration }} seconds"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} has high network in speed or is matched for {{ in_duration }} seconds"
 
   - alert: BWInUsageRecovered_{{ owner }}_{{ rule_group }}
     expr: |
       (
         rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 < {{ in_down_to }}
-      ) and on(domain, device) group_left(rule_id, instance_id, target_device)
+      ) and on(domain, target_device) group_left(rule_id, instance_id, target_device)
       (
-        label_replace(up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}, "device", "$1", "target_device", "(.*)")
+        up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}
       )
     for: {{ in_down_duration }}s
     labels:
@@ -40,7 +40,7 @@ groups:
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       action: "{{ action | default('false') }}"
-      target_device: "{{ $labels.target_device | default($labels.device) }}"
+      target_device: "{{ $labels.target_device }}"
     annotations:
       summary: "Network In Speed Recovered ({{ $value }} kB/s)"
-      description: "VM {{ $labels.domain }} interface {{ $labels.device }} network in speed has dropped below threshold for {{ in_down_duration }} seconds"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} network in speed has dropped below threshold for {{ in_down_duration }} seconds"
