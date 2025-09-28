@@ -12,6 +12,7 @@ import (
 )
 
 type VolumeStatus string
+type BackupStatus string
 
 const (
 	VolumeStatusResizing  VolumeStatus = "resizing"
@@ -26,6 +27,17 @@ const (
 )
 
 func (s VolumeStatus) String() string {
+	return string(s)
+}
+
+const (
+	BackupStatusPending   BackupStatus = "pending"
+	BackupStatusReady     BackupStatus = "ready"
+	BackupStatusError     BackupStatus = "error"
+	BackupStatusRestoring BackupStatus = "restoring"
+)
+
+func (s BackupStatus) String() string {
 	return string(s)
 }
 
@@ -59,7 +71,12 @@ type Volume struct {
 }
 
 func (v *Volume) IsBusy() bool {
-	if v.Status == VolumeStatusResizing || v.Status == VolumeStatusAttaching || v.Status == VolumeStatusDetaching || v.Status == VolumeStatusRestoring || v.Status == VolumeStatusBackuping {
+	if v.Status == VolumeStatusPending ||
+		v.Status == VolumeStatusResizing ||
+		v.Status == VolumeStatusAttaching ||
+		v.Status == VolumeStatusDetaching ||
+		v.Status == VolumeStatusRestoring ||
+		v.Status == VolumeStatusBackuping {
 		return true
 	}
 	return false
@@ -115,11 +132,18 @@ type VolumeBackup struct {
 	Owner      int64  `gorm:"default:1;index"` /* The organization ID of the resource */
 	Name       string `gorm:"type:varchar(128)"`
 	VolumeID   int64
-	Volume     *Volume `gorm:"foreignkey:VolumeID"`
-	BackupType string  `gorm:"type:varchar(32)"` // snapshot or backup
-	Status     string  `gorm:"type:varchar(32)"`
+	Volume     *Volume      `gorm:"foreignkey:VolumeID"`
+	BackupType string       `gorm:"type:varchar(32)"` // snapshot or backup
+	Status     BackupStatus `gorm:"type:varchar(32)"`
 	Size       int32
 	Path       string `gorm:"type:varchar(256)"`
+}
+
+func (v *VolumeBackup) CanDelete() bool {
+	return v.Status != BackupStatusRestoring && v.Status != BackupStatusPending
+}
+func (v *VolumeBackup) CanRestore() bool {
+	return v.Status == BackupStatusReady
 }
 
 func (v *VolumeBackup) GetBackupDriver() string {

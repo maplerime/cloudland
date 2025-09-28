@@ -110,6 +110,8 @@ const (
 	ErrBackupDeleteFailed                  ErrCode = 125103
 	ErrBackupInUse                         ErrCode = 125104
 	ErrCannotRestoreWhileInstanceIsRunning ErrCode = 125105
+	ErrCannotRestoreFromBackup             ErrCode = 125106
+	ErrBackupInvalidState                  ErrCode = 125107
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
