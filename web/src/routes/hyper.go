@@ -127,7 +127,16 @@ func (a *HyperAdmin) Update(ctx context.Context, hyper *model.Hyper) (err error)
 		hyperInDB.DiskOverRate = hyper.DiskOverRate
 		callScript = true
 	}
-	if err = db.Save(hyperInDB).Error; err != nil {
+
+	updateFields := make(map[string]interface{})
+	updateFields["remark"] = hyperInDB.Remark
+	updateFields["status"] = hyperInDB.Status
+	updateFields["cpu_over_rate"] = hyperInDB.CpuOverRate
+	updateFields["mem_over_rate"] = hyperInDB.MemOverRate
+	updateFields["disk_over_rate"] = hyperInDB.DiskOverRate
+	updateFields["zone_id"] = hyperInDB.ZoneID
+
+	if err = db.Model(hyperInDB).Updates(updateFields).Error; err != nil {
 		logger.Error("Failed to update hypervisor", err)
 		return
 	}
