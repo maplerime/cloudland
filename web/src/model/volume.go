@@ -19,6 +19,8 @@ const (
 	VolumeStatusAttached  VolumeStatus = "attached"
 	VolumeStatusAttaching VolumeStatus = "attaching"
 	VolumeStatusDetaching VolumeStatus = "detaching"
+	VolumeStatusError     VolumeStatus = "error"
+	VolumeStatusPending   VolumeStatus = "pending"
 )
 
 func (s VolumeStatus) String() string {
