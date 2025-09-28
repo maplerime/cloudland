@@ -104,12 +104,14 @@ const (
 	ErrVolumeIsRestoring      = 121015
 
 	// Snapshot/Backup related errors (1251xx)
-	ErrBackupNotFound                      = 125100
-	ErrBackupCreationFailed                = 125101
-	ErrBackupUpdateFailed                  = 125102
-	ErrBackupDeleteFailed                  = 125103
-	ErrBackupInUse                         = 125104
-	ErrCannotRestoreWhileInstanceIsRunning = 125105
+	ErrBackupNotFound                      ErrCode = 125100
+	ErrBackupCreationFailed                ErrCode = 125101
+	ErrBackupUpdateFailed                  ErrCode = 125102
+	ErrBackupDeleteFailed                  ErrCode = 125103
+	ErrBackupInUse                         ErrCode = 125104
+	ErrCannotRestoreWhileInstanceIsRunning ErrCode = 125105
+	ErrCannotRestoreFromBackup             ErrCode = 125106
+	ErrBackupInvalidState                  ErrCode = 125107
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)

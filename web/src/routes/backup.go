@@ -150,6 +150,17 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 		err = NewCLError(ErrPermissionDenied, "Not authorized to snapshot the volume", nil)
 		return
 	}
+	if volume.Status == model.VolumeStatusError {
+		logger.Errorf("Volume %s is in error state, cannot snapshot now", volume.UUID)
+		err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Volume %s is in error state, cannot snapshot now", volume.UUID), nil)
+		return
+	}
+	if volume.IsBusy() {
+		msg := fmt.Sprintf("Volume %s is in %s state, cannot snapshot now", volume.UUID, volume.Status)
+		logger.Errorf(msg)
+		err = NewCLError(ErrVolumeIsBusy, msg, nil)
+		return
+	}
 	snapshot, err := a.createBackupModel(ctx, name, "snapshot", volume, "")
 	if err != nil {
 		logger.Error("Failed to create snapshot", err)
@@ -250,6 +261,13 @@ func (a *BackupAdmin) GetBackupByUUID(ctx context.Context, uuID string) (backup 
 
 func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (err error) {
 	logger.Debugf("Delete backup %s", backup.UUID)
+	if !backup.CanDelete() {
+		msg := fmt.Sprintf("Backup %s is in %s state, cannot be deleted now", backup.UUID, backup.Status)
+		logger.Errorf(msg)
+		err = NewCLError(ErrBackupInvalidState, msg, nil)
+		return
+	}
+
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -310,6 +328,12 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (err error) {
 	backup, err := a.GetBackupByID(ctx, backupID)
 	if err != nil {
 		logger.Error("Failed to get backup", err)
+		return
+	}
+	if !backup.CanRestore() {
+		msg := fmt.Sprintf("Backup %s is in %s state, cannot restore now", backup.UUID, backup.Status)
+		logger.Errorf(msg)
+		err = NewCLError(ErrCannotRestoreFromBackup, msg, nil)
 		return
 	}
 	volume, err := volumeAdmin.Get(ctx, backup.VolumeID)
