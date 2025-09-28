@@ -464,7 +464,7 @@ func (a *BackupAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return
 }
 
-func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path, status string) (backup *model.VolumeBackup, err error) {
+func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path string, status model.BackupStatus) (backup *model.VolumeBackup, err error) {
 	logger.Debugf("Update backup %d, name: %s, path: %s, status: %s", id, name, path, status)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {

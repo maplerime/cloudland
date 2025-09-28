@@ -25,9 +25,9 @@ type VolBackupPayload struct {
 
 type VolBackupResponse struct {
 	*ResourceReference
-	Volume   *BaseReference `json:"volume"`
-	Status   string         `json:"status"`
-	BackupID string         `json:"backup_id"`
+	Volume   *BaseReference     `json:"volume"`
+	Status   model.BackupStatus `json:"status"`
+	BackupID string             `json:"backup_id"`
 }
 
 type VolBackupListResponse struct {
