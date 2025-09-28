@@ -279,7 +279,7 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 
-	if volume.Status != model.VolumeStatusAvailable {
+	if !a.CanDeleteVolume(volume) {
 		logger.Errorf("Volume is in use, cannot be deleted %+v", volume)
 		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Please detach volume[%s] before delete it", volume.Name), nil)
 		return
@@ -310,6 +310,17 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		}
 	*/
 	return
+}
+
+func (a *VolumeAdmin) CanDeleteVolume(volume *model.Volume) bool {
+	switch volume.Status {
+	case model.VolumeStatusAvailable,
+		model.VolumeStatusPending,
+		model.VolumeStatusError:
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
