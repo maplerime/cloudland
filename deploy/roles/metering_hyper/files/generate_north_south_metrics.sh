@@ -44,9 +44,11 @@ curl -s "$METRICS_URL" | grep '^libvirt_domain_interface_meta{' | while read -r 
         esac
     done
 
-    # Enhanced validation: both vm_ip and router must be present and non-empty
+    # Enhanced validation: vm_ip must be present and non-empty
     [ -z "$vm_ip" ] && continue
-    [ -z "$router" ] && continue
+
+    # If router is empty, treat it as "0"
+    [ -z "$router" ] && router="0"
 
     # Use different processing strategies based on router value
     if [ "$router" = "0" ]; then

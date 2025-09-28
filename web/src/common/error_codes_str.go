@@ -111,15 +111,15 @@ func _() {
 	_ = x[ErrFIPInUse-131209]
 	_ = x[ErrDummyFIPCreateFailed-131210]
 	_ = x[ErrUpdateGroupIDFailed-131211]
-	_ = x[ErrRouterNotFound-131306]
-	_ = x[ErrRouterCreateFailed-131307]
-	_ = x[ErrRouterUpdateFailed-131308]
-	_ = x[ErrRouterUpdateDefaultSGFailed-131309]
-	_ = x[ErrRouterDeleteFailed-131310]
-	_ = x[ErrRouterInUse-131311]
-	_ = x[ErrRouterHasFloatingIPs-131312]
-	_ = x[ErrRouterHasSubnets-131313]
-	_ = x[ErrRouterHasPortmaps-131314]
+	_ = x[ErrRouterNotFound-131301]
+	_ = x[ErrRouterCreateFailed-131302]
+	_ = x[ErrRouterUpdateFailed-131303]
+	_ = x[ErrRouterUpdateDefaultSGFailed-131304]
+	_ = x[ErrRouterDeleteFailed-131305]
+	_ = x[ErrRouterInUse-131306]
+	_ = x[ErrRouterHasFloatingIPs-131307]
+	_ = x[ErrRouterHasSubnets-131308]
+	_ = x[ErrRouterHasPortmaps-131309]
 	_ = x[ErrIpGroupNotFound-131401]
 	_ = x[ErrIpGroupCreateFailed-131402]
 	_ = x[ErrIpGroupUpdateFailed-131403]
@@ -156,24 +156,24 @@ func _() {
 	_ = x[ErrSSHKeyDeleteFailed-161004]
 	_ = x[ErrSSHKeyGenerateFailed-161005]
 	_ = x[ErrSSHKeyInUse-161006]
-	_ = x[ErrNoQualifiedHypervisor-161001]
-	_ = x[ErrHypervisorNotFound-161002]
-	_ = x[ErrHypervisorUpdateFailed-161003]
-	_ = x[ErrHypervisorDeleteFailed-161004]
-	_ = x[ErrHypervisorInvalidState-161005]
-	_ = x[ErrZoneNotFound-161006]
-	_ = x[ErrUnsetDefaultZoneFailed-161007]
-	_ = x[ErrZoneCreationFailed-161008]
-	_ = x[ErrZoneUpdateFailed-161009]
-	_ = x[ErrZoneDeleteFailed-161010]
-	_ = x[ErrHypersInZone-161011]
+	_ = x[ErrNoQualifiedHypervisor-171001]
+	_ = x[ErrHypervisorNotFound-171002]
+	_ = x[ErrHypervisorUpdateFailed-171003]
+	_ = x[ErrHypervisorDeleteFailed-171004]
+	_ = x[ErrHypervisorInvalidState-171005]
+	_ = x[ErrZoneNotFound-171006]
+	_ = x[ErrUnsetDefaultZoneFailed-171007]
+	_ = x[ErrZoneCreationFailed-171008]
+	_ = x[ErrZoneUpdateFailed-171009]
+	_ = x[ErrZoneDeleteFailed-171010]
+	_ = x[ErrHypersInZone-171011]
 	_ = x[ErrDictionaryRecordsNotFound-199801]
 	_ = x[ErrDictionaryCreateFailed-199802]
 	_ = x[ErrDictionaryUpdateFailed-199803]
 	_ = x[ErrDictionaryDeleteFailed-199804]
 }
 
-const _ErrCode_name = "UnknownInsufficientResourceResourceNotFoundInvalidParameterPermissionDeniedExecuteOnHyperFailedOwnerNotFoundEncryptionFailedJSONMarshalFailedResourcesInOrgInvalidCIDRCIDRTooBigDatabaseErrorSQLSyntaxErrorUserNotFoundUserCreationFailedUserUpdateFailedUserDeleteFailedOrgNotFoundOrgCreationFailedOrgUpdateFailedOrgDeleteFailedNoRoleOnUserPasswordHashFailedPasswordMismatchMemberNotFoundMemberCreationFailedMemberUpdateFailedMemberDeleteFailedInstanceNotFoundInstanceCreationFailedInstanceUpdateFailedInstanceDeleteFailedInstanceInvalidStateInstanceInvalidConfigInstancePowerActionFailInstanceNoRouterInstanceNoPrimaryInterfaceInvalidDomainFormatConsoleCreateFailedConsoleNotFoundInvalidConsoleTokenInvalidMetadataMigrationNotFoundMigrationCreateFailedMigrationUpdateFailedMigrationDeleteFailedMigrationInProgressFlavorNotFoundFlavorCreateFailedFlavorUpdateFailedFlavorDeleteFailedFlavorInUseDiskTooSmallVolumeNotFoundVolumeCreationFailedVolumeUpdateFailedVolumeDeleteFailedVolumeAttachFailedVolumeDetachFailedVolumeInvalidStateVolumeInvalidSizeBootVolumeNotFoundBootVolumeUpdateFailedBootVolumeDeleteFailedVolumeIsInUseBootVolumeCannotDetachVolumeIsBusyAddressNotFoundAddressUpdateFailedAddressDeleteFailedInsufficientAddressAddressCreateFailedAddressInUseSubnetNotFoundSubnetCreateFailedSubnetUpdateFailedSubnetDeleteFailedSubnetShouldBePublicSubnetShouldBeSitePublicSubnetNotFoundSiteSubnetUpdateFailedSubnetsCrossVPCInOneInstancePublicSubnetCannotInVPCInterfaceNotFoundInterfaceCreateFailedInterfaceUpdateFailedNotAllowInterfaceInSiteSubnetInterfaceDeleteFailedCannotDeletePrimaryInterfaceTooManyInterfacesInterfaceInvalidSubnetFIPInUseDummyFIPCreateFailedUpdateGroupIDFailedRouterNotFoundRouterCreateFailedRouterUpdateFailedRouterUpdateDefaultSGFailedRouterDeleteFailedRouterInUseRouterHasFloatingIPsRouterHasSubnetsRouterHasPortmapsIpGroupNotFoundIpGroupCreateFailedIpGroupUpdateFailedIpGroupDeleteFailedIpGroupInUseSecurityGroupNotFoundSecurityGroupCreateFailedSecurityGroupUpdateFailedSecurityGroupDeleteFailedAssociateSG2InterfaceFailedAtLeastOneSGRequiredCannotDeleteDefaultSGSGHasInterfacesSecurityRuleNotFoundSecurityRuleInvalidSecurityRuleDeleteFailedSecurityRuleCreateFailedSecurityRuleUpdateFailedImageNotFoundImageInUseImageNoQAImageCreateFailedImageUpdateFailedImageDeleteFailedImageNotAvailableImageStorageCreateFailedImageStorageDeleteFailedImageStorageUpdateFailedImageStorageNotFoundRescueImageNotFoundSSHKeyNotFoundSSHKeyCreateFailedSSHKeyUpdateFailedSSHKeyDeleteFailedSSHKeyGenerateFailedSSHKeyInUseUnsetDefaultZoneFailedZoneCreationFailedZoneUpdateFailedZoneDeleteFailedHypersInZoneDictionaryRecordsNotFoundDictionaryCreateFailedDictionaryUpdateFailedDictionaryDeleteFailed"
+const _ErrCode_name = "UnknownInsufficientResourceResourceNotFoundInvalidParameterPermissionDeniedExecuteOnHyperFailedOwnerNotFoundEncryptionFailedJSONMarshalFailedResourcesInOrgInvalidCIDRCIDRTooBigDatabaseErrorSQLSyntaxErrorUserNotFoundUserCreationFailedUserUpdateFailedUserDeleteFailedOrgNotFoundOrgCreationFailedOrgUpdateFailedOrgDeleteFailedNoRoleOnUserPasswordHashFailedPasswordMismatchMemberNotFoundMemberCreationFailedMemberUpdateFailedMemberDeleteFailedInstanceNotFoundInstanceCreationFailedInstanceUpdateFailedInstanceDeleteFailedInstanceInvalidStateInstanceInvalidConfigInstancePowerActionFailInstanceNoRouterInstanceNoPrimaryInterfaceInvalidDomainFormatConsoleCreateFailedConsoleNotFoundInvalidConsoleTokenInvalidMetadataMigrationNotFoundMigrationCreateFailedMigrationUpdateFailedMigrationDeleteFailedMigrationInProgressFlavorNotFoundFlavorCreateFailedFlavorUpdateFailedFlavorDeleteFailedFlavorInUseDiskTooSmallVolumeNotFoundVolumeCreationFailedVolumeUpdateFailedVolumeDeleteFailedVolumeAttachFailedVolumeDetachFailedVolumeInvalidStateVolumeInvalidSizeBootVolumeNotFoundBootVolumeUpdateFailedBootVolumeDeleteFailedVolumeIsInUseBootVolumeCannotDetachVolumeIsBusyAddressNotFoundAddressUpdateFailedAddressDeleteFailedInsufficientAddressAddressCreateFailedAddressInUseSubnetNotFoundSubnetCreateFailedSubnetUpdateFailedSubnetDeleteFailedSubnetShouldBePublicSubnetShouldBeSitePublicSubnetNotFoundSiteSubnetUpdateFailedSubnetsCrossVPCInOneInstancePublicSubnetCannotInVPCInterfaceNotFoundInterfaceCreateFailedInterfaceUpdateFailedNotAllowInterfaceInSiteSubnetInterfaceDeleteFailedCannotDeletePrimaryInterfaceTooManyInterfacesInterfaceInvalidSubnetFIPInUseDummyFIPCreateFailedUpdateGroupIDFailedRouterNotFoundRouterCreateFailedRouterUpdateFailedRouterUpdateDefaultSGFailedRouterDeleteFailedRouterInUseRouterHasFloatingIPsRouterHasSubnetsRouterHasPortmapsIpGroupNotFoundIpGroupCreateFailedIpGroupUpdateFailedIpGroupDeleteFailedIpGroupInUseSecurityGroupNotFoundSecurityGroupCreateFailedSecurityGroupUpdateFailedSecurityGroupDeleteFailedAssociateSG2InterfaceFailedAtLeastOneSGRequiredCannotDeleteDefaultSGSGHasInterfacesSecurityRuleNotFoundSecurityRuleInvalidSecurityRuleDeleteFailedSecurityRuleCreateFailedSecurityRuleUpdateFailedImageNotFoundImageInUseImageNoQAImageCreateFailedImageUpdateFailedImageDeleteFailedImageNotAvailableImageStorageCreateFailedImageStorageDeleteFailedImageStorageUpdateFailedImageStorageNotFoundRescueImageNotFoundSSHKeyNotFoundSSHKeyCreateFailedSSHKeyUpdateFailedSSHKeyDeleteFailedSSHKeyGenerateFailedSSHKeyInUseNoQualifiedHypervisorHypervisorNotFoundHypervisorUpdateFailedHypervisorDeleteFailedHypervisorInvalidStateZoneNotFoundUnsetDefaultZoneFailedZoneCreationFailedZoneUpdateFailedZoneDeleteFailedHypersInZoneDictionaryRecordsNotFoundDictionaryCreateFailedDictionaryUpdateFailedDictionaryDeleteFailed"
 
 var _ErrCode_map = map[ErrCode]string{
 	100000: _ErrCode_name[0:7],
@@ -271,15 +271,15 @@ var _ErrCode_map = map[ErrCode]string{
 	131209: _ErrCode_name[1628:1636],
 	131210: _ErrCode_name[1636:1656],
 	131211: _ErrCode_name[1656:1675],
-	131306: _ErrCode_name[1675:1689],
-	131307: _ErrCode_name[1689:1707],
-	131308: _ErrCode_name[1707:1725],
-	131309: _ErrCode_name[1725:1752],
-	131310: _ErrCode_name[1752:1770],
-	131311: _ErrCode_name[1770:1781],
-	131312: _ErrCode_name[1781:1801],
-	131313: _ErrCode_name[1801:1817],
-	131314: _ErrCode_name[1817:1834],
+	131301: _ErrCode_name[1675:1689],
+	131302: _ErrCode_name[1689:1707],
+	131303: _ErrCode_name[1707:1725],
+	131304: _ErrCode_name[1725:1752],
+	131305: _ErrCode_name[1752:1770],
+	131306: _ErrCode_name[1770:1781],
+	131307: _ErrCode_name[1781:1801],
+	131308: _ErrCode_name[1801:1817],
+	131309: _ErrCode_name[1817:1834],
 	131401: _ErrCode_name[1834:1849],
 	131402: _ErrCode_name[1849:1868],
 	131403: _ErrCode_name[1868:1887],
@@ -316,15 +316,21 @@ var _ErrCode_map = map[ErrCode]string{
 	161004: _ErrCode_name[2469:2487],
 	161005: _ErrCode_name[2487:2507],
 	161006: _ErrCode_name[2507:2518],
-	161007: _ErrCode_name[2518:2540],
-	161008: _ErrCode_name[2540:2558],
-	161009: _ErrCode_name[2558:2574],
-	161010: _ErrCode_name[2574:2590],
-	161011: _ErrCode_name[2590:2602],
-	199801: _ErrCode_name[2602:2627],
-	199802: _ErrCode_name[2627:2649],
-	199803: _ErrCode_name[2649:2671],
-	199804: _ErrCode_name[2671:2693],
+	171001: _ErrCode_name[2518:2539],
+	171002: _ErrCode_name[2539:2557],
+	171003: _ErrCode_name[2557:2579],
+	171004: _ErrCode_name[2579:2601],
+	171005: _ErrCode_name[2601:2623],
+	171006: _ErrCode_name[2623:2635],
+	171007: _ErrCode_name[2635:2657],
+	171008: _ErrCode_name[2657:2675],
+	171009: _ErrCode_name[2675:2691],
+	171010: _ErrCode_name[2691:2707],
+	171011: _ErrCode_name[2707:2719],
+	199801: _ErrCode_name[2719:2744],
+	199802: _ErrCode_name[2744:2766],
+	199803: _ErrCode_name[2766:2788],
+	199804: _ErrCode_name[2788:2810],
 }
 
 func (i ErrCode) String() string {

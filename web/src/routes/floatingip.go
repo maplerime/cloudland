@@ -162,7 +162,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	}
 	if idleCountTotal < int64(activationCount) {
 		logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d, pubSubnets: %v", idleCountTotal, activationCount, pubSubnets)
-		return nil, NewCLError(ErrInsufficientResource, "Not enough idle addresses for public subnets", nil)
+		return nil, NewCLError(ErrInsufficientAddress, "Not enough idle addresses for public subnets", nil)
 	}
 
 	if len(siteSubnets) > 0 {
@@ -395,14 +395,13 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		floatingIp.InstanceID = 0
 		floatingIp.IntAddress = ""
 		floatingIp.Type = string(PublicFloating)
-		err = db.Model(floatingIp).Updates(map[string]interface{}{
-			"instance":    nil,
-			"interface":   nil,
-			"router":      nil,
-			"instance_id": 0,
-			"int_address": "",
-			"type":        string(PublicFloating),
-		}).Error
+
+		updateFields := make(map[string]interface{})
+		updateFields["instance_id"] = 0
+		updateFields["int_address"] = ""
+		updateFields["type"] = string(PublicFloating)
+
+		err = db.Model(floatingIp).Updates(updateFields).Error
 		if err != nil {
 			logger.Errorf("Failed to update public ip, %v", err)
 			return NewCLError(ErrUpdatePublicIPFailed, "Failed to update public ip", err)
