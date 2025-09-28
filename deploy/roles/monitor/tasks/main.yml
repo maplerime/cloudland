@@ -358,7 +358,7 @@
             smtp_hello: '{{ smtp_hello }}'
 
           route:
-            group_by: ['node_type', 'alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
+            group_by: ['target_device','node_type', 'alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
             group_wait: 30s
             group_interval: 5m
             repeat_interval: 3h
