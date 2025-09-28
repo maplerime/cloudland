@@ -22,6 +22,7 @@ const (
 	VolumeStatusRestoring VolumeStatus = "restoring"
 	VolumeStatusBackuping VolumeStatus = "backuping"
 	VolumeStatusError     VolumeStatus = "error"
+	VolumeStatusPending   VolumeStatus = "pending"
 )
 
 func (s VolumeStatus) String() string {

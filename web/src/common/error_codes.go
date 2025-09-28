@@ -156,15 +156,15 @@ const (
 	ErrUpdateGroupIDFailed       ErrCode = 131211
 
 	// VPC/Router related errors (1313xx)
-	ErrRouterNotFound              ErrCode = 131306
-	ErrRouterCreateFailed          ErrCode = 131307
-	ErrRouterUpdateFailed          ErrCode = 131308
-	ErrRouterUpdateDefaultSGFailed ErrCode = 131309
-	ErrRouterDeleteFailed          ErrCode = 131310
-	ErrRouterInUse                 ErrCode = 131311
-	ErrRouterHasFloatingIPs        ErrCode = 131312
-	ErrRouterHasSubnets            ErrCode = 131313
-	ErrRouterHasPortmaps           ErrCode = 131314
+	ErrRouterNotFound              ErrCode = 131301
+	ErrRouterCreateFailed          ErrCode = 131302
+	ErrRouterUpdateFailed          ErrCode = 131303
+	ErrRouterUpdateDefaultSGFailed ErrCode = 131304
+	ErrRouterDeleteFailed          ErrCode = 131305
+	ErrRouterInUse                 ErrCode = 131306
+	ErrRouterHasFloatingIPs        ErrCode = 131307
+	ErrRouterHasSubnets            ErrCode = 131308
+	ErrRouterHasPortmaps           ErrCode = 131309
 
 	// IP Group related errors (1314xx)
 	ErrIpGroupNotFound     ErrCode = 131401
@@ -210,18 +210,18 @@ const (
 	ErrSSHKeyGenerateFailed ErrCode = 161005
 	ErrSSHKeyInUse          ErrCode = 161006
 
-	// hypervisor/zone related errors (161xxx)
-	ErrNoQualifiedHypervisor  ErrCode = 161001
-	ErrHypervisorNotFound     ErrCode = 161002
-	ErrHypervisorUpdateFailed ErrCode = 161003
-	ErrHypervisorDeleteFailed ErrCode = 161004
-	ErrHypervisorInvalidState ErrCode = 161005
-	ErrZoneNotFound           ErrCode = 161006
-	ErrUnsetDefaultZoneFailed ErrCode = 161007
-	ErrZoneCreationFailed     ErrCode = 161008
-	ErrZoneUpdateFailed       ErrCode = 161009
-	ErrZoneDeleteFailed       ErrCode = 161010
-	ErrHypersInZone           ErrCode = 161011
+	// hypervisor/zone related errors (171xxx)
+	ErrNoQualifiedHypervisor  ErrCode = 171001
+	ErrHypervisorNotFound     ErrCode = 171002
+	ErrHypervisorUpdateFailed ErrCode = 171003
+	ErrHypervisorDeleteFailed ErrCode = 171004
+	ErrHypervisorInvalidState ErrCode = 171005
+	ErrZoneNotFound           ErrCode = 171006
+	ErrUnsetDefaultZoneFailed ErrCode = 171007
+	ErrZoneCreationFailed     ErrCode = 171008
+	ErrZoneUpdateFailed       ErrCode = 171009
+	ErrZoneDeleteFailed       ErrCode = 171010
+	ErrHypersInZone           ErrCode = 171011
 
 	// dictionary related errors (1998xx)
 	ErrDictionaryRecordsNotFound ErrCode = 199801

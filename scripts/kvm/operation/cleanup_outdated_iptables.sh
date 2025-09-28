@@ -15,3 +15,13 @@ for sg_tap in $secgroup_taps; do
         ../clear_sg_chain.sh $sg_tap
     fi
 done
+
+lock_file="$run_dir/iptables.lock"
+exec 200>>"$lock_file"
+iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
+for i in {1..10}; do
+    ln=$(iptables -n -L FORWARD --line-numbers | grep 'state RELATED,ESTABLISHED' | tail -1 | cut -d' ' -f1)
+    [ "$ln" = 1 ] && break
+    iptables -D FORWARD $ln
+done
+flock -u 200
