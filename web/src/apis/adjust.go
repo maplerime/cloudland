@@ -16,6 +16,7 @@ import (
 
 	"bytes"
 	"io"
+	"web/src/common"
 	"web/src/dbs"
 	"web/src/model"
 	"web/src/routes"
@@ -400,6 +401,13 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-INFO] Removed file: %s", alertPath)
 	} else {
 		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
+	}
+
+	// 清理计算节点上的调整状态指标
+	log.Printf("[ADJUST-INFO] Cleaning up CPU adjustment metrics for rule: %s", uuid)
+	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), uuid, "cpu"); err != nil {
+		log.Printf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
+		// 不影响规则删除的成功状态，只记录警告
 	}
 
 	// 删除数据库记录
@@ -1361,6 +1369,13 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
 	}
 
+	// 清理计算节点上的调整状态指标
+	log.Printf("[ADJUST-INFO] Cleaning up bandwidth adjustment metrics for rule: %s", uuid)
+	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), uuid, "bandwidth"); err != nil {
+		log.Printf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
+		// 不影响规则删除的成功状态，只记录警告
+	}
+
 	// 删除数据库记录
 	err = a.operator.DeleteAdjustRuleGroupWithDependencies(c.Request.Context(), uuid)
 	if err != nil {
@@ -1602,4 +1617,71 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 			"linked_vms":   linkedVMs,
 		},
 	})
+}
+
+// cleanupRuleMetricsOnNodes 清理计算节点上的规则相关指标
+func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID, ruleType string) error {
+	log.Printf("[ADJUST-INFO] Starting cleanup of %s metrics for rule group: %s", ruleType, ruleGroupUUID)
+
+	// 获取与该规则组关联的VM列表
+	alarmOperator := &routes.AlarmOperator{}
+	vmLinks, err := alarmOperator.GetLinkedVMs(ctx, ruleGroupUUID)
+	if err != nil {
+		log.Printf("[ADJUST-ERROR] Failed to get linked VMs for rule cleanup: %v", err)
+		return fmt.Errorf("failed to get linked VMs: %v", err)
+	}
+
+	if len(vmLinks) == 0 {
+		log.Printf("[ADJUST-INFO] No VMs linked to rule group %s, no metrics to cleanup", ruleGroupUUID)
+		return nil
+	}
+
+	log.Printf("[ADJUST-INFO] Found %d VMs linked to rule group %s", len(vmLinks), ruleGroupUUID)
+
+	// 获取这些VM所在的计算节点
+	hyperNodes := make(map[int32]bool)
+	instanceAdmin := &routes.InstanceAdmin{}
+	for _, link := range vmLinks {
+		// 获取VM实例信息以确定其所在的计算节点
+		instance, err := instanceAdmin.GetInstanceByUUID(ctx, link.VMUUID)
+		if err != nil {
+			log.Printf("[ADJUST-WARNING] Failed to get instance info for VM %s: %v", link.VMUUID, err)
+			continue
+		}
+		if instance.Hyper > 0 {
+			hyperNodes[instance.Hyper] = true
+		}
+	}
+
+	if len(hyperNodes) == 0 {
+		log.Printf("[ADJUST-WARNING] No valid compute nodes found for rule group %s", ruleGroupUUID)
+		return nil
+	}
+
+	log.Printf("[ADJUST-INFO] Will cleanup metrics on %d compute nodes", len(hyperNodes))
+
+	// 在每个计算节点上执行清理操作
+	var cleanupErrors []string
+	for hyperID := range hyperNodes {
+		log.Printf("[ADJUST-INFO] Cleaning up %s metrics on compute node %d for rule %s", ruleType, hyperID, ruleGroupUUID)
+
+		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/cleanup_rule_metrics.sh --rule-id '%s' --type '%s'",
+			ruleGroupUUID, ruleType)
+
+		err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", hyperID), command)
+		if err != nil {
+			errMsg := fmt.Sprintf("failed to cleanup metrics on node %d: %v", hyperID, err)
+			log.Printf("[ADJUST-ERROR] %s", errMsg)
+			cleanupErrors = append(cleanupErrors, errMsg)
+		} else {
+			log.Printf("[ADJUST-INFO] Successfully cleaned up %s metrics on compute node %d", ruleType, hyperID)
+		}
+	}
+
+	if len(cleanupErrors) > 0 {
+		return fmt.Errorf("metrics cleanup failed on some nodes: %s", strings.Join(cleanupErrors, "; "))
+	}
+
+	log.Printf("[ADJUST-INFO] Successfully cleaned up %s metrics for rule group %s on all compute nodes", ruleType, ruleGroupUUID)
+	return nil
 }
