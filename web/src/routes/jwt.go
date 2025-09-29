@@ -110,7 +110,7 @@ func NewToken(u, o, uid, oid string, role model.Role) (signed string, issueAt, e
 	return
 }
 
-func ParseToken(tokenString string, expectedAudience string) (token *jwt.Token, tokenClaims *CustomClaims, err error) {
+func ParseToken(tokenString string) (token *jwt.Token, tokenClaims *CustomClaims, err error) {
 	tokenClaims = &CustomClaims{}
 	token, err = jwt.ParseWithClaims(
 		tokenString,
@@ -119,14 +119,5 @@ func ParseToken(tokenString string, expectedAudience string) (token *jwt.Token, 
 			return publicKey(), nil
 		},
 	)
-	if err != nil {
-		return
-	}
-	// Explicit audience check
-	if !tokenClaims.VerifyAudience(expectedAudience, true) {
-		err = fmt.Errorf("invalid audience")
-		token = nil
-		tokenClaims = nil
-	}
 	return
 }

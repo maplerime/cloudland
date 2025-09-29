@@ -32,7 +32,7 @@ func Authorize() gin.HandlerFunc {
 		}
 		tokenStr = tokenStr[len(TokenType)+1:]
 		// Use expected audience as AppName (or set as needed)
-		_, claims, err := routes.ParseToken(tokenStr, AppName)
+		_, claims, err := routes.ParseToken(tokenStr)
 		if err != nil {
 			ErrorResponse(c, http.StatusUnauthorized, "Invalid Token", err)
 			c.Abort()
