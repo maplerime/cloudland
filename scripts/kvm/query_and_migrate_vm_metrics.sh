@@ -119,11 +119,11 @@ query_latest_metric_with_rule_id() {
             | map(select(.value[1] != null))
             | sort_by(.value[0] | tonumber)
             | last
-            | "\(.value[1] // "")|\(.metric.rule_id // "")|\(.value[0] | floor)"
+            | "\(.value[1] // "")|\(.metric.rule_id // "")|\(.value[0] | floor)|\(.metric.type // "")|\(.metric.target_device // "")"
         else
-            "||"
+            "||||"
         end
-    ' 2>/dev/null || echo "||")
+    ' 2>/dev/null || echo "||||")
     
     echo "$result"
 }
@@ -156,6 +156,8 @@ bandwidth_result=$(query_latest_metric_with_rule_id "vm_bandwidth_adjustment_sta
 bandwidth_status=$(echo "$bandwidth_result" | cut -d'|' -f1)
 bandwidth_rule_id=$(echo "$bandwidth_result" | cut -d'|' -f2)
 bandwidth_timestamp=$(echo "$bandwidth_result" | cut -d'|' -f3)
+bandwidth_type=$(echo "$bandwidth_result" | cut -d'|' -f4)
+bandwidth_target_device=$(echo "$bandwidth_result" | cut -d'|' -f5)
 
 if [[ -z "$bandwidth_status" ]]; then
     bandwidth_status="0"  # Default to not limited
@@ -190,7 +192,7 @@ fi
 # Write Bandwidth adjustment status if we have data
 if [[ -n "$bandwidth_rule_id" && "$bandwidth_status" != "" ]]; then
     echo "Writing bandwidth adjustment metric..."
-    if /opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain "$DOMAIN" --rule-id "$bandwidth_rule_id" --status "$bandwidth_status"; then
+    if /opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain "$DOMAIN" --rule-id "$bandwidth_rule_id" --type "$bandwidth_type" --status "$bandwidth_status" --target-device "$bandwidth_target_device"; then
         echo "Successfully wrote bandwidth adjustment status: $bandwidth_status"
     else
         echo "Warning: Failed to write bandwidth adjustment status" >&2
@@ -204,7 +206,7 @@ echo "=== Migration Summary ==="
 echo "Domain: $DOMAIN"
 echo "Prometheus Server: $PROMETHEUS_HOST:$PROMETHEUS_PORT"
 echo "CPU Status: $cpu_status $(if [[ -n "$cpu_rule_id" ]]; then echo "(Rule: $cpu_rule_id)"; fi) $(if [[ -n "$cpu_timestamp" ]]; then echo "(Timestamp: $cpu_timestamp)"; fi)"
-echo "Bandwidth Status: $bandwidth_status $(if [[ -n "$bandwidth_rule_id" ]]; then echo "(Rule: $bandwidth_rule_id)"; fi) $(if [[ -n "$bandwidth_timestamp" ]]; then echo "(Timestamp: $bandwidth_timestamp)"; fi)"
+echo "Bandwidth Status: $bandwidth_status $(if [[ -n "$bandwidth_rule_id" ]]; then echo "(Rule: $bandwidth_rule_id)"; fi) $(if [[ -n "$bandwidth_type" ]]; then echo "(Type: $bandwidth_type)"; fi) $(if [[ -n "$bandwidth_target_device" ]]; then echo "(Device: $bandwidth_target_device)"; fi) $(if [[ -n "$bandwidth_timestamp" ]]; then echo "(Timestamp: $bandwidth_timestamp)"; fi)"
 echo "Metrics migration completed successfully"
 
 exit 0 

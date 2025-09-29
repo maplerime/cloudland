@@ -17,25 +17,28 @@ DOMAIN=""
 RULE_ID=""
 TYPE=""
 STATUS=""
+TARGET_DEVICE=""
 
 # Usage help
 usage() {
     cat << EOF
-Usage: $0 --domain <vm_domain> --rule-id <rule_id> --type <in|out> --status <0|1>
+Usage: $0 --domain <vm_domain> --rule-id <rule_id> --type <in|out> --status <0|1> --target-device <device_name>
 
 Parameters:
-  --domain    VM domain name (required)
-  --rule-id   Rule ID for tracking (required)
-  --type      Bandwidth type (required)
-              in  = inbound bandwidth
-              out = outbound bandwidth
-  --status    Bandwidth adjustment status (required)
-              0 = normal (not limited)
-              1 = limited
+  --domain        VM domain name (required)
+  --rule-id       Rule ID for tracking (required)
+  --type          Bandwidth type (required)
+                  in  = inbound bandwidth
+                  out = outbound bandwidth
+  --status        Bandwidth adjustment status (required)
+                  0 = normal (not limited)
+                  1 = limited
+  --target-device Target network device name (required)
+                  e.g., tap6c299b, vnet0, etc.
 
 Examples:
-  $0 --domain inst-6 --rule-id inst-6-7c64dbfd-d676-4232-ae61-52f9cc75f890 --type in --status 0
-  $0 --domain inst-6 --rule-id inst-6-7c64dbfd-d676-4232-ae61-52f9cc75f890 --type out --status 1
+  $0 --domain inst-6 --rule-id inst-6-7c64dbfd-d676-4232-ae61-52f9cc75f890 --type in --status 0 --target-device tap6c299b
+  $0 --domain inst-6 --rule-id inst-6-7c64dbfd-d676-4232-ae61-52f9cc75f890 --type out --status 1 --target-device vnet0
 
 EOF
 }
@@ -59,6 +62,10 @@ while [[ $# -gt 0 ]]; do
             STATUS="$2"
             shift 2
             ;;
+        --target-device)
+            TARGET_DEVICE="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -72,7 +79,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # Validate required parameters
-if [[ -z "$DOMAIN" || -z "$RULE_ID" || -z "$TYPE" || -z "$STATUS" ]]; then
+if [[ -z "$DOMAIN" || -z "$RULE_ID" || -z "$TYPE" || -z "$STATUS" || -z "$TARGET_DEVICE" ]]; then
     echo "Error: Missing required parameters"
     usage
     exit 1
@@ -101,7 +108,7 @@ fi
 # Build metric line
 #METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\", type=\"$TYPE\"} $STATUS"
 PROMETHEUS_RULE_ID="bw-$RULE_ID"
-METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\"} $STATUS"
+METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"} $STATUS"
 
 # Check if this is a recovery operation (status = 0)
 if [[ "$STATUS" == "0" ]]; then
@@ -113,9 +120,9 @@ if [[ "$STATUS" == "0" ]]; then
     fi
     
     # Check if the specific metric exists
-    PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\"}"
+    PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
     if ! grep -q "^$PATTERN" "$METRICS_FILE"; then
-        echo "Warning: No existing metric found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE"
+        echo "Warning: No existing metric found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
         echo "No action needed - VM bandwidth is already in normal state"
         exit 0
     fi
@@ -133,12 +140,12 @@ if [[ ! -f "$METRICS_FILE" ]]; then
     exit 0
 fi
 
-# Check if metric with same domain, rule_id and type already exists
-PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\"}"
+# Check if metric with same domain, rule_id, type and target_device already exists
+PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
 
 if grep -q "^$PATTERN" "$METRICS_FILE"; then
     # Update existing metric
-    echo "Updating existing metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE"
+    echo "Updating existing metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
     
     # For recovery (status=0), remove the metric line entirely
     if [[ "$STATUS" == "0" ]]; then
@@ -173,7 +180,7 @@ else
         echo "$METRIC_LINE" >> "$METRICS_FILE"
         echo "Bandwidth adjustment status updated successfully (new metric added)"
     else
-        echo "No existing metric to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE"
+        echo "No existing metric to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
         echo "No action needed - VM bandwidth is already in normal state"
     fi
 fi

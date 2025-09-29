@@ -699,8 +699,8 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	}
 
 	if bwType != "" {
-		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d",
-			domain, record.RuleGroupUUID, bwType, status)
+		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
+			domain, record.RuleGroupUUID, bwType, status, nicName)
 		fmt.Printf("wngzhe AdjustBandwidthResource - Updating bandwidth adjustment metric: %s\n", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
@@ -830,8 +830,8 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	status := 0
 
 	if bwType != "" {
-		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d",
-			domain, record.RuleGroupUUID, bwType, status)
+		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
+			domain, record.RuleGroupUUID, bwType, status, nicName)
 		fmt.Printf("wngzhe RestoreBandwidthResource - Updating bandwidth adjustment metric: %s\n", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
