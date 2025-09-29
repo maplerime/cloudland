@@ -33,8 +33,8 @@ func (a *ListenerAdmin) Create(ctx context.Context, name string, port int32, loa
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
-		logger.Error("Not authorized to create routers")
-		err = NewCLError(ErrPermissionDenied, "Not authorized to create routers", nil)
+		logger.Error("Not authorized to create listener")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to create listener", nil)
 		return
 	}
 	owner := memberShip.OrgID
@@ -56,7 +56,7 @@ func (a *ListenerAdmin) Create(ctx context.Context, name string, port int32, loa
 
 func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
 	if id <= 0 {
-		logger.Error("returning nil router")
+		logger.Error("returning nil listener")
 		return
 	}
 	ctx, db := GetContextDB(ctx)
@@ -64,8 +64,8 @@ func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.L
 	where := memberShip.GetWhere()
 	listener = &model.Listener{Model: model.Model{ID: id}}
 	if err = db.Where(where).Take(listener).Error; err != nil {
-		logger.Error("Failed to query router", err)
-		err = NewCLError(ErrListenerNotFound, "Failed to find router", err)
+		logger.Error("Failed to query listener", err)
+		err = NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, listener.Owner)
@@ -82,7 +82,7 @@ func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (lis
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	listener = &model.Listener{}
-	err = db.Preload("Router").Where(where).Where("uuid = ?", uuID).Take(listener).Error
+	err = db.Where(where).Where("uuid = ?", uuID).Take(listener).Error
 	if err != nil {
 		logger.Error("Failed to query listener, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find listener", err)
@@ -102,7 +102,7 @@ func (a *ListenerAdmin) GetListenerByName(ctx context.Context, name string) (lis
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	listener = &model.Listener{}
-	err = db.Preload("Router").Where(where).Where("name = ?", name).Take(listener).Error
+	err = db.Where(where).Where("name = ?", name).Take(listener).Error
 	if err != nil {
 		logger.Error("Failed to query listener, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find listener", err)
@@ -161,9 +161,16 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener) (e
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
+	listener.Name = fmt.Sprintf("%s-%d", listener.Name, listener.CreatedAt.Unix())
+	err = db.Model(listener).Update("name", listener.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update listsner name", err)
+		err = NewCLError(ErrSubnetUpdateFailed, "DB failed to update listener name", err)
+		return
+	}
 	if err = db.Delete(listener).Error; err != nil {
 		logger.Error("DB failed to delete listener", err)
-		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete router", err)
+		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete listener", err)
 		return
 	}
 	return

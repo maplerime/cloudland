@@ -177,6 +177,10 @@ const (
 	ErrListenerCreateFailed              = 131510
 	ErrListenerUpdateFailed              = 131511
 	ErrListenerDeleteFailed              = 131512
+	ErrBackendNotFound                   = 131513
+	ErrBackendCreateFailed               = 131514
+	ErrBackendUpdateFailed               = 131515
+	ErrBackendDeleteFailed               = 131516
 
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001

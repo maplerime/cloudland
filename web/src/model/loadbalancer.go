@@ -51,9 +51,9 @@ type Listener struct {
 type Backend struct {
 	Model
 	Owner       int64  `default:1"` /* The organization ID of the resource */
-	Name        string `type:varchar(64)"`
-	ListenerID  int64
-	BackendAddr string `gorm:"type:varchar(64)"`
+	ListenerID  int64  `gorm:"unique_index:idx_listener_be"`
+	BackendAddr string `gorm:"unique_index:idx_listener_be;type:varchar(64)"`
+	Status         string `gorm:"type:varchar(32)"`
 }
 
 func init() {

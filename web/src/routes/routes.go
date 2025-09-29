@@ -206,6 +206,12 @@ func New() (m *macaron.Macaron) {
 	m.Get("/loadbalancers/:lbid/listeners", listenerView.List)
 	m.Get("/loadbalancers/:lbid/listeners/:id", listenerView.Edit)
 	m.Post("/loadbalancers/:lbid/listeners/:id", listenerView.Patch)
+	m.Get("/loadbalancers/:lbid/listeners/:lstnid/backends/new", backendView.New)
+	m.Post("/loadbalancers/:lbid/listeners/:lstnid/backends/new", backendView.Create)
+	m.Delete("/loadbalancers/:lbid/listeners/:lstnid/backends/:id", backendView.Delete)
+	m.Get("/loadbalancers/:lbid/listeners:lstnid/backends", backendView.List)
+	m.Get("/loadbalancers/:lbid/listeners/:lstnid/backends/:id", backendView.Edit)
+	m.Post("/loadbalancers/:lbid/listeners/:lstnid/backends/:id", backendView.Patch)
 	/*
 		m.Get("/portmaps", portmapView.List)
 		m.Get("/portmaps/new", portmapView.New)
