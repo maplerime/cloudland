@@ -87,9 +87,9 @@ cleanup_metrics_file() {
         return 0
     fi
     
-    # Check if any metrics exist for this rule ID
-    if ! grep -q "rule_id=\"$prometheus_rule_id\"" "$metrics_file"; then
-        echo "No $metrics_type metrics found for rule ID: $RULE_ID (prometheus rule: $prometheus_rule_id)"
+    # Check if any metrics exist for this rule ID (using grep -E for regex support)
+    if ! grep -E "rule_id=\"$prometheus_rule_id\"" "$metrics_file" >/dev/null 2>&1; then
+        echo "No $metrics_type metrics found for rule ID: $RULE_ID (prometheus rule pattern: $prometheus_rule_id)"
         return 0
     fi
     
@@ -98,13 +98,13 @@ cleanup_metrics_file() {
     
     # Show what will be removed
     echo "Metrics to be removed:"
-    grep "rule_id=\"$prometheus_rule_id\"" "$metrics_file" | while IFS= read -r line; do
+    grep -E "rule_id=\"$prometheus_rule_id\"" "$metrics_file" | while IFS= read -r line; do
         echo "  $line"
     done
     
-    # Remove all metrics lines containing the rule ID
+    # Remove all metrics lines containing the rule ID (using grep -E for regex support)
     local temp_file="$metrics_file.tmp"
-    grep -v "rule_id=\"$prometheus_rule_id\"" "$metrics_file" > "$temp_file"
+    grep -v -E "rule_id=\"$prometheus_rule_id\"" "$metrics_file" > "$temp_file"
     
     # Check if file is now empty (only comments remain)
     if ! grep -q "^vm_" "$temp_file"; then
@@ -123,8 +123,8 @@ if [[ "$RULE_TYPE" == "cpu" ]]; then
     PROMETHEUS_RULE_ID="cpu-$RULE_ID"
     cleanup_metrics_file "$CPU_METRICS_FILE" "$PROMETHEUS_RULE_ID" "CPU adjustment"
 elif [[ "$RULE_TYPE" == "bandwidth" ]]; then
-    # Bandwidth metrics use format: bw-$RULE_ID  
-    PROMETHEUS_RULE_ID="bw-$RULE_ID"
+    # Bandwidth metrics use format: adjust-bw-domain-$RULE_ID  
+    PROMETHEUS_RULE_ID="adjust-bw-.*-$RULE_ID"
     cleanup_metrics_file "$BANDWIDTH_METRICS_FILE" "$PROMETHEUS_RULE_ID" "bandwidth adjustment"
 fi
 

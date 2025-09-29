@@ -38,7 +38,7 @@ Examples:
   $0                             # Interactive cleanup
 
 Old format: domain-groupUUID
-New format: cpu-domain-groupUUID or bw-domain-groupUUID
+New format: cpu-domain-groupUUID or adjust-bw-domain-groupUUID
 EOF
 }
 
@@ -246,8 +246,8 @@ clean_bw_metrics() {
                     echo "$line" >> "$temp_file"
                     ((new_count++))
                 elif [[ "$rule_id" =~ ^[^-]+-[a-f0-9-]+$ ]]; then
-                    # Old format: domain-uuid, convert to bw-domain-uuid
-                    local new_rule_id="bw-$rule_id"
+                    # Old format: domain-uuid, convert to adjust-bw-domain-uuid
+                    local new_rule_id="adjust-bw-$rule_id"
                     local new_line="vm_bandwidth_adjustment_status{domain=\"$domain\",rule_id=\"$new_rule_id\",type=\"$type\"} $value$timestamp"
                     echo "$new_line" >> "$temp_file"
                     ((old_count++))
@@ -303,7 +303,7 @@ main() {
         echo
         echo "This script will migrate rule_id metrics from old format to new typed format:"
         echo "  Old: domain-groupUUID"
-        echo "  New: cpu-domain-groupUUID or bw-domain-groupUUID"
+        echo "  New: cpu-domain-groupUUID or adjust-bw-domain-groupUUID"
         echo
         echo "Files to be processed:"
         [[ -f "$CPU_METRICS_FILE" ]] && echo "  - $CPU_METRICS_FILE"

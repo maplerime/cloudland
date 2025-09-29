@@ -107,7 +107,7 @@ fi
 
 # Build metric line
 #METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\", type=\"$TYPE\"} $STATUS"
-PROMETHEUS_RULE_ID="bw-$RULE_ID"
+PROMETHEUS_RULE_ID="adjust-bw-$DOMAIN-$RULE_ID"
 METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"} $STATUS"
 
 # Check if this is a recovery operation (status = 0)
