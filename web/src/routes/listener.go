@@ -29,7 +29,7 @@ var (
 type ListenerAdmin struct{}
 type ListenerView struct{}
 
-func (a *ListenerAdmin) Create(ctx context.Context, name string, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
+func (a *ListenerAdmin) Create(ctx context.Context, name string, port int32, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -44,7 +44,7 @@ func (a *ListenerAdmin) Create(ctx context.Context, name string, loadBalancer *m
 			EndTransaction(ctx, err)
 		}
 	}()
-	listener = &model.Listener{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, LoadBalancerID: loadBalancer.ID, Status: "available"}
+	listener = &model.Listener{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Port: port, LoadBalancerID: loadBalancer.ID, Status: "available"}
 	err = db.Create(listener).Error
 	if err != nil {
 		logger.Error("DB failed to create listener ", err)
@@ -54,7 +54,7 @@ func (a *ListenerAdmin) Create(ctx context.Context, name string, loadBalancer *m
 	return
 }
 
-func (a *ListenerAdmin) Get(ctx context.Context, id int64) (listener *model.Listener, err error) {
+func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
 	if id <= 0 {
 		logger.Error("returning nil router")
 		return
@@ -63,7 +63,7 @@ func (a *ListenerAdmin) Get(ctx context.Context, id int64) (listener *model.List
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	listener = &model.Listener{Model: model.Model{ID: id}}
-	if err = db.Preload("Router").Where(where).Take(listener).Error; err != nil {
+	if err = db.Where(where).Take(listener).Error; err != nil {
 		logger.Error("Failed to query router", err)
 		err = NewCLError(ErrListenerNotFound, "Failed to find router", err)
 		return
@@ -169,7 +169,7 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener) (e
 	return
 }
 
-func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, listeners []*model.Listener, err error) {
+func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order string, loadBalancer *model.LoadBalancer) (total int64, listeners []*model.Listener, err error) {
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
@@ -179,19 +179,19 @@ func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	if order == "" {
 		order = "created_at"
 	}
-
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
+	where := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
+	wm := memberShip.GetWhere()
+	if wm != "" {
+		where = fmt.Sprintf("%s and %s", where, wm)
 	}
-	where := memberShip.GetWhere()
 	listeners = []*model.Listener{}
-	if err = db.Model(&model.Listener{}).Where(where).Where(query).Count(&total).Error; err != nil {
+	if err = db.Model(&model.Listener{}).Where(where).Count(&total).Error; err != nil {
 		logger.Error("DB failed to count listeners, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count listeners", err)
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Where(where).Where(query).Find(&listeners).Error; err != nil {
+	if err = db.Where(where).Find(&listeners).Error; err != nil {
 		logger.Error("DB failed to query listeners, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query listeners", err)
 		return
@@ -212,6 +212,7 @@ func (a *ListenerAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *ListenerView) List(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
 	if limit == 0 {
@@ -221,17 +222,29 @@ func (v *ListenerView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
-	query := c.QueryTrim("q")
-	queryStr := c.QueryTrim("router_id")
-	logger.Debugf("The query parameters is in ListenerView list: query=%s, queryStr=%s", query, queryStr)
-
-	if queryStr != "" {
-		redirectURL := fmt.Sprintf("/listeners?router_id=%s", queryStr)
-		// Perform the redirect
-		c.Redirect(redirectURL)
+	lbid := c.Params("lbid")
+	if lbid == "" {
+		logger.Error("Load balancer ID is empty")
+		c.Data["ErrorMsg"] = "Load balancer ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancerID, err := strconv.Atoi(lbid)
+	if err != nil {
+		logger.Error("Invalid load balancer ID", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancer, err := loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+	if err != nil {
+		logger.Error("Failed to get load balancer", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
 	}
 
-	total, listeners, err := listenerAdmin.List(c.Req.Context(), offset, limit, order, query)
+	total, listeners, err := listenerAdmin.List(c.Req.Context(), offset, limit, order, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to list listeners, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -242,7 +255,6 @@ func (v *ListenerView) List(c *macaron.Context, store session.Store) {
 	c.Data["Listeners"] = listeners
 	c.Data["Total"] = total
 	c.Data["Pages"] = pages
-	c.Data["Query"] = query
 	c.HTML(200, "listeners")
 }
 
@@ -262,7 +274,28 @@ func (v *ListenerView) Delete(c *macaron.Context, store session.Store) (err erro
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	listener, err := listenerAdmin.Get(ctx, int64(listenerID))
+	lbid := c.Params("lbid")
+	if lbid == "" {
+		logger.Error("Load balancer ID is empty")
+		c.Data["ErrorMsg"] = "Load balancer ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancerID, err := strconv.Atoi(lbid)
+	if err != nil {
+		logger.Error("Invalid load balancer ID", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancer, err := loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+	if err != nil {
+		logger.Error("Failed to get load balancer", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	listener, err := listenerAdmin.Get(ctx, int64(listenerID), loadBalancer)
 	if err != nil {
 		logger.Error("Not able to get listener")
 		c.Data["ErrorMsg"] = err.Error()
@@ -277,7 +310,7 @@ func (v *ListenerView) Delete(c *macaron.Context, store session.Store) (err erro
 		return
 	}
 	c.JSON(200, map[string]interface{}{
-		"redirect": "loadbalancer",
+		"redirect": "listeners",
 	})
 	return
 }
@@ -292,17 +325,32 @@ func (v *ListenerView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, routers, err := routerAdmin.List(ctx, -1, -1, "", "")
-	if err != nil {
-		logger.Error("Database failed to query routers", err)
-		return
-	}
-	c.Data["Routers"] = routers
 	c.HTML(200, "listeners_new")
 }
 
 func (v *ListenerView) Edit(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
+	lbid := c.Params("lbid")
+	if lbid == "" {
+		logger.Error("Load balancer ID is empty")
+		c.Data["ErrorMsg"] = "Load balancer ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancerID, err := strconv.Atoi(lbid)
+	if err != nil {
+		logger.Error("Invalid load balancer ID", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancer, err := loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+	if err != nil {
+		logger.Error("Failed to get load balancer", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	id := c.Params("id")
 	listenerID, err := strconv.Atoi(id)
 	if err != nil {
@@ -311,7 +359,7 @@ func (v *ListenerView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	listener, err := listenerAdmin.Get(ctx, int64(listenerID))
+	listener, err := listenerAdmin.Get(ctx, int64(listenerID), loadBalancer)
 	if err != nil {
 		logger.Error("Failed to get listener, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -325,6 +373,27 @@ func (v *ListenerView) Edit(c *macaron.Context, store session.Store) {
 func (v *ListenerView) Patch(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "../listeners"
+	lbid := c.Params("lbid")
+	if lbid == "" {
+		logger.Error("Load balancer ID is empty")
+		c.Data["ErrorMsg"] = "Load balancer ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancerID, err := strconv.Atoi(lbid)
+	if err != nil {
+		logger.Error("Invalid load balancer ID", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancer, err := loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+	if err != nil {
+		logger.Error("Failed to get load balancer", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
 	id := c.Params("id")
 	listenerID, err := strconv.Atoi(id)
 	if err != nil {
@@ -333,7 +402,7 @@ func (v *ListenerView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	listener, err := listenerAdmin.Get(ctx, int64(listenerID))
+	listener, err := listenerAdmin.Get(ctx, int64(listenerID), loadBalancer)
 	if err != nil {
 		logger.Error("Failed to get listener, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -354,22 +423,36 @@ func (v *ListenerView) Patch(c *macaron.Context, store session.Store) {
 func (v *ListenerView) Create(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "../listeners"
-	name := c.QueryTrim("name")
-	loadBalancerID := c.QueryInt64("loadbalancer")
-	if loadBalancerID <= 0 {
-		logger.Error("Invalid load balancer")
-		c.Data["ErrorMsg"] = "Invalid load balancer"
-		c.HTML(404, "404")
+	lbid := c.Params("lbid")
+	if lbid == "" {
+		logger.Error("Load balancer ID is empty")
+		c.Data["ErrorMsg"] = "Load balancer ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	loadBalancer, err := loadBalancerAdmin.Get(ctx, loadBalancerID)
+	loadBalancerID, err := strconv.Atoi(lbid)
 	if err != nil {
-		logger.Error("Get router failed ", err)
+		logger.Error("Invalid load balancer ID", err)
 		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	loadBalancer, err := loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+	if err != nil {
+		logger.Error("Failed to get load balancer", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	name := c.QueryTrim("name")
+	port := c.QueryInt("port")
+	if port <= 0 {
+		logger.Errorf("Invalid port %d", port)
+		c.Data["ErrorMsg"] = "Invalid port"
 		c.HTML(404, "404")
 		return
 	}
-	_, err = listenerAdmin.Create(ctx, name, loadBalancer)
+	_, err = listenerAdmin.Create(ctx, name, int32(port), loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create listener, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

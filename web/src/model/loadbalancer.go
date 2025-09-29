@@ -24,7 +24,7 @@ type VrrpInstance struct {
 type LoadBalancer struct {
 	Model
 	Owner        int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Name         string `gorm:"type:varchar(64)"`
+	Name         string `gorm:"unique_index:idx_router_lb;type:varchar(64)"`
 	Status       string `gorm:"type:varchar(32)"`
 	FloatingIps  []*FloatingIp `gorm:"foreignkey:LoadBalancerID"`
 	RouterID     int64         `gorm:"unique_index:idx_router_lb"`
@@ -37,12 +37,12 @@ type LoadBalancer struct {
 type Listener struct {
 	Model
 	Owner          int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Name           string `gorm:"type:varchar(64)"`
+	Name           string `gorm:"unique_index:idx_lb_listener;type:varchar(64)"`
 	Status         string `gorm:"type:varchar(32)"`
 	Port           int32  `gorm:"default:-1"`
 	InterfaceID    int64
 	Interface      *Interface `gorm:"foreignkey:InterfaceID"`
-	LoadBalancerID int64
+	LoadBalancerID int64      `gorm:"unique_index:idx_lb_listener"`
 	Certificate    string     `gorm:"type:text"`
 	Key            string     `gorm:"type:text"`
 	Backends       []*Backend `gorm:"foreignkey:ListenerID"`
