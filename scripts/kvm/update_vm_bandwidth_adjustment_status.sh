@@ -28,11 +28,11 @@ Parameters:
   --domain        VM domain name (required)
   --rule-id       Rule ID for tracking (required)
   --type          Bandwidth type (required)
-                  in  = inbound bandwidth
-                  out = outbound bandwidth
+              in  = inbound bandwidth
+              out = outbound bandwidth
   --status        Bandwidth adjustment status (required)
-                  0 = normal (not limited)
-                  1 = limited
+              0 = normal (not limited)
+              1 = limited
   --target-device Target network device name (required)
                   e.g., tap6c299b, vnet0, etc.
 
@@ -107,7 +107,7 @@ fi
 
 # Build metric line
 #METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\", type=\"$TYPE\"} $STATUS"
-PROMETHEUS_RULE_ID="adjust-bw-$DOMAIN-$RULE_ID"
+PROMETHEUS_RULE_ID="$RULE_ID"
 METRIC_LINE="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"} $STATUS"
 
 # Check if this is a recovery operation (status = 0)
