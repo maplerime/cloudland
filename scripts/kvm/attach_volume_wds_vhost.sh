@@ -50,7 +50,15 @@ ux_sock=/var/run/wds/$vhost_name
 vol_xml=$xml_dir/$vm_ID/disk-${vol_ID}.xml
 cp $template_dir/wds_volume.xml $vol_xml
 device=vd$(printf "\\$(printf '%03o' "$letter")")
-sed -i "s#VM_UNIX_SOCK#$ux_sock#g;s#VOLUME_TARGET#$device#g;" $vol_xml
+
+# dumpxml instance xml to find cpu count
+cpu_count=$(virsh dumpxml $vm_ID | grep "<vcpu" | sed -e 's/.*<vcpu[^>]*>\([0-9]*\)<\/vcpu>.*/\1/')
+vhost_queue_num=1
+if [ "$cpu_count" -gt 2 ]; then
+    vhost_queue_num=2
+fi
+sed -i "s#VM_UNIX_SOCK#$ux_sock#g;s#VOLUME_TARGET#$device#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $vol_xml
+
 virsh attach-device $vm_ID $vol_xml --config --persistent
 if [ $? -eq 0 ]; then
     echo "|:-COMMAND-:| $(basename $0) '$1' '$vol_ID' '$device'"
