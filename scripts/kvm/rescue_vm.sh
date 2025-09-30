@@ -147,7 +147,7 @@ virsh define $vm_xml
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}.xml
 cp $disk_template $disk_xml
 
-sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $vol_xml
+sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $disk_xml
 
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
