@@ -8,6 +8,7 @@ cache_dir=/opt/cloudland/cache
 cache_tmp_dir=$cache_dir/tmp
 backup_dir=$cache_dir/backup
 volume_dir=/opt/cloudland/cache/volume
+router_dir=/opt/cloudland/cache/router
 image_dir=$cache_dir/instance
 image_cache=$cache_dir/image
 xml_dir=/opt/cloudland/cache/xml
