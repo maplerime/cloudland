@@ -90,6 +90,10 @@ vm_QA="$qemu_agent_dir/$vm_ID.agent"
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 template=$template_dir/wds_template_with_qa.xml
 cp $template $vm_xml
+vhost_queue_num=1
+if [ "$vm_cpu" -gt 2 ]; then
+    vhost_queue_num=2
+fi
 sed -i "s/VM_ID/$vm_ID/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_UNIX_SOCK#$boot_ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/INSTANCE_UUID/$instance_uuid/g; s/VM_NESTED/$vm_nested/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g" $vm_xml
 vm_nvram="$image_dir/${vm_ID}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
@@ -98,6 +102,7 @@ if [ "$boot_loader" = "uefi" ]; then
     -e "s/VM_ID/$vm_ID/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s/VHOST_QUEUE_NUM/$vhost_queue_num/g" \
     -e "s#VM_IMG#$vm_img#g" \
     -e "s#VM_UNIX_SOCK#$boot_ux_sock#g" \
     -e "s#VM_META#$vm_meta#g" \
@@ -113,6 +118,7 @@ else
     -e "s/VM_ID/$vm_ID/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s/VHOST_QUEUE_NUM/$vhost_queue_num/g" \
     -e "s#VM_IMG#$vm_img#g" \
     -e "s#VM_UNIX_SOCK#$boot_ux_sock#g" \
     -e "s#VM_META#$vm_meta#g" \
