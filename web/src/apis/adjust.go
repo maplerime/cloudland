@@ -1511,15 +1511,39 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 		return
 	}
 
+	// 根据规则类型验证interface参数
+	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		// BW类型必须提供interface参数
+		if req.Interface == "" {
+			log.Printf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "interface parameter is required for bandwidth adjustment rules"})
+			return
+		}
+	} else {
+		// CPU类型不需要interface参数，清空它
+		req.Interface = ""
+	}
+
 	// 检查VM是否已经链接到该规则组
 	alarmOperator := &routes.AlarmOperator{}
 	existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), req.GroupUUID)
 	if err == nil {
 		for _, link := range existingLinks {
 			if link.VMUUID == req.VMUUID {
-				log.Printf("[ADJUST-WARN] VM already linked to rule group: vm_uuid=%s, group_uuid=%s", req.VMUUID, req.GroupUUID)
-				c.JSON(http.StatusConflict, gin.H{"error": "VM already linked to this rule group"})
-				return
+				// 对于BW类型，还需要检查interface是否相同
+				if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+					if link.Interface == req.Interface {
+						log.Printf("[ADJUST-WARN] VM already linked to rule group with same interface: vm_uuid=%s, group_uuid=%s, interface=%s",
+							req.VMUUID, req.GroupUUID, req.Interface)
+						c.JSON(http.StatusConflict, gin.H{"error": "VM already linked to this rule group with the same interface"})
+						return
+					}
+				} else {
+					// CPU类型，VM已链接
+					log.Printf("[ADJUST-WARN] VM already linked to rule group: vm_uuid=%s, group_uuid=%s", req.VMUUID, req.GroupUUID)
+					c.JSON(http.StatusConflict, gin.H{"error": "VM already linked to this rule group"})
+					return
+				}
 			}
 		}
 	}
@@ -1532,7 +1556,21 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Successfully linked VM to adjustment rule: group_uuid=%s, vm_uuid=%s", req.GroupUUID, req.VMUUID)
+	// 更新matched_vms.json
+	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
+	ruleType := "adjust-cpu"
+	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		ruleType = "adjust-bw"
+	}
+
+	err = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{req.VMUUID}, req.GroupUUID, "add", ruleType, req.Interface)
+	if err != nil {
+		log.Printf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
+		// 不返回错误，因为数据库操作已成功
+	}
+
+	log.Printf("[ADJUST-INFO] Successfully linked VM to adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
+		req.GroupUUID, req.VMUUID, req.Interface)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
@@ -1547,10 +1585,12 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 }
 
 // UnlinkAdjustRule 将VM从调整规则中取消链接
+// UnlinkAdjustRule 将VM从调整规则中取消链接
 func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	var req struct {
 		GroupUUID string `json:"group_uuid" binding:"required"`
 		VMUUID    string `json:"vm_uuid" binding:"required"`
+		Interface string `json:"interface"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -1559,14 +1599,28 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Unlinking VM from adjustment rule: group_uuid=%s, vm_uuid=%s", req.GroupUUID, req.VMUUID)
+	log.Printf("[ADJUST-INFO] Unlinking VM from adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
+		req.GroupUUID, req.VMUUID, req.Interface)
 
 	// 检查规则组是否存在
-	_, err := a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+	group, err := a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "adjustment rule group not found"})
 		return
+	}
+
+	// 根据规则类型验证interface参数
+	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		// BW类型必须提供interface参数
+		if req.Interface == "" {
+			log.Printf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "interface parameter is required for bandwidth adjustment rules"})
+			return
+		}
+	} else {
+		// CPU类型不需要interface参数，清空它
+		req.Interface = ""
 	}
 
 	// 检查VM是否链接到该规则组
@@ -1581,26 +1635,50 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	var linkExists bool
 	for _, link := range existingLinks {
 		if link.VMUUID == req.VMUUID {
-			linkExists = true
-			break
+			// 对于BW类型，还需要检查interface是否相同
+			if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+				if link.Interface == req.Interface {
+					linkExists = true
+					break
+				}
+			} else {
+				// CPU类型，VM已链接
+				linkExists = true
+				break
+			}
 		}
 	}
 
 	if !linkExists {
-		log.Printf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s", req.VMUUID, req.GroupUUID)
+		log.Printf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s, interface=%s",
+			req.VMUUID, req.GroupUUID, req.Interface)
 		c.JSON(http.StatusNotFound, gin.H{"error": "VM not linked to this rule group"})
 		return
 	}
 
 	// 删除链接
-	_, err = alarmOperator.DeleteVMLink(c.Request.Context(), req.GroupUUID, req.VMUUID, "")
+	_, err = alarmOperator.DeleteVMLink(c.Request.Context(), req.GroupUUID, req.VMUUID, req.Interface)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to delete VM link: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete VM link: " + err.Error()})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Successfully unlinked VM from adjustment rule: group_uuid=%s, vm_uuid=%s", req.GroupUUID, req.VMUUID)
+	// 更新matched_vms.json
+	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
+	ruleType := "adjust-cpu"
+	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		ruleType = "adjust-bw"
+	}
+
+	err = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{req.VMUUID}, req.GroupUUID, "remove", ruleType, req.Interface)
+	if err != nil {
+		log.Printf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
+		// 不返回错误，因为数据库操作已成功
+	}
+
+	log.Printf("[ADJUST-INFO] Successfully unlinked VM from adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
+		req.GroupUUID, req.VMUUID, req.Interface)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  "success",
@@ -1608,6 +1686,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		"data": gin.H{
 			"group_uuid": req.GroupUUID,
 			"vm_uuid":    req.VMUUID,
+			"interface":  req.Interface,
 		},
 	})
 }
