@@ -778,9 +778,9 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	var bwType string
 
 	// 根据调整类型确定之前限制的带宽方向，用于清理相应的指标
-	if record.AdjustType == "limit_in_bw" || record.AdjustType == model.RuleTypeAdjustInBW {
+	if record.AdjustType == model.RuleTypeAdjustInBW || record.AdjustType == "restore_in_bw" {
 		bwType = "in"
-	} else if record.AdjustType == "limit_out_bw" || record.AdjustType == model.RuleTypeAdjustOutBW {
+	} else if record.AdjustType == model.RuleTypeAdjustOutBW || record.AdjustType == "restore_out_bw" {
 		bwType = "out"
 	}
 
@@ -833,6 +833,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 
 	if bwType != "" {
 		// Generate proper rule_id format: adjust-bw-$DOMAIN-$UUID
+		// 必须与AdjustBandwidthResource函数使用完全相同的逻辑
 		ruleID := fmt.Sprintf("adjust-bw-%s-%s", domain, record.RuleGroupUUID)
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)

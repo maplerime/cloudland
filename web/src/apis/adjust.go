@@ -1667,7 +1667,7 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/cleanup_rule_metrics.sh --rule-id '%s' --type '%s'",
 			ruleGroupUUID, ruleType)
-
+		log.Printf("wngzhe[ADJUST-INFO] Cleaning up %s comamnd is  %s", ruleType, command)
 		err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", hyperID), command)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to cleanup metrics on node %d: %v", hyperID, err)
