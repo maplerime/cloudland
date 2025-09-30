@@ -403,6 +403,37 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
 	}
 
+	// 恢复所有关联VM的CPU资源
+	log.Printf("[ADJUST-INFO] Restoring CPU resources for all linked VMs before rule deletion: %s", uuid)
+	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), uuid)
+	if err != nil {
+		log.Printf("[ADJUST-WARNING] Failed to get linked VMs for CPU restore: %v", err)
+	} else {
+		// 恢复每个VM的CPU资源
+		for _, link := range vmLinks {
+			// 获取VM的domain信息
+			domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
+			if err != nil {
+				log.Printf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
+				continue
+			}
+
+			// 创建恢复记录
+			record := &routes.AdjustmentRecord{
+				RuleGroupUUID: uuid,
+				AdjustType:    "restore_cpu",
+			}
+
+			// 恢复CPU资源
+			err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, link.VMUUID)
+			if err != nil {
+				log.Printf("[ADJUST-WARNING] Failed to restore CPU for VM %s: %v", link.VMUUID, err)
+			} else {
+				log.Printf("[ADJUST-INFO] Successfully restored CPU for VM %s", link.VMUUID)
+			}
+		}
+	}
+
 	// 清理计算节点上的调整状态指标
 	log.Printf("[ADJUST-INFO] Cleaning up CPU adjustment metrics for rule: %s", uuid)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), uuid, "cpu"); err != nil {
@@ -1367,6 +1398,38 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-INFO] Removed file: %s", alertPath)
 	} else {
 		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
+	}
+
+	// 恢复所有关联VM的带宽资源
+	log.Printf("[ADJUST-INFO] Restoring bandwidth resources for all linked VMs before rule deletion: %s", uuid)
+	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), uuid)
+	if err != nil {
+		log.Printf("[ADJUST-WARNING] Failed to get linked VMs for bandwidth restore: %v", err)
+	} else {
+		// 恢复每个VM的带宽资源
+		for _, link := range vmLinks {
+			// 获取VM的domain信息
+			domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
+			if err != nil {
+				log.Printf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
+				continue
+			}
+
+			// 创建恢复记录
+			record := &routes.AdjustmentRecord{
+				RuleGroupUUID: uuid,
+				AdjustType:    "restore_bw",
+				TargetDevice:  link.Interface,
+			}
+
+			// 恢复带宽资源
+			err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, link.Interface, link.VMUUID)
+			if err != nil {
+				log.Printf("[ADJUST-WARNING] Failed to restore bandwidth for VM %s: %v", link.VMUUID, err)
+			} else {
+				log.Printf("[ADJUST-INFO] Successfully restored bandwidth for VM %s", link.VMUUID)
+			}
+		}
 	}
 
 	// 清理计算节点上的调整状态指标
