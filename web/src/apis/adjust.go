@@ -2,6 +2,7 @@ package apis
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -1585,7 +1586,6 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 }
 
 // UnlinkAdjustRule 将VM从调整规则中取消链接
-// UnlinkAdjustRule 将VM从调整规则中取消链接
 func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	var req struct {
 		GroupUUID string `json:"group_uuid" binding:"required"`
@@ -1656,6 +1656,66 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		return
 	}
 
+	// 获取VM的domain信息
+	domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), req.VMUUID)
+	if err != nil {
+		log.Printf("[ADJUST-ERROR] Failed to get domain for VM %s: %v", req.VMUUID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get VM domain: " + err.Error()})
+		return
+	}
+
+	// 检查VM是否正在被限速，如果是则执行恢复操作
+	log.Printf("[ADJUST-INFO] Checking if VM is currently being limited: domain=%s", domain)
+
+	// 创建恢复记录
+	record := &routes.AdjustmentRecord{
+		RuleGroupUUID: req.GroupUUID,
+		TargetDevice:  req.Interface,
+	}
+
+	// 根据规则类型执行相应的恢复操作
+	if group.Type == model.RuleTypeAdjustCPU {
+		// CPU类型：检查并恢复CPU资源
+		log.Printf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
+
+		// 检查CPU调整状态指标
+		isCPULimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "cpu", req.GroupUUID)
+		if err != nil {
+			log.Printf("[ADJUST-WARN] Failed to check CPU adjustment status: %v", err)
+		} else if isCPULimited {
+			log.Printf("[ADJUST-INFO] VM is currently CPU limited, performing restore: domain=%s", domain)
+			record.AdjustType = "restore_cpu"
+			err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, req.VMUUID)
+			if err != nil {
+				log.Printf("[ADJUST-WARN] Failed to restore CPU resources: %v", err)
+			} else {
+				log.Printf("[ADJUST-INFO] Successfully restored CPU resources for domain: %s", domain)
+			}
+		} else {
+			log.Printf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
+		}
+	} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		// 带宽类型：检查并恢复带宽资源
+		log.Printf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
+
+		// 检查带宽调整状态指标
+		isBWLimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "bandwidth", req.GroupUUID)
+		if err != nil {
+			log.Printf("[ADJUST-WARN] Failed to check bandwidth adjustment status: %v", err)
+		} else if isBWLimited {
+			log.Printf("[ADJUST-INFO] VM is currently bandwidth limited, performing restore: domain=%s, interface=%s", domain, req.Interface)
+			record.AdjustType = "restore_bw"
+			err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, req.Interface, req.VMUUID)
+			if err != nil {
+				log.Printf("[ADJUST-WARN] Failed to restore bandwidth resources: %v", err)
+			} else {
+				log.Printf("[ADJUST-INFO] Successfully restored bandwidth resources for domain: %s, interface: %s", domain, req.Interface)
+			}
+		} else {
+			log.Printf("[ADJUST-INFO] VM is not currently bandwidth limited: domain=%s, interface=%s", domain, req.Interface)
+		}
+	}
+
 	// 删除链接
 	_, err = alarmOperator.DeleteVMLink(c.Request.Context(), req.GroupUUID, req.VMUUID, req.Interface)
 	if err != nil {
@@ -1664,9 +1724,21 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		return
 	}
 
+	// 清理自定义指标
+	ruleType := "cpu"
+	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+		ruleType = "bandwidth"
+	}
+
+	log.Printf("[ADJUST-INFO] Cleaning up %s adjustment metrics for rule: %s", ruleType, req.GroupUUID)
+	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), req.GroupUUID, ruleType); err != nil {
+		log.Printf("[ADJUST-WARN] Failed to cleanup rule metrics: %v", err)
+		// 不返回错误，因为数据库操作已成功
+	}
+
 	// 更新matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
-	ruleType := "adjust-cpu"
+	ruleType = "adjust-cpu"
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 		ruleType = "adjust-bw"
 	}
@@ -1689,6 +1761,116 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 			"interface":  req.Interface,
 		},
 	})
+}
+
+// checkVMAdjustmentStatus 检查VM是否正在被限速
+func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricType, ruleGroupUUID string) (bool, error) {
+	// 构建查询语句
+	query := ""
+	if metricType == "cpu" {
+		// 查询CPU调整状态
+		query = fmt.Sprintf("vm_cpu_adjustment_status{domain=\"%s\", rule_id=~\"adjust-cpu-.*-%s\"}", domain, ruleGroupUUID)
+	} else if metricType == "bandwidth" {
+		// 查询带宽调整状态
+		query = fmt.Sprintf("vm_bandwidth_adjustment_status{domain=\"%s\", rule_id=~\"adjust-bw-.*-%s\"}", domain, ruleGroupUUID)
+	} else {
+		return false, fmt.Errorf("unsupported metric type: %s", metricType)
+	}
+
+	// 构建Prometheus URL，使用monitor.go中的配置
+	prometheusURL := fmt.Sprintf("http://%s:%d/api/v1/query", prometheusIP, prometheusPort)
+
+	// 发送HTTP请求
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequest("GET", prometheusURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	q := req.URL.Query()
+	q.Add("query", query)
+	req.URL.RawQuery = q.Encode()
+
+	log.Printf("[ADJUST-INFO] Querying Prometheus: %s", req.URL.String())
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("failed to query Prometheus: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// 解析响应
+	var result struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Values [][]interface{} `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return false, fmt.Errorf("failed to parse Prometheus response: %v", err)
+	}
+
+	// 检查是否有结果且状态为1（限速中）
+	if result.Status == "success" && len(result.Data.Result) > 0 {
+		for _, r := range result.Data.Result {
+			if len(r.Values) > 0 && len(r.Values[0]) >= 2 {
+				if status, ok := r.Values[0][1].(string); ok && status == "1" {
+					return true, nil
+				}
+			}
+		}
+	}
+
+	return false, nil
+}
+
+// cleanupVMMetrics 清理VM的自定义指标
+func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID string, ruleType string) error {
+	// 获取VM实例信息
+	instance, err := routes.GetInstanceByUUIDWithAuth(ctx, vmUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get instance info: %v", err)
+	}
+
+	// 获取VM的domain信息
+	domain, err := routes.GetDomainByInstanceUUID(ctx, vmUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get domain for VM: %v", err)
+	}
+
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+
+	// 根据规则类型清理相应的指标
+	if ruleType == model.RuleTypeAdjustCPU {
+		// 清理CPU调整指标
+		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status 0",
+			domain, fmt.Sprintf("%s-%s", domain, ruleGroupUUID))
+
+		err = common.HyperExecute(ctx, control, command)
+		if err != nil {
+			return fmt.Errorf("failed to cleanup CPU metrics: %v", err)
+		}
+	} else if ruleType == model.RuleTypeAdjustInBW || ruleType == model.RuleTypeAdjustOutBW {
+		// 清理带宽调整指标
+		// 需要确定带宽类型（in/out）
+		bwType := "in"
+		if ruleType == model.RuleTypeAdjustOutBW {
+			bwType = "out"
+		}
+
+		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status 0 --target-device '%s'",
+			domain, fmt.Sprintf("adjust-bw-%s-%s", domain, ruleGroupUUID), bwType, "unknown")
+
+		err = common.HyperExecute(ctx, control, command)
+		if err != nil {
+			return fmt.Errorf("failed to cleanup bandwidth metrics: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // GetLinkAdjustRule 获取调整规则的VM链接信息
