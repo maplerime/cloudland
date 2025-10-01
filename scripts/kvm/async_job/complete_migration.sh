@@ -16,6 +16,11 @@ for i in {1..1800}; do
     if [ "$vm_state" = "running" ]; then
         echo
         state="completed"
+        
+        # Update vm_instance_map metrics - ensure VM is properly tracked
+        echo "Updating vm_instance_map metrics: ensuring VM $vm_ID is properly tracked"
+        ./generate_vm_instance_map.sh update $vm_ID
+        
         vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
         virsh define $vm_xml
         virsh autostart $vm_ID

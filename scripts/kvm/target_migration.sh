@@ -142,6 +142,12 @@ state="target_prepared"
 if [ "$migration_type" = "cold" ]; then
     virsh start $vm_ID
     [ $? -ne 0 ] && state="failed"
+    
+    # Update vm_instance_map metrics - add VM to target hypervisor
+    if [ "$state" != "failed" ]; then
+        echo "Updating vm_instance_map metrics: adding VM $vm_ID to target hypervisor"
+        ./generate_vm_instance_map.sh add $vm_ID
+    fi
 fi
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
 async_exec ./async_job/complete_migration.sh "$migrate_ID" "$task_ID" "$ID" "$source_hyper"
