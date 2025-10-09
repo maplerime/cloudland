@@ -7,7 +7,7 @@
                             {{ $Link := .Link }}
                             {{ $Listener := .Listener }}
 		            <h4 class="ui top attached header">
-			            {{.i18n.Tr "Backend_Manage_Panel"}} -- {{$Backend.Name}} ({{.i18n.Tr "Total"}}: {{.Total}})
+			            {{.i18n.Tr "Backend_Manage_Panel"}} -- {{$Listener.Name}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
 				            <a class="ui green tiny button" href="{{$Link}}/new">{{.i18n.Tr "Create"}}</a>
 			            </div>
