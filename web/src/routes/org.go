@@ -255,6 +255,16 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 		err = NewCLError(ErrResourcesInOrg, "There are resources in this org", nil)
 		return
 	}
+	err = db.Model(&model.User{}).Where("owner = ?", org.ID).Count(&count).Error
+	if err != nil {
+		logger.Error("DB failed to query users, %v", err)
+		return
+	}
+	if count > 0 {
+		logger.Error("There are users in this org", err)
+		err = NewCLError(ErrResourcesInOrg, "There are users in this org", nil)
+		return
+	}
 	err = db.Delete(&model.Member{}, `org_id = ?`, org.ID).Error
 	if err != nil {
 		logger.Error("DB failed to delete member, %v", err)
