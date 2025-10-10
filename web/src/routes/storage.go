@@ -101,7 +101,11 @@ func (a *ImageStorageAdmin) InitStorages(ctx context.Context, image *model.Image
 		if storage, exists := storageMap[poolID]; exists {
 			if storage.Status != model.StorageStatusSynced && storage.Status != model.StorageStatusSyncing {
 				storage.Status = model.StorageStatusUnknown
-				if err = db.Save(&storage).Error; err != nil {
+				
+				updateFields := make(map[string]interface{})
+				updateFields["status"] = storage.Status
+
+				if err = db.Model(&storage).Updates(updateFields).Error; err != nil {
 					logger.Error("Update image storage failed", err)
 					err = NewCLError(ErrImageStorageCreateFailed, "Failed to Create image storage", err)
 					return
