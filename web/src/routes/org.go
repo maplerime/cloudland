@@ -245,7 +245,7 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 	}()
 
 	count := 0
-	err = db.Model(&model.Interface{}).Where("owner = ?", org.ID).Count(&count).Error
+	err = db.Model(&model.Interface{}).Where("owner = ? and type <> 'gateway'", org.ID).Count(&count).Error
 	if err != nil {
 		logger.Error("DB failed to query interfaces, %v", err)
 		return
