@@ -30,13 +30,48 @@ var (
 type LoadBalancerAdmin struct{}
 type LoadBalancerView struct{}
 
-func CreateVrrpInstance(ctx context.Context, name string, router *model.Router) (vrrpInstance *model.VrrpInstance, err error) {
+type EndpointConfig struct {
+	BackendURL string `json:"backend_url"`
+	Status string `json:"status"`
+}
+
+type BackendConfig struct {
+	Endpoints []*EndpointConfig `json:"endpoints"`
+}
+
+type ListenerConfig struct{
+	Name string `json:"name"`
+	Mode string `json:"mode"`
+	Port int32  `json:"port"`
+	Backends []*BackendConfig `json:"backends"`
+}
+
+type LoadBalancerConfig struct {
+	Listeners []*ListenerConfig `json:"listeners"`
+}
+
+func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, zone *model.Zone) (vrrpInstance *model.VrrpInstance, err error) {
 	ctx, db := GetContextDB(ctx)
 	name = fmt.Sprintf("%s-%d", name, time.Now().UnixNano())
-	vrrpSubnet, err := subnetAdmin.Create(ctx, 0, name, "192.168.196.0/27", "", "", "", "vrrp", "", "", false, router, nil)
-	if err != nil {
-		logger.Error("Failed to create vrrp subnet")
-		return
+	var vrrpSubnet *model.Subnet
+	if router.VrrpSubnetID > 0 {
+		vrrpSubnet, err = subnetAdmin.Get(ctx, router.VrrpSubnetID)
+		if err != nil {
+			logger.Error("Failed to create vrrp subnet")
+			return
+		}
+	} else {
+		vrrpSubnet, err = subnetAdmin.Create(ctx, 0, name, "192.168.196.0/27", "", "", "", "vrrp", "", "", false, router, nil)
+		if err != nil {
+			logger.Error("Failed to create vrrp subnet")
+			return
+		}
+		router.VrrpSubnetID = vrrpSubnet.ID
+		err = db.Model(router).Update("vrrp_subnet_id", vrrpSubnet.ID).Error
+		if err != nil {
+			logger.Error("DB failed to update router vrrp subnet", err)
+			return
+		}
 	}
 	memberShip := GetMemberShip(ctx)
 	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID}
@@ -45,10 +80,36 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router) 
 		logger.Error("DB failed to create vrrp instance ", err)
 		return
 	}
+	vrrpIface1, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "vmaster", "vrrp", nil, false)
+	if err != nil {
+		logger.Error("Failed to create vrrp interface 1", err)
+		return
+	}
+	vrrpIface2, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "vmaster", "vrrp", nil, false)
+	if err != nil {
+		logger.Error("Failed to create vrrp interface 1", err)
+		return
+	}
+	control := "inter="
+	hyperGroup := ""
+	if zone != nil {
+		hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
+		if err != nil {
+			logger.Error("Failed to get hyper group", err)
+			return
+		}
+		control = "select=" + hyperGroup
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'master'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Delete vm command execution failed ", err)
+		return
+	}
 	return
 }
 
-func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *model.Router) (loadBalancer *model.LoadBalancer, err error) {
+func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *model.Router, zone *model.Zone) (loadBalancer *model.LoadBalancer, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -63,7 +124,7 @@ func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *mod
 			EndTransaction(ctx, err)
 		}
 	}()
-	vrrpInstance, err := CreateVrrpInstance(ctx, name, router)
+	vrrpInstance, err := CreateVrrpInstance(ctx, name, router, zone)
 	if err != nil {
 		logger.Error("Failed to create vrrp instance", err)
 		err = NewCLError(ErrVrrpInstanceCreateFailed, "Failed to create vrrp instance", err)
@@ -401,7 +462,18 @@ func (v *LoadBalancerView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(404, "404")
 		return
 	}
-	_, err = loadBalancerAdmin.Create(ctx, name, router)
+	zoneID := c.QueryInt64("zone")
+	var zone *model.Zone
+	if zoneID > 0 {
+		zone, err = zoneAdmin.Get(ctx, zoneID)
+		if err != nil {
+			logger.Error("Get zone failed ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(404, "404")
+			return
+		}
+	}
+	_, err = loadBalancerAdmin.Create(ctx, name, router, zone)
 	if err != nil {
 		logger.Error("Failed to create load balancer, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

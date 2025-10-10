@@ -79,7 +79,7 @@ type InstancesData struct {
 	IsAdmin   bool              `json:"is_admin"`
 }
 
-func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyper int32) (hyperGroup string, err error) {
+func GetHyperGroup(ctx context.Context, zoneID int64, skipHyper int32) (hyperGroup string, err error) {
 	ctx, db := GetContextDB(ctx)
 	hypers := []*model.Hyper{}
 	where := fmt.Sprintf("zone_id = %d and status = 1 and hostid <> %d", zoneID, skipHyper)
@@ -149,7 +149,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			loginPort = 3389
 		}
 	}
-	hyperGroup, err := a.GetHyperGroup(ctx, zoneID, -1)
+	hyperGroup, err := GetHyperGroup(ctx, zoneID, -1)
 	if err != nil {
 		logger.Error("No valid hypervisor", err)
 		return

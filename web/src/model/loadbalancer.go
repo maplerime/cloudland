@@ -29,9 +29,9 @@ type LoadBalancer struct {
 	FloatingIps  []*FloatingIp `gorm:"foreignkey:LoadBalancerID"`
 	RouterID     int64         `gorm:"unique_index:idx_router_lb"`
 	Router       *Router
+	Listeners    []*Listener `gorm:"foreignkey:LoadBalancerID"`
 	VrrpInstanceID int64
 	VrrpInstance *VrrpInstance `gorm:"foreignkey:VrrpInstanceID"`
-	Listeners    []*Listener `gorm:"foreignkey:LoadBalancerID"`
 }
 
 type Listener struct {
