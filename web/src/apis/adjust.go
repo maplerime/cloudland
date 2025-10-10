@@ -1658,14 +1658,19 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 
 	// 获取VM的domain信息
 	domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), req.VMUUID)
+	vmExists := true
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get domain for VM %s: %v", req.VMUUID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get VM domain: " + err.Error()})
-		return
+		log.Printf("[ADJUST-WARN] Failed to get domain for VM %s (VM may have been deleted): %v", req.VMUUID, err)
+		vmExists = false
+		domain = "" // 设置为空，避免后续操作使用无效的domain
 	}
 
 	// 检查VM是否正在被限速，如果是则执行恢复操作
-	log.Printf("[ADJUST-INFO] Checking if VM is currently being limited: domain=%s", domain)
+	if vmExists {
+		log.Printf("[ADJUST-INFO] Checking if VM is currently being limited: domain=%s", domain)
+	} else {
+		log.Printf("[ADJUST-INFO] VM %s does not exist, skipping resource restoration", req.VMUUID)
+	}
 
 	// 创建恢复记录
 	record := &routes.AdjustmentRecord{
@@ -1673,47 +1678,51 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		TargetDevice:  req.Interface,
 	}
 
-	// 根据规则类型执行相应的恢复操作
-	if group.Type == model.RuleTypeAdjustCPU {
-		// CPU类型：检查并恢复CPU资源
-		log.Printf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
+	// 根据规则类型执行相应的恢复操作（仅在VM存在时执行）
+	if vmExists {
+		if group.Type == model.RuleTypeAdjustCPU {
+			// CPU类型：检查并恢复CPU资源
+			log.Printf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
 
-		// 检查CPU调整状态指标
-		isCPULimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "cpu", req.GroupUUID)
-		if err != nil {
-			log.Printf("[ADJUST-WARN] Failed to check CPU adjustment status: %v", err)
-		} else if isCPULimited {
-			log.Printf("[ADJUST-INFO] VM is currently CPU limited, performing restore: domain=%s", domain)
-			record.AdjustType = "restore_cpu"
-			err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, req.VMUUID)
+			// 检查CPU调整状态指标
+			isCPULimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "cpu", req.GroupUUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARN] Failed to restore CPU resources: %v", err)
+				log.Printf("[ADJUST-WARN] Failed to check CPU adjustment status: %v", err)
+			} else if isCPULimited {
+				log.Printf("[ADJUST-INFO] VM is currently CPU limited, performing restore: domain=%s", domain)
+				record.AdjustType = "restore_cpu"
+				err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, req.VMUUID)
+				if err != nil {
+					log.Printf("[ADJUST-WARN] Failed to restore CPU resources: %v", err)
+				} else {
+					log.Printf("[ADJUST-INFO] Successfully restored CPU resources for domain: %s", domain)
+				}
 			} else {
-				log.Printf("[ADJUST-INFO] Successfully restored CPU resources for domain: %s", domain)
+				log.Printf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
 			}
-		} else {
-			log.Printf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
-		}
-	} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// 带宽类型：检查并恢复带宽资源
-		log.Printf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
+		} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+			// 带宽类型：检查并恢复带宽资源
+			log.Printf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
 
-		// 检查带宽调整状态指标
-		isBWLimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "bandwidth", req.GroupUUID)
-		if err != nil {
-			log.Printf("[ADJUST-WARN] Failed to check bandwidth adjustment status: %v", err)
-		} else if isBWLimited {
-			log.Printf("[ADJUST-INFO] VM is currently bandwidth limited, performing restore: domain=%s, interface=%s", domain, req.Interface)
-			record.AdjustType = "restore_bw"
-			err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, req.Interface, req.VMUUID)
+			// 检查带宽调整状态指标
+			isBWLimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "bandwidth", req.GroupUUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARN] Failed to restore bandwidth resources: %v", err)
+				log.Printf("[ADJUST-WARN] Failed to check bandwidth adjustment status: %v", err)
+			} else if isBWLimited {
+				log.Printf("[ADJUST-INFO] VM is currently bandwidth limited, performing restore: domain=%s, interface=%s", domain, req.Interface)
+				record.AdjustType = "restore_bw"
+				err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, req.Interface, req.VMUUID)
+				if err != nil {
+					log.Printf("[ADJUST-WARN] Failed to restore bandwidth resources: %v", err)
+				} else {
+					log.Printf("[ADJUST-INFO] Successfully restored bandwidth resources for domain: %s, interface: %s", domain, req.Interface)
+				}
 			} else {
-				log.Printf("[ADJUST-INFO] Successfully restored bandwidth resources for domain: %s, interface: %s", domain, req.Interface)
+				log.Printf("[ADJUST-INFO] VM is not currently bandwidth limited: domain=%s, interface=%s", domain, req.Interface)
 			}
-		} else {
-			log.Printf("[ADJUST-INFO] VM is not currently bandwidth limited: domain=%s, interface=%s", domain, req.Interface)
 		}
+	} else {
+		log.Printf("[ADJUST-INFO] Skipping resource restoration for deleted VM: %s", req.VMUUID)
 	}
 
 	// 删除链接

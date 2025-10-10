@@ -119,13 +119,47 @@ query_latest_metric_with_rule_id() {
             | map(select(.value[1] != null))
             | sort_by(.value[0] | tonumber)
             | last
-            | "\(.value[1] // "")|\(.metric.rule_id // "")|\(.value[0] | floor)"
+            | "\(.value[1] // "")|\(.metric.rule_id // "")|\(.metric.type // "")|\(.metric.target_device // "")|\(.value[0] | floor)"
         else
-            "||"
+            "||||"
         end
-    ' 2>/dev/null || echo "||")
+    ' 2>/dev/null || echo "||||")
     
     echo "$result"
+}
+
+# Function to query all bandwidth adjustment metrics for a domain
+query_all_bandwidth_metrics() {
+    local metric_name="$1"
+    local query="${metric_name}{domain=\"${DOMAIN}\"}"
+    local url="${QUERY_API}?query=${query}"
+
+    echo "Querying all bandwidth metrics: $metric_name" >&2
+
+    # Use curl to query Prometheus
+    local response
+    response=$(curl -s --connect-timeout 10 --max-time 30 "$url" 2>/dev/null)
+
+    if [ $? -ne 0 ]; then
+        echo "Warning: Failed to query metric $metric_name from Prometheus" >&2
+        return 1
+    fi
+
+    # Parse JSON response to extract all metrics
+    local results
+    results=$(echo "$response" | jq -r '
+        if .status == "success" and (.data.result | length) > 0 then
+            .data.result
+            | map(select(.value[1] != null))
+            | sort_by(.value[0] | tonumber)
+            | .[]
+            | "\(.value[1] // "")|\(.metric.rule_id // "")|\(.metric.type // "")|\(.metric.target_device // "")|\(.value[0] | floor)"
+        else
+            empty
+        end
+    ' 2>/dev/null)
+
+    echo "$results"
 }
 
 # Query CPU adjustment status
@@ -150,26 +184,20 @@ if [[ -n "$cpu_rule_id" ]]; then
     echo "CPU rule ID: $cpu_rule_id"
 fi
 
-# Query Bandwidth adjustment status  
-echo "=== Querying Latest Bandwidth Adjustment Status ==="
-bandwidth_result=$(query_latest_metric_with_rule_id "vm_bandwidth_adjustment_status")
-bandwidth_status=$(echo "$bandwidth_result" | cut -d'|' -f1)
-bandwidth_rule_id=$(echo "$bandwidth_result" | cut -d'|' -f2)
-bandwidth_timestamp=$(echo "$bandwidth_result" | cut -d'|' -f3)
+# Query All Bandwidth adjustment statuses
+echo "=== Querying All Bandwidth Adjustment Statuses ==="
+bandwidth_results=$(query_all_bandwidth_metrics "vm_bandwidth_adjustment_status")
 
-if [[ -z "$bandwidth_status" ]]; then
-    bandwidth_status="0"  # Default to not limited
-    echo "No bandwidth adjustment status found, using default: $bandwidth_status"
+if [[ -z "$bandwidth_results" ]]; then
+    echo "No bandwidth adjustment statuses found"
 else
-    echo "Latest bandwidth adjustment status: $bandwidth_status"
-    if [[ -n "$bandwidth_timestamp" ]]; then
-        bandwidth_time_readable=$(date -d "@$bandwidth_timestamp" 2>/dev/null || echo "Unknown")
-        echo "Bandwidth metric timestamp: $bandwidth_timestamp ($bandwidth_time_readable)"
-    fi
-fi
-
-if [[ -n "$bandwidth_rule_id" ]]; then
-    echo "Bandwidth rule ID: $bandwidth_rule_id"
+    echo "Found bandwidth adjustment statuses:"
+    echo "$bandwidth_results" | while IFS='|' read -r status rule_id type device timestamp; do
+        if [[ -n "$status" && -n "$rule_id" && -n "$type" && -n "$device" ]]; then
+            time_readable=$(date -d "@$timestamp" 2>/dev/null || echo "Unknown")
+            echo "  - Status: $status, Rule ID: $rule_id, Type: $type, Device: $device, Time: $timestamp ($time_readable)"
+        fi
+    done
 fi
 
 # Write metrics to target node
@@ -187,16 +215,32 @@ else
     echo "Skipping CPU adjustment metric (no data or rule_id)"
 fi
 
-# Write Bandwidth adjustment status if we have data
-if [[ -n "$bandwidth_rule_id" && "$bandwidth_status" != "" ]]; then
-    echo "Writing bandwidth adjustment metric..."
-    if /opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain "$DOMAIN" --rule-id "$bandwidth_rule_id" --status "$bandwidth_status"; then
-        echo "Successfully wrote bandwidth adjustment status: $bandwidth_status"
-    else
-        echo "Warning: Failed to write bandwidth adjustment status" >&2
-    fi
+# Write All Bandwidth adjustment statuses if we have data
+if [[ -n "$bandwidth_results" ]]; then
+    echo "Writing bandwidth adjustment metrics..."
+    bandwidth_success_count=0
+    bandwidth_total_count=0
+
+    echo "$bandwidth_results" | while IFS='|' read -r status rule_id type device timestamp; do
+        if [[ -n "$status" && -n "$rule_id" && -n "$type" && -n "$device" ]]; then
+            ((bandwidth_total_count++))
+            echo "Writing bandwidth metric: domain=$DOMAIN, rule_id=$rule_id, type=$type, status=$status, device=$device"
+
+            if /opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain "$DOMAIN" --rule-id "$rule_id" --type "$type" --status "$status" --target-device "$device"; then
+                echo "Successfully wrote bandwidth adjustment status: $status (type=$type, device=$device)"
+                ((bandwidth_success_count++))
+            else
+                echo "Warning: Failed to write bandwidth adjustment status for type=$type, device=$device" >&2
+            fi
+        else
+            echo "Warning: Skipping incomplete bandwidth metric data: status=$status, rule_id=$rule_id, type=$type, device=$device" >&2
+        fi
+    done
+
+    # Note: Due to subshell, counters won't be available here, but the operations will complete
+    echo "Bandwidth metrics migration completed"
 else
-    echo "Skipping bandwidth adjustment metric (no data or rule_id)"
+    echo "No bandwidth adjustment metrics to migrate"
 fi
 
 # Output summary
