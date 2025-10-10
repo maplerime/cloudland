@@ -17,8 +17,8 @@ type VrrpInstance struct {
 	Peer         int32  `gorm:"default:-1"`
 	VrrpSubnetID int64
 	VrrpSubnet   *Subnet       `gorm:"foreignkey:VrrpSubnetID"`
-	InterfaceID    int64
-	Interface      *Interface `gorm:"foreignkey:InterfaceID"`
+	ZoneID       int64
+	RouterID     int64
 }
 
 type LoadBalancer struct {
@@ -39,6 +39,7 @@ type Listener struct {
 	Owner          int64  `gorm:"default:1"` /* The organization ID of the resource */
 	Name           string `gorm:"unique_index:idx_lb_listener;type:varchar(64)"`
 	Status         string `gorm:"type:varchar(32)"`
+	Mode           string `gorm:"type:varchar(32)"`
 	Port           int32  `gorm:"default:-1"`
 	InterfaceID    int64
 	Interface      *Interface `gorm:"foreignkey:InterfaceID"`

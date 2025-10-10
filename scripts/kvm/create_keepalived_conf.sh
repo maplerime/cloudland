@@ -42,3 +42,5 @@ vrrp_instance load_balancer_${vrrp_ID} {
     }
 }
 EOF
+
+echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role'"

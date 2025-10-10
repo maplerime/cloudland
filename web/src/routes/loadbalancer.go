@@ -74,18 +74,22 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		}
 	}
 	memberShip := GetMemberShip(ctx)
-	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID}
+	zoneID := int64(0)
+	if zone != nil {
+		zoneID = zone.ID
+	}
+	vrrpInstance = &model.VrrpInstance{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, VrrpSubnetID: vrrpSubnet.ID, ZoneID: zoneID, RouterID: router.ID}
 	err = db.Create(vrrpInstance).Error
 	if err != nil {
 		logger.Error("DB failed to create vrrp instance ", err)
 		return
 	}
-	vrrpIface1, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "vmaster", "vrrp", nil, false)
+	vrrpIface1, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "master", "vrrp", nil, false)
 	if err != nil {
 		logger.Error("Failed to create vrrp interface 1", err)
 		return
 	}
-	vrrpIface2, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "vmaster", "vrrp", nil, false)
+	vrrpIface2, err := CreateInterface(ctx, vrrpSubnet, vrrpInstance.ID, memberShip.OrgID, -1, 0, 0, "", "", "backup", "vrrp", nil, false)
 	if err != nil {
 		logger.Error("Failed to create vrrp interface 1", err)
 		return

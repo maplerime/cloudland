@@ -318,6 +318,8 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		iface.Dhcp = ID
 	} else if strings.Contains(ifType, "gateway") {
 		iface.Device = ID
+	} else if strings.Contains(ifType, "vrrp") {
+		iface.Device = ID
 	}
 	err = db.Create(iface).Error
 	if err != nil {
