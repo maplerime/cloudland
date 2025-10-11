@@ -37,6 +37,11 @@ virsh undefine $vm_ID
 if [ $? -ne 0 ]; then
     virsh undefine --nvram $vm_ID
 fi
+
+# Update vm_instance_map metrics - remove VM from source hypervisor
+echo "Updating vm_instance_map metrics: removing VM $vm_ID from source hypervisor"
+./generate_vm_instance_map.sh remove $vm_ID
+
 ./clear_source_vhost.sh
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
