@@ -1633,6 +1633,9 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	}
 
 	var linkExists bool
+	var vmFoundWithDifferentInterface bool
+	var existingInterface string
+
 	for _, link := range existingLinks {
 		if link.VMUUID == req.VMUUID {
 			// 对于BW类型，还需要检查interface是否相同
@@ -1640,6 +1643,10 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 				if link.Interface == req.Interface {
 					linkExists = true
 					break
+				} else {
+					// VM存在但interface不匹配
+					vmFoundWithDifferentInterface = true
+					existingInterface = link.Interface
 				}
 			} else {
 				// CPU类型，VM已链接
@@ -1650,9 +1657,26 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	}
 
 	if !linkExists {
-		log.Printf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s, interface=%s",
-			req.VMUUID, req.GroupUUID, req.Interface)
-		c.JSON(http.StatusNotFound, gin.H{"error": "VM not linked to this rule group"})
+		if vmFoundWithDifferentInterface {
+			// VM存在但interface不匹配，提供具体的错误信息
+			log.Printf("[ADJUST-ERROR] VM linked with different interface: vm_uuid=%s, requested_interface=%s, actual_interface=%s",
+				req.VMUUID, req.Interface, existingInterface)
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("VM %s is linked to this rule group but with interface '%s', not '%s'. Please use the correct interface value.",
+					req.VMUUID, existingInterface, req.Interface),
+				"details": gin.H{
+					"vm_uuid":             req.VMUUID,
+					"requested_interface": req.Interface,
+					"actual_interface":    existingInterface,
+					"suggestion":          fmt.Sprintf("Use interface '%s' instead of '%s'", existingInterface, req.Interface),
+				},
+			})
+		} else {
+			// VM完全没有链接到该规则组
+			log.Printf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s, interface=%s",
+				req.VMUUID, req.GroupUUID, req.Interface)
+			c.JSON(http.StatusNotFound, gin.H{"error": "VM not linked to this rule group"})
+		}
 		return
 	}
 

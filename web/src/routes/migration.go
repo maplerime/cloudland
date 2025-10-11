@@ -20,7 +20,6 @@ import (
 	"web/src/model"
 
 	"github.com/go-macaron/session"
-	"github.com/spf13/viper"
 	macaron "gopkg.in/macaron.v1"
 )
 
@@ -140,21 +139,8 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			memory = flavor.Memory
 			disk = flavor.Disk
 		}
-		// Get Prometheus configuration for VM metrics migration
-		viper.SetConfigFile("conf/config.toml")
-		var prometheusHost string
-		var prometheusPort int
-		if err := viper.ReadInConfig(); err != nil {
-			logger.Error("Failed to read config file for Prometheus settings: %v", err)
-			prometheusHost = ""
-			prometheusPort = 0
-		} else {
-			prometheusHost = viper.GetString("monitor.host")
-			prometheusPort = viper.GetInt("monitor.port")
-			// If Prometheus is not configured in config file, use empty string, script will skip metrics migration
-		}
 
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%d'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, prometheusHost, prometheusPort, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/target_migration.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, task1.ID, instance.ID, instance.Hostname, cpu, memory, disk, sourceHyper.Hostname, migrationType, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Target migration command execution failed", err)

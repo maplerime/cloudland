@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 9 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type> [prometheus_host] [prometheus_port]"
+[ $# -lt 9 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type>"
 
 migrate_ID=$1
 task_ID=$2
@@ -15,8 +15,6 @@ vm_mem=$6
 disk_size=$7
 source_hyper=$8
 migration_type=$9
-prometheus_host=${10:-""}
-prometheus_port=${11:-""}
 state=error
 
 if [ -z "$wds_address" ]; then
@@ -85,4 +83,4 @@ jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 [ "$migration_type" = "cold" ] && virsh start $vm_ID
 state="target_prepared"
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
-async_exec ./async_job/complete_migration.sh "$migrate_ID" "$task_ID" "$ID" "$prometheus_host" "$prometheus_port"
+async_exec ./async_job/complete_migration.sh "$migrate_ID" "$task_ID" "$ID"
