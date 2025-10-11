@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 cd `dirname $0`
 source ../cloudrc
@@ -10,12 +10,23 @@ router=$1
 vrrp_ID=$2
 vrrp_vlan=$3
 local_mac=$4
-local_ip=${5%/*}
+local_ip=$5
 peer_mac=$6
-peer_ip=${7%/*}
+peer_ip=$7
 role=$8
 virtual_ip=$9
 ext_dev=te-$1-$ext_link
+
+./create_local_router.sh $router
+./create_link.sh $vrrp_vlan
+cat /proc/net/dev | grep -q "^\<ln-$vlan\>"
+if [ $? -ne 0 ]; then
+    ./create_veth.sh $router ln-$vrrp_vlan ns-$vrrp_vlan
+    apply_vnic -I ln-$vrrp_vlan
+fi
+brctl addif br$vrrp_vlan ln-$vrrp_vlan
+ip netns exec $router ip link set ns-$vrrp_vlan address $local_mac
+ip netns exec $router ip addr add $local_ip dev ns-$vrrp_vlan
 
 lb_dir=$router_dir/$router/lb-$vrrp_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir
@@ -27,9 +38,9 @@ vrrp_instance load_balancer_${vrrp_ID} {
     priority 10
     advert_int 1
 
-    unicast_src_ip $local_ip
+    unicast_src_ip ${local_ip%/*}
     unicast_peer {
-        $peer_ip
+        ${peer_ip%/*}
     }
 
     authentication {

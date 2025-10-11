@@ -8,6 +8,7 @@ package rpcs
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -17,6 +18,51 @@ import (
 
 func init() {
 	Add("create_keepalived_conf", CreateKeepalivedConf)
+}
+
+func sendVrrpFdbRules(ctx context.Context, vrrpID int64, vrrpIface1, vrrpIface2 *model.Interface) (err error) {
+	db := DB()
+	hyper1 := &model.Hyper{}
+	err = db.Where("hostid = ?", vrrpIface1.Hyper).Take(hyper1).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp hypervisor 1", err)
+		return
+	}
+	hyper2 := &model.Hyper{}
+	err = db.Where("hostid = ?", vrrpIface2.Hyper).Take(hyper2).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp hypervisor 2", err)
+		return
+	}
+	vrrpRules := []*FdbRule{
+		{
+			Instance: vrrpIface1.Name,
+			Vni:      vrrpIface1.Address.Subnet.Vlan,
+			InnerIP:  vrrpIface1.Address.Address,
+			InnerMac: vrrpIface1.MacAddr,
+			OuterIP:  hyper1.HostIP,
+			Gateway:  "nogateway",
+			Router:   vrrpIface1.Address.Subnet.RouterID,
+		},
+		{
+			Instance: vrrpIface2.Name,
+			Vni:      vrrpIface2.Address.Subnet.Vlan,
+			InnerIP:  vrrpIface2.Address.Address,
+			InnerMac: vrrpIface2.MacAddr,
+			OuterIP:  hyper2.HostIP,
+			Gateway:  "nogateway",
+			Router:   vrrpIface2.Address.Subnet.RouterID,
+		},
+	}
+	fdbJson, _ := json.Marshal(vrrpRules)
+	control := fmt.Sprintf("toall=group-vrrp-%d", vrrpID, vrrpIface1.Hyper, vrrpIface2.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("add_fw.sh execution failed", err)
+		return
+	}
+	return
 }
 
 func CreateKeepalivedConf(ctx context.Context, args []string) (status string, err error) {
@@ -38,6 +84,12 @@ func CreateKeepalivedConf(ctx context.Context, args []string) (status string, er
 		logger.Error("Invalid hypervisor ID", err)
 		return
 	}
+	hyper := &model.Hyper{}
+	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
+	if err != nil || hyper.Hostid < 0 {
+		logger.Error("Failed to query hypervisor")
+		return
+	}
 	role := args[3]
 	vrrpInstance := &model.VrrpInstance{Model: model.Model{ID: int64(vrrpID)}}
 	err = db.Preload("VrrpSubnet").Take(vrrpInstance).Error
@@ -45,30 +97,25 @@ func CreateKeepalivedConf(ctx context.Context, args []string) (status string, er
 		logger.Error("Failed to query vrrp instance", err)
 		return
 	}
-	hyper := &model.Hyper{}
-	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
-	if err != nil {
-		logger.Error("Failed to query hypervisor", err)
-		return
-	}
-	err = db.Model(&model.Interface{}).Where("type == 'vrrp' and name == ? and device == ?", role, vrrpID).Updates(map[string]interface{}{
+	err = db.Model(&model.Interface{}).Where("type = 'vrrp' and name = ? and device = ?", role, vrrpID).Updates(map[string]interface{}{
 		"hyper": hyperID}).Error
 	if err != nil {
 		logger.Error("Failed to update interface", err)
 	}
 	vrrpIface1 := &model.Interface{}
 	vrrpIface2 := &model.Interface{}
-	err = db.Where("type == 'vrrp' and name == 'master' and device == ?", vrrpID).Take(vrrpIface1).Error
+	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'master' and device = ?", vrrpID).Take(vrrpIface1).Error
 	if err != nil {
 		logger.Error("Failed to query vrrp interface 1", err)
 		return
 	}
-	err = db.Where("type == 'vrrp' and name == 'backup' and device == ?", vrrpID).Take(vrrpIface2).Error
+	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'backup' and device = ?", vrrpID).Take(vrrpIface2).Error
 	if err != nil {
 		logger.Error("Failed to query vrrp interface 2", err)
 		return
 	}
 	if role == "master" {
+		vrrpIface1.Hyper = int32(hyperID)
 		hyperGroup := ""
 		hyperGroup, err = GetHyperGroup(ctx, vrrpInstance.ZoneID, int32(hyperID))
 		if err != nil {
@@ -79,7 +126,14 @@ func CreateKeepalivedConf(ctx context.Context, args []string) (status string, er
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'backup'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface2.MacAddr, vrrpIface2.Address.Address, vrrpIface1.MacAddr, vrrpIface1.Address.Address)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Add_fwrule execution failed", err)
+			logger.Error("create_keepalived_conf.sh execution failed", err)
+			return
+		}
+	} else if role == "backup" {
+		vrrpIface2.Hyper = int32(hyperID)
+		err = sendVrrpFdbRules(ctx, int64(vrrpID), vrrpIface1, vrrpIface2)
+		if err != nil {
+			logger.Error("sendVrrpFdbRules execution failed", err)
 			return
 		}
 	}
