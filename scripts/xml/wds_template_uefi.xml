@@ -36,7 +36,7 @@
   <devices>
     <emulator>/usr/bin/qemu-system-x86_64</emulator>
     <disk type='vhostuser' device='disk' snapshot='no'>
-      <driver name='qemu' type='raw'/>
+      <driver name='qemu' type='raw' queues='VHOST_QUEUE_NUM'/>
       <source type='unix' path='VM_UNIX_SOCK'>
         <reconnect enabled='yes' timeout='10'/>
       </source>
