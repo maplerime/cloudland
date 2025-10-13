@@ -45,6 +45,11 @@ for (( i=1; i <= $count; i++ )); do
     ./clear_sg_chain.sh $vif_dev
 done
 ./clear_local_router.sh $router
+
+# Update vm_instance_map metrics - remove VM from source hypervisor
+echo "Updating vm_instance_map metrics: removing VM $vm_ID from source hypervisor"
+./generate_vm_instance_map.sh remove $vm_ID
+
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 state="source_prepared"
