@@ -155,6 +155,20 @@ type AggregatedDataPoint struct {
 	OriginalTime string
 }
 
+// TrafficAggregationResult represents the result from traffic aggregation query
+type TrafficAggregationResult struct {
+	TotalRecords     int64  `json:"total_records"`
+	MinValue         int64  `json:"min_value"`
+	MaxValue         int64  `json:"max_value"`
+	TotalIncrement   int64  `json:"total_increment"`
+	ResetCount       int64  `json:"reset_count"`
+	UniqueTimestamps int64  `json:"unique_timestamps"`
+	Subject          string `json:"subject"`
+	InstanceID       string `json:"instance_id"`
+	StartTime        int64  `json:"start_time"`
+	EndTime          int64  `json:"end_time"`
+}
+
 var (
 	targetFilterCache *PrometheusTargetFilter
 	targetFilterMutex sync.Mutex
@@ -615,6 +629,11 @@ func (o *OpenMeterAPI) buildSQLQuery(req OpenMeterQueryRequest) string {
 	req.Start = startTime
 	req.End = endTime
 
+	// Use optimized query for traffic metrics
+	if req.Subject == "domain_north_south_inbound_bytes_total" || req.Subject == "domain_north_south_outbound_bytes_total" {
+		return o.buildTrafficAggregationQuery(req)
+	}
+
 	timeFilter = fmt.Sprintf("AND toUnixTimestamp(time) BETWEEN %d AND %d", startTime, endTime)
 
 	query := fmt.Sprintf(`
@@ -640,6 +659,76 @@ ORDER BY time ASC
 LIMIT %d
 FORMAT JSONEachRow
 `, req.Subject, req.InstanceID, timeFilter, req.Limit)
+
+	return strings.TrimSpace(query)
+}
+
+// buildTrafficAggregationQuery builds optimized aggregation query for traffic metrics
+func (o *OpenMeterAPI) buildTrafficAggregationQuery(req OpenMeterQueryRequest) string {
+	timeFilter := fmt.Sprintf("AND toUnixTimestamp(time) BETWEEN %d AND %d", req.Start, req.End)
+
+	query := fmt.Sprintf(`
+WITH traffic_data AS (
+  SELECT 
+    time,
+    toUnixTimestamp(time) as unix_time,
+    JSONExtractFloat(toString(JSONExtract(data, 'value', 'JSON'))) as value,
+    JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'device') as device,
+    JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain') as domain
+  FROM om_events 
+  WHERE subject = '%s'
+    AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain') = (
+      SELECT any(JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain'))
+      FROM om_events
+      WHERE subject = 'vm_instance_map'
+        AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'instance_id') = '%s'
+    )
+    %s
+  ORDER BY time ASC
+),
+aggregated_by_time AS (
+  SELECT 
+    unix_time,
+    sum(value) as total_value,
+    count(*) as device_count,
+    groupArray(device) as devices
+  FROM traffic_data
+  GROUP BY unix_time
+  ORDER BY unix_time ASC
+),
+with_increments AS (
+  SELECT 
+    unix_time,
+    total_value,
+    device_count,
+    devices,
+    lagInFrame(total_value) OVER (ORDER BY unix_time ASC) as prev_value,
+    CASE 
+      WHEN lagInFrame(total_value) OVER (ORDER BY unix_time ASC) IS NULL THEN 0
+      WHEN total_value < lagInFrame(total_value) OVER (ORDER BY unix_time ASC) THEN total_value
+      ELSE total_value - lagInFrame(total_value) OVER (ORDER BY unix_time ASC)
+    END as increment,
+    CASE 
+      WHEN lagInFrame(total_value) OVER (ORDER BY unix_time ASC) IS NOT NULL 
+           AND total_value < lagInFrame(total_value) OVER (ORDER BY unix_time ASC) THEN 1
+      ELSE 0
+    END as is_reset
+  FROM aggregated_by_time
+)
+SELECT 
+  count(*) as total_records,
+  min(total_value) as min_value,
+  max(total_value) as max_value,
+  sum(increment) as total_increment,
+  sum(is_reset) as reset_count,
+  count(DISTINCT unix_time) as unique_timestamps,
+  '%s' as subject,
+  '%s' as instance_id,
+  %d as start_time,
+  %d as end_time
+FROM with_increments
+FORMAT JSONEachRow
+`, req.Subject, req.InstanceID, timeFilter, req.Subject, req.InstanceID, req.Start, req.End)
 
 	return strings.TrimSpace(query)
 }
@@ -921,12 +1010,7 @@ func (o *OpenMeterAPI) processVMStateMetrics(events []OpenMeterEvent, queryStart
 }
 
 // processTrafficMetrics processes network traffic metrics
-// Rules:
-// 1. Aggregate traffic from all network interfaces by timestamp
-// 2. Detect counter resets based on aggregated values
-// 3. Handle SDN restarts and host migrations
-// 4. Calculate incremental traffic for each segment
-// 5. Sum all increments to get total traffic
+// Traffic metrics now always use aggregated results from buildTrafficAggregationQuery
 func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject string, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
 	if len(events) == 0 {
 		return &TrafficCalculationResult{}, map[string]interface{}{
@@ -935,168 +1019,69 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 		}, nil
 	}
 
-	// Group events by timestamp and aggregate traffic values from all network interfaces
-	timestampGroups := make(map[string][]OpenMeterEvent)
-	for _, event := range events {
-		timestampGroups[event.Time] = append(timestampGroups[event.Time], event)
+	// For traffic metrics, we now always use aggregated results from buildTrafficAggregationQuery
+	// The query structure ensures we get exactly one event with aggregated data
+	if events[0].Data != nil {
+		return o.parseTrafficAggregationResult(events[0], subject, queryStart, queryEnd)
 	}
-	// Create aggregated time series with total traffic per timestamp
-	var aggregatedSeries []AggregatedDataPoint
-	for timestamp, eventsAtTime := range timestampGroups {
-		var totalValue int64
-		var host string
-		var devices []string
 
-		// Deduplicate events with same value at the same timestamp
-		uniqueValues := make(map[int64]bool)
-		var uniqueEvents []OpenMeterEvent
+	// This should not happen for traffic metrics, but provide a fallback
+	return &TrafficCalculationResult{}, map[string]interface{}{
+		"total_bytes": 0,
+		"total_mb":    0,
+	}, fmt.Errorf("unexpected data structure for traffic metrics")
+}
 
-		for _, event := range eventsAtTime {
-			value := o.extractTrafficValueFromEvent(event)
-			// Only include events with unique values to avoid double counting
-			if !uniqueValues[value] {
-				uniqueValues[value] = true
-				uniqueEvents = append(uniqueEvents, event)
-			}
-		}
+// parseTrafficAggregationResult parses the aggregated traffic result from ClickHouse
+func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subject string, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
+	// Extract values from the aggregated result
+	totalIncrement := int64(0)
+	resetCount := int64(0)
+	uniqueTimestamps := int64(0)
 
-		// Sum traffic from deduplicated network interfaces at this timestamp
-		for _, event := range uniqueEvents {
-			value := o.extractTrafficValueFromEvent(event)
-			totalValue += value
-			// Get host info from first event (should be same for all interfaces)
-			if host == "" {
-				host = o.extractHostFromEvent(event)
-			}
-			// Collect device names for debugging
-			if device := o.extractTargetDeviceFromEvent(event); device != "" {
-				devices = append(devices, device)
-			}
-		}
-		aggregatedSeries = append(aggregatedSeries, AggregatedDataPoint{
-			Timestamp:    timestamp,
-			TotalValue:   totalValue,
-			Host:         host,
-			EventCount:   len(uniqueEvents), // Use deduplicated count
-			Devices:      devices,
-			OriginalTime: timestamp,
-		})
+	if val, ok := event.Data["total_increment"].(float64); ok {
+		totalIncrement = int64(val)
 	}
-	// Sort aggregated series by time (oldest first)
-	sort.Slice(aggregatedSeries, func(i, j int) bool {
-		return aggregatedSeries[i].Timestamp < aggregatedSeries[j].Timestamp
-	})
+	if val, ok := event.Data["reset_count"].(float64); ok {
+		resetCount = int64(val)
+	}
+	if val, ok := event.Data["unique_timestamps"].(float64); ok {
+		uniqueTimestamps = int64(val)
+	}
 
+	// Calculate duration for rate calculation
+	durationMinutes := float64(queryEnd-queryStart) / 60.0
+	var averageRateMbps float64
+	if durationMinutes > 0 {
+		averageRateMbps = (float64(totalIncrement) / (1024 * 1024)) / (durationMinutes / 60) // MB per second
+	}
+
+	// Create result structure matching the expected format
 	result := &TrafficCalculationResult{
+		TotalBytes:     totalIncrement,
 		Segments:       []TrafficSegment{},
 		Resets:         []TrafficReset{},
 		HostMigrations: []HostMigrationDetected{},
+		DataQuality: map[string]interface{}{
+			"missing_intervals":     0,
+			"continuous_monitoring": resetCount == 0,
+			"interface_aggregation": true,
+		},
 	}
 
-	var currentSegmentStart int
-	var totalBytes int64
-	var lastHost string
-
-	// Process aggregated time series
-	for i, dataPoint := range aggregatedSeries {
-		currentValue := dataPoint.TotalValue
-		currentHost := dataPoint.Host
-
-		// Detect host migration
-		if lastHost != "" && lastHost != currentHost {
-			eventTimestamp := o.parseTimestampFromString(dataPoint.Timestamp)
-			result.HostMigrations = append(result.HostMigrations, HostMigrationDetected{
-				Timestamp:       eventTimestamp,
-				FromHost:        lastHost,
-				ToHost:          currentHost,
-				MigrationType:   "live_migration",
-				DowntimeSeconds: 15,
-				DataLossBytes:   currentValue,
-				Reason:          "host_maintenance",
-			})
-			// Host migration causes counter reset
-			if currentSegmentStart < i {
-				segment := o.createTrafficSegmentFromAggregated(aggregatedSeries, currentSegmentStart, i-1, queryStart, queryEnd)
-				result.Segments = append(result.Segments, segment)
-				totalBytes += segment.IncrementBy
-			}
-			currentSegmentStart = i
-		}
-
-		// Detect counter reset (aggregated value decreased)
-		if i > currentSegmentStart {
-			prevValue := aggregatedSeries[i-1].TotalValue
-			if currentValue < prevValue {
-				eventTimestamp := o.parseTimestampFromString(dataPoint.Timestamp)
-				result.Resets = append(result.Resets, TrafficReset{
-					Timestamp:               eventTimestamp,
-					BeforeValue:             prevValue,
-					AfterValue:              currentValue,
-					ResetReason:             "counter_reset_or_sdn_restart",
-					DurationAffectedMinutes: 2,
-				})
-
-				// Close current segment
-				if currentSegmentStart < i {
-					segment := o.createTrafficSegmentFromAggregated(aggregatedSeries, currentSegmentStart, i-1, queryStart, queryEnd)
-					result.Segments = append(result.Segments, segment)
-					totalBytes += segment.IncrementBy
-				}
-				currentSegmentStart = i
-			}
-		}
-
-		lastHost = currentHost
-	}
-
-	// Close final segment
-	if currentSegmentStart < len(aggregatedSeries) {
-		segment := o.createTrafficSegmentFromAggregated(aggregatedSeries, currentSegmentStart, len(aggregatedSeries)-1, queryStart, queryEnd)
-		result.Segments = append(result.Segments, segment)
-		totalBytes += segment.IncrementBy
-	}
-
-	result.TotalBytes = totalBytes
-
-	// Add duration to segments using Unix timestamp calculation
-	for i := range result.Segments {
-		result.Segments[i].Duration = o.calculateTimeDifferenceFromUnix(result.Segments[i].StartTime, result.Segments[i].EndTime)
-	}
-
-	// Calculate data quality metrics
-	dataQuality := map[string]interface{}{
-		"missing_intervals":     0, // Could be calculated based on expected vs actual data points
-		"continuous_monitoring": len(result.Resets) == 0 && len(result.HostMigrations) == 0,
-		"interface_aggregation": true, // Indicates multi-interface aggregation was used
-	}
-
-	// Add data quality to result
-	result.DataQuality = dataQuality
-
-	// Calculate rate (optional)
-	var averageRateMbps float64
-	if len(result.Segments) > 0 {
-		totalDurationMinutes := 0.0
-		for _, segment := range result.Segments {
-			totalDurationMinutes += segment.Duration
-		}
-		if totalDurationMinutes > 0 {
-			averageRateMbps = (float64(totalBytes) / (1024 * 1024)) / (totalDurationMinutes / 60) // MB per second
-		}
-	}
-
+	// Create summary matching the expected JSON format
 	summary := map[string]interface{}{
-		"total_bytes":           totalBytes,
-		"total_mb":              float64(totalBytes) / (1024 * 1024),
-		"total_gb":              float64(totalBytes) / (1024 * 1024 * 1024),
-		"total_kb":              float64(totalBytes) / 1024,
-		"monitoring_periods":    len(result.Segments),
-		"sdn_reset_count":       len(result.Resets),
-		"host_migrations_count": len(result.HostMigrations),
+		"total_bytes":           totalIncrement,
+		"total_mb":              float64(totalIncrement) / (1024 * 1024),
+		"total_gb":              float64(totalIncrement) / (1024 * 1024 * 1024),
+		"total_kb":              float64(totalIncrement) / 1024,
+		"monitoring_periods":    1, // Aggregated result represents one period
+		"sdn_reset_count":       resetCount,
+		"host_migrations_count": 0, // Not detected in aggregated query
 		"metric_type":           subject,
 		"average_rate_mbps":     averageRateMbps,
 		"interface_aggregation": true,
-		"unique_timestamps":     len(aggregatedSeries),
+		"unique_timestamps":     uniqueTimestamps,
 	}
 
 	return result, summary, nil
@@ -1638,20 +1623,6 @@ func (o *OpenMeterAPI) extractVMStateFromEvent(event OpenMeterEvent) string {
 	return ""
 }
 
-// extractTrafficValueFromEvent extracts traffic bytes from metric event
-func (o *OpenMeterAPI) extractTrafficValueFromEvent(event OpenMeterEvent) int64 {
-	if values, ok := event.Data["values"].([]interface{}); ok && len(values) > 0 {
-		if valueArray, ok := values[0].([]interface{}); ok && len(valueArray) > 1 {
-			if valueStr, ok := valueArray[1].(string); ok {
-				if value, err := strconv.ParseInt(valueStr, 10, 64); err == nil {
-					return value
-				}
-			}
-		}
-	}
-	return 0
-}
-
 // extractHostFromEvent extracts host information from metric event
 func (o *OpenMeterAPI) extractHostFromEvent(event OpenMeterEvent) string {
 	if labels, ok := event.Data["labels"].(map[string]interface{}); ok {
@@ -1708,24 +1679,6 @@ func (o *OpenMeterAPI) extractTargetDeviceFromEvent(event OpenMeterEvent) string
 	return ""
 }
 
-// parseTimestampFromEvent extracts Unix timestamp from event
-func (o *OpenMeterAPI) parseTimestampFromEvent(event OpenMeterEvent) int64 {
-	layout := "2006-01-02 15:04:05"
-	if t, err := time.Parse(layout, event.Time); err == nil {
-		return t.Unix()
-	}
-	return time.Now().Unix()
-}
-
-// parseTimestampFromString extracts Unix timestamp from time string
-func (o *OpenMeterAPI) parseTimestampFromString(timeStr string) int64 {
-	layout := "2006-01-02 15:04:05"
-	if t, err := time.Parse(layout, timeStr); err == nil {
-		return t.Unix()
-	}
-	return time.Now().Unix()
-}
-
 // convertTimeStringToUnix converts time string to Unix timestamp
 func (o *OpenMeterAPI) convertTimeStringToUnix(timeStr string) int64 {
 	layout := "2006-01-02 15:04:05"
@@ -1763,94 +1716,6 @@ func (o *OpenMeterAPI) calculateTimeDifferenceFromUnix(startTimestamp, endTimest
 	}
 	duration := time.Duration(endTimestamp-startTimestamp) * time.Second
 	return duration.Minutes()
-}
-
-// createTrafficSegment creates a traffic segment from events with Unix timestamps
-func (o *OpenMeterAPI) createTrafficSegment(events []OpenMeterEvent, startIdx, endIdx int, queryStart, queryEnd int64) TrafficSegment {
-	if startIdx > endIdx || endIdx >= len(events) {
-		return TrafficSegment{}
-	}
-
-	startEvent := events[startIdx]
-	endEvent := events[endIdx]
-
-	startValue := o.extractTrafficValueFromEvent(startEvent)
-	endValue := o.extractTrafficValueFromEvent(endEvent)
-
-	increment := int64(0)
-	if endValue >= startValue {
-		increment = endValue - startValue
-	}
-
-	// Use query time range if available, otherwise use event timestamps
-	segmentStartTime := o.parseTimestampFromEvent(startEvent)
-	segmentEndTime := o.parseTimestampFromEvent(endEvent)
-
-	// For single data point or when query time range is specified, use query range for better time coverage
-	if queryStart > 0 && queryEnd > 0 {
-		// If we only have one data point, use the full query range
-		if startIdx == endIdx {
-			segmentStartTime = queryStart
-			segmentEndTime = queryEnd
-		} else {
-			// For multiple data points, extend to query boundaries if events are at the edges
-			if startIdx == 0 {
-				segmentStartTime = queryStart
-			}
-			if endIdx == len(events)-1 {
-				segmentEndTime = queryEnd
-			}
-		}
-	}
-
-	return TrafficSegment{
-		StartTime:   segmentStartTime,
-		EndTime:     segmentEndTime,
-		StartValue:  startValue,
-		EndValue:    endValue,
-		IncrementBy: increment,
-	}
-}
-
-// createTrafficSegmentFromAggregated creates a traffic segment from aggregated data points
-func (o *OpenMeterAPI) createTrafficSegmentFromAggregated(aggregatedSeries []AggregatedDataPoint, startIdx, endIdx int, queryStart, queryEnd int64) TrafficSegment {
-	if startIdx > endIdx || endIdx >= len(aggregatedSeries) {
-		return TrafficSegment{}
-	}
-	startDataPoint := aggregatedSeries[startIdx]
-	endDataPoint := aggregatedSeries[endIdx]
-	startValue := startDataPoint.TotalValue
-	endValue := endDataPoint.TotalValue
-	increment := int64(0)
-	if endValue >= startValue {
-		increment = endValue - startValue
-	}
-	// Use query time range if available, otherwise use event timestamps
-	segmentStartTime := o.parseTimestampFromString(startDataPoint.Timestamp)
-	segmentEndTime := o.parseTimestampFromString(endDataPoint.Timestamp)
-	// For single data point or when query time range is specified, use query range for better time coverage
-	if queryStart > 0 && queryEnd > 0 {
-		// If we only have one data point, use the full query range
-		if startIdx == endIdx {
-			segmentStartTime = queryStart
-			segmentEndTime = queryEnd
-		} else {
-			// For multiple data points, extend to query boundaries if events are at the edges
-			if startIdx == 0 {
-				segmentStartTime = queryStart
-			}
-			if endIdx == len(aggregatedSeries)-1 {
-				segmentEndTime = queryEnd
-			}
-		}
-	}
-	return TrafficSegment{
-		StartTime:   segmentStartTime,
-		EndTime:     segmentEndTime,
-		StartValue:  startValue,
-		EndValue:    endValue,
-		IncrementBy: increment,
-	}
 }
 
 // calculateTimeDifference calculates time difference in minutes between two time strings
