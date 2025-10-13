@@ -154,6 +154,7 @@ type AggregatedDataPoint struct {
 	Devices      []string
 	OriginalTime string
 }
+
 var (
 	targetFilterCache *PrometheusTargetFilter
 	targetFilterMutex sync.Mutex
@@ -945,8 +946,22 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 		var totalValue int64
 		var host string
 		var devices []string
-		// Sum traffic from all network interfaces at this timestamp
+
+		// Deduplicate events with same value at the same timestamp
+		uniqueValues := make(map[int64]bool)
+		var uniqueEvents []OpenMeterEvent
+
 		for _, event := range eventsAtTime {
+			value := o.extractTrafficValueFromEvent(event)
+			// Only include events with unique values to avoid double counting
+			if !uniqueValues[value] {
+				uniqueValues[value] = true
+				uniqueEvents = append(uniqueEvents, event)
+			}
+		}
+
+		// Sum traffic from deduplicated network interfaces at this timestamp
+		for _, event := range uniqueEvents {
 			value := o.extractTrafficValueFromEvent(event)
 			totalValue += value
 			// Get host info from first event (should be same for all interfaces)
@@ -962,7 +977,7 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 			Timestamp:    timestamp,
 			TotalValue:   totalValue,
 			Host:         host,
-			EventCount:   len(eventsAtTime),
+			EventCount:   len(uniqueEvents), // Use deduplicated count
 			Devices:      devices,
 			OriginalTime: timestamp,
 		})
@@ -1710,6 +1725,7 @@ func (o *OpenMeterAPI) parseTimestampFromString(timeStr string) int64 {
 	}
 	return time.Now().Unix()
 }
+
 // convertTimeStringToUnix converts time string to Unix timestamp
 func (o *OpenMeterAPI) convertTimeStringToUnix(timeStr string) int64 {
 	layout := "2006-01-02 15:04:05"
@@ -1836,6 +1852,7 @@ func (o *OpenMeterAPI) createTrafficSegmentFromAggregated(aggregatedSeries []Agg
 		IncrementBy: increment,
 	}
 }
+
 // calculateTimeDifference calculates time difference in minutes between two time strings
 func (o *OpenMeterAPI) calculateTimeDifference(startTime, endTime string) float64 {
 	layout := "2006-01-02 15:04:05"
