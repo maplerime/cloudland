@@ -9,6 +9,7 @@ package routes
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -29,7 +30,33 @@ var (
 type BackendAdmin struct{}
 type BackendView struct{}
 
-func (a *BackendAdmin) Create(ctx context.Context, backendAddr string, listener *model.Listener) (backend *model.Backend, err error) {
+func (v *BackendView) CreateHaproxyConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+	listeners := loadBalancer.Listeners
+	listenerCfgs := []*ListenerConfig{}
+	for _, listener := range listeners {
+		listenerCfgs = append(listenerCfgs, &ListenerConfig{
+			Name: fmt.Sprintf("lb-%d-lsn-%d", loadBalancer.ID, listener.ID),
+			Mode: listener.Mode,
+			Port: listener.Port,
+		})
+		backendCfgs := []*BackendConfig{}
+		for _, backend := range listener.Backends {
+			backendCfgs = append(backendCfgs, &BackendConfig{
+				BackendURL: backend.BackendAddr,
+				Status:     backend.Status,
+			})
+		}
+	}
+	haproxyCfg := &LoadBalancerConfig{listenerCfgs}
+	_, err = json.Marshal(haproxyCfg)
+	if err != nil {
+		logger.Errorf("Failed to marshal load balancer json data, %v", err)
+		return
+	}
+	return
+}
+
+func (a *BackendAdmin) Create(ctx context.Context, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (backend *model.Backend, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -186,7 +213,7 @@ func (a *BackendAdmin) List(ctx context.Context, offset, limit int64, order stri
 	if order == "" {
 		order = "created_at"
 	}
-	where := fmt.Sprintf("listsner_id = %d", listener.ID)
+	where := fmt.Sprintf("listener_id = %d", listener.ID)
 	wm := memberShip.GetWhere()
 	if wm != "" {
 		where = fmt.Sprintf("%s and %s", where, wm)
@@ -564,7 +591,7 @@ func (v *BackendView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(404, "404")
 		return
 	}
-	_, err = backendAdmin.Create(ctx, backendAddr, listener)
+	_, err = backendAdmin.Create(ctx, backendAddr, listener, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create backend, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

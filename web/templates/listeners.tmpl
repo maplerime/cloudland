@@ -54,7 +54,21 @@
 		   			        {{ if $.IsAdmin }}
 			                        <td>{{.OwnerInfo.Name}}</td>
 						{{ end }}
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+                                    <td><div class="ui selection dropdown">
+											<input id="action" name="action" type="hidden">
+												<i class="dropdown icon"></i>
+													<div class="default text">Action
+													</div>
+														<div class="menu">
+															<div class="item" data-value="1" data-text="ShowBackends        ">
+															<a href="{{$Link}}/{{.ID}}/backends">{{$.i18n.Tr "Configure Backends"}}        </a>
+															</div>
+                                                            <div class="item" data-value="2" data-text="DeleteListener        ">
+                                                                <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete Listener"}}        </a>
+                                                            </div>
+														</div>
+										</div>
+									</td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>

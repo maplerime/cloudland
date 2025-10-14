@@ -165,22 +165,22 @@ const (
 	ErrIpGroupInUse        ErrCode = 131405
 
 	// load balancer related errors (1315xx)
-	ErrLoadBalancerNotFound              = 131501
-	ErrLoadBalancerCreateFailed          = 131502
-	ErrLoadBalancerUpdateFailed          = 131503
-	ErrLoadBalancerDeleteFailed          = 131504
-	ErrVrrpInstanceNotFound              = 131505
-	ErrVrrpInstanceCreateFailed          = 131506
-	ErrVrrpInstanceUpdateFailed          = 131507
-	ErrVrrpInstanceDeleteFailed          = 131508
-	ErrListenerNotFound                  = 131509
-	ErrListenerCreateFailed              = 131510
-	ErrListenerUpdateFailed              = 131511
-	ErrListenerDeleteFailed              = 131512
-	ErrBackendNotFound                   = 131513
-	ErrBackendCreateFailed               = 131514
-	ErrBackendUpdateFailed               = 131515
-	ErrBackendDeleteFailed               = 131516
+	ErrLoadBalancerNotFound     = 131501
+	ErrLoadBalancerCreateFailed = 131502
+	ErrLoadBalancerUpdateFailed = 131503
+	ErrLoadBalancerDeleteFailed = 131504
+	ErrVrrpInstanceNotFound     = 131505
+	ErrVrrpInstanceCreateFailed = 131506
+	ErrVrrpInstanceUpdateFailed = 131507
+	ErrVrrpInstanceDeleteFailed = 131508
+	ErrListenerNotFound         = 131509
+	ErrListenerCreateFailed     = 131510
+	ErrListenerUpdateFailed     = 131511
+	ErrListenerDeleteFailed     = 131512
+	ErrBackendNotFound          = 131513
+	ErrBackendCreateFailed      = 131514
+	ErrBackendUpdateFailed      = 131515
+	ErrBackendDeleteFailed      = 131516
 
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001

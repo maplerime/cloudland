@@ -59,11 +59,14 @@
 													<div class="default text">Action
 													</div>
 														<div class="menu">
-															<div class="item" data-value="1" data-text="ShowInterfaces        ">
+															<div class="item" data-value="1" data-text="ShowPublicIps        ">
+															<a href="{{$Link}}/{{.ID}}/floatingips">{{$.i18n.Tr "Configure PublicIPs"}}        </a>
+															</div>
+															<div class="item" data-value="2" data-text="ShowListeners        ">
 															<a href="{{$Link}}/{{.ID}}/listeners">{{$.i18n.Tr "Configure Listeners"}}        </a>
 															</div>
-                                                            <div class="item" data-value="2" data-text="DeleteLoadBalancer        ">
-                                                                <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "DeleteLoadBalancer"}}        </a>
+                                                            <div class="item" data-value="3" data-text="DeleteLoadBalancer        ">
+                                                                <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "DeleteLoad Balancer"}}        </a>
                                                             </div>
 														</div>
 										</div>

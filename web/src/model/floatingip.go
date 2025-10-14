@@ -18,6 +18,8 @@ type FloatingIp struct {
 	IntAddress string `gorm:"type:varchar(64)"`
 	InstanceID int64
 	Instance   *Instance  `gorm:"foreignkey:InstanceID",gorm:"PRELOAD:false"`
+	LoadBalancerID int64
+	LoadBalancer   *Instance  `gorm:"foreignkey:LoadbalancerID",gorm:"PRELOAD:false"`
 	Interface  *Interface `gorm:"foreignkey:FloatingIp"`
 	RouterID   int64
 	Inbound    int32

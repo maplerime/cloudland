@@ -30,13 +30,9 @@ var (
 type LoadBalancerAdmin struct{}
 type LoadBalancerView struct{}
 
-type EndpointConfig struct {
+type BackendConfig struct {
 	BackendURL string `json:"backend_url"`
 	Status string `json:"status"`
-}
-
-type BackendConfig struct {
-	Endpoints []*EndpointConfig `json:"endpoints"`
 }
 
 type ListenerConfig struct{
@@ -153,7 +149,7 @@ func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *mo
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	loadBalancer = &model.LoadBalancer{Model: model.Model{ID: id}}
-	if err = db.Preload("Router").Where(where).Take(loadBalancer).Error; err != nil {
+	if err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where).Take(loadBalancer).Error; err != nil {
 		logger.Error("Failed to query load balancer", err)
 		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find load balancer", err)
 		return
@@ -256,6 +252,37 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	if err != nil {
 		logger.Error("DB failed to update loadBalancer name", err)
 		err = NewCLError(ErrRouterUpdateFailed, "Failed to update loadBalancer name", err)
+		return
+	}
+	vrrpID := loadBalancer.VrrpInstance.ID
+	vrrpSubnet := loadBalancer.VrrpInstance.VrrpSubnet
+	vrrpIface1 := &model.Interface{}
+	vrrpIface2 := &model.Interface{}
+	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'master' and device = ?", vrrpID).Take(vrrpIface1).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp interface 1", err)
+		return
+	}
+	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'backup' and device = ?", vrrpID).Take(vrrpIface2).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp interface 2", err)
+		return
+	}
+	control := fmt.Sprintf("toall=group-vrrp-%d:%d,%d", vrrpID, vrrpIface1.Hyper, vrrpIface2.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", loadBalancer.RouterID, vrrpID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("clear keepalived conf command execution failed ", err)
+		return
+	}
+	if err = db.Delete(vrrpIface1).Error; err != nil {
+		logger.Error("DB failed to delete vrrp interface 1", err)
+		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete vrrp interface 1", err)
+		return
+	}
+	if err = db.Delete(vrrpIface2).Error; err != nil {
+		logger.Error("DB failed to delete vrrp interface 2", err)
+		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete vrrp interface 2", err)
 		return
 	}
 	if err = db.Delete(loadBalancer).Error; err != nil {

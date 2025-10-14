@@ -37,10 +37,16 @@ type FloatingIps struct {
 type FloatingIpAdmin struct{}
 type FloatingIpView struct{}
 
-func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool, group *model.IpGroup) ([]*model.FloatingIp, error) {
+func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool, group *model.IpGroup, loadBalancer *model.LoadBalancer) ([]*model.FloatingIp, error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	floatingIps := make([]*model.FloatingIp, 0)
+	publicType := string(PublicFloating)
+	loadBalancerID := int64(0)
+	if loadBalancer != nil {
+		publicType = string(PublicLoadBalancer)
+		loadBalancerID = loadBalancer.ID
+	}
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
 		uniqueName := fmt.Sprintf("%s-%d-%d", name, i, time.Now().UnixNano())
@@ -48,7 +54,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		if group != nil && group.ID != 0 {
 			groupID = group.ID
 		}
-		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicFloating), GroupID: groupID}
+		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: publicType, GroupID: groupID, LoadBalancerID: loadBalancerID}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
 			return nil, NewCLError(ErrFIPCreateFailed, "Failed to create floating ip", err)
@@ -111,7 +117,7 @@ func (a *FloatingIpAdmin) createDummyFloatingIp(ctx context.Context, instance *m
 	return
 }
 
-func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, pubSubnets []*model.Subnet, publicIp string, name string, inbound, outbound, activationCount int32, siteSubnets []*model.Subnet, group *model.IpGroup) (floatingIps []*model.FloatingIp, err error) {
+func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, pubSubnets []*model.Subnet, publicIp string, name string, inbound, outbound, activationCount int32, siteSubnets []*model.Subnet, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIps []*model.FloatingIp, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -190,7 +196,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	floatingIps = make([]*model.FloatingIp, 0)
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d, siteSubnets: %v, group: %v", pubSubnets, publicIp, instance, activationCount, inbound, outbound, siteSubnets, group)
 	var fips []*model.FloatingIp
-	fips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false, group)
+	fips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false, group, loadBalancer)
 	if err != nil {
 		return
 	}
@@ -200,7 +206,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	for i := 0; i < len(siteSubnets); i++ {
 		logger.Debugf("siteSubnets[%d]: %v, idleCount: %d, activationCount: %d, inbound: %d, outbound: %d, group: %v", i, siteSubnets[i], siteSubnets[i].IdleCount, siteSubnets[i].IdleCount, inbound, outbound, group)
 		var siteFips []*model.FloatingIp
-		siteFips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true, group)
+		siteFips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true, group, nil)
 		if err != nil {
 			return
 		}
@@ -481,8 +487,8 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
-	if floatingIp.Type != string(PublicFloating) {
-		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
+	if floatingIp.Type != string(PublicFloating) && floatingIp.Type != string(PublicLoadBalancer) {
+		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating or PublicLoadBalancer type is supported for deletion", floatingIp.Type)
 		logger.Info(errorStr)
 		err = NewCLError(ErrInvalidParameter, errorStr, nil)
 		return
@@ -604,8 +610,20 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	intQuery := ""
+	lbid := c.Params("lbid")
+	if lbid != "" {
+		loadBalancerID, err := strconv.Atoi(lbid)
+		if err != nil {
+			logger.Error("Invalid load balancer ID", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		intQuery = fmt.Sprintf("load_balancer_id = %d", loadBalancerID)
+	}
 	query := c.QueryTrim("q")
-	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, "")
+	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, intQuery)
 	if err != nil {
 		logger.Error("Failed to list floating ip(s), %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -653,6 +671,35 @@ func (v *FloatingIpView) Delete(c *macaron.Context, store session.Store) (err er
 		"redirect": "floatingips",
 	})
 	return
+}
+
+func (v *FloatingIpView) LBNew(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	db := DB()
+
+	subnets := []*model.Subnet{}
+	err := db.Where("type = ?", "public").Find(&subnets).Error
+	if err != nil {
+		logger.Error("Failed to query subnets %v", err)
+		return
+	}
+	ipGroups := []*model.IpGroup{}
+	err = db.Where("type = ?", string(ResourceIpGroupType)).Find(&ipGroups).Error
+	if err != nil {
+		logger.Error("Failed to query resource ip groups %v", err)
+		return
+	}
+
+	c.Data["Subnets"] = subnets
+	c.Data["IpGroups"] = ipGroups
+	c.HTML(200, "floatingips_lbnew")
 }
 
 func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
@@ -912,6 +959,24 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
+	var loadBalancer *model.LoadBalancer
+	lbid := c.Params("lbid")
+	if lbid != "" {
+		loadBalancerID, err := strconv.Atoi(lbid)
+		if err != nil {
+			logger.Error("Invalid load balancer ID", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		loadBalancer, err = loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+		if err != nil {
+			logger.Error("Failed to get ip load balancer ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+	}
 
 	var publicSubnets, siteSubnets []string
 	if publicSubnetStr != "" {
@@ -1033,7 +1098,7 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 		}
 	}
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d, siteSubnets: %v, group: %v", pubSubnets, publicIp, instance, count, inbound, outbound, siteSubnetList, group)
-	_, err = floatingIpAdmin.Create(c.Req.Context(), instance, pubSubnets, publicIp, name, int32(inbound), int32(outbound), int32(count), siteSubnetList, group)
+	_, err = floatingIpAdmin.Create(c.Req.Context(), instance, pubSubnets, publicIp, name, int32(inbound), int32(outbound), int32(count), siteSubnetList, group, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create floating ip", err)
 		c.Data["ErrorMsg"] = err.Error()
