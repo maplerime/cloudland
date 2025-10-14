@@ -664,71 +664,102 @@ FORMAT JSONEachRow
 }
 
 // buildTrafficAggregationQuery builds optimized aggregation query for traffic metrics
+// Supports both inbound and outbound traffic queries through req.Subject parameter
+// Features: Migration support, multi-interface handling, counter reset detection, data deduplication
 func (o *OpenMeterAPI) buildTrafficAggregationQuery(req OpenMeterQueryRequest) string {
-	timeFilter := fmt.Sprintf("AND toUnixTimestamp(time) BETWEEN %d AND %d", req.Start, req.End)
+	timeFilter := fmt.Sprintf("AND time >= toDateTime(%d) AND time <= toDateTime(%d)", req.Start, req.End)
 
 	query := fmt.Sprintf(`
-WITH traffic_data AS (
-  SELECT 
-    time,
-    toUnixTimestamp(time) as unix_time,
-    JSONExtractFloat(toString(JSONExtract(data, 'value', 'JSON'))) as value,
-    JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'device') as device,
-    JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain') as domain
-  FROM om_events 
-  WHERE subject = '%s'
-    AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain') = (
-      SELECT any(JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'domain'))
-      FROM om_events
-      WHERE subject = 'vm_instance_map'
-        AND JSONExtractString(toString(JSONExtract(data, 'labels', 'JSON')), 'instance_id') = '%s'
-    )
-    %s
-  ORDER BY time ASC
-),
-aggregated_by_time AS (
-  SELECT 
-    unix_time,
-    sum(value) as total_value,
-    count(*) as device_count,
-    groupArray(device) as devices
-  FROM traffic_data
-  GROUP BY unix_time
-  ORDER BY unix_time ASC
-),
-with_increments AS (
-  SELECT 
-    unix_time,
-    total_value,
-    device_count,
-    devices,
-    lagInFrame(total_value) OVER (ORDER BY unix_time ASC) as prev_value,
-    CASE 
-      WHEN lagInFrame(total_value) OVER (ORDER BY unix_time ASC) IS NULL THEN 0
-      WHEN total_value < lagInFrame(total_value) OVER (ORDER BY unix_time ASC) THEN total_value
-      ELSE total_value - lagInFrame(total_value) OVER (ORDER BY unix_time ASC)
-    END as increment,
-    CASE 
-      WHEN lagInFrame(total_value) OVER (ORDER BY unix_time ASC) IS NOT NULL 
-           AND total_value < lagInFrame(total_value) OVER (ORDER BY unix_time ASC) THEN 1
-      ELSE 0
-    END as is_reset
-  FROM aggregated_by_time
-)
-SELECT 
-  count(*) as total_records,
-  min(total_value) as min_value,
-  max(total_value) as max_value,
-  sum(increment) as total_increment,
-  sum(is_reset) as reset_count,
-  count(DISTINCT unix_time) as unique_timestamps,
-  '%s' as subject,
+SET allow_experimental_window_functions = 1;
+
+WITH
+  -- Collect domain + compute_ip with time window (migration compatible)
+  vm_locations AS (
+    SELECT
+      JSON_VALUE(data, '$.labels.domain') AS domain,
+      arrayElement(splitByChar(':', JSON_VALUE(data, '$.labels.instance')), 2) AS compute_ip
+    FROM om_events
+    WHERE subject = 'vm_instance_map'
+      AND JSON_VALUE(data, '$.labels.instance_id') = '%s'
+      %s
+    GROUP BY domain, compute_ip
+  ),
+
+  -- Raw traffic data extraction (using JSON_VALUE for better vectorization)
+  traffic_raw AS (
+    SELECT
+      time,
+      toUnixTimestamp(time) AS unix_time,
+      toFloat64(JSON_VALUE(data, '$.values[0][1]')) AS value,
+      JSON_VALUE(data, '$.labels.domain') AS domain,
+      coalesce(JSON_VALUE(data, '$.labels.interface'),
+               JSON_VALUE(data, '$.labels.device'),
+               'default') AS interface_id,
+      arrayElement(splitByChar(':', JSON_VALUE(data, '$.labels.instance')), 2) AS compute_ip
+    FROM om_events
+    WHERE subject = '%s'
+      %s
+      AND JSON_VALUE(data, '$.labels.domain') IN (SELECT domain FROM vm_locations)
+  ),
+
+  -- ★ Critical deduplication step: keep "max value" for same (domain, interface_id, compute_ip, unix_time)
+  --    Most robust for monotonic counters; multiple samples in same second won't affect diff logic
+  dedup_raw AS (
+    SELECT
+      unix_time,
+      domain,
+      interface_id,
+      compute_ip,
+      max(value) AS value
+    FROM traffic_raw
+    GROUP BY
+      unix_time, domain, interface_id, compute_ip
+  ),
+
+  -- Window-based difference calculation with deterministic ordering
+  interface_increments AS (
+    SELECT
+      unix_time,
+      domain,
+      interface_id,
+      compute_ip,
+      value,
+      lagInFrame(value) OVER (PARTITION BY domain, interface_id, compute_ip ORDER BY unix_time) AS prev_value,
+      CASE
+        WHEN prev_value IS NULL THEN 0
+        WHEN value < prev_value THEN value      -- Counter wrap-around/restart
+        ELSE value - prev_value
+      END AS increment,
+      CASE
+        WHEN prev_value IS NOT NULL AND value < prev_value THEN 1 ELSE 0
+      END AS is_reset
+    FROM dedup_raw
+  ),
+
+  time_aggregated AS (
+    SELECT
+      unix_time,
+      sum(increment)          AS total_increment_at_time,
+      sum(is_reset)           AS resets_at_time,
+      uniqExact(interface_id) AS active_interfaces,
+      uniqExact(domain)       AS active_domains
+    FROM interface_increments
+    GROUP BY unix_time
+  )
+
+SELECT
   '%s' as instance_id,
-  %d as start_time,
-  %d as end_time
-FROM with_increments
+  (SELECT count() FROM time_aggregated)                      AS total_records,
+  (SELECT sum(total_increment_at_time) FROM time_aggregated) AS total_bytes,
+  (SELECT sum(resets_at_time) FROM time_aggregated)          AS reset_count,
+  (SELECT count() FROM time_aggregated)                      AS unique_timestamps,
+  (SELECT max(active_interfaces) FROM time_aggregated)       AS max_device_count,
+  1                                                          AS hypervisor_count,
+  '%s'                                                       AS subject,
+  %d                                                         AS start_time,
+  %d                                                         AS end_time
 FORMAT JSONEachRow
-`, req.Subject, req.InstanceID, timeFilter, req.Subject, req.InstanceID, req.Start, req.End)
+`, req.InstanceID, timeFilter, req.Subject, timeFilter, req.InstanceID, req.Subject, req.Start, req.End)
 
 	return strings.TrimSpace(query)
 }
@@ -1035,13 +1066,15 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 // parseTrafficAggregationResult parses the aggregated traffic result from ClickHouse
 func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subject string, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
 	// Extract values from the aggregated result
-	totalIncrement := int64(0)
+	var totalBytes int64 = 0
 	resetCount := int64(0)
 	uniqueTimestamps := int64(0)
 
-	if val, ok := event.Data["total_increment"].(float64); ok {
-		totalIncrement = int64(val)
+	// Extract total_bytes (unified field name from query)
+	if val, ok := event.Data["total_bytes"].(float64); ok {
+		totalBytes = int64(val)
 	}
+
 	if val, ok := event.Data["reset_count"].(float64); ok {
 		resetCount = int64(val)
 	}
@@ -1053,12 +1086,12 @@ func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subje
 	durationMinutes := float64(queryEnd-queryStart) / 60.0
 	var averageRateMbps float64
 	if durationMinutes > 0 {
-		averageRateMbps = (float64(totalIncrement) / (1024 * 1024)) / (durationMinutes / 60) // MB per second
+		averageRateMbps = (float64(totalBytes) / (1024 * 1024)) / (durationMinutes / 60) // MB per second
 	}
 
 	// Create result structure matching the expected format
 	result := &TrafficCalculationResult{
-		TotalBytes:     totalIncrement,
+		TotalBytes:     totalBytes,
 		Segments:       []TrafficSegment{},
 		Resets:         []TrafficReset{},
 		HostMigrations: []HostMigrationDetected{},
@@ -1069,19 +1102,26 @@ func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subje
 		},
 	}
 
+	// Extract device count for multi-interface tracking
+	maxDeviceCount := int64(1)
+	if val, ok := event.Data["max_device_count"].(float64); ok {
+		maxDeviceCount = int64(val)
+	}
+
 	// Create summary matching the expected JSON format
 	summary := map[string]interface{}{
-		"total_bytes":           totalIncrement,
-		"total_mb":              float64(totalIncrement) / (1024 * 1024),
-		"total_gb":              float64(totalIncrement) / (1024 * 1024 * 1024),
-		"total_kb":              float64(totalIncrement) / 1024,
+		"total_bytes":           totalBytes,
+		"total_mb":              float64(totalBytes) / (1024 * 1024),
+		"total_gb":              float64(totalBytes) / (1024 * 1024 * 1024),
+		"total_kb":              float64(totalBytes) / 1024,
 		"monitoring_periods":    1, // Aggregated result represents one period
 		"sdn_reset_count":       resetCount,
 		"host_migrations_count": 0, // Not detected in aggregated query
-		"metric_type":           subject,
 		"average_rate_mbps":     averageRateMbps,
 		"interface_aggregation": true,
 		"unique_timestamps":     uniqueTimestamps,
+		"max_device_count":      maxDeviceCount,
+		"multi_interface_vm":    maxDeviceCount > 1,
 	}
 
 	return result, summary, nil
