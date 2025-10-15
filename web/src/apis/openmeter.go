@@ -588,18 +588,20 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	// Return response
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
-		"data":   result,
+		"data": gin.H{
+			"subject":     result.Subject,
+			"instance_id": result.InstanceID,
+			"summary":     result.Summary,
+		},
 		"metadata": gin.H{
-			"query_params": gin.H{
-				"instance_id": req.InstanceID,
-				"subject":     req.Subject,
-				"start_time":  req.Start,
-				"end_time":    req.End,
-				"limit":       req.Limit,
-			},
 			"clickhouse_host": meteringHost,
 			"clickhouse_port": meteringPort,
 			"database":        req.Database,
+			"query_params": gin.H{
+				"instance_id": req.InstanceID,
+				"start_time":  req.Start,
+				"end_time":    req.End,
+			},
 		},
 	})
 }
@@ -665,45 +667,36 @@ FORMAT JSONEachRow
 
 // buildTrafficAggregationQuery builds optimized aggregation query for traffic metrics
 // Supports both inbound and outbound traffic queries through req.Subject parameter
+// buildTrafficAggregationQuery returns a single-row JSONEachRow result.
+// It inlines per-query SETTINGS to match CLI performance and qualifies the table with the database name.
 // Features: Migration support, multi-interface handling, counter reset detection, data deduplication
 func (o *OpenMeterAPI) buildTrafficAggregationQuery(req OpenMeterQueryRequest) string {
 	timeFilter := fmt.Sprintf("AND time >= toDateTime(%d) AND time <= toDateTime(%d)", req.Start, req.End)
 
 	query := fmt.Sprintf(`
-SET allow_experimental_window_functions = 1;
-
 WITH
-  -- Collect domain + compute_ip with time window (migration compatible)
   vm_locations AS (
     SELECT
       JSON_VALUE(data, '$.labels.domain') AS domain,
       arrayElement(splitByChar(':', JSON_VALUE(data, '$.labels.instance')), 2) AS compute_ip
-    FROM om_events
+    FROM openmeter.om_events
     WHERE subject = 'vm_instance_map'
       AND JSON_VALUE(data, '$.labels.instance_id') = '%s'
       %s
     GROUP BY domain, compute_ip
   ),
-
-  -- Raw traffic data extraction (using JSON_VALUE for better vectorization)
   traffic_raw AS (
     SELECT
-      time,
       toUnixTimestamp(time) AS unix_time,
       toFloat64(JSON_VALUE(data, '$.values[0][1]')) AS value,
       JSON_VALUE(data, '$.labels.domain') AS domain,
-      coalesce(JSON_VALUE(data, '$.labels.interface'),
-               JSON_VALUE(data, '$.labels.device'),
-               'default') AS interface_id,
+      coalesce(JSON_VALUE(data, '$.labels.interface'), JSON_VALUE(data, '$.labels.device'), 'default') AS interface_id,
       arrayElement(splitByChar(':', JSON_VALUE(data, '$.labels.instance')), 2) AS compute_ip
-    FROM om_events
+    FROM openmeter.om_events
     WHERE subject = '%s'
       %s
       AND JSON_VALUE(data, '$.labels.domain') IN (SELECT domain FROM vm_locations)
   ),
-
-  -- ★ Critical deduplication step: keep "max value" for same (domain, interface_id, compute_ip, unix_time)
-  --    Most robust for monotonic counters; multiple samples in same second won't affect diff logic
   dedup_raw AS (
     SELECT
       unix_time,
@@ -712,12 +705,9 @@ WITH
       compute_ip,
       max(value) AS value
     FROM traffic_raw
-    GROUP BY
-      unix_time, domain, interface_id, compute_ip
+    GROUP BY unix_time, domain, interface_id, compute_ip
   ),
-
-  -- Window-based difference calculation with deterministic ordering
-  interface_increments AS (
+  interface_with_increments AS (
     SELECT
       unix_time,
       domain,
@@ -727,7 +717,7 @@ WITH
       lagInFrame(value) OVER (PARTITION BY domain, interface_id, compute_ip ORDER BY unix_time) AS prev_value,
       CASE
         WHEN prev_value IS NULL THEN 0
-        WHEN value < prev_value THEN value      -- Counter wrap-around/restart
+        WHEN value < prev_value THEN value
         ELSE value - prev_value
       END AS increment,
       CASE
@@ -735,30 +725,55 @@ WITH
       END AS is_reset
     FROM dedup_raw
   ),
-
   time_aggregated AS (
     SELECT
       unix_time,
-      sum(increment)          AS total_increment_at_time,
-      sum(is_reset)           AS resets_at_time,
+      sum(increment) AS total_increment_at_time,
+      sum(is_reset) AS resets_at_time,
       uniqExact(interface_id) AS active_interfaces,
-      uniqExact(domain)       AS active_domains
-    FROM interface_increments
+      uniqExact(domain) AS active_domains
+    FROM interface_with_increments
     GROUP BY unix_time
+  ),
+  s1 AS (
+    SELECT
+      count() AS total_time_points,
+      sum(total_increment_at_time) AS total_increment,
+      sum(resets_at_time) AS total_resets,
+      max(active_interfaces) AS max_concurrent_interfaces,
+      max(active_domains) AS max_concurrent_domains
+    FROM time_aggregated
+  ),
+  s2 AS (
+    SELECT
+      uniqExact(domain) AS total_domains,
+      uniqExact(interface_id) AS total_interfaces,
+      min(value) AS min_value,
+      max(value) AS max_value
+    FROM interface_with_increments
   )
-
 SELECT
   '%s' as instance_id,
-  (SELECT count() FROM time_aggregated)                      AS total_records,
-  (SELECT sum(total_increment_at_time) FROM time_aggregated) AS total_bytes,
-  (SELECT sum(resets_at_time) FROM time_aggregated)          AS reset_count,
-  (SELECT count() FROM time_aggregated)                      AS unique_timestamps,
-  (SELECT max(active_interfaces) FROM time_aggregated)       AS max_device_count,
-  1                                                          AS hypervisor_count,
-  '%s'                                                       AS subject,
-  %d                                                         AS start_time,
-  %d                                                         AS end_time
+  s1.total_time_points,
+  s2.total_domains,
+  s2.total_interfaces,
+  CAST(s2.min_value AS UInt64) AS min_value,
+  CAST(s2.max_value AS UInt64) AS max_value,
+  CAST(s1.total_increment AS UInt64) AS total_increment,
+  CAST(s1.total_resets AS UInt64) AS total_resets,
+  s1.max_concurrent_interfaces,
+  s1.max_concurrent_domains,
+  '%s' as subject,
+  %d as start_time,
+  %d as end_time
+FROM s1
+CROSS JOIN s2
 FORMAT JSONEachRow
+SETTINGS
+  allow_experimental_window_functions = 1,
+  output_format_json_quote_64bit_integers = 0,
+  output_format_json_validate_utf8 = 0,
+  output_format_write_statistics = 0
 `, req.InstanceID, timeFilter, req.Subject, timeFilter, req.InstanceID, req.Subject, req.Start, req.End)
 
 	return strings.TrimSpace(query)
@@ -1070,23 +1085,24 @@ func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subje
 	resetCount := int64(0)
 	uniqueTimestamps := int64(0)
 
-	// Extract total_bytes (unified field name from query)
-	if val, ok := event.Data["total_bytes"].(float64); ok {
+	// Extract total_increment (field name from new query)
+	if val, ok := event.Data["total_increment"].(float64); ok {
 		totalBytes = int64(val)
 	}
 
-	if val, ok := event.Data["reset_count"].(float64); ok {
+	if val, ok := event.Data["total_resets"].(float64); ok {
 		resetCount = int64(val)
 	}
-	if val, ok := event.Data["unique_timestamps"].(float64); ok {
+	if val, ok := event.Data["total_time_points"].(float64); ok {
 		uniqueTimestamps = int64(val)
 	}
 
 	// Calculate duration for rate calculation
-	durationMinutes := float64(queryEnd-queryStart) / 60.0
+	durationSeconds := float64(queryEnd - queryStart)
 	var averageRateMbps float64
-	if durationMinutes > 0 {
-		averageRateMbps = (float64(totalBytes) / (1024 * 1024)) / (durationMinutes / 60) // MB per second
+	if durationSeconds > 0 {
+		// Convert bytes to Mbps: (bytes * 8 bits/byte) / (seconds * 1024 * 1024 bits/Mbps)
+		averageRateMbps = (float64(totalBytes) * 8) / (durationSeconds * 1024 * 1024)
 	}
 
 	// Create result structure matching the expected format
@@ -1104,7 +1120,7 @@ func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subje
 
 	// Extract device count for multi-interface tracking
 	maxDeviceCount := int64(1)
-	if val, ok := event.Data["max_device_count"].(float64); ok {
+	if val, ok := event.Data["max_concurrent_interfaces"].(float64); ok {
 		maxDeviceCount = int64(val)
 	}
 
