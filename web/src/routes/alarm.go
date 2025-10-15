@@ -34,6 +34,7 @@ import (
 
 const (
 	RuleTypeCPU       = "cpu"
+	RuleTypeMemory    = "memory"
 	RuleTypeBW        = "bw"
 	RuleTypeCompute   = "compute_node"
 	RuleTypeControl   = "control_node"
@@ -108,8 +109,23 @@ type (
 	CPURule struct {
 		ID           int       `gorm:"primaryKey;autoIncrement"`
 		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `gorm:"size:255"`
-		Duration     int       `gorm:"check:duration >= 1"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // 阈值
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // 比较操作符: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // 持续时间(分钟)
+		Over         int       `json:"over" gorm:"check:over >= 1"`
+		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
+		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
+		CreatedAt    time.Time `gorm:"autoCreateTime"`
+	}
+
+	MemoryRule struct {
+		ID           int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // 阈值
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // 比较操作符: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // 持续时间(分钟)
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
@@ -286,7 +302,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %v", err)
 	}
-	
+
 	if len(groups) == 0 {
 		log.Printf("rule not found: groupID=%s", groupUUID)
 		return nil, gorm.ErrRecordNotFound
@@ -485,6 +501,12 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 				log.Printf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("CPU rules delete failed: %w", err)
 			}
+		case "memory":
+			if err := tx.Where("group_uuid = ?", groupUUID).
+				Delete(&model.MemoryRuleDetail{}).Error; err != nil {
+				log.Printf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("Memory rules delete failed: %w", err)
+			}
 		case "bw":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.BWRuleDetail{}).Error; err != nil {
@@ -564,6 +586,15 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 	return details, nil
 }
 
+func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID string) ([]model.MemoryRuleDetail, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var details []model.MemoryRuleDetail
+	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+		log.Printf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+	}
+	return details, nil
+}
+
 func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID string) error {
 	ctx, db := common.GetContextDB(ctx)
 	return db.Model(&model.RuleGroupV2{}).
@@ -627,6 +658,16 @@ func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.C
 	if err := db.Create(detail).Error; err != nil {
 		log.Printf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create cpu rule detail failed: %w", err)
+	}
+	return nil
+}
+
+func (a *AlarmOperator) CreateMemoryRuleDetail(ctx context.Context, detail *model.MemoryRuleDetail) error {
+	ctx, db := common.GetContextDB(ctx)
+	detail.UUID = uuid.NewString()
+	if err := db.Create(detail).Error; err != nil {
+		log.Printf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		return fmt.Errorf("create memory rule detail failed: %w", err)
 	}
 	return nil
 }
@@ -1208,14 +1249,14 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
-	
+
 	// 根据所有者确定规则文件路径
 	var outputPath string
 	owner, ok := data["owner"].(string)
 	if !ok {
 		owner = ""
 	}
-	
+
 	// 根据owner决定规则文件位置
 	if owner == "admin" {
 		outputPath = filepath.Join(RulesGeneral, outputFile)
@@ -1242,7 +1283,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 		log.Printf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
-        fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
 		log.Printf("Failed to write output file: path=%s, error=%v", outputPath, err)

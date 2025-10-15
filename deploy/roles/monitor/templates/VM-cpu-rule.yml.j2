@@ -1,46 +1,23 @@
 groups:
 - name: cpu_{{ owner }}_{{ rule_group }}
   rules:
-  - alert: HighCPUUsage_{{ owner }}_{{ rule_group }}
+  - alert: CPUUsage_{{ owner }}_{{ rule_group }}
     expr: |
       (
         (
           sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
           / on (domain) group_left() libvirt_domain_info_virtual_cpus
-        ) * 100 > {{ over }}
-      ) or ignoring(rule_id)
+        ) * 100 {{ rule_operator }} {{ limit_value }}
+      ) and on (domain)
       up{job="vm-group-metadata", rule_id=~"alarm-cpu-.*-{{ rule_group }}"}
-    for: {{ duration }}s
+    for: {{ duration_minutes }}m
     labels:
-      severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
-      matched: '{{ if $labels.rule_id }}true{{ else }}false{{ end }}'
+      severity: "{{ level }}"
+      region_id: "{{ region_id }}"
+      rule_id: "{{ rule_id }}"
       rule_group: "{{ rule_group }}"
       alert_type: cpu
       owner: "{{ owner }}"
-      email: "{{ email | default('') }}"
-      action: "{{ action | default('false') }}"
     annotations:
-      summary: "High VM Usage ({{ $value }})"
-      description: "VM {{ $labels.domain }} has high CPU usage or is matched for {{ duration }} seconds"
-
-  - alert: CPUUsageRecovered_{{ owner }}_{{ rule_group }}
-    expr: |
-      (
-        (
-          sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
-          / on (domain) group_left() libvirt_domain_info_virtual_cpus
-        ) * 100 < {{ down_to }}
-      ) and ignoring(rule_id)
-      up{job="vm-group-metadata", rule_id=~"alarm-cpu-.*-{{ rule_group }}"}
-    for: {{ down_duration }}s
-    labels:
-      severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'
-      matched: '{{ if $labels.rule_id }}true{{ else }}false{{ end }}'
-      rule_group: "{{ rule_group }}"
-      alert_type: cpu
-      owner: "{{ owner }}"
-      email: "{{ email | default('') }}"
-      action: "{{ action | default('false') }}"
-    annotations:
-      summary: "VM CPU Usage Recovered ({{ $value }})"
-      description: "VM {{ $labels.domain }} CPU usage has dropped below threshold for {{ down_duration }} seconds" 
+      summary: "CPU Usage Alert ({{ $value }}%)"
+      description: "VM {{ $labels.domain }} CPU usage {{ rule_operator }} {{ limit_value }}% for {{ duration_minutes }} minutes. Instance: {{ $labels.instance_id }}, Region: {{ region_id }}, Rule: {{ rule_id }}"

@@ -15,6 +15,7 @@ func init() {
 	dbs.AutoMigrate(
 		&RuleGroupV2{},
 		&CPURuleDetail{},
+		&MemoryRuleDetail{},
 		&BWRuleDetail{},
 		&VMRuleLink{},
 		&NodeAlarmRule{},
@@ -27,21 +28,36 @@ func (RuleGroupV2) TableName() string {
 
 type RuleGroupV2 struct {
 	Model
-	Name       string `gorm:"type:varchar(128);uniqueIndex;column:name"`
-	Type       string `gorm:"type:varchar(32)"`
-	Owner      string `gorm:"type:varchar(255);index"`
-	Enabled    bool   `gorm:"default:true"`
-	TriggerCnt int    `gorm:"default:0"`
-	Email      string `gorm:"type:varchar(255);default:''"`
-	Action     bool   `gorm:"default:false"`
+	Name            string `gorm:"type:varchar(128);uniqueIndex;column:name"`
+	Type            string `gorm:"type:varchar(32)"`
+	Owner           string `gorm:"type:varchar(255);index"`
+	Enabled         bool   `gorm:"default:true"`
+	TriggerCnt      int    `gorm:"default:0"`
+	RegionID        string `gorm:"type:varchar(64)"`
+	Level           string `gorm:"type:varchar(32)"`
+	DurationMinutes int
 }
 
 type CPURuleDetail struct {
 	Model
 	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
 	Name         string `gorm:"type:varchar(128);column:name"`
+	Limit        int    `gorm:"column:limit;check:limit >= 1"` // 阈值，对应输入的limit
+	Rule         string `gorm:"type:varchar(8);column:rule"`   // 比较操作符: gt/lt
+	Duration     int    `gorm:"check:duration >= 1"`           // 持续时间(分钟)，对应输入的duration
 	Over         int    `gorm:"column:over;check:over >= 1"`
-	Duration     int    `gorm:"check:duration >= 1"`
+	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
+	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
+}
+
+type MemoryRuleDetail struct {
+	Model
+	GroupUUID    string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
+	Name         string `gorm:"type:varchar(128);column:name"`
+	Limit        int    `gorm:"column:limit;check:limit >= 1"` // 阈值，对应输入的limit
+	Rule         string `gorm:"type:varchar(8);column:rule"`   // 比较操作符: gt/lt
+	Duration     int    `gorm:"check:duration >= 1"`           // 持续时间(分钟)，对应输入的duration
+	Over         int    `gorm:"column:over;check:over >= 1"`
 	DownDuration int    `gorm:"column:down_duration;check:down_duration >= 1"`
 	DownTo       int    `gorm:"column:down_to;check:down_to <= 100"`
 }
@@ -77,7 +93,7 @@ type NodeAlarmRule struct {
 	Model
 	RuleType    string        `gorm:"type:varchar(32);index;not null" json:"rule_type"`
 	Name        string        `gorm:"type:varchar(64);index;not null" json:"name"`
-	Config      ConfigWrapper `gorm:"type:text;not null" json:"config" gorm:"column:config"`
+	Config      ConfigWrapper `gorm:"type:text;not null;column:config" json:"config"`
 	Description string        `gorm:"type:varchar(255)" json:"description"`
 	Enabled     bool          `gorm:"default:true" json:"enabled"`
 	Owner       string        `gorm:"column:owner;type:varchar(64);index;not null" json:"owner"`

@@ -365,6 +365,7 @@
             receiver: '{{ receiver_name }}'
 
             routes:
+
               # Route node alarms to node-webhook (maintain compatibility with existing config)
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network)
@@ -379,22 +380,16 @@
                 receiver: 'slack-notifications'
                 continue: true
 
-              # Route all CPU alarms to cpu-webhook (processing logic handled in webhook)
-              - match:
-                  alert_type: cpu
-                receiver: 'cpu-webhook'
-                continue: true
-
-              # Route all BW alarms to bw-webhook (processing logic handled in webhook)
-              - match:
-                  alert_type: bw
-                receiver: 'bw-webhook'
-                continue: true
-
-              # Send alerts with email field to per-instance email notification
+              # Route VM alerts (CPU, Memory, BW) to unified VM webhook
               - match_re:
-                  email: ".+"
-                receiver: 'instance-alarm-email-notification'
+                  alert_type: (cpu|memory|bw)
+                receiver: 'vm-alerts-webhook'
+                continue: true
+
+              # Also send VM alerts to slack for monitoring
+              - match_re:
+                  alert_type: (cpu|memory|bw)
+                receiver: 'slack-notifications'
                 continue: true
 
           receivers:
@@ -417,34 +412,7 @@
                 {% endraw %}
 
 
-          - name: 'instance-alarm-email-notification'
-            email_configs:
-            - to: '{% raw %}{{ .CommonLabels.email }}{% endraw %}'
-              send_resolved: true
-              headers:
-                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
-              html: |-
-                {% raw %}
-                <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
-                <b>[Alert Name]</b> {{ .CommonLabels.alertname }}<br>
-                <b>[Severity]</b> {{ .CommonLabels.severity }}<br>
-                <b>[Instance/Domain]</b> {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}<br>
-                <b>[Summary]</b> {{ .CommonAnnotations.summary }}<br>
-                <b>[Description]</b> {{ .CommonAnnotations.description }}<br>
-                <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
-                <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
-                {% endraw %}
-
-
-          - name: 'cpu-webhook'
-            webhook_configs:
-            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
-              send_resolved: true
-              http_config:
-                tls_config:
-                  insecure_skip_verify: true
-
-          - name: 'bw-webhook'
+          - name: 'vm-alerts-webhook'
             webhook_configs:
             - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
               send_resolved: true
