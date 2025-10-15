@@ -24,4 +24,8 @@ for i in {1..10}; do
     [ "$ln" = 1 ] && break
     iptables -D FORWARD $ln
 done
+ln=$(iptables -n -L secgroup-chain --line-numbers | grep 'ACCEPT' | head -1 | cut -d' ' -f1)
+if [ "$ln" = 1 ]; then
+    iptables -A secgroup-chain -j ACCEPT && iptables -D secgroup-chain -j ACCEPT
+fi
 flock -u 200
