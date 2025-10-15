@@ -504,6 +504,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 
 	// Debug logging
 	log.Printf("ClickHouse response - status: %d, body length: %d", resp.StatusCode, len(body))
+	log.Printf("OpenMeter Debug - Raw Response Body: %s", string(body))
 
 	// Parse raw events
 	events, err := o.parseJSONEachRowResponse(body)
@@ -799,26 +800,37 @@ func (o *OpenMeterAPI) parseJSONEachRowResponse(body []byte) ([]OpenMeterEvent, 
 			continue
 		}
 
-		// Convert to OpenMeterEvent
-		event := OpenMeterEvent{
-			ID:         getStringValue(rawEvent, "id"),
-			Source:     getStringValue(rawEvent, "source"),
-			Type:       getStringValue(rawEvent, "type"),
-			Subject:    getStringValue(rawEvent, "subject"),
-			Time:       getStringValue(rawEvent, "time"),
-			IngestedAt: getStringValue(rawEvent, "ingested_at"),
-			StoredAt:   getStringValue(rawEvent, "stored_at"),
-		}
-
-		// Parse data field
-		if dataStr := getStringValue(rawEvent, "data"); dataStr != "" {
-			var data map[string]interface{}
-			if err := json.Unmarshal([]byte(dataStr), &data); err == nil {
-				event.Data = data
+		// Check if this is a traffic aggregation result (has total_increment field)
+		if _, hasIncrement := rawEvent["total_increment"]; hasIncrement {
+			// This is an aggregation result, create OpenMeterEvent with the data in Data field
+			event := OpenMeterEvent{
+				ID:      "aggregation-result",
+				Subject: getStringValue(rawEvent, "subject"),
+				Data:    rawEvent, // Put the entire aggregation result in Data field
 			}
-		}
+			events = append(events, event)
+		} else {
+			// Standard OpenMeter event format
+			event := OpenMeterEvent{
+				ID:         getStringValue(rawEvent, "id"),
+				Source:     getStringValue(rawEvent, "source"),
+				Type:       getStringValue(rawEvent, "type"),
+				Subject:    getStringValue(rawEvent, "subject"),
+				Time:       getStringValue(rawEvent, "time"),
+				IngestedAt: getStringValue(rawEvent, "ingested_at"),
+				StoredAt:   getStringValue(rawEvent, "stored_at"),
+			}
 
-		events = append(events, event)
+			// Parse data field
+			if dataStr := getStringValue(rawEvent, "data"); dataStr != "" {
+				var data map[string]interface{}
+				if err := json.Unmarshal([]byte(dataStr), &data); err == nil {
+					event.Data = data
+				}
+			}
+
+			events = append(events, event)
+		}
 	}
 
 	return events, nil
@@ -1067,19 +1079,15 @@ func (o *OpenMeterAPI) processTrafficMetrics(events []OpenMeterEvent, subject st
 
 	// For traffic metrics, we now always use aggregated results from buildTrafficAggregationQuery
 	// The query structure ensures we get exactly one event with aggregated data
-	if events[0].Data != nil {
-		return o.parseTrafficAggregationResult(events[0], subject, queryStart, queryEnd)
+	if events[0].Data == nil {
+		return &TrafficCalculationResult{}, map[string]interface{}{
+			"total_bytes": 0,
+			"total_mb":    0,
+		}, fmt.Errorf("unexpected data structure for traffic metrics")
 	}
 
-	// This should not happen for traffic metrics, but provide a fallback
-	return &TrafficCalculationResult{}, map[string]interface{}{
-		"total_bytes": 0,
-		"total_mb":    0,
-	}, fmt.Errorf("unexpected data structure for traffic metrics")
-}
+	event := events[0]
 
-// parseTrafficAggregationResult parses the aggregated traffic result from ClickHouse
-func (o *OpenMeterAPI) parseTrafficAggregationResult(event OpenMeterEvent, subject string, queryStart, queryEnd int64) (*TrafficCalculationResult, map[string]interface{}, error) {
 	// Extract values from the aggregated result
 	var totalBytes int64 = 0
 	resetCount := int64(0)
