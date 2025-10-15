@@ -34,6 +34,7 @@ import (
 
 const (
 	RuleTypeCPU       = "cpu"
+	RuleTypeMemory    = "memory"
 	RuleTypeBW        = "bw"
 	RuleTypeCompute   = "compute_node"
 	RuleTypeControl   = "control_node"
@@ -84,6 +85,15 @@ type ListRuleGroupsParams struct {
 	Page      int
 	PageSize  int
 	GroupUUID string
+	RuleID    string // 新增：支持通过rule_id查询
+}
+
+// AdaptiveQueryParams 自适应查询参数
+type AdaptiveQueryParams struct {
+	ID       string // 可以是GroupUUID或RuleID
+	RuleType string
+	Page     int
+	PageSize int
 }
 
 type (
@@ -108,8 +118,23 @@ type (
 	CPURule struct {
 		ID           int       `gorm:"primaryKey;autoIncrement"`
 		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `gorm:"size:255"`
-		Duration     int       `gorm:"check:duration >= 1"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // 阈值
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // 比较操作符: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // 持续时间(分钟)
+		Over         int       `json:"over" gorm:"check:over >= 1"`
+		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
+		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
+		CreatedAt    time.Time `gorm:"autoCreateTime"`
+	}
+
+	MemoryRule struct {
+		ID           int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // 阈值
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // 比较操作符: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // 持续时间(分钟)
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
@@ -142,6 +167,7 @@ type (
 		Name          string `gorm:"size:255"`
 		Status        string `gorm:"type:varchar(20)"`
 		RuleGroupUUID string `json:"rule_group"`
+		GlobalRuleID  string `gorm:"type:varchar(255)" json:"global_rule_id"` // 新增：全局规则ID
 		Severity      string `gorm:"type:varchar(20)"`
 		Summary       string `gorm:"type:text"`
 		Description   string `gorm:"type:text"`
@@ -150,6 +176,8 @@ type (
 		CreatedAt     time.Time `gorm:"autoCreateTime"`
 		AlertType     string    `gorm:"type:varchar(20)" json:"alert_type"`
 		TargetDevice  string    `gorm:"type:varchar(255)" json:"target_device"`
+		RegionID      string    `gorm:"type:varchar(255)" json:"region_id"`   // 新增：区域ID
+		InstanceID    string    `gorm:"type:varchar(255)" json:"instance_id"` // 新增：实例ID
 	}
 )
 
@@ -286,7 +314,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %v", err)
 	}
-	
+
 	if len(groups) == 0 {
 		log.Printf("rule not found: groupID=%s", groupUUID)
 		return nil, gorm.ErrRecordNotFound
@@ -326,6 +354,76 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	} else {
 		log.Printf("unsupported rule type groupID %s type %s", groupUUID, ruleType)
+		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
+	}
+}
+
+// GetRulesByRuleID 通过 rule_id 获取规则组（支持告警规则）
+func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*model.RuleGroupV2, error) {
+	ctx, _ = common.GetContextDB(ctx)
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+	if err != nil {
+		log.Printf("rules query failed: ruleID=%s, error=%v", ruleID, err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("rule not found: ruleID=%s", ruleID)
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	ruleType := groups[0].Type
+
+	if ruleType == "cpu" {
+		details, err := a.GetCPURuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.CPURuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "bw" {
+		details, err := a.GetBWRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.BWRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "memory" {
+		details, err := a.GetMemoryRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.MemoryRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else {
+		log.Printf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
 		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
@@ -485,6 +583,12 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 				log.Printf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("CPU rules delete failed: %w", err)
 			}
+		case "memory":
+			if err := tx.Where("group_uuid = ?", groupUUID).
+				Delete(&model.MemoryRuleDetail{}).Error; err != nil {
+				log.Printf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("Memory rules delete failed: %w", err)
+			}
 		case "bw":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.BWRuleDetail{}).Error; err != nil {
@@ -540,6 +644,10 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
 	}
+	// 新增：支持通过rule_id查询
+	if params.RuleID != "" {
+		query = query.Where("rule_id = ?", params.RuleID)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		log.Printf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
@@ -560,6 +668,15 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 	var details []model.CPURuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		log.Printf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+	}
+	return details, nil
+}
+
+func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID string) ([]model.MemoryRuleDetail, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var details []model.MemoryRuleDetail
+	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+		log.Printf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
@@ -627,6 +744,16 @@ func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.C
 	if err := db.Create(detail).Error; err != nil {
 		log.Printf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create cpu rule detail failed: %w", err)
+	}
+	return nil
+}
+
+func (a *AlarmOperator) CreateMemoryRuleDetail(ctx context.Context, detail *model.MemoryRuleDetail) error {
+	ctx, db := common.GetContextDB(ctx)
+	detail.UUID = uuid.NewString()
+	if err := db.Create(detail).Error; err != nil {
+		log.Printf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		return fmt.Errorf("create memory rule detail failed: %w", err)
 	}
 	return nil
 }
@@ -1208,14 +1335,14 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
-	
+
 	// 根据所有者确定规则文件路径
 	var outputPath string
 	owner, ok := data["owner"].(string)
 	if !ok {
 		owner = ""
 	}
-	
+
 	// 根据owner决定规则文件位置
 	if owner == "admin" {
 		outputPath = filepath.Join(RulesGeneral, outputFile)
@@ -1242,7 +1369,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 		log.Printf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
-        fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
 		log.Printf("Failed to write output file: path=%s, error=%v", outputPath, err)
@@ -1736,4 +1863,252 @@ func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
 
 func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
 	c.HTML(200, "alarms_new")
+}
+
+// RemoteNotifyConfig 相关操作函数
+
+// CreateRemoteNotifyConfig 创建远程通知配置
+func (a *AlarmOperator) CreateRemoteNotifyConfig(ctx context.Context, config *model.RemoteNotifyConfig) error {
+	ctx, db := common.GetContextDB(ctx)
+	config.UUID = uuid.NewString()
+	if err := db.Create(config).Error; err != nil {
+		log.Printf("create remote notify config failed: name=%s, error=%v", config.Name, err)
+		return fmt.Errorf("create remote notify config failed: %w", err)
+	}
+	return nil
+}
+
+// GetRemoteNotifyConfigs 获取远程通知配置列表
+func (a *AlarmOperator) GetRemoteNotifyConfigs(ctx context.Context) ([]model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var configs []model.RemoteNotifyConfig
+	if err := db.Find(&configs).Error; err != nil {
+		log.Printf("get remote notify configs failed: error=%v", err)
+		return nil, fmt.Errorf("get remote notify configs failed: %w", err)
+	}
+	return configs, nil
+}
+
+// GetRemoteNotifyConfigByName 根据名称获取远程通知配置
+func (a *AlarmOperator) GetRemoteNotifyConfigByName(ctx context.Context, name string) (*model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var config model.RemoteNotifyConfig
+	if err := db.Where("name = ?", name).First(&config).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		log.Printf("get remote notify config by name failed: name=%s, error=%v", name, err)
+		return nil, fmt.Errorf("get remote notify config by name failed: %w", err)
+	}
+	return &config, nil
+}
+
+// GetRemoteNotifyConfigsByType 根据类型获取远程通知配置列表
+func (a *AlarmOperator) GetRemoteNotifyConfigsByType(ctx context.Context, configType string) ([]model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var configs []model.RemoteNotifyConfig
+	if err := db.Where("type = ?", configType).Find(&configs).Error; err != nil {
+		log.Printf("get remote notify configs by type failed: type=%s, error=%v", configType, err)
+		return nil, fmt.Errorf("get remote notify configs by type failed: %w", err)
+	}
+	return configs, nil
+}
+
+// DeleteRemoteNotifyConfig 删除远程通知配置
+func (a *AlarmOperator) DeleteRemoteNotifyConfig(ctx context.Context, name string) error {
+	ctx, db := common.GetContextDB(ctx)
+	result := db.Where("name = ?", name).Delete(&model.RemoteNotifyConfig{})
+	if result.Error != nil {
+		log.Printf("delete remote notify config failed: name=%s, error=%v", name, result.Error)
+		return fmt.Errorf("delete remote notify config failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("remote notify config not found: %s", name)
+	}
+	return nil
+}
+
+// 远程通知相关功能函数
+
+// NotifyParams 通知参数
+type NotifyParams struct {
+	Alerts []struct {
+		State       string            `json:"state"`
+		Labels      map[string]string `json:"labels"`
+		Annotations map[string]string `json:"annotations"`
+		StartsAt    time.Time         `json:"startsAt"`
+		EndsAt      time.Time         `json:"endsAt"`
+	} `json:"alerts"`
+}
+
+// GetToken 获取Token（每次都重新获取，不缓存）
+func (a *AlarmOperator) GetToken(config model.RemoteNotifyConfig) (string, error) {
+	log.Printf("[GetToken] Starting token request for config: %s, TokenURL: %s", config.Name, config.TokenURL)
+
+	// 直接获取token，不搞任何缓存
+	loginData := map[string]string{
+		"username": config.Username,
+		"password": config.Password,
+	}
+
+	jsonData, err := json.Marshal(loginData)
+	if err != nil {
+		log.Printf("[GetToken] Failed to marshal login data: %v", err)
+		return "", fmt.Errorf("failed to marshal login data: %w", err)
+	}
+	log.Printf("[GetToken] Login data prepared: %s", string(jsonData))
+
+	log.Printf("[GetToken] Sending POST request to: %s", config.TokenURL)
+	resp, err := http.Post(config.TokenURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[GetToken] HTTP request failed: %v", err)
+		return "", fmt.Errorf("failed to request token: %w", err)
+	}
+	defer resp.Body.Close()
+	log.Printf("[GetToken] Received response with status: %d", resp.StatusCode)
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[GetToken] Token request failed with status %d, response body: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("token request failed with status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int `json:"code"`
+		Data struct {
+			User struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"user"`
+			Team struct {
+				ID   string `json:"id"`
+				Name string `json:"name"`
+			} `json:"team"`
+			Token string `json:"token"`
+			Role  string `json:"role"`
+		} `json:"data"`
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("[GetToken] Failed to read response body: %v", err)
+		return "", fmt.Errorf("failed to read token response: %w", err)
+	}
+	log.Printf("[GetToken] Raw response body: %s", string(body))
+
+	if err := json.Unmarshal(body, &result); err != nil {
+		log.Printf("[GetToken] Failed to parse JSON response: %v", err)
+		return "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if result.Code != 0 {
+		log.Printf("[GetToken] Token request returned error code: %d", result.Code)
+		return "", fmt.Errorf("token request returned error code: %d", result.Code)
+	}
+
+	log.Printf("[GetToken] Successfully obtained token (length: %d chars)", len(result.Data.Token))
+	return result.Data.Token, nil
+}
+
+// SendNotificationToService 发送通知到单个远程服务
+func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config model.RemoteNotifyConfig, params NotifyParams) error {
+	log.Printf("[SendNotification] Starting notification to service: %s, URL: %s", config.Name, config.NotifyURL)
+
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		log.Printf("[SendNotification] Failed to marshal params: %v", err)
+		return fmt.Errorf("failed to marshal params: %w", err)
+	}
+	log.Printf("[SendNotification] Notification payload: %s", string(jsonData))
+
+	req, err := http.NewRequestWithContext(ctx, "POST", config.NotifyURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[SendNotification] Failed to create request: %v", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	// 设置X-Region-Id头部（从告警标签中获取，如果没有则使用默认值）
+	regionID := "1" // 默认值
+	if len(params.Alerts) > 0 {
+		if alertRegion, exists := params.Alerts[0].Labels["region_id"]; exists && alertRegion != "" {
+			regionID = alertRegion
+		}
+	}
+	req.Header.Set("X-Region-Id", regionID)
+	log.Printf("[SendNotification] Set X-Region-Id header: %s", regionID)
+
+	log.Printf("[SendNotification] Request created for URL: %s", config.NotifyURL)
+
+	if config.TokenURL != "" {
+		log.Printf("[SendNotification] Using token authentication, TokenURL: %s", config.TokenURL)
+		// Token认证：用存储的用户名密码获取token
+		token, err := a.GetToken(config)
+		if err != nil {
+			log.Printf("[SendNotification] Failed to get token: %v", err)
+			return fmt.Errorf("failed to get token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		log.Printf("[SendNotification] Token authentication header set")
+	} else if config.Username != "" {
+		log.Printf("[SendNotification] Using basic authentication for user: %s", config.Username)
+		// 基础认证：直接用存储的用户名密码
+		req.SetBasicAuth(config.Username, config.Password)
+	} else {
+		log.Printf("[SendNotification] No authentication configured")
+	}
+	// 无认证：什么都不加
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	log.Printf("[SendNotification] Sending notification request...")
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[SendNotification] HTTP request failed: %v", err)
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+	log.Printf("[SendNotification] Received response with status: %d", resp.StatusCode)
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[SendNotification] Request failed with status %d, response body: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("remote service returned status %d", resp.StatusCode)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("[SendNotification] Notification sent successfully, response: %s", string(body))
+	return nil
+}
+
+// SendNotificationToAllServices 发送通知到所有NOTIFY类型的远程服务
+func (a *AlarmOperator) SendNotificationToAllServices(ctx context.Context, params NotifyParams) error {
+	log.Printf("[SendNotificationToAllServices] Starting notification process")
+
+	// 只获取NOTIFY类型的配置
+	configs, err := a.GetRemoteNotifyConfigsByType(ctx, model.RemoteConfigTypeNotify)
+	if err != nil {
+		log.Printf("[SendNotificationToAllServices] Failed to get NOTIFY type remote configs: %v", err)
+		return fmt.Errorf("failed to get NOTIFY type remote configs: %w", err)
+	}
+
+	log.Printf("[SendNotificationToAllServices] Found %d NOTIFY type remote configs", len(configs))
+
+	if len(configs) == 0 {
+		log.Printf("[SendNotificationToAllServices] No NOTIFY type remote configs found, skipping notification")
+		return nil
+	}
+
+	for i, config := range configs {
+		log.Printf("[SendNotificationToAllServices] Processing NOTIFY config %d/%d: %s (type: %s)", i+1, len(configs), config.Name, config.Type)
+		if err := a.SendNotificationToService(ctx, config, params); err != nil {
+			// 记录错误但不中断其他通知
+			log.Printf("[SendNotificationToAllServices] Failed to send notification to %s: %v", config.Name, err)
+		} else {
+			log.Printf("[SendNotificationToAllServices] Successfully sent notification to %s", config.Name)
+		}
+	}
+
+	log.Printf("[SendNotificationToAllServices] NOTIFY notification process completed")
+	return nil
 }

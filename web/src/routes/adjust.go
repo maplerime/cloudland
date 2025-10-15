@@ -178,6 +178,7 @@ func NewAdjustOperator() *AdjustOperator {
 type ListAdjustRuleGroupsParams struct {
 	RuleType   string
 	GroupUUID  string
+	RuleID     string
 	Owner      string
 	Page       int
 	PageSize   int
@@ -202,6 +203,28 @@ func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid str
 	return &group, nil
 }
 
+// GetAdjustRulesByIdentifier 通过标识符获取资源调整规则组（支持 rule_id 和 group_uuid）
+func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identifier string) (*model.AdjustRuleGroup, error) {
+	var group model.AdjustRuleGroup
+
+	// 先尝试按 rule_id 查询
+	err := dbs.DB().Where("rule_id = ?", identifier).First(&group).Error
+	if err == nil {
+		return &group, nil
+	}
+
+	// 如果 rule_id 查询失败，再按 uuid 查询（向后兼容）
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = dbs.DB().Where("uuid = ?", identifier).First(&group).Error
+		if err != nil {
+			return nil, err
+		}
+		return &group, nil
+	}
+
+	return nil, err
+}
+
 // ListAdjustRuleGroups 列出资源调整规则组
 func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAdjustRuleGroupsParams) ([]model.AdjustRuleGroup, int64, error) {
 	var groups []model.AdjustRuleGroup
@@ -213,9 +236,17 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 	if params.RuleType != "" {
 		query = query.Where("type = ?", params.RuleType)
 	}
-	if params.GroupUUID != "" {
+
+	// 双重标识查询逻辑
+	if params.RuleID != "" && params.GroupUUID != "" {
+		// 同时提供了两个标识符，使用 OR 查询
+		query = query.Where("rule_id = ? OR uuid = ?", params.RuleID, params.GroupUUID)
+	} else if params.RuleID != "" {
+		query = query.Where("rule_id = ?", params.RuleID)
+	} else if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
 	}
+
 	if params.Owner != "" {
 		query = query.Where("owner = ?", params.Owner)
 	}
@@ -359,14 +390,6 @@ func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID str
 // SaveAdjustmentHistory 保存调整历史
 func (o *AdjustOperator) SaveAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) error {
 	return dbs.DB().Create(history).Error
-}
-
-// SendAdjustEmail 发送调整通知邮件
-func (o *AdjustOperator) SendAdjustEmail(email string, record *AdjustmentRecord, domain string) error {
-	// 可以在此实现邮件发送逻辑，或者调用公共邮件服务
-	log.Printf("发送调整通知邮件到 %s: domain=%s, adjustType=%s", email, domain, record.AdjustType)
-	// 这里可以实现实际的邮件发送逻辑，暂时只记录日志
-	return nil
 }
 
 // AdjustCPUResource 调整CPU资源
@@ -613,35 +636,47 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		// 根据调整类型设置限制值
 		if record.AdjustType == "limit_in_bw" || record.AdjustType == model.RuleTypeAdjustInBW {
 			bwType = "in"
-			// 只有原始入站带宽大于0时才需要实际限制
-			if originalInBw > 0 {
-				needActualLimit = true
-				// 限制入站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
-				inBw = details[0].LimitValue / 1024 // 转换为 MB/s
-				if inBw < 1 {
-					inBw = 1 // 最小1MB/s
+			// 查找入站规则详情
+			for _, detail := range details {
+				if detail.Direction == "in" {
+					// 只有原始入站带宽大于0时才需要实际限制
+					if originalInBw > 0 {
+						needActualLimit = true
+						// 限制入站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
+						inBw = detail.LimitValue / 1024 // 转换为 MB/s
+						if inBw < 1 {
+							inBw = 1 // 最小1MB/s
+						}
+						// 使用单向设置，不影响出站带宽
+						outBw = 0 // 占位符，实际不使用
+						fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalInBw, inBw)
+					} else {
+						fmt.Printf("wngzhe AdjustBandwidthResource - Original inbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
+					}
+					break
 				}
-				// 使用单向设置，不影响出站带宽
-				outBw = 0 // 占位符，实际不使用
-				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalInBw, inBw)
-			} else {
-				fmt.Printf("wngzhe AdjustBandwidthResource - Original inbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
 			}
 		} else if record.AdjustType == "limit_out_bw" || record.AdjustType == model.RuleTypeAdjustOutBW {
 			bwType = "out"
-			// 只有原始出站带宽大于0时才需要实际限制
-			if originalOutBw > 0 {
-				needActualLimit = true
-				// 限制出站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
-				outBw = details[0].LimitValue / 1024 // 转换为 MB/s
-				if outBw < 1 {
-					outBw = 1 // 最小1MB/s
+			// 查找出站规则详情
+			for _, detail := range details {
+				if detail.Direction == "out" {
+					// 只有原始出站带宽大于0时才需要实际限制
+					if originalOutBw > 0 {
+						needActualLimit = true
+						// 限制出站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
+						outBw = detail.LimitValue / 1024 // 转换为 MB/s
+						if outBw < 1 {
+							outBw = 1 // 最小1MB/s
+						}
+						// 使用单向设置，不影响入站带宽
+						inBw = 0 // 占位符，实际不使用
+						fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalOutBw, outBw)
+					} else {
+						fmt.Printf("wngzhe AdjustBandwidthResource - Original outbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
+					}
+					break
 				}
-				// 使用单向设置，不影响入站带宽
-				inBw = 0 // 占位符，实际不使用
-				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalOutBw, outBw)
-			} else {
-				fmt.Printf("wngzhe AdjustBandwidthResource - Original outbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
 			}
 		}
 	}
@@ -877,10 +912,76 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 			log.Printf("获取带宽调整规则详情失败或不存在: %v", err)
 			return defaultCooldown
 		}
-		// 使用恢复持续时间作为冷却期
+		// 使用第一个规则的恢复持续时间作为冷却期
 		return details[0].RestoreDuration
 	default:
 		log.Printf("未知的调整类型: %s，使用默认冷却期", adjustType)
 		return defaultCooldown
 	}
+}
+
+// SendAdjustmentNotification 发送资源调整实时通知
+// 发送调整通知，直接使用alert.Status作为状态
+func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert AdjustAlert, success bool) error {
+	// 根据状态设置必要参数
+	endsAt := alert.EndsAt
+	summaryPrefix := "Resource adjustment"
+
+	if alert.Status == "resolved" {
+		endsAt = time.Now() // resolved状态设置当前时间
+		summaryPrefix = "RESOLVED: Resource adjustment"
+	}
+
+	// 构造通知参数
+	notifyParams := NotifyParams{
+		Alerts: []struct {
+			State       string            `json:"state"`
+			Labels      map[string]string `json:"labels"`
+			Annotations map[string]string `json:"annotations"`
+			StartsAt    time.Time         `json:"startsAt"`
+			EndsAt      time.Time         `json:"endsAt"`
+		}{
+			{
+				State: alert.Status,
+				Labels: map[string]string{
+					"alertname":     alert.Labels["alertname"],
+					"severity":      alert.Labels["severity"],       // 从labels中读取severity，不假设
+					"rule_id":       alert.Labels["global_rule_id"], // 改名：从global_rule_id改为rule_id
+					"domain":        alert.Labels["domain"],
+					"action_type":   alert.Labels["action_type"],
+					"target_device": alert.Labels["target_device"],
+					"instance_id":   alert.Labels["instance_id"],
+					"adjustment_status": func() string {
+						if success {
+							return "success"
+						}
+						return "failed"
+					}(),
+				},
+				Annotations: map[string]string{
+					"summary": fmt.Sprintf("%s %s: %s", summaryPrefix,
+						func() string {
+							if success {
+								return "completed successfully"
+							}
+							return "failed"
+						}(), alert.Annotations["summary"]),
+					"description": alert.Annotations["description"],
+				},
+				StartsAt: alert.StartsAt,
+				EndsAt:   endsAt,
+			},
+		},
+	}
+
+	// 创建AlarmOperator实例并发送通知
+	alarmOperator := &AlarmOperator{}
+	if err := alarmOperator.SendNotificationToAllServices(ctx, notifyParams); err != nil {
+		log.Printf("Failed to send adjustment notification: %v", err)
+		return err
+	}
+
+	log.Printf("Successfully sent adjustment notification for domain: %s, action: %s, success: %v",
+		alert.Labels["domain"], alert.Labels["action_type"], success)
+	return nil
 }

@@ -121,25 +121,56 @@
           - python3-pip
         state: present
 
-    - name: Check if docker apt repo exists
-      shell: >
-        find /etc/apt -type f -name "*.list" -print0
-        | xargs -0 grep -qsE 'download\.docker\.com/linux/ubuntu'
-      register: docker_repo_grep
-      changed_when: false
-      failed_when: false
+    - name: Remove all conflicting Docker repository configurations
+      shell: |
+        # Remove all Docker-related source files
+        rm -f /etc/apt/sources.list.d/docker*.list
+        rm -f /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        # Also check for any files containing docker in the name
+        find /etc/apt/sources.list.d/ -name "*docker*" -delete 2>/dev/null || true
+      ignore_errors: true
 
-    - name: Add Docker GPG key
-      apt_key:
+    - name: Remove all old Docker GPG keys
+      shell: |
+        # Remove all Docker-related GPG keys
+        rm -f /etc/apt/keyrings/docker*
+        rm -f /usr/share/keyrings/docker*
+        rm -f /etc/apt/keyrings/docker.asc
+        rm -f /usr/share/keyrings/docker-archive-keyring.gpg
+        # Remove any old apt-key entries for Docker
+        apt-key list 2>/dev/null | grep -A1 -B1 "docker\|Docker" | grep "pub" | awk '{print $2}' | cut -d'/' -f2 | while read keyid; do
+          if [[ -n "$keyid" ]]; then
+            apt-key del "$keyid" 2>/dev/null || true
+          fi
+        done
+      ignore_errors: true
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Add Docker GPG key (modern method)
+      get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
-        id: "0EBFCD88"
-      when: docker_repo_grep.rc != 0
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        force: true
 
-    - name: Add Docker repository
+    - name: Clean APT cache before adding Docker repository
+      shell: apt clean
+      ignore_errors: true
+
+    - name: Add Docker repository (modern method)
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
-      when: docker_repo_grep.rc != 0
+        filename: docker
+
+    - name: Update APT cache after adding Docker repository
+      shell: apt update
+      ignore_errors: true
 
     - name: Install Docker CE
       apt:
@@ -358,13 +389,14 @@
             smtp_hello: '{{ smtp_hello }}'
 
           route:
-            group_by: ['target_device','node_type', 'alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
+            group_by: ['node_type', 'alert_type', 'domain', 'instance_id', 'rule_group', 'action_type', 'target_device']
             group_wait: 30s
             group_interval: 5m
             repeat_interval: 3h
             receiver: '{{ receiver_name }}'
 
             routes:
+
               # Route node alarms to node-webhook (maintain compatibility with existing config)
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network)
@@ -379,22 +411,16 @@
                 receiver: 'slack-notifications'
                 continue: true
 
-              # Route all CPU alarms to cpu-webhook (processing logic handled in webhook)
-              - match:
-                  alert_type: cpu
-                receiver: 'cpu-webhook'
-                continue: true
-
-              # Route all BW alarms to bw-webhook (processing logic handled in webhook)
-              - match:
-                  alert_type: bw
-                receiver: 'bw-webhook'
-                continue: true
-
-              # Send alerts with email field to per-instance email notification
+              # Route VM alerts (CPU, Memory, BW) to unified VM webhook
               - match_re:
-                  email: ".+"
-                receiver: 'instance-alarm-email-notification'
+                  alert_type: (cpu|memory|bw)
+                receiver: 'vm-alerts-webhook'
+                continue: true
+
+              # Also send VM alerts to slack for monitoring
+              - match_re:
+                  alert_type: (cpu|memory|bw)
+                receiver: 'slack-notifications'
                 continue: true
 
           receivers:
@@ -417,34 +443,7 @@
                 {% endraw %}
 
 
-          - name: 'instance-alarm-email-notification'
-            email_configs:
-            - to: '{% raw %}{{ .CommonLabels.email }}{% endraw %}'
-              send_resolved: true
-              headers:
-                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
-              html: |-
-                {% raw %}
-                <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
-                <b>[Alert Name]</b> {{ .CommonLabels.alertname }}<br>
-                <b>[Severity]</b> {{ .CommonLabels.severity }}<br>
-                <b>[Instance/Domain]</b> {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}<br>
-                <b>[Summary]</b> {{ .CommonAnnotations.summary }}<br>
-                <b>[Description]</b> {{ .CommonAnnotations.description }}<br>
-                <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
-                <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
-                {% endraw %}
-
-
-          - name: 'cpu-webhook'
-            webhook_configs:
-            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
-              send_resolved: true
-              http_config:
-                tls_config:
-                  insecure_skip_verify: true
-
-          - name: 'bw-webhook'
+          - name: 'vm-alerts-webhook'
             webhook_configs:
             - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
               send_resolved: true
@@ -933,6 +932,7 @@
     - roles/monitor/templates/VM-cpu-rule.yml.j2
     - roles/monitor/templates/VM-in-bw-rule.yml.j2
     - roles/monitor/templates/VM-out-bw-rule.yml.j2
+    - roles/monitor/templates/VM-memory-rule.yml.j2
   tags: [monitor]
 
 - name: Create directories for mapping files
@@ -967,7 +967,17 @@
             target_label: rule_id
             action: replace
 
-          # 3. 设置 instance 为 domain 值
+          # 3. 保留 instance_id 标签 (新增)
+          - source_labels: [instance_id]
+            target_label: instance_id
+            action: replace
+
+          # 4. 保留 target_device 标签 (新增)
+          - source_labels: [target_device]
+            target_label: target_device
+            action: replace
+
+          # 5. 设置 instance 为 domain 值
           - source_labels: [domain]
             target_label: instance
             action: replace
