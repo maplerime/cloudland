@@ -221,7 +221,8 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 
 func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 	var req struct {
-		GroupUUID string   `json:"group_uuid" binding:"required"`
+		GroupUUID string   `json:"group_uuid,omitempty"`
+		RuleID    string   `json:"rule_id,omitempty"`
 		VMUUIDs   []string `json:"vm_uuids" binding:"required"`
 		Interface string   `json:"interface"`
 	}
@@ -229,8 +230,23 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
 		return
 	}
-	groupUUID := req.GroupUUID
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
+
+	// 验证必须提供 group_uuid 或 rule_id 其中之一
+	if req.GroupUUID == "" && req.RuleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
+		return
+	}
+
+	var group *model.RuleGroupV2
+	var err error
+
+	// 优先使用 rule_id，如果没有则使用 group_uuid
+	if req.RuleID != "" {
+		group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+	} else {
+		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+	}
+
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
 		return
@@ -239,6 +255,8 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 		return
 	}
+
+	groupUUID := group.UUID
 	if !group.Enabled {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":      "Rule group is not enabled, please enable the rule group before linking it to a virtual machine",
@@ -277,6 +295,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"group_uuid": groupUUID,
+			"rule_id":    group.RuleID,
 			"linked_vms": linkedVMs,
 		},
 	})
@@ -284,6 +303,7 @@ func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
 
 func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	var req struct {
+		RuleID          string           `json:"rule_id"` // 新增：用户指定的rule_id
 		Name            string           `json:"name" binding:"required"`
 		Owner           string           `json:"owner" binding:"required"`
 		Rules           []routes.CPURule `json:"rules" binding:"required,min=1"`
@@ -297,6 +317,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		return
 	}
 	group := &model.RuleGroupV2{
+		RuleID:          req.RuleID, // 新增：设置用户指定的rule_id
 		Name:            req.Name,
 		Type:            routes.RuleTypeCPU,
 		Owner:           req.Owner,
@@ -383,14 +404,17 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"group_uuid": group.UUID,
+			"rule_id":    group.RuleID, // 返回用户指定的rule_id
 			"enabled":    true,
 			"linkedvms":  req.LinkedVMs,
+			"region_id":  req.RegionID,
 		},
 	})
 }
 
 func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	var req struct {
+		RuleID          string              `json:"rule_id"` // 新增：用户指定的rule_id
 		Name            string              `json:"name" binding:"required"`
 		Owner           string              `json:"owner" binding:"required"`
 		Rules           []routes.MemoryRule `json:"rules" binding:"required,min=1"`
@@ -404,6 +428,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		return
 	}
 	group := &model.RuleGroupV2{
+		RuleID:          req.RuleID, // 新增：设置用户指定的rule_id
 		Name:            req.Name,
 		Type:            routes.RuleTypeMemory,
 		Owner:           req.Owner,
@@ -492,6 +517,8 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 			"group_uuid": group.UUID,
 			"enabled":    true,
 			"linkedvms":  req.LinkedVMs,
+			"region_id":  req.RegionID,
+			"rule_id":    group.UUID,
 		},
 	})
 }
@@ -500,6 +527,7 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	groupUUID := c.Param("uuid")
+	ruleID := c.Query("rule_id") // 新增：支持通过rule_id查询
 	if page < 1 {
 		page = 1
 	}
@@ -515,6 +543,11 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 
 	if groupUUID != "" {
 		queryParams.GroupUUID = groupUUID
+		queryParams.PageSize = 1
+	}
+	// 新增：支持通过rule_id查询
+	if ruleID != "" {
+		queryParams.RuleID = ruleID
 		queryParams.PageSize = 1
 	}
 
@@ -584,6 +617,7 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	groupUUID := c.Param("uuid")
+	ruleID := c.Query("rule_id") // 新增：支持通过rule_id查询
 	if page < 1 {
 		page = 1
 	}
@@ -595,6 +629,7 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 		RuleType: routes.RuleTypeMemory,
 		Page:     page,
 		PageSize: pageSize,
+		RuleID:   ruleID, // 新增：传递rule_id参数
 	}
 
 	if groupUUID != "" {
@@ -665,28 +700,45 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 }
 
 func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
-	groupUUID := c.Param("uuid")
-	if groupUUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
+	identifier := c.Param("uuid") // 可以是RuleID或UUID
+	if identifier == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty identifier error."})
 		return
 	}
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if err != nil {
+
+	// 自适应查询：先尝试RuleID，再尝试UUID
+	var group *model.RuleGroupV2
+	params := routes.ListRuleGroupsParams{
+		RuleID:   identifier,
+		RuleType: routes.RuleTypeCPU,
+		PageSize: 1,
+	}
+	groups, _, err := a.operator.ListRuleGroups(c.Request.Context(), params)
+	if err == nil && len(groups) > 0 {
+		// RuleID 查询成功
+		group = &groups[0]
+	} else {
+		// RuleID 查询失败，尝试UUID查询
+		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), identifier)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "Rule not found: The specified rule does not exist",
-				"code":  "NOT_FOUND",
-				"uuid":  groupUUID,
+				"error":      "Rule not found: The specified rule does not exist",
+				"code":       "NOT_FOUND",
+				"identifier": identifier,
 			})
-		} else {
+			return
+		} else if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to retrieve rule information",
-				"code":  "INTERNAL_ERROR",
-				"uuid":  groupUUID,
+				"error":      "Failed to retrieve rule information",
+				"code":       "INTERNAL_ERROR",
+				"identifier": identifier,
 			})
+			return
 		}
-		return
 	}
+
+	// 使用实际的GroupUUID进行后续操作
+	groupUUID := group.UUID
 
 	// 确认规则类型是否正确
 	if group.Type != routes.RuleTypeCPU {
@@ -761,7 +813,8 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"deleted_group": groupUUID,
+			"group_uuid":    group.UUID,
+			"rule_id":       group.RuleID,
 			"deleted_files": deletedFiles,
 			"linked_vms":    linkedVMs,
 		},
@@ -769,22 +822,45 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 }
 
 func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
-	groupUUID := c.Param("uuid")
-	if groupUUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
+	identifier := c.Param("uuid") // 可以是RuleID或UUID
+	if identifier == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty identifier error."})
 		return
 	}
 
-	// Verify rule group exists and is of correct type
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Failed to retrieve rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
+	// 自适应查询：先尝试RuleID，再尝试UUID
+	var group *model.RuleGroupV2
+	params := routes.ListRuleGroupsParams{
+		RuleID:   identifier,
+		RuleType: routes.RuleTypeMemory,
+		PageSize: 1,
 	}
+	groups, _, err := a.operator.ListRuleGroups(c.Request.Context(), params)
+	if err == nil && len(groups) > 0 {
+		// RuleID 查询成功
+		group = &groups[0]
+	} else {
+		// RuleID 查询失败，尝试UUID查询
+		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), identifier)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":      "Rule not found: The specified rule does not exist",
+				"code":       "NOT_FOUND",
+				"identifier": identifier,
+			})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"error":      "Failed to retrieve rule information",
+				"code":       "INTERNAL_ERROR",
+				"identifier": identifier,
+			})
+			return
+		}
+	}
+
+	// 使用实际的GroupUUID进行后续操作
+	groupUUID := group.UUID
 
 	if group.Type != routes.RuleTypeMemory {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -862,7 +938,8 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"deleted_group": groupUUID,
+			"group_uuid":    group.UUID,
+			"rule_id":       group.RuleID,
 			"deleted_files": deletedFiles,
 			"linked_vms":    linkedVMs,
 		},
@@ -1302,8 +1379,47 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 
 func (a *AlarmAPI) notifyRealtimeAlert(alert *routes.Alert) error {
 	log.Printf("notifyRealtimeAlert input: %v", alert)
+
+	// 构造通知参数
+	notifyParams := routes.NotifyParams{
+		Status: "firing",
+		Alerts: []struct {
+			State       string            `json:"state"`
+			ActiveAt    time.Time         `json:"activeAt"`
+			Value       string            `json:"value"`
+			Labels      map[string]string `json:"labels"`
+			Annotations map[string]string `json:"annotations"`
+			StartsAt    time.Time         `json:"startsAt"`
+			EndsAt      time.Time         `json:"endsAt"`
+		}{
+			{
+				State:    "firing",
+				ActiveAt: alert.StartsAt,
+				Value:    "1",
+				Labels: map[string]string{
+					"alertname":     alert.Name,
+					"severity":      alert.Severity,
+					"rule_group":    alert.RuleGroupUUID,
+					"alert_type":    alert.AlertType,
+					"target_device": alert.TargetDevice,
+				},
+				Annotations: map[string]string{
+					"summary":     alert.Summary,
+					"description": alert.Description,
+				},
+				StartsAt: alert.StartsAt,
+				EndsAt:   alert.EndsAt,
+			},
+		},
+	}
+
+	// 调用routes/alarm.go中的抽象函数发送通知
+	if err := a.operator.SendNotificationToAllServices(context.Background(), notifyParams); err != nil {
+		log.Printf("Failed to send notification to remote services: %v", err)
+		return err
+	}
+
 	return nil
-	// notify message to ui
 }
 
 // GetActiveRules retrieves active rules from Prometheus
@@ -1367,23 +1483,35 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 
 func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	var req struct {
-		Name         string          `json:"name" binding:"required"`
-		Owner        string          `json:"owner" binding:"required"`
-		Email        string          `json:"email"`
-		Action       bool            `json:"action"`
-		Rules        []routes.BWRule `json:"rules" binding:"required,min=1"`
-		LinkedVMs    []string        `json:"linkedvms"`
-		TargetDevice string          `json:"target_device"`
+		Name     string `json:"name" binding:"required"`
+		Owner    string `json:"owner" binding:"required"`
+		Enable   bool   `json:"enable"`
+		RegionID string `json:"region_id" binding:"required"`
+		RuleID   string `json:"rule_id" binding:"required"`
+		Level    string `json:"level"` // critical/warning/info
+		Rules    []struct {
+			Direction string `json:"direction" binding:"required,oneof=in out"`
+			Name      string `json:"name"`
+			Limit     int    `json:"limit" binding:"required,min=1"`    // Mbps
+			Duration  int    `json:"duration" binding:"required,min=1"` // 分钟
+		} `json:"rules" binding:"required,min=1"`
+		LinkedVMs []struct {
+			InstanceID   string `json:"instance_id" binding:"required"`   // 映射到 VMUUID
+			TargetDevice string `json:"target_device" binding:"required"` // 映射到 Interface
+		} `json:"linkedvms"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	group := &model.RuleGroupV2{
-		Name:    req.Name,
-		Type:    routes.RuleTypeBW,
-		Owner:   req.Owner,
-		Enabled: true,
+		RuleID:   req.RuleID,
+		Name:     req.Name,
+		Type:     routes.RuleTypeBW,
+		Owner:    req.Owner,
+		Enabled:  req.Enable,
+		RegionID: req.RegionID,
+		Level:    req.Level,
 	}
 	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
@@ -1391,8 +1519,12 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	}
 	for _, rule := range req.Rules {
 		detail := &model.BWRuleDetail{
-			GroupUUID:       group.UUID,
-			Name:            rule.Name,
+			GroupUUID: group.UUID,
+			Name:      rule.Name,
+			Direction: rule.Direction,
+			Limit:     rule.Limit,
+			Duration:  rule.Duration,
+			// Set legacy fields to -1 for backward compatibility
 			InThreshold:     -1,
 			InDuration:      -1,
 			InOverType:      "absolute",
@@ -1404,41 +1536,40 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			OutDownTo:       -1,
 			OutDownDuration: -1,
 		}
-		if rule.InEnabled {
-			detail.InThreshold = rule.InThreshold
-			detail.InDuration = rule.InDuration
-			detail.InOverType = rule.InOverType
-			detail.InDownTo = rule.InDownTo
-			detail.InDownDuration = rule.InDownDuration
-		}
-		if rule.OutEnabled {
-			detail.OutThreshold = rule.OutThreshold
-			detail.OutDuration = rule.OutDuration
-			detail.OutOverType = rule.OutOverType
-			detail.OutDownTo = rule.OutDownTo
-			detail.OutDownDuration = rule.OutDownDuration
-		}
 		if err := a.operator.CreateBWRuleDetail(c.Request.Context(), detail); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
 			return
 		}
 	}
 	if len(req.LinkedVMs) > 0 {
+		// Convert new format to existing format for VM linking
+		var vmUUIDs []string
+		for _, vm := range req.LinkedVMs {
+			vmUUIDs = append(vmUUIDs, vm.InstanceID) // InstanceID 映射到 VMUUID
+		}
+
 		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
-		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-bw")
+
+		// Link VMs with target_device (Interface field)
+		for _, vm := range req.LinkedVMs {
+			_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, []string{vm.InstanceID}, vm.TargetDevice)
+		}
+
+		// Update matched VMs JSON for each VM with its target_device
+		for _, vm := range req.LinkedVMs {
+			_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{vm.InstanceID}, group.UUID, "add", "alarm-bw", vm.TargetDevice)
+		}
 	}
-	// Render templates for in/out directions
+	// Render templates for each rule direction
 	for _, rule := range req.Rules {
-		if rule.InEnabled {
+		if rule.Direction == "in" {
 			data := map[string]interface{}{
 				"owner":            req.Owner,
 				"rule_group":       group.UUID,
-				"in_threshold":     rule.InThreshold,
-				"in_duration":      rule.InDuration,
-				"in_down_to":       rule.InDownTo,
-				"in_down_duration": rule.InDownDuration,
-				"target_device":    req.TargetDevice,
+				"in_threshold":     rule.Limit,
+				"in_duration":      rule.Duration,
+				"in_down_to":       -1, // Not used in new API
+				"in_down_duration": -1, // Not used in new API
 			}
 			templateFile := "VM-in-bw-rule.yml.j2"
 			outputFile := fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
@@ -1447,16 +1578,14 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render in-bw rule template"})
 				return
 			}
-		}
-		if rule.OutEnabled {
+		} else if rule.Direction == "out" {
 			data := map[string]interface{}{
 				"owner":             req.Owner,
 				"rule_group":        group.UUID,
-				"out_threshold":     rule.OutThreshold,
-				"out_duration":      rule.OutDuration,
-				"out_down_to":       rule.OutDownTo,
-				"out_down_duration": rule.OutDownDuration,
-				"target_device":     req.TargetDevice,
+				"out_threshold":     rule.Limit,
+				"out_duration":      rule.Duration,
+				"out_down_to":       -1, // Not used in new API
+				"out_down_duration": -1, // Not used in new API
 			}
 			templateFile := "VM-out-bw-rule.yml.j2"
 			outputFile := fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
@@ -1472,7 +1601,8 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"group_uuid": group.UUID,
-			"enabled":    true,
+			"rule_id":    req.RuleID,
+			"enabled":    req.Enable,
 			"linkedvms":  req.LinkedVMs,
 		},
 	})
@@ -1482,6 +1612,7 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
 	groupUUID := c.Param("uuid")
+	ruleID := c.Query("rule_id") // 新增：支持通过rule_id查询
 	if page < 1 {
 		page = 1
 	}
@@ -1493,6 +1624,7 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 		RuleType: routes.RuleTypeBW,
 		Page:     page,
 		PageSize: pageSize,
+		RuleID:   ruleID, // 新增：传递rule_id参数
 	}
 
 	if groupUUID != "" {
@@ -1512,42 +1644,63 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "query BW detail rules failed: " + err.Error()})
 			return
 		}
-		linkedVMs := make([]string, 0)
+		linkedVMs := make([]gin.H, 0)
 		vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), group.UUID)
 		if err == nil {
 			for _, link := range vmLinks {
-				linkedVMs = append(linkedVMs, link.VMUUID)
+				linkedVMs = append(linkedVMs, gin.H{
+					"instance_id":   link.VMUUID,    // 字段名改为 instance_id
+					"target_device": link.Interface, // 字段名改为 target_device
+				})
 			}
 		}
 
 		ruleDetails := make([]gin.H, 0, len(details))
 		for _, d := range details {
-			ruleDetails = append(ruleDetails, gin.H{
-				"id":                d.ID,
-				"rule_uuid":         d.UUID,
-				"name":              d.Name,
-				"in_threshold":      d.InThreshold,
-				"in_duration":       d.InDuration,
-				"in_over_type":      d.InOverType,
-				"in_down_to":        d.InDownTo,
-				"in_down_duration":  d.InDownDuration,
-				"out_threshold":     d.OutThreshold,
-				"out_duration":      d.OutDuration,
-				"out_over_type":     d.OutOverType,
-				"out_down_to":       d.OutDownTo,
-				"out_down_duration": d.OutDownDuration,
-			})
+			// 优先使用新的单向字段，如果为空则使用旧的双向字段
+			if d.Direction != "" {
+				// 使用新的单向格式
+				ruleDetails = append(ruleDetails, gin.H{
+					"id":        d.ID,
+					"rule_uuid": d.UUID,
+					"name":      d.Name,
+					"direction": d.Direction,
+					"limit":     d.Limit,
+					"duration":  d.Duration,
+				})
+			} else {
+				// 兼容旧的双向格式
+				ruleDetails = append(ruleDetails, gin.H{
+					"id":                d.ID,
+					"rule_uuid":         d.UUID,
+					"name":              d.Name,
+					"in_threshold":      d.InThreshold,
+					"in_duration":       d.InDuration,
+					"in_over_type":      d.InOverType,
+					"in_down_to":        d.InDownTo,
+					"in_down_duration":  d.InDownDuration,
+					"out_threshold":     d.OutThreshold,
+					"out_duration":      d.OutDuration,
+					"out_over_type":     d.OutOverType,
+					"out_down_to":       d.OutDownTo,
+					"out_down_duration": d.OutDownDuration,
+				})
+			}
 		}
 
 		responseData = append(responseData, gin.H{
 			"id":          group.ID,
 			"group_uuid":  group.UUID,
+			"rule_id":     group.RuleID,
 			"name":        group.Name,
+			"owner":       group.Owner,
+			"region_id":   group.RegionID,
+			"level":       group.Level,
 			"trigger_cnt": group.TriggerCnt,
 			"create_time": group.CreatedAt.Format(time.RFC3339),
 			"rules":       ruleDetails,
 			"enabled":     group.Enabled,
-			"linked_vms":  linkedVMs,
+			"linkedvms":   linkedVMs, // 字段名改为 linkedvms 与创建接口保持一致
 		})
 	}
 
@@ -1563,35 +1716,52 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 }
 
 func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
-	groupUUID := c.Param("uuid")
-	if groupUUID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "empty UUID error."})
+	identifier := c.Param("uuid") // 可以是RuleID或UUID
+	if identifier == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "empty identifier error."})
 		return
 	}
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if err != nil {
+
+	// 自适应查询：先尝试RuleID，再尝试UUID
+	var group *model.RuleGroupV2
+	params := routes.ListRuleGroupsParams{
+		RuleID:   identifier,
+		RuleType: routes.RuleTypeBW,
+		PageSize: 1,
+	}
+	groups, _, err := a.operator.ListRuleGroups(c.Request.Context(), params)
+	if err == nil && len(groups) > 0 {
+		// RuleID 查询成功
+		group = &groups[0]
+	} else {
+		// RuleID 查询失败，尝试UUID查询
+		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), identifier)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error": "Rule not found: The specified rule does not exist",
-				"code":  "NOT_FOUND",
-				"uuid":  groupUUID,
+				"error":      "Rule not found: The specified rule does not exist",
+				"code":       "NOT_FOUND",
+				"identifier": identifier,
 			})
-		} else {
+			return
+		} else if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
-				"error": "Failed to retrieve rule information",
-				"code":  "INTERNAL_ERROR",
-				"uuid":  groupUUID,
+				"error":      "Failed to retrieve rule information",
+				"code":       "INTERNAL_ERROR",
+				"identifier": identifier,
 			})
+			return
 		}
-		return
 	}
+
+	// 使用实际的GroupUUID进行后续操作
+	groupUUID := group.UUID
 
 	// 确认规则类型是否正确
 	if group.Type != routes.RuleTypeBW {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "Rule type mismatch: Expected BW rule but found " + group.Type,
-			"code":  "INVALID_RULE_TYPE",
-			"uuid":  groupUUID,
+			"error":      "Rule type mismatch: Expected BW rule but found " + group.Type,
+			"code":       "INVALID_RULE_TYPE",
+			"identifier": identifier,
 		})
 		return
 	}
@@ -1668,7 +1838,8 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"deleted_group": groupUUID,
+			"group_uuid":    group.UUID,
+			"rule_id":       group.RuleID,
 			"deleted_files": deletedFiles,
 			"linked_vms":    linkedVMs,
 		},
@@ -2065,4 +2236,98 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 type VMAlarmMapping struct {
 	Targets []string          `yaml:"targets"`
 	Labels  map[string]string `yaml:"labels"`
+}
+
+// RemoteNotifyConfig API接口
+
+// CreateRemoteNotifyConfig 创建远程通知配置
+func (a *AlarmAPI) CreateRemoteNotifyConfig(c *gin.Context) {
+	var req model.RemoteNotifyConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 检查名称是否已存在
+	existing, err := a.operator.GetRemoteNotifyConfigByName(c.Request.Context(), req.Name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing config"})
+		return
+	}
+	if existing != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Config with this name already exists"})
+		return
+	}
+
+	if err := a.operator.CreateRemoteNotifyConfig(c.Request.Context(), &req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create config: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   req,
+	})
+}
+
+// GetRemoteNotifyConfigs 获取远程通知配置列表
+func (a *AlarmAPI) GetRemoteNotifyConfigs(c *gin.Context) {
+	configs, err := a.operator.GetRemoteNotifyConfigs(c.Request.Context())
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get configs: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   configs,
+		"count":  len(configs),
+	})
+}
+
+// GetRemoteNotifyConfig 获取单个远程通知配置
+func (a *AlarmAPI) GetRemoteNotifyConfig(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name parameter is required"})
+		return
+	}
+
+	config, err := a.operator.GetRemoteNotifyConfigByName(c.Request.Context(), name)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get config: " + err.Error()})
+		return
+	}
+	if config == nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Config not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   config,
+	})
+}
+
+// DeleteRemoteNotifyConfig 删除远程通知配置
+func (a *AlarmAPI) DeleteRemoteNotifyConfig(c *gin.Context) {
+	name := c.Param("name")
+	if name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "name parameter is required"})
+		return
+	}
+
+	if err := a.operator.DeleteRemoteNotifyConfig(c.Request.Context(), name); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete config: " + err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  "success",
+		"message": "Config deleted successfully",
+	})
 }

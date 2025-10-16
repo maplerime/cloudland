@@ -85,6 +85,15 @@ type ListRuleGroupsParams struct {
 	Page      int
 	PageSize  int
 	GroupUUID string
+	RuleID    string // 新增：支持通过rule_id查询
+}
+
+// AdaptiveQueryParams 自适应查询参数
+type AdaptiveQueryParams struct {
+	ID       string // 可以是GroupUUID或RuleID
+	RuleType string
+	Page     int
+	PageSize int
 }
 
 type (
@@ -346,6 +355,76 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	}
 }
 
+// GetRulesByRuleID 通过 rule_id 获取规则组（支持告警规则）
+func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*model.RuleGroupV2, error) {
+	ctx, _ = common.GetContextDB(ctx)
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+	if err != nil {
+		log.Printf("rules query failed: ruleID=%s, error=%v", ruleID, err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("rule not found: ruleID=%s", ruleID)
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	ruleType := groups[0].Type
+
+	if ruleType == "cpu" {
+		details, err := a.GetCPURuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.CPURuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "bw" {
+		details, err := a.GetBWRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.BWRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "memory" {
+		details, err := a.GetMemoryRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.MemoryRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else {
+		log.Printf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
+		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
+	}
+}
+
 func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
 
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
@@ -561,6 +640,10 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	}
 	if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
+	}
+	// 新增：支持通过rule_id查询
+	if params.RuleID != "" {
+		query = query.Where("rule_id = ?", params.RuleID)
 	}
 
 	if err := query.Count(&total).Error; err != nil {
@@ -1777,4 +1860,171 @@ func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
 
 func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
 	c.HTML(200, "alarms_new")
+}
+
+// RemoteNotifyConfig 相关操作函数
+
+// CreateRemoteNotifyConfig 创建远程通知配置
+func (a *AlarmOperator) CreateRemoteNotifyConfig(ctx context.Context, config *model.RemoteNotifyConfig) error {
+	ctx, db := common.GetContextDB(ctx)
+	config.UUID = uuid.NewString()
+	if err := db.Create(config).Error; err != nil {
+		log.Printf("create remote notify config failed: name=%s, error=%v", config.Name, err)
+		return fmt.Errorf("create remote notify config failed: %w", err)
+	}
+	return nil
+}
+
+// GetRemoteNotifyConfigs 获取远程通知配置列表
+func (a *AlarmOperator) GetRemoteNotifyConfigs(ctx context.Context) ([]model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var configs []model.RemoteNotifyConfig
+	if err := db.Find(&configs).Error; err != nil {
+		log.Printf("get remote notify configs failed: error=%v", err)
+		return nil, fmt.Errorf("get remote notify configs failed: %w", err)
+	}
+	return configs, nil
+}
+
+// GetRemoteNotifyConfigByName 根据名称获取远程通知配置
+func (a *AlarmOperator) GetRemoteNotifyConfigByName(ctx context.Context, name string) (*model.RemoteNotifyConfig, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var config model.RemoteNotifyConfig
+	if err := db.Where("name = ?", name).First(&config).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		log.Printf("get remote notify config by name failed: name=%s, error=%v", name, err)
+		return nil, fmt.Errorf("get remote notify config by name failed: %w", err)
+	}
+	return &config, nil
+}
+
+// DeleteRemoteNotifyConfig 删除远程通知配置
+func (a *AlarmOperator) DeleteRemoteNotifyConfig(ctx context.Context, name string) error {
+	ctx, db := common.GetContextDB(ctx)
+	result := db.Where("name = ?", name).Delete(&model.RemoteNotifyConfig{})
+	if result.Error != nil {
+		log.Printf("delete remote notify config failed: name=%s, error=%v", name, result.Error)
+		return fmt.Errorf("delete remote notify config failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("remote notify config not found: %s", name)
+	}
+	return nil
+}
+
+// 远程通知相关功能函数
+
+// NotifyParams 通知参数
+type NotifyParams struct {
+	Status string `json:"status"`
+	Alerts []struct {
+		State       string            `json:"state"`
+		ActiveAt    time.Time         `json:"activeAt"`
+		Value       string            `json:"value"`
+		Labels      map[string]string `json:"labels"`
+		Annotations map[string]string `json:"annotations"`
+		StartsAt    time.Time         `json:"startsAt"`
+		EndsAt      time.Time         `json:"endsAt"`
+	} `json:"alerts"`
+}
+
+// GetToken 获取Token（每次都重新获取，不缓存）
+func (a *AlarmOperator) GetToken(config model.RemoteNotifyConfig) (string, error) {
+	// 直接获取token，不搞任何缓存
+	loginData := map[string]string{
+		"username": config.Username,
+		"password": config.Password,
+	}
+
+	jsonData, err := json.Marshal(loginData)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal login data: %w", err)
+	}
+
+	resp, err := http.Post(config.TokenURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to request token: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("token request failed with status: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Code int `json:"code"`
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("failed to parse token response: %w", err)
+	}
+
+	if result.Code != 0 {
+		return "", fmt.Errorf("token request returned error code: %d", result.Code)
+	}
+
+	return result.Data.Token, nil
+}
+
+// SendNotificationToService 发送通知到单个远程服务
+func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config model.RemoteNotifyConfig, params NotifyParams) error {
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		return fmt.Errorf("failed to marshal params: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", config.NotifyURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	if config.TokenURL != "" {
+		// Token认证：用存储的用户名密码获取token
+		token, err := a.GetToken(config)
+		if err != nil {
+			return fmt.Errorf("failed to get token: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	} else if config.Username != "" {
+		// 基础认证：直接用存储的用户名密码
+		req.SetBasicAuth(config.Username, config.Password)
+	}
+	// 无认证：什么都不加
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("remote service returned status %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// SendNotificationToAllServices 发送通知到所有配置的远程服务
+func (a *AlarmOperator) SendNotificationToAllServices(ctx context.Context, params NotifyParams) error {
+	configs, err := a.GetRemoteNotifyConfigs(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get remote notify configs: %w", err)
+	}
+
+	for _, config := range configs {
+		if err := a.SendNotificationToService(ctx, config, params); err != nil {
+			// 记录错误但不中断其他通知
+			log.Printf("Failed to send notification to %s: %v", config.Name, err)
+		}
+	}
+
+	return nil
 }

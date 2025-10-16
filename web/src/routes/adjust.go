@@ -178,6 +178,7 @@ func NewAdjustOperator() *AdjustOperator {
 type ListAdjustRuleGroupsParams struct {
 	RuleType   string
 	GroupUUID  string
+	RuleID     string
 	Owner      string
 	Page       int
 	PageSize   int
@@ -202,6 +203,28 @@ func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid str
 	return &group, nil
 }
 
+// GetAdjustRulesByIdentifier 通过标识符获取资源调整规则组（支持 rule_id 和 group_uuid）
+func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identifier string) (*model.AdjustRuleGroup, error) {
+	var group model.AdjustRuleGroup
+
+	// 先尝试按 rule_id 查询
+	err := dbs.DB().Where("rule_id = ?", identifier).First(&group).Error
+	if err == nil {
+		return &group, nil
+	}
+
+	// 如果 rule_id 查询失败，再按 uuid 查询（向后兼容）
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = dbs.DB().Where("uuid = ?", identifier).First(&group).Error
+		if err != nil {
+			return nil, err
+		}
+		return &group, nil
+	}
+
+	return nil, err
+}
+
 // ListAdjustRuleGroups 列出资源调整规则组
 func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAdjustRuleGroupsParams) ([]model.AdjustRuleGroup, int64, error) {
 	var groups []model.AdjustRuleGroup
@@ -213,9 +236,17 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 	if params.RuleType != "" {
 		query = query.Where("type = ?", params.RuleType)
 	}
-	if params.GroupUUID != "" {
+
+	// 双重标识查询逻辑
+	if params.RuleID != "" && params.GroupUUID != "" {
+		// 同时提供了两个标识符，使用 OR 查询
+		query = query.Where("rule_id = ? OR uuid = ?", params.RuleID, params.GroupUUID)
+	} else if params.RuleID != "" {
+		query = query.Where("rule_id = ?", params.RuleID)
+	} else if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
 	}
+
 	if params.Owner != "" {
 		query = query.Where("owner = ?", params.Owner)
 	}
@@ -883,4 +914,65 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 		log.Printf("未知的调整类型: %s，使用默认冷却期", adjustType)
 		return defaultCooldown
 	}
+}
+
+// SendAdjustmentNotification 发送资源调整实时通知
+func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert AdjustAlert, success bool) error {
+	// 构造通知参数
+	notifyParams := NotifyParams{
+		Status: "firing",
+		Alerts: []struct {
+			State       string            `json:"state"`
+			ActiveAt    time.Time         `json:"activeAt"`
+			Value       string            `json:"value"`
+			Labels      map[string]string `json:"labels"`
+			Annotations map[string]string `json:"annotations"`
+			StartsAt    time.Time         `json:"startsAt"`
+			EndsAt      time.Time         `json:"endsAt"`
+		}{
+			{
+				State:    "firing",
+				ActiveAt: alert.ActiveAt,
+				Value:    alert.Value,
+				Labels: map[string]string{
+					"alertname":     alert.Labels["alertname"],
+					"severity":      "info", // 调整操作通常是info级别
+					"rule_group":    alert.Labels["rule_group"],
+					"domain":        alert.Labels["domain"],
+					"action_type":   alert.Labels["action_type"],
+					"target_device": alert.Labels["target_device"],
+					"instance_id":   alert.Labels["instance_id"],
+					"adjustment_status": func() string {
+						if success {
+							return "success"
+						}
+						return "failed"
+					}(),
+				},
+				Annotations: map[string]string{
+					"summary": fmt.Sprintf("Resource adjustment %s: %s",
+						func() string {
+							if success {
+								return "completed successfully"
+							}
+							return "failed"
+						}(), alert.Annotations["summary"]),
+					"description": alert.Annotations["description"],
+				},
+				StartsAt: alert.StartsAt,
+				EndsAt:   alert.EndsAt,
+			},
+		},
+	}
+
+	// 创建AlarmOperator实例并发送通知
+	alarmOperator := &AlarmOperator{}
+	if err := alarmOperator.SendNotificationToAllServices(ctx, notifyParams); err != nil {
+		log.Printf("Failed to send adjustment notification: %v", err)
+		return err
+	}
+
+	log.Printf("Successfully sent adjustment notification for domain: %s, action: %s, success: %v",
+		alert.Labels["domain"], alert.Labels["action_type"], success)
+	return nil
 }

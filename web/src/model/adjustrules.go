@@ -38,6 +38,8 @@ type AdjustRuleGroup struct {
 	Enabled       bool   `gorm:"default:true"`
 	Email         string `gorm:"type:varchar(255)"`
 	AdjustEnabled bool   `gorm:"default:true"`
+	RegionID      string `gorm:"type:varchar(64);index"`
+	RuleID        string `gorm:"type:varchar(128);index"`
 }
 
 // CPUAdjustRuleDetail CPU调整规则详情

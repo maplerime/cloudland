@@ -11,13 +11,12 @@ groups:
       )
     for: {{ in_duration }}s
     labels:
-      severity: '{{ if $labels.rule_id }}critical{{ else }}warning{{ end }}'
-      matched: '{{ if $labels.rule_id }}true{{ else }}false{{ end }}'
+      severity: "{{ level }}"
+      region_id: "{{ region_id }}"
+      rule_id: "{{ rule_id }}"
       rule_group: "{{ rule_group }}"
       alert_type: bw
       owner: "{{ owner }}"
-      email: "{{ email | default('') }}"
-      action: "{{ action | default('false') }}"
       target_device: "{{ $labels.target_device }}"
     annotations:
       summary: "High Network In Speed ({{ $value }} kB/s)"
@@ -33,13 +32,12 @@ groups:
       )
     for: {{ in_down_duration }}s
     labels:
-      severity: '{{ if $labels.rule_id }}info{{ else }}info{{ end }}'
-      matched: '{{ if $labels.rule_id }}true{{ else }}false{{ end }}'
+      severity: "info"
+      region_id: "{{ region_id }}"
+      rule_id: "{{ rule_id }}"
       rule_group: "{{ rule_group }}"
       alert_type: bw
       owner: "{{ owner }}"
-      email: "{{ email | default('') }}"
-      action: "{{ action | default('false') }}"
       target_device: "{{ $labels.target_device }}"
     annotations:
       summary: "Network In Speed Recovered ({{ $value }} kB/s)"

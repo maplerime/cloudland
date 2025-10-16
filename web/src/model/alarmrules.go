@@ -19,6 +19,7 @@ func init() {
 		&BWRuleDetail{},
 		&VMRuleLink{},
 		&NodeAlarmRule{},
+		&RemoteNotifyConfig{},
 	)
 	logger.Debugf("Alert system tables migrated successfully")
 }
@@ -28,6 +29,7 @@ func (RuleGroupV2) TableName() string {
 
 type RuleGroupV2 struct {
 	Model
+	RuleID          string `gorm:"type:varchar(128);uniqueIndex;column:rule_id"` // 用户指定的rule_id，用于API查询和删除
 	Name            string `gorm:"type:varchar(128);uniqueIndex;column:name"`
 	Type            string `gorm:"type:varchar(32)"`
 	Owner           string `gorm:"type:varchar(255);index"`
@@ -67,6 +69,12 @@ type BWRuleDetail struct {
 	GroupUUID string `gorm:"column:group_uuid;type:varchar(36);index;not null"`
 	Name      string `gorm:"type:varchar(128)"`
 
+	// New single-direction fields for API v2
+	Direction string `gorm:"type:varchar(8);check:direction IN ('in','out')"` // 方向: in/out
+	Limit     int    `gorm:"check:limit >= 1"`                                // 阈值 (Mbps)
+	Duration  int    `gorm:"check:duration >= 1"`                             // 持续时间(分钟)
+
+	// Legacy dual-direction fields - kept for backward compatibility
 	// Inbound parameters - negative values indicate disabled rules
 	InThreshold    int    `gorm:"default:-1"`
 	InDuration     int    `gorm:"default:-1"`
@@ -122,4 +130,18 @@ func (c ConfigWrapper) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(c.RawMessage), nil
+}
+
+// RemoteNotifyConfig 远程通知配置
+type RemoteNotifyConfig struct {
+	Model
+	Name      string `gorm:"type:varchar(128);uniqueIndex;column:name"`    // 服务名称
+	NotifyURL string `gorm:"type:varchar(500);not null;column:notify_url"` // 通知URL
+	Username  string `gorm:"type:varchar(255);column:username"`            // 用户名（基础认证或Token认证都用这个）
+	Password  string `gorm:"type:varchar(255);column:password"`            // 密码（基础认证或Token认证都用这个）
+	TokenURL  string `gorm:"type:varchar(500);column:token_url"`           // Token获取URL（为空=基础认证，不为空=Token认证）
+}
+
+func (RemoteNotifyConfig) TableName() string {
+	return "remote_notify_config"
 }
