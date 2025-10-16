@@ -30,7 +30,8 @@ var (
 type BackendAdmin struct{}
 type BackendView struct{}
 
-func (v *BackendView) CreateHaproxyConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+	ctx, db := GetContextDB(ctx)
 	listeners := loadBalancer.Listeners
 	listenerCfgs := []*ListenerConfig{}
 	for _, listener := range listeners {
@@ -48,10 +49,36 @@ func (v *BackendView) CreateHaproxyConf(ctx context.Context, loadBalancer *model
 		}
 	}
 	haproxyCfg := &LoadBalancerConfig{listenerCfgs}
-	_, err = json.Marshal(haproxyCfg)
+	jsonData, err := json.Marshal(haproxyCfg)
 	if err != nil {
 		logger.Errorf("Failed to marshal load balancer json data, %v", err)
 		return
+	}
+	vrrpID := loadBalancer.VrrpInstanceID
+	vrrpIface1 := &model.Interface{}
+	vrrpIface2 := &model.Interface{}
+	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'master' and device = ?", vrrpID).Take(vrrpIface1).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp interface 1", err)
+		return
+	}
+	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'backup' and device = ?", vrrpID).Take(vrrpIface2).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp interface 2", err)
+		return
+	}
+	control := fmt.Sprintf("toall=group-vrrp-%d", vrrpID)
+	if vrrpIface1.Hyper >= 0 {
+		control = fmt.Sprintf("%s:%d", control, vrrpIface1.Hyper)
+		if vrrpIface1.Hyper >= 0 {
+			control = fmt.Sprintf("%s,%d", control, vrrpIface2.Hyper)
+		}
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_proxy_conf.sh '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, jsonData)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("create_keepalived_conf.sh execution failed", err)
+			return
+		}
 	}
 	return
 }
@@ -76,6 +103,12 @@ func (a *BackendAdmin) Create(ctx context.Context, backendAddr string, listener 
 	if err != nil {
 		logger.Error("DB failed to create backend ", err)
 		err = NewCLError(ErrBackendCreateFailed, "Failed to create backend", err)
+		return
+	}
+	err = a.CreateHaproxyConf(ctx, loadBalancer)
+	if err != nil {
+		logger.Error("Failed to create haproxy conf ", err)
+		err = NewCLError(ErrBackendCreateFailed, "Failed to create haproxy conf", err)
 		return
 	}
 	return

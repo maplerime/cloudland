@@ -16,7 +16,7 @@ read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing < <(jq
 nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./create_link.sh $vlan
-brctl setageing $vm_br 300
+brctl setageing $vm_br 120
 virsh domiflist $vm_ID | grep $mac
 if [ $? -ne 0 ]; then
     template=$template_dir/interface.xml
@@ -24,8 +24,9 @@ if [ $? -ne 0 ]; then
     let queue_num=($(virsh dominfo $vm_ID | grep 'CPU(s)' | awk '{print $2}')+1)/2
     cp $template $interface_xml
     sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
-    virsh attach-device $vm_ID $interface_xml --config
     virsh attach-device $vm_ID $interface_xml --live --persistent
+    [ $? -ne 0 ] && virsh attach-device $vm_ID $interface_xml --config
+    echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 fi
 udevadm settle
 async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
@@ -37,5 +38,4 @@ more_addresses=$(jq -r .more_addresses <<< $vlan_info)
 if [ -n "$more_addresses" ]; then
     echo "$more_addresses" | ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta"
 fi
-echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"

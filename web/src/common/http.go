@@ -47,7 +47,7 @@ func ErrorResponse(c *gin.Context, code int, errorMsg string, err error) {
 			c.JSON(code, &APIError{
 				ErrorCode:    int(clErr.Code),
 				ErrorCodeStr: clErr.Code.String(),
-				ErrorMessage: clErr.Message,
+				ErrorMessage: clErr.Error(),
 			})
 			return
 		}

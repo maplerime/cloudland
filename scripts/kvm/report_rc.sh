@@ -120,6 +120,14 @@ function router_status()
     echo "$router_list" >old_router_list
 }
 
+function check_system_router()
+{
+    sudo ip netns exec router-0 ip r | grep default
+    if [ $? -ne 0 ]; then
+        sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
+    fi
+}
+
 function sync_instance()
 {
     flag_file=$run_dir/need_to_sync
@@ -219,6 +227,7 @@ function calc_resource()
 calc_resource
 sync_instance
 sync_delayed_job
+check_system_router
 #probe_arp >/dev/null 2>&1
 inst_status
 daily_job

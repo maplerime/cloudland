@@ -536,6 +536,13 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 			return
 		}
 	}
+	// delete interfaces if any
+	err = db.Where("subnet = ?", subnet.ID).Delete(model.Interface{}).Error
+	if err != nil {
+		logger.Error("Database delete interface failed, %v", err)
+		err = NewCLError(ErrAddressDeleteFailed, "Database delete interface failed", err)
+		return
+	}
 	if subnet.RouterID > 0 {
 		err = clearRouting(ctx, subnet.RouterID, subnet)
 		if err != nil {
@@ -689,7 +696,8 @@ func (v *SubnetView) Delete(c *macaron.Context, store session.Store) (err error)
 }
 
 func (v *SubnetView) New(c *macaron.Context, store session.Store) {
-	memberShip := GetMemberShip(c.Req.Context())
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
 		logger.Error("Not authorized for this operation")
@@ -697,10 +705,9 @@ func (v *SubnetView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	routers := []*model.Router{}
-	err := DB().Find(&routers).Error
+	_, routers, err := routerAdmin.List(ctx, 0, -1, "", "")
 	if err != nil {
-		logger.Error("Database failed to query routers", err)
+		logger.Error("Failed to query routers", err)
 		return
 	}
 	groups := []*model.IpGroup{}
