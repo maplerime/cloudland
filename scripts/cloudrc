@@ -3,6 +3,7 @@ localrc="${BASH_SOURCE[0]}.local"
 source "$localrc"
 guest_userid_template=ZCC%05X
 run_dir=/opt/cloudland/run
+log_dir=/opt/cloudland/log
 async_job_dir=$run_dir/async_job
 cache_dir=/opt/cloudland/cache
 cache_tmp_dir=$cache_dir/tmp
