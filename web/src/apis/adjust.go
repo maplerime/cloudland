@@ -164,6 +164,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 		ruleData := map[string]interface{}{
 			"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 			"rule_group_original": group.UUID,
+			"global_rule_id":      group.RuleID, // 用户指定的全局规则ID
 			"high_threshold":      detail.HighThreshold,
 			"low_threshold":       detail.LowThreshold,
 			"smooth_window":       detail.SmoothWindow,
@@ -738,7 +739,7 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 
 	// 处理每个告警
 	for i, alert := range req.Alerts {
-		log.Printf("[ADJUST-INFO] Starting to process alert %d", i+1)
+		log.Printf("[ADJUST-INFO] Starting to process alert %d, status: %s", i+1, alert.Status)
 
 		// 创建一个请求追踪ID，用于关联日志
 		requestID := fmt.Sprintf("adjust-%s-%d", time.Now().Format("20060102-150405"), i)
@@ -1065,6 +1066,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		ruleData := map[string]interface{}{
 			"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 			"rule_group_original": group.UUID,
+			"global_rule_id":      group.RuleID, // 用户指定的全局规则ID
 			"in_enabled":          rule.InEnabled,
 			"in_high_threshold":   detail.InHighThreshold,
 			"in_low_threshold":    detail.InLowThreshold,

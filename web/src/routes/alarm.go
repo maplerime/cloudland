@@ -167,6 +167,7 @@ type (
 		Name          string `gorm:"size:255"`
 		Status        string `gorm:"type:varchar(20)"`
 		RuleGroupUUID string `json:"rule_group"`
+		GlobalRuleID  string `gorm:"type:varchar(255)" json:"global_rule_id"` // 新增：全局规则ID
 		Severity      string `gorm:"type:varchar(20)"`
 		Summary       string `gorm:"type:text"`
 		Description   string `gorm:"type:text"`
@@ -1922,7 +1923,6 @@ type NotifyParams struct {
 	Alerts []struct {
 		State       string            `json:"state"`
 		ActiveAt    time.Time         `json:"activeAt"`
-		Value       string            `json:"value"`
 		Labels      map[string]string `json:"labels"`
 		Annotations map[string]string `json:"annotations"`
 		StartsAt    time.Time         `json:"startsAt"`

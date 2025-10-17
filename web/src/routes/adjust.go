@@ -917,31 +917,40 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 }
 
 // SendAdjustmentNotification 发送资源调整实时通知
+// 发送调整通知，直接使用alert.Status作为状态
 func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert AdjustAlert, success bool) error {
+	// 根据状态设置必要参数
+	endsAt := alert.EndsAt
+	summaryPrefix := "Resource adjustment"
+
+	if alert.Status == "resolved" {
+		endsAt = time.Now() // resolved状态设置当前时间
+		summaryPrefix = "RESOLVED: Resource adjustment"
+	}
+
 	// 构造通知参数
 	notifyParams := NotifyParams{
-		Status: "firing",
+		Status: alert.Status,
 		Alerts: []struct {
 			State       string            `json:"state"`
 			ActiveAt    time.Time         `json:"activeAt"`
-			Value       string            `json:"value"`
 			Labels      map[string]string `json:"labels"`
 			Annotations map[string]string `json:"annotations"`
 			StartsAt    time.Time         `json:"startsAt"`
 			EndsAt      time.Time         `json:"endsAt"`
 		}{
 			{
-				State:    "firing",
+				State:    alert.Status,
 				ActiveAt: alert.ActiveAt,
-				Value:    alert.Value,
 				Labels: map[string]string{
-					"alertname":     alert.Labels["alertname"],
-					"severity":      "info", // 调整操作通常是info级别
-					"rule_group":    alert.Labels["rule_group"],
-					"domain":        alert.Labels["domain"],
-					"action_type":   alert.Labels["action_type"],
-					"target_device": alert.Labels["target_device"],
-					"instance_id":   alert.Labels["instance_id"],
+					"alertname":      alert.Labels["alertname"],
+					"severity":       alert.Labels["severity"], // 从labels中读取severity，不假设
+					"rule_group":     alert.Labels["rule_group"],
+					"global_rule_id": alert.Labels["global_rule_id"], // 新增：包含全局规则ID
+					"domain":         alert.Labels["domain"],
+					"action_type":    alert.Labels["action_type"],
+					"target_device":  alert.Labels["target_device"],
+					"instance_id":    alert.Labels["instance_id"],
 					"adjustment_status": func() string {
 						if success {
 							return "success"
@@ -950,7 +959,7 @@ func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert A
 					}(),
 				},
 				Annotations: map[string]string{
-					"summary": fmt.Sprintf("Resource adjustment %s: %s",
+					"summary": fmt.Sprintf("%s %s: %s", summaryPrefix,
 						func() string {
 							if success {
 								return "completed successfully"
@@ -960,7 +969,7 @@ func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert A
 					"description": alert.Annotations["description"],
 				},
 				StartsAt: alert.StartsAt,
-				EndsAt:   alert.EndsAt,
+				EndsAt:   endsAt,
 			},
 		},
 	}

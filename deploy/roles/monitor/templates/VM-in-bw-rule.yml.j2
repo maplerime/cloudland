@@ -5,40 +5,20 @@ groups:
     expr: |
       (
         rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 > {{ in_threshold }}
-      ) and on(domain, target_device) group_left(rule_id, instance_id, target_device)
+      ) * on(domain, target_device) group_left(rule_id, instance_id)
       (
         up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}
       )
-    for: {{ in_duration }}s
+    for: {{ in_duration }}m
     labels:
       severity: "{{ level }}"
       region_id: "{{ region_id }}"
       rule_id: "{{ rule_id }}"
+      global_rule_id: "{{ global_rule_id }}"
       rule_group: "{{ rule_group }}"
       alert_type: bw
       owner: "{{ owner }}"
       target_device: "{{ $labels.target_device }}"
     annotations:
       summary: "High Network In Speed ({{ $value }} kB/s)"
-      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} has high network in speed or is matched for {{ in_duration }} seconds"
-
-  - alert: BWInUsageRecovered_{{ owner }}_{{ rule_group }}
-    expr: |
-      (
-        rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 < {{ in_down_to }}
-      ) and on(domain, target_device) group_left(rule_id, instance_id, target_device)
-      (
-        up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"}
-      )
-    for: {{ in_down_duration }}s
-    labels:
-      severity: "info"
-      region_id: "{{ region_id }}"
-      rule_id: "{{ rule_id }}"
-      rule_group: "{{ rule_group }}"
-      alert_type: bw
-      owner: "{{ owner }}"
-      target_device: "{{ $labels.target_device }}"
-    annotations:
-      summary: "Network In Speed Recovered ({{ $value }} kB/s)"
-      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} network in speed has dropped below threshold for {{ in_down_duration }} seconds"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} has high network in speed for {{ in_duration }} minutes"

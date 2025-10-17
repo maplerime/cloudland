@@ -9,6 +9,7 @@ groups:
       alert_type: resource_adjustment
       action_type: limit_cpu
       rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
@@ -25,6 +26,7 @@ groups:
       alert_type: resource_adjustment
       action_type: restore_cpu
       rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
@@ -41,6 +43,7 @@ groups:
       alert_type: resource_adjustment
       action_type: limit_in_bw
       rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
@@ -57,6 +60,7 @@ groups:
       alert_type: resource_adjustment
       action_type: restore_in_bw
       rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
@@ -73,6 +77,7 @@ groups:
       alert_type: resource_adjustment
       action_type: limit_out_bw
       rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"
@@ -89,6 +94,7 @@ groups:
       alert_type: resource_adjustment
       action_type: restore_out_bw
       rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
       email: "{{ email | default('') }}"
       adjust_enabled: "{{ adjust_enabled | default('true') }}"

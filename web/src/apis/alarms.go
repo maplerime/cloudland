@@ -382,6 +382,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		"limit_value":      rule.Limit,                                            // 阈值
 		"duration_minutes": rule.Duration,                                         // 持续时间(分钟)
 		"rule_id":          fmt.Sprintf("alarm-cpu-%s-%s", req.Owner, group.UUID), // 规则ID
+		"global_rule_id":   group.RuleID,                                          // 用户指定的全局规则ID
 		"region_id":        req.RegionID,
 		"level":            req.Level,
 		// 保持兼容性的旧字段
@@ -493,6 +494,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		"limit_value":      rule.Limit,                                               // 阈值
 		"duration_minutes": rule.Duration,                                            // 持续时间(分钟)
 		"rule_id":          fmt.Sprintf("alarm-memory-%s-%s", req.Owner, group.UUID), // 规则ID
+		"global_rule_id":   group.RuleID,                                             // 用户指定的全局规则ID
 		"region_id":        req.RegionID,
 		"level":            req.Level,
 		// 保持兼容性的旧字段
@@ -518,7 +520,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 			"enabled":    true,
 			"linkedvms":  req.LinkedVMs,
 			"region_id":  req.RegionID,
-			"rule_id":    group.UUID,
+			"rule_id":    group.RuleID, // 修复：返回用户指定的rule_id
 		},
 	})
 }
@@ -573,23 +575,38 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 
 		ruleDetails := make([]gin.H, 0, len(details))
 		for _, d := range details {
+			// 兼容字段逻辑：优先使用新字段值，如果新字段为空则使用旧字段值
+			overValue := d.Over
+			if d.Limit > 0 {
+				overValue = d.Limit // 新的 limit 字段映射到旧的 over 字段
+			}
+
+			downDurationValue := d.DownDuration
+			if d.Duration > 0 {
+				downDurationValue = d.Duration // 新的 duration 字段映射到旧的 down_duration 字段
+			}
+
 			ruleDetails = append(ruleDetails, gin.H{
-				"id":        d.ID,
-				"rule_uuid": d.UUID,
-				"name":      d.Name,
-				"limit":     d.Limit,    // 新增：阈值
-				"rule":      d.Rule,     // 新增：比较操作符(gt/lt)
-				"duration":  d.Duration, // 持续时间(分钟)
-				// 保持兼容性的旧字段
-				"over":          d.Over,
+				"name":     d.Name,
+				"limit":    d.Limit,    // 新增：阈值
+				"rule":     d.Rule,     // 新增：比较操作符(gt/lt)
+				"duration": d.Duration, // 持续时间(分钟)
+				// 保持兼容性的旧字段 - 智能映射新字段到旧字段
+				"over":          overValue,
 				"down_to":       d.DownTo,
-				"down_duration": d.DownDuration,
+				"down_duration": downDurationValue,
 			})
 		}
 
+		// 计算实际的 duration_minutes：从规则详情中获取第一个规则的 duration
+		actualDurationMinutes := group.DurationMinutes
+		if len(details) > 0 {
+			actualDurationMinutes = details[0].Duration
+		}
+
 		responseData = append(responseData, gin.H{
-			"id":               group.ID,
 			"group_uuid":       group.UUID,
+			"rule_id":          group.RuleID, // 添加缺失的用户指定rule_id
 			"name":             group.Name,
 			"trigger_cnt":      group.TriggerCnt,
 			"create_time":      group.CreatedAt.Format(time.RFC3339),
@@ -598,7 +615,7 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 			"linked_vms":       linkedVMs,
 			"region_id":        group.RegionID,
 			"level":            group.Level,
-			"duration_minutes": group.DurationMinutes,
+			"duration_minutes": actualDurationMinutes, // 修正：使用实际的规则持续时间
 		})
 	}
 
@@ -660,12 +677,10 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 		ruleDetails := make([]gin.H, 0, len(details))
 		for _, d := range details {
 			ruleDetails = append(ruleDetails, gin.H{
-				"id":        d.ID,
-				"rule_uuid": d.UUID,
-				"name":      d.Name,
-				"limit":     d.Limit,    // 新增：阈值
-				"rule":      d.Rule,     // 新增：比较操作符(gt/lt)
-				"duration":  d.Duration, // 持续时间(分钟)
+				"name":     d.Name,
+				"limit":    d.Limit,    // 新增：阈值
+				"rule":     d.Rule,     // 新增：比较操作符(gt/lt)
+				"duration": d.Duration, // 持续时间(分钟)
 				// 保持兼容性的旧字段
 				"over":          d.Over,
 				"down_to":       d.DownTo,
@@ -674,8 +689,8 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 		}
 
 		responseData = append(responseData, gin.H{
-			"id":               group.ID,
 			"group_uuid":       group.UUID,
+			"rule_id":          group.RuleID, // 新增：返回rule_id字段
 			"name":             group.Name,
 			"trigger_cnt":      group.TriggerCnt,
 			"create_time":      group.CreatedAt.Format(time.RFC3339),
@@ -1301,7 +1316,6 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 		Alerts []struct {
 			State       string            `json:"state"`
 			ActiveAt    time.Time         `json:"activeAt"`
-			Value       string            `json:"value"`
 			Labels      map[string]string `json:"labels"`
 			Annotations map[string]string `json:"annotations"`
 			StartsAt    time.Time         `json:"startsAt"`
@@ -1330,11 +1344,12 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 		owner := alert.Labels["owner"]
 		domain := alert.Labels["domain"]
 		rule_group_uuid := alert.Labels["rule_group"]
+		global_rule_id := alert.Labels["global_rule_id"] // 新增：提取全局规则ID
 		matched := alert.Labels["matched"]
 
 		log.Printf("ProcessAlertWebhook Processing alert: alert_type=%s alertName=%s severity=%s", alert_type, alertName, severity)
 		log.Printf("ProcessAlertWebhook Processing alert: domain=%s rule_group_uuid=%s", domain, rule_group_uuid)
-		log.Printf("ProcessAlertWebhook Processing alert: owner=%s matched=%s", owner, matched)
+		log.Printf("ProcessAlertWebhook Processing alert: global_rule_id=%s owner=%s matched=%s", global_rule_id, owner, matched)
 
 		description := alert.Annotations["description"]
 		summary := alert.Annotations["summary"]
@@ -1348,7 +1363,9 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 
 		alertRecord := &routes.Alert{
 			Name:          alertName,
+			Status:        status, // 直接设置状态
 			RuleGroupUUID: rule_group_uuid,
+			GlobalRuleID:  global_rule_id, // 新增：设置全局规则ID
 			Severity:      severity,
 			Summary:       summary,
 			Description:   description,
@@ -1359,14 +1376,15 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 
 		if status == "firing" {
 			log.Printf("ProcessAlertWebhook Alert FIRING: domain=%s matched=%s", domain, matched)
-			// 通知实时告警系统
-			if err := a.notifyRealtimeAlert(alertRecord); err != nil {
-				log.Printf("Failed to notify realtime alert: %v", err)
-			}
 		} else {
 			// Resolved: alert resolved
 			log.Printf("ProcessAlertWebhook Alert RESOLVED: domain=%s matched=%s", domain, matched)
 			log.Printf("ProcessAlertWebhook alert resolved alert: summary=%s alertRecord=%v", summary, alertRecord)
+		}
+
+		// 统一通知实时告警系统
+		if err := a.notifyRealtimeAlert(alertRecord); err != nil {
+			log.Printf("Failed to notify realtime alert: %v", err)
 		}
 	}
 
@@ -1377,48 +1395,70 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	})
 }
 
+// notifyRealtimeAlert 统一的实时告警通知函数
+// 直接使用alert.Status，无需额外参数
 func (a *AlarmAPI) notifyRealtimeAlert(alert *routes.Alert) error {
-	log.Printf("notifyRealtimeAlert input: %v", alert)
+	// 直接使用alert的Status
+	status := alert.Status
+
+	var endsAt time.Time
+	var summary, description string
+
+	if status == "resolved" {
+		endsAt = time.Now() // 设置恢复时间
+		summary = fmt.Sprintf("RESOLVED: %s", alert.Summary)
+		description = fmt.Sprintf("Alert resolved: %s", alert.Description)
+	} else {
+		endsAt = alert.EndsAt
+		summary = alert.Summary
+		description = alert.Description
+	}
+
+	log.Printf("notifyRealtimeAlert (%s) input: %v", status, alert)
 
 	// 构造通知参数
 	notifyParams := routes.NotifyParams{
-		Status: "firing",
+		Status: status,
 		Alerts: []struct {
 			State       string            `json:"state"`
 			ActiveAt    time.Time         `json:"activeAt"`
-			Value       string            `json:"value"`
 			Labels      map[string]string `json:"labels"`
 			Annotations map[string]string `json:"annotations"`
 			StartsAt    time.Time         `json:"startsAt"`
 			EndsAt      time.Time         `json:"endsAt"`
 		}{
 			{
-				State:    "firing",
+				State:    status,
 				ActiveAt: alert.StartsAt,
-				Value:    "1",
 				Labels: map[string]string{
-					"alertname":     alert.Name,
-					"severity":      alert.Severity,
-					"rule_group":    alert.RuleGroupUUID,
-					"alert_type":    alert.AlertType,
-					"target_device": alert.TargetDevice,
+					"alertname":      alert.Name,
+					"severity":       alert.Severity,
+					"rule_group":     alert.RuleGroupUUID,
+					"global_rule_id": alert.GlobalRuleID, // 新增：包含全局规则ID
+					"alert_type":     alert.AlertType,
+					"target_device":  alert.TargetDevice,
 				},
 				Annotations: map[string]string{
-					"summary":     alert.Summary,
-					"description": alert.Description,
+					"summary":     summary,
+					"description": description,
 				},
 				StartsAt: alert.StartsAt,
-				EndsAt:   alert.EndsAt,
+				EndsAt:   endsAt,
 			},
 		},
 	}
 
 	// 调用routes/alarm.go中的抽象函数发送通知
 	if err := a.operator.SendNotificationToAllServices(context.Background(), notifyParams); err != nil {
-		log.Printf("Failed to send notification to remote services: %v", err)
+		log.Printf("Failed to send %s notification to remote services: %v", status, err)
 		return err
 	}
 
+	if status == "resolved" {
+		log.Printf("Successfully sent resolved notification for alert: %s", alert.Name)
+	} else {
+		log.Printf("Successfully sent firing notification for alert: %s", alert.Name)
+	}
 	return nil
 }
 
@@ -1562,38 +1602,35 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	}
 	// Render templates for each rule direction
 	for _, rule := range req.Rules {
+		// 构建通用数据
+		data := map[string]interface{}{
+			"owner":          req.Owner,
+			"rule_group":     group.UUID,
+			"global_rule_id": req.RuleID, // 用户指定的全局规则ID
+			"region_id":      req.RegionID,
+			"level":          req.Level,
+		}
+
+		var templateFile, outputFile string
+
 		if rule.Direction == "in" {
-			data := map[string]interface{}{
-				"owner":            req.Owner,
-				"rule_group":       group.UUID,
-				"in_threshold":     rule.Limit,
-				"in_duration":      rule.Duration,
-				"in_down_to":       -1, // Not used in new API
-				"in_down_duration": -1, // Not used in new API
-			}
-			templateFile := "VM-in-bw-rule.yml.j2"
-			outputFile := fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
-			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
-				log.Printf("Failed to render in-bw rule template: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render in-bw rule template"})
-				return
-			}
+			data["rule_id"] = fmt.Sprintf("alarm-bw-in-%s-%s", req.Owner, group.UUID) // 系统生成的规则ID
+			data["in_threshold"] = rule.Limit
+			data["in_duration"] = rule.Duration
+			templateFile = "VM-in-bw-rule.yml.j2"
+			outputFile = fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
 		} else if rule.Direction == "out" {
-			data := map[string]interface{}{
-				"owner":             req.Owner,
-				"rule_group":        group.UUID,
-				"out_threshold":     rule.Limit,
-				"out_duration":      rule.Duration,
-				"out_down_to":       -1, // Not used in new API
-				"out_down_duration": -1, // Not used in new API
-			}
-			templateFile := "VM-out-bw-rule.yml.j2"
-			outputFile := fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
-			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
-				log.Printf("Failed to render out-bw rule template: %v", err)
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render out-bw rule template"})
-				return
-			}
+			data["rule_id"] = fmt.Sprintf("alarm-bw-out-%s-%s", req.Owner, group.UUID) // 系统生成的规则ID
+			data["out_threshold"] = rule.Limit
+			data["out_duration"] = rule.Duration
+			templateFile = "VM-out-bw-rule.yml.j2"
+			outputFile = fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
+		}
+
+		if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
+			log.Printf("Failed to render %s-bw rule template: %v", rule.Direction, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s-bw rule template", rule.Direction)})
+			return
 		}
 	}
 	routes.ReloadPrometheus()
@@ -1661,8 +1698,6 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 			if d.Direction != "" {
 				// 使用新的单向格式
 				ruleDetails = append(ruleDetails, gin.H{
-					"id":        d.ID,
-					"rule_uuid": d.UUID,
 					"name":      d.Name,
 					"direction": d.Direction,
 					"limit":     d.Limit,
@@ -1671,8 +1706,6 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 			} else {
 				// 兼容旧的双向格式
 				ruleDetails = append(ruleDetails, gin.H{
-					"id":                d.ID,
-					"rule_uuid":         d.UUID,
 					"name":              d.Name,
 					"in_threshold":      d.InThreshold,
 					"in_duration":       d.InDuration,
@@ -1689,7 +1722,6 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 		}
 
 		responseData = append(responseData, gin.H{
-			"id":          group.ID,
 			"group_uuid":  group.UUID,
 			"rule_id":     group.RuleID,
 			"name":        group.Name,
