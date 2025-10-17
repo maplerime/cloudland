@@ -644,35 +644,47 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		// 根据调整类型设置限制值
 		if record.AdjustType == "limit_in_bw" || record.AdjustType == model.RuleTypeAdjustInBW {
 			bwType = "in"
-			// 只有原始入站带宽大于0时才需要实际限制
-			if originalInBw > 0 {
-				needActualLimit = true
-				// 限制入站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
-				inBw = details[0].LimitValue / 1024 // 转换为 MB/s
-				if inBw < 1 {
-					inBw = 1 // 最小1MB/s
+			// 查找入站规则详情
+			for _, detail := range details {
+				if detail.Direction == "in" {
+					// 只有原始入站带宽大于0时才需要实际限制
+					if originalInBw > 0 {
+						needActualLimit = true
+						// 限制入站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
+						inBw = detail.LimitValue / 1024 // 转换为 MB/s
+						if inBw < 1 {
+							inBw = 1 // 最小1MB/s
+						}
+						// 使用单向设置，不影响出站带宽
+						outBw = 0 // 占位符，实际不使用
+						fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalInBw, inBw)
+					} else {
+						fmt.Printf("wngzhe AdjustBandwidthResource - Original inbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
+					}
+					break
 				}
-				// 使用单向设置，不影响出站带宽
-				outBw = 0 // 占位符，实际不使用
-				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalInBw, inBw)
-			} else {
-				fmt.Printf("wngzhe AdjustBandwidthResource - Original inbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
 			}
 		} else if record.AdjustType == "limit_out_bw" || record.AdjustType == model.RuleTypeAdjustOutBW {
 			bwType = "out"
-			// 只有原始出站带宽大于0时才需要实际限制
-			if originalOutBw > 0 {
-				needActualLimit = true
-				// 限制出站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
-				outBw = details[0].LimitValue / 1024 // 转换为 MB/s
-				if outBw < 1 {
-					outBw = 1 // 最小1MB/s
+			// 查找出站规则详情
+			for _, detail := range details {
+				if detail.Direction == "out" {
+					// 只有原始出站带宽大于0时才需要实际限制
+					if originalOutBw > 0 {
+						needActualLimit = true
+						// 限制出站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
+						outBw = detail.LimitValue / 1024 // 转换为 MB/s
+						if outBw < 1 {
+							outBw = 1 // 最小1MB/s
+						}
+						// 使用单向设置，不影响入站带宽
+						inBw = 0 // 占位符，实际不使用
+						fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalOutBw, outBw)
+					} else {
+						fmt.Printf("wngzhe AdjustBandwidthResource - Original outbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
+					}
+					break
 				}
-				// 使用单向设置，不影响入站带宽
-				inBw = 0 // 占位符，实际不使用
-				fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalOutBw, outBw)
-			} else {
-				fmt.Printf("wngzhe AdjustBandwidthResource - Original outbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
 			}
 		}
 	}
@@ -908,7 +920,7 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 			log.Printf("获取带宽调整规则详情失败或不存在: %v", err)
 			return defaultCooldown
 		}
-		// 使用恢复持续时间作为冷却期
+		// 使用第一个规则的恢复持续时间作为冷却期
 		return details[0].RestoreDuration
 	default:
 		log.Printf("未知的调整类型: %s，使用默认冷却期", adjustType)
