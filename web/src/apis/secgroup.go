@@ -108,7 +108,7 @@ func (v *SecgroupAPI) Patch(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Patching secgroup %s with %+v", uuID, payload)
-	if payload.IsDefault == false {
+	if payload.IsDefault == false && secgroup.IsDefault {
 		logger.Errorf("Not allowed to patch default security group to false")
 		ErrorResponse(c, http.StatusBadRequest, "Not allowed to patch default security group to false", err)
 		return
