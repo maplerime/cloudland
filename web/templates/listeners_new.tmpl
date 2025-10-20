@@ -18,6 +18,18 @@
 									<label for="name">{{.i18n.Tr "Name"}}</label>
 									<input id="name" name="name" autofocus required>
 								</div>
+								<div class="required inline field">
+									<label for="mode">{{.i18n.Tr "Mode"}}</label>
+									<div class="ui selection dropdown">
+									  <input id="mode" name="mode" type="hidden">
+									  <i class="dropdown icon"></i>
+									  <div class="default text">{{.i18n.Tr "http"}}</div>
+									  <div class="menu">
+										<div class="item" data-value="http" data-text="http">{{.i18n.Tr "http"}}</div>
+										<div class="item" data-value="tcp" data-text="tcp">{{.i18n.Tr "tcp"}}</div>
+									  </div>
+									</div>
+								</div>
                                                                 <div class="required inline field">
                                                                         <label for="port">{{.i18n.Tr "Port"}}</label>
                                                                         <input id="port" name="port">

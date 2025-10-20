@@ -6,9 +6,11 @@ source ../cloudrc
 [ $# -lt 2 ] && die "$0 <router> <lb_ID>"
 
 router=$1
+lb_ID=$2
 [ "${router/router-/}" = "$router" ] && router=router-$1
 lb_dir=$router_dir/$router/lb-$lb_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir
+content=$(cat)
 cat >$lb_dir/haproxy.conf <<EOF
 global
     log /dev/log local0 info
@@ -49,35 +51,35 @@ listen stats
     stats auth admin:password
     stats hide-version
     stats refresh 30s
-
-frontend http_front
-    bind *:80
-    # redirect scheme https code 301 if !{ ssl_fc }
-    default_backend http_back
-
-frontend https_front
-    bind *:443 ssl crt $lb_dir/certs/
-    mode http
-    default_backend http_back
-
-backend http_back
-    balance roundrobin
-    option httpchk GET /health
-    http-check expect status 200
-
-    server web1 192.168.1.101:80 check weight 100 maxconn 1000
-    server web2 192.168.1.102:80 check weight 100 maxconn 1000
-    # server web3 192.168.1.103:80 check weight 100 maxconn 1000 backup
-
-frontend tcp_front
-    bind *:3306
-    mode tcp
-    default_backend tcp_back
-
-backend tcp_back
-    mode tcp
-    balance source
-    option tcp-check
-    server db1 192.168.1.201:3306 check inter 10s fall 3 rise 2
-    server db2 192.168.1.202:3306 check inter 10s fall 3 rise 2
 EOF
+
+listeners=$(jq -r .listeners <<< $content)
+nlistener=$(jq length <<< $listeners)
+i=0
+while [ $i -lt $nlistener ]; do
+    listener=$(jq -r .[$i] <<< $listeners)
+    echo $listener
+    read -d'\n' -r name mode port< <(jq -r ".name, .mode, .port" <<<$listener)
+    cat >>$lb_dir/haproxy.conf <<EOF
+
+frontend ${name}_front
+    bind *:$port
+    mode $mode
+    default_backend ${name}_back
+
+backend ${name}_back
+    balance roundrobin
+EOF
+    backends=$(jq -r .backends <<< $listener)
+    nbackend=$(jq length <<< $backends)
+    j=0
+    while [ $j -lt $nbackend ]; do
+        backend=$(jq -r .[$j] <<< $backends)
+        read -d'\n' -r backend < <(jq -r ".backend_url" <<<$backend)
+        cat >>$lb_dir/haproxy.conf <<EOF
+    server ${name}$j $backend check weight 100 maxconn 1000
+EOF
+        let j=$j+1
+    done
+    let i=$i+1
+done

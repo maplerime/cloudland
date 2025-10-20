@@ -30,16 +30,14 @@ var (
 type BackendAdmin struct{}
 type BackendView struct{}
 
-func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *model.Listener, loadBalancer *model.LoadBalancer) (err error) {
 	ctx, db := GetContextDB(ctx)
 	listeners := loadBalancer.Listeners
 	listenerCfgs := []*ListenerConfig{}
 	for _, listener := range listeners {
-		listenerCfgs = append(listenerCfgs, &ListenerConfig{
-			Name: fmt.Sprintf("lb-%d-lsn-%d", loadBalancer.ID, listener.ID),
-			Mode: listener.Mode,
-			Port: listener.Port,
-		})
+		if listener.ID == updatedlistener.ID {
+			listener = updatedlistener
+		}
 		backendCfgs := []*BackendConfig{}
 		for _, backend := range listener.Backends {
 			backendCfgs = append(backendCfgs, &BackendConfig{
@@ -47,6 +45,12 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, loadBalancer *mode
 				Status:     backend.Status,
 			})
 		}
+		listenerCfgs = append(listenerCfgs, &ListenerConfig{
+			Name: fmt.Sprintf("lb-%d-lsn-%d-%s", loadBalancer.ID, listener.ID, listener.Name),
+			Mode: listener.Mode,
+			Port: listener.Port,
+			Backends: backendCfgs,
+		})
 	}
 	haproxyCfg := &LoadBalancerConfig{listenerCfgs}
 	jsonData, err := json.Marshal(haproxyCfg)
@@ -73,7 +77,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, loadBalancer *mode
 		if vrrpIface1.Hyper >= 0 {
 			control = fmt.Sprintf("%s,%d", control, vrrpIface2.Hyper)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_proxy_conf.sh '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("create_keepalived_conf.sh execution failed", err)
@@ -105,7 +109,8 @@ func (a *BackendAdmin) Create(ctx context.Context, backendAddr string, listener 
 		err = NewCLError(ErrBackendCreateFailed, "Failed to create backend", err)
 		return
 	}
-	err = a.CreateHaproxyConf(ctx, loadBalancer)
+	listener.Backends = append(listener.Backends, backend)
+	err = a.CreateHaproxyConf(ctx, listener, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create haproxy conf ", err)
 		err = NewCLError(ErrBackendCreateFailed, "Failed to create haproxy conf", err)
@@ -602,7 +607,7 @@ func (v *BackendView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	listenerID, err := strconv.Atoi(lbid)
+	listenerID, err := strconv.Atoi(lstnid)
 	if err != nil {
 		logger.Error("Invalid listener ID", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -617,13 +622,6 @@ func (v *BackendView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	backendAddr := c.QueryTrim("backend_addr")
-	port := c.QueryInt("port")
-	if port <= 0 {
-		logger.Errorf("Invalid port %d", port)
-		c.Data["ErrorMsg"] = "Invalid port"
-		c.HTML(404, "404")
-		return
-	}
 	_, err = backendAdmin.Create(ctx, backendAddr, listener, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create backend, %v", err)
