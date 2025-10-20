@@ -27,6 +27,8 @@ fi
 brctl addif br$vrrp_vlan ln-$vrrp_vlan
 ip netns exec $router ip link set ns-$vrrp_vlan address $local_mac
 ip netns exec $router ip addr add $local_ip dev ns-$vrrp_vlan
+read -d'\n' -r network < <(ipcalc -nb $local_ip | awk '/Network/ {print $2}')
+ip netns exec $router ipset add nonat $network
 
 lb_dir=$router_dir/$router/lb-$vrrp_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir

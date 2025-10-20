@@ -115,7 +115,7 @@ func CreateKeepalivedConf(ctx context.Context, args []string) (status string, er
 	}
 	if role == "master" {
 		vrrpIface2 := &model.Interface{}
-		err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = ? and device = ?", role, vrrpID).Take(vrrpIface2).Error
+		err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'backup' and device = ?", vrrpID).Take(vrrpIface2).Error
 		if err != nil {
 			logger.Error("Failed to query vrrp interface 2", err)
 			return
