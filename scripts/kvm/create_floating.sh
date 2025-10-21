@@ -14,7 +14,7 @@ ext_vlan=$4
 int_addr=$5
 int_ip=${int_addr%/*}
 int_vlan=$6
-mark_id=$(($7 % 4294967295))
+mark_id=$(($7 % 2147483647))
 inbound=$8
 outbound=$9
 
@@ -39,7 +39,7 @@ ext_dev=te-$suffix
 ./create_veth.sh $router ext-$suffix te-$suffix
 
 ip netns exec $router ip addr add $ext_cidr dev $ext_dev
-ip netns exec $router ip route add default via $ext_gw table $table
+ip netns exec $router ip route replace default via $ext_gw table $table
 ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | while read ns_link ns_gw; do
     ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')
     ip netns exec $router ip route add $ip_net dev $ns_link table $table
@@ -65,6 +65,7 @@ else
     ip netns exec $router tc filter del dev ns-$int_vlan protocol ip parent 1:0 prio $mark_id handle $mark_id fw flowid 1:$mark_id
     ip netns exec $router tc class del dev ns-$int_vlan parent 1: classid 1:$mark_id
 fi
+let mark_id=$mark_id+2147483647
 if [ "$outbound" -gt 0 ]; then
     ip netns exec $router tc qdisc add dev $ext_dev root handle 1: htb default 10
     ip netns exec $router tc class add dev $ext_dev parent 1: classid 1:$mark_id htb rate ${outbound}mbit burst ${outbound}kbit

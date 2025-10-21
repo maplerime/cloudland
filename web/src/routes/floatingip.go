@@ -71,7 +71,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		fip.SubnetID = fipIface.Address.Subnet.ID
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
-				logger.Error("Execute floating ip failed", err)
+				logger.Error("Execute attaching floating ip failed", err)
 				return nil, err
 			}
 		}
@@ -211,6 +211,13 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 			return
 		}
 		floatingIps = append(floatingIps, siteFips...)
+	}
+
+	if loadBalancer != nil {
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			return
+		}
 	}
 
 	return floatingIps, nil
