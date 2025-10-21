@@ -17,29 +17,27 @@ import (
 	"web/src/model"
 )
 
-// 不需要重复声明instanceAdmin，已在instance.go中定义
-
-// findInterfaceByTargetDevice 通过target_device找到对应的接口
-// target_device格式: tapXXXXXX (tap + MAC地址后6位无冒号)
-// 例如: tapdb4c44 对应 MAC 52:54:21:db:4c:44
+// findInterfaceByTargetDevice finds the corresponding interface by target_device
+// target_device format: tapXXXXXX (tap + last 6 digits of MAC without colons)
+// Example: tapdb4c44 corresponds to MAC 52:54:21:db:4c:44
 func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) *model.Interface {
 	if !strings.HasPrefix(targetDevice, "tap") || len(targetDevice) != 9 {
 		log.Printf("Invalid target_device format: %s, expected tapXXXXXX", targetDevice)
 		return nil
 	}
 
-	// 提取MAC地址后6位
-	macSuffix := targetDevice[3:] // 去掉 "tap" 前缀
+	// Extract last 6 digits of MAC address
+	macSuffix := targetDevice[3:]
 
 	for _, iface := range instance.Interfaces {
 		if iface.MacAddr == "" {
 			continue
 		}
 
-		// 提取MAC地址后6位（去掉冒号）
+		// Extract last 6 digits of MAC (remove colons)
 		macParts := strings.Split(iface.MacAddr, ":")
 		if len(macParts) >= 3 {
-			// 取最后3段，去掉冒号
+			// Take last 3 parts, remove colons
 			lastThreeParts := strings.Join(macParts[len(macParts)-3:], "")
 			if strings.EqualFold(lastThreeParts, macSuffix) {
 				log.Printf("Found matching interface: MAC=%s, targetDevice=%s", iface.MacAddr, targetDevice)
@@ -52,98 +50,83 @@ func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) 
 	return nil
 }
 
-// getAdminPassword 从配置文件读取admin密码
+// getAdminPassword reads admin password from config file
 func getAdminPassword() string {
-	// 设置配置文件路径并读取配置文件
 	viper.SetConfigFile("conf/config.toml")
 	if err := viper.ReadInConfig(); err != nil {
 		log.Printf("Failed to read config file, using default password: %v", err)
-		return "passw0rd" // 默认密码，与admin.go中保持一致
+		return "passw0rd"
 	}
 
 	password := viper.GetString("admin.password")
 	if password == "" {
-		password = "passw0rd" // 默认密码，与admin.go中保持一致
+		password = "passw0rd"
 	}
 	return password
 }
 
-// CreateAdminContext 为webhook请求创建具有admin权限的上下文
-// 这个函数用于解决webhook请求没有经过授权中间件的问题
-// 注意：这个函数现在会验证admin密码以确保安全
+// CreateAdminContext creates admin context for webhook requests
+// This function solves the problem of webhook requests not passing through auth middleware
 func CreateAdminContext(ctx context.Context) (context.Context, error) {
-	fmt.Printf("wngzhe CreateAdminContext - Creating admin context for webhook request\n")
-
-	// 从配置文件读取admin密码
+	// Get admin password from config file
 	adminPassword := getAdminPassword()
-	fmt.Printf("wngzhe CreateAdminContext - Retrieved admin password from config\n")
 
-	// 使用正常的认证流程验证admin用户和密码
+	// Validate admin user and password
 	user, err := userAdmin.Validate(ctx, "admin", adminPassword)
 	if err != nil {
-		log.Printf("Failed to validate admin user with password: %v", err)
-		return ctx, fmt.Errorf("failed to validate admin user with password: %v", err)
+		log.Printf("Failed to validate admin user: %v", err)
+		return ctx, fmt.Errorf("failed to validate admin user: %v", err)
 	}
-	fmt.Printf("wngzhe CreateAdminContext - Admin password validation successful: ID=%d, Name=%s\n", user.ID, user.Username)
 
-	// 获取admin组织信息
+	// Get admin organization
 	org, err := orgAdmin.GetOrgByName(ctx, "admin")
 	if err != nil {
 		log.Printf("Failed to get admin org: %v", err)
 		return ctx, fmt.Errorf("failed to get admin org: %v", err)
 	}
-	fmt.Printf("wngzhe CreateAdminContext - Got admin org: ID=%d, Name=%s\n", org.ID, org.Name)
 
-	// 获取membership信息
+	// Get membership
 	memberShip, err := common.GetDBMemberShip(user.ID, org.ID)
 	if err != nil {
 		log.Printf("Failed to get admin membership: %v", err)
 		return ctx, fmt.Errorf("failed to get admin membership: %v", err)
 	}
 
-	// 确保admin权限
+	// Ensure admin role
 	memberShip.Role = model.Admin
-	fmt.Printf("wngzhe CreateAdminContext - Created membership: UserID=%d, OrgID=%d, Role=%d\n",
-		memberShip.UserID, memberShip.OrgID, memberShip.Role)
 
-	// 设置上下文
+	// Set context
 	adminCtx := memberShip.SetContext(ctx)
-	fmt.Printf("wngzhe CreateAdminContext - Admin context created successfully with password validation\n")
 
 	return adminCtx, nil
 }
 
-// GetInstanceByUUIDWithAuth 使用admin权限获取实例信息的辅助函数
-// 这个函数专门用于webhook调用，不修改原有的GetInstanceByUUID函数
+// GetInstanceByUUIDWithAuth helper function to get instance with admin auth
+// This function is specifically for webhook calls
 func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string) (*model.Instance, error) {
-	fmt.Printf("wngzhe GetInstanceByUUIDWithAuth - Getting instance with admin auth: %s\n", instanceID)
-
-	// 创建admin上下文
+	// Create admin context
 	adminCtx, err := CreateAdminContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create admin context: %v", err)
 	}
 
-	// 使用admin上下文调用GetInstanceByUUID
+	// Get instance with admin context
 	instance, err := instanceAdmin.GetInstanceByUUID(adminCtx, instanceID)
 	if err != nil {
-		log.Printf("Failed to get instance with admin auth: %v", err)
-		return nil, fmt.Errorf("failed to get instance with admin auth: %v", err)
+		log.Printf("Failed to get instance: %v", err)
+		return nil, fmt.Errorf("failed to get instance: %v", err)
 	}
-
-	log.Printf("Successfully got instance: ID=%d, UUID=%s, CPU=%d, Hyper=%d",
-		instance.ID, instance.UUID, instance.Cpu, instance.Hyper)
 
 	return instance, nil
 }
 
-// AlertWebhookRequest Prometheus告警Webhook请求结构
+// AlertWebhookRequest Prometheus alert webhook request structure
 type AlertWebhookRequest struct {
 	Status string        `json:"status"`
 	Alerts []AdjustAlert `json:"alerts"`
 }
 
-// AdjustAlert 告警信息结构
+// AdjustAlert Alert information structure
 type AdjustAlert struct {
 	Status      string            `json:"status"`
 	State       string            `json:"state"`
@@ -155,26 +138,26 @@ type AdjustAlert struct {
 	EndsAt      time.Time         `json:"endsAt"`
 }
 
-// AdjustmentRecord 调整记录
+// AdjustmentRecord Adjustment record
 type AdjustmentRecord struct {
-	Name          string    // 告警名称
-	RuleGroupUUID string    // 规则组UUID
-	Summary       string    // 告警摘要
-	Description   string    // 告警描述
-	StartsAt      time.Time // 告警开始时间
-	AdjustType    string    // 调整类型
-	TargetDevice  string    // 目标设备(适用于带宽调整)
+	Name          string
+	RuleGroupUUID string
+	Summary       string
+	Description   string
+	StartsAt      time.Time
+	AdjustType    string
+	TargetDevice  string
 }
 
-// AdjustOperator 资源自动调整操作
+// AdjustOperator Resource auto-adjustment operator
 type AdjustOperator struct{}
 
-// NewAdjustOperator 创建资源自动调整操作对象
+// NewAdjustOperator creates resource auto-adjustment operator
 func NewAdjustOperator() *AdjustOperator {
 	return &AdjustOperator{}
 }
 
-// ListAdjustRuleGroupsParams 列出资源调整规则组的参数
+// ListAdjustRuleGroupsParams parameters for listing resource adjustment rule groups
 type ListAdjustRuleGroupsParams struct {
 	RuleType   string
 	GroupUUID  string
@@ -185,7 +168,7 @@ type ListAdjustRuleGroupsParams struct {
 	EnabledSQL string
 }
 
-// CreateAdjustRuleGroup 创建资源调整规则组
+// CreateAdjustRuleGroup creates resource adjustment rule group
 func (o *AdjustOperator) CreateAdjustRuleGroup(ctx context.Context, group *model.AdjustRuleGroup) error {
 	if group.UUID == "" {
 		group.UUID = uuid.New().String()
@@ -194,7 +177,7 @@ func (o *AdjustOperator) CreateAdjustRuleGroup(ctx context.Context, group *model
 	return dbs.DB().Create(group).Error
 }
 
-// GetAdjustRulesByGroupUUID 通过UUID获取资源调整规则组
+// GetAdjustRulesByGroupUUID gets resource adjustment rule group by UUID
 func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid string) (*model.AdjustRuleGroup, error) {
 	var group model.AdjustRuleGroup
 	if err := dbs.DB().Where("uuid = ?", uuid).First(&group).Error; err != nil {
@@ -203,17 +186,17 @@ func (o *AdjustOperator) GetAdjustRulesByGroupUUID(ctx context.Context, uuid str
 	return &group, nil
 }
 
-// GetAdjustRulesByIdentifier 通过标识符获取资源调整规则组（支持 rule_id 和 group_uuid）
+// GetAdjustRulesByIdentifier gets resource adjustment rule group by identifier (supports rule_id and group_uuid)
 func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identifier string) (*model.AdjustRuleGroup, error) {
 	var group model.AdjustRuleGroup
 
-	// 先尝试按 rule_id 查询
+	// Try querying by rule_id first
 	err := dbs.DB().Where("rule_id = ?", identifier).First(&group).Error
 	if err == nil {
 		return &group, nil
 	}
 
-	// 如果 rule_id 查询失败，再按 uuid 查询（向后兼容）
+	// If rule_id query fails, query by uuid (backward compatible)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		err = dbs.DB().Where("uuid = ?", identifier).First(&group).Error
 		if err != nil {
@@ -225,21 +208,21 @@ func (o *AdjustOperator) GetAdjustRulesByIdentifier(ctx context.Context, identif
 	return nil, err
 }
 
-// ListAdjustRuleGroups 列出资源调整规则组
+// ListAdjustRuleGroups lists resource adjustment rule groups
 func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAdjustRuleGroupsParams) ([]model.AdjustRuleGroup, int64, error) {
 	var groups []model.AdjustRuleGroup
 	var total int64
 
 	query := dbs.DB().Model(&model.AdjustRuleGroup{})
 
-	// 应用过滤条件
+	// Apply filter conditions
 	if params.RuleType != "" {
 		query = query.Where("type = ?", params.RuleType)
 	}
 
-	// 双重标识查询逻辑
+	// Dual identifier query logic
 	if params.RuleID != "" && params.GroupUUID != "" {
-		// 同时提供了两个标识符，使用 OR 查询
+		// Both identifiers provided, use OR query
 		query = query.Where("rule_id = ? OR uuid = ?", params.RuleID, params.GroupUUID)
 	} else if params.RuleID != "" {
 		query = query.Where("rule_id = ?", params.RuleID)
@@ -254,20 +237,20 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 		query = query.Where(params.EnabledSQL)
 	}
 
-	// 获取总数
+	// Get total count
 	err := query.Count(&total).Error
 	if err != nil {
 		return nil, 0, err
 	}
 
-	// 应用分页
+	// Apply pagination
 	offset := (params.Page - 1) * params.PageSize
 	query = query.Offset(offset).Limit(params.PageSize)
 
-	// 排序
+	// Sort
 	query = query.Order("created_at desc")
 
-	// 执行查询
+	// Execute query
 	if err := query.Find(&groups).Error; err != nil {
 		return nil, 0, err
 	}
@@ -275,12 +258,12 @@ func (o *AdjustOperator) ListAdjustRuleGroups(ctx context.Context, params ListAd
 	return groups, total, nil
 }
 
-// CreateCPUAdjustRuleDetail 创建CPU调整规则详情
+// CreateCPUAdjustRuleDetail creates CPU adjustment rule detail
 func (o *AdjustOperator) CreateCPUAdjustRuleDetail(ctx context.Context, detail *model.CPUAdjustRuleDetail) error {
 	return dbs.DB().Create(detail).Error
 }
 
-// GetCPUAdjustRuleDetails 获取CPU调整规则详情
+// GetCPUAdjustRuleDetails gets CPU adjustment rule details
 func (o *AdjustOperator) GetCPUAdjustRuleDetails(ctx context.Context, groupUUID string) ([]model.CPUAdjustRuleDetail, error) {
 	var details []model.CPUAdjustRuleDetail
 	if err := dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
@@ -289,7 +272,7 @@ func (o *AdjustOperator) GetCPUAdjustRuleDetails(ctx context.Context, groupUUID 
 	return details, nil
 }
 
-// CreateBWAdjustRuleDetail 创建带宽调整规则详情
+// CreateBWAdjustRuleDetail creates bandwidth adjustment rule detail
 func (o *AdjustOperator) CreateBWAdjustRuleDetail(ctx context.Context, detail *model.BWAdjustRuleDetail) error {
 	if detail.UUID == "" {
 		detail.UUID = uuid.New().String()
@@ -297,7 +280,7 @@ func (o *AdjustOperator) CreateBWAdjustRuleDetail(ctx context.Context, detail *m
 	return dbs.DB().Create(detail).Error
 }
 
-// GetBWAdjustRuleDetails 获取带宽调整规则详情
+// GetBWAdjustRuleDetails gets bandwidth adjustment rule details
 func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID string) ([]model.BWAdjustRuleDetail, error) {
 	var details []model.BWAdjustRuleDetail
 	if err := dbs.DB().Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
@@ -306,7 +289,7 @@ func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID s
 	return details, nil
 }
 
-// DeleteAdjustRuleGroupWithDependencies 删除资源调整规则组及其依赖
+// DeleteAdjustRuleGroupWithDependencies deletes resource adjustment rule group and its dependencies
 func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Context, groupUUID string) error {
 	tx := dbs.DB().Begin()
 	defer func() {
@@ -315,31 +298,31 @@ func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Conte
 		}
 	}()
 
-	// 删除CPU调整规则详情
+	// Delete CPU adjustment rule details
 	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.CPUAdjustRuleDetail{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// 删除带宽调整规则详情
+	// Delete bandwidth adjustment rule details
 	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.BWAdjustRuleDetail{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// 删除VM链接
+	// Delete VM links
 	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.VMRuleLink{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// 删除调整历史记录
+	// Delete adjustment history
 	if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.AdjustmentHistory{}).Error; err != nil {
 		tx.Rollback()
 		return err
 	}
 
-	// 删除规则组
+	// Delete rule group
 	if err := tx.Where("uuid = ?", groupUUID).Delete(&model.AdjustRuleGroup{}).Error; err != nil {
 		tx.Rollback()
 		return err
@@ -348,13 +331,13 @@ func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Conte
 	return tx.Commit().Error
 }
 
-// RecordAdjustmentHistory 记录调整历史
+// RecordAdjustmentHistory records adjustment history
 func (o *AdjustOperator) RecordAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) error {
 	history.AdjustTime = time.Now()
 	return dbs.DB().Create(history).Error
 }
 
-// IsInCooldown 检查是否在冷却期内
+// IsInCooldown checks if in cooldown period
 func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actionType string, cooldownSeconds int) (bool, error) {
 	var history model.AdjustmentHistory
 	err := dbs.DB().Where("domain_name = ? AND rule_id = ? AND action_type = ?", domain, ruleID, actionType).
@@ -369,12 +352,12 @@ func (o *AdjustOperator) IsInCooldown(ctx context.Context, domain, ruleID, actio
 		return false, err
 	}
 
-	// 检查是否在冷却期内
+	// Check if in cooldown period
 	cooldownDuration := time.Duration(cooldownSeconds) * time.Second
 	return time.Since(history.AdjustTime) < cooldownDuration, nil
 }
 
-// GetAdjustmentHistory 获取调整历史
+// GetAdjustmentHistory gets adjustment history
 func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID string, limit int) ([]model.AdjustmentHistory, error) {
 	var history []model.AdjustmentHistory
 	query := dbs.DB().Where("group_uuid = ?", groupUUID).Order("adjust_time desc")
@@ -387,199 +370,154 @@ func (o *AdjustOperator) GetAdjustmentHistory(ctx context.Context, groupUUID str
 	return history, err
 }
 
-// SaveAdjustmentHistory 保存调整历史
+// SaveAdjustmentHistory saves adjustment history
 func (o *AdjustOperator) SaveAdjustmentHistory(ctx context.Context, history *model.AdjustmentHistory) error {
 	return dbs.DB().Create(history).Error
 }
 
-// AdjustCPUResource 调整CPU资源
+// AdjustCPUResource adjusts CPU resources
 func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, limit bool, instanceID string) error {
-	fmt.Printf("wngzhe AdjustCPUResource - domain: %s, limit: %v, ruleGroupUUID: %s, instanceID: %s\n", domain, limit, record.RuleGroupUUID, instanceID)
-	log.Printf("wngzhe AdjustCPUResource - Starting CPU adjustment for domain: %s, limit: %v", domain, limit)
-
 	var instance *model.Instance
 	var err error
 
-	// 如果提供了instanceID，直接使用它查询实例信息
+	// Get instance by ID if provided, otherwise query by domain
 	if instanceID != "" {
-		fmt.Printf("wngzhe AdjustCPUResource - Using provided instanceID: %s\n", instanceID)
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance info by instanceID: %v", err)
-			return fmt.Errorf("failed to get instance info by instanceID: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
-		// 如果没有提供instanceID，则使用原来的方法通过domain查询
-		fmt.Printf("wngzhe AdjustCPUResource - No instanceID provided, querying by domain: %s\n", domain)
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
 			log.Printf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
-		fmt.Printf("wngzhe AdjustCPUResource - Got instance UUID: %s\n", uuid)
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance info: %v", err)
-			return fmt.Errorf("failed to get instance info: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
-	fmt.Printf("wngzhe AdjustCPUResource - Got instance info: CPU=%d, Hyper=%d\n", instance.Cpu, instance.Hyper)
 
-	// 构建命令
+	// Build command
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	fmt.Printf("wngzhe AdjustCPUResource - Control command: %s\n", control)
-
 	var command string
 
 	if limit {
-		fmt.Printf("wngzhe AdjustCPUResource - Applying CPU limit for ruleGroupUUID: %s\n", record.RuleGroupUUID)
-
-		// 根据规则组获取限制值
+		// Get limit value from rule group
 		details, err := o.GetCPUAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
 			log.Printf("Failed to get CPU adjustment rule details: %v", err)
 			return fmt.Errorf("failed to get CPU adjustment rule details: %v", err)
 		}
-		fmt.Printf("wngzhe AdjustCPUResource - Got %d CPU adjustment rule details\n", len(details))
 
-		// 获取限制百分比
+		// Get limit percentage
 		limitPercent := details[0].LimitPercent
-		fmt.Printf("wngzhe AdjustCPUResource - LimitPercent: %d%%, Original CPU: %d\n", limitPercent, instance.Cpu)
 
-		// 使用CPU配额限制方式，不再需要检查单核CPU限制
 		command = fmt.Sprintf("/opt/cloudland/scripts/kvm/adjust_cpu_hotplug.sh '%s' '%d'",
 			domain, limitPercent)
 	} else {
-		// 恢复CPU资源
+		// Restore CPU resources
 		command = fmt.Sprintf("/opt/cloudland/scripts/kvm/adjust_cpu_hotplug.sh '%s' 'restore'",
 			domain)
 	}
-	fmt.Printf("wngzhe AdjustCPUResource - Executing command: %s\n", command)
 
-	// 执行命令
+	// Execute command
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
-		fmt.Printf("wngzhe AdjustCPUResource - Command execution failed: %v\n", err)
 		log.Printf("Failed to adjust CPU: %v", err)
 		return fmt.Errorf("failed to adjust CPU resources: %v", err)
 	}
 
-	// 成功调整CPU后，更新自定义指标状态
+	// Update custom metric status
 	status := 0
 	if limit {
-		status = 1 // 限制状态
+		status = 1
 	}
 	updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status %d",
 		domain, fmt.Sprintf("%s-%s", domain, record.RuleGroupUUID), status)
-	fmt.Printf("wngzhe AdjustCPUResource - Updating CPU adjustment metric: %s\n", updateCommand)
 
 	err = common.HyperExecute(ctx, control, updateCommand)
 	if err != nil {
-		// 只记录警告，不影响主要操作的成功状态
-		fmt.Printf("wngzhe AdjustCPUResource - Warning: Failed to update CPU adjustment metric: %v\n", err)
 		log.Printf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
-	} else {
-		fmt.Printf("wngzhe AdjustCPUResource - Successfully updated CPU adjustment metric\n")
 	}
 
-	if limit {
-		fmt.Printf("wngzhe AdjustCPUResource - CPU adjustment completed successfully: domain=%s, limit applied\n", domain)
-		log.Printf("Successfully adjusted CPU resources: domain=%s, limit=%v", domain, limit)
-	} else {
-		fmt.Printf("wngzhe AdjustCPUResource - CPU adjustment completed successfully: domain=%s, limits restored\n", domain)
-		log.Printf("Successfully restored CPU resources: domain=%s", domain)
-	}
+	log.Printf("Successfully adjusted CPU resources: domain=%s, limit=%v", domain, limit)
 	return nil
 }
 
-// RestoreCPUResource 恢复CPU资源
+// RestoreCPUResource restores CPU resources
 func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *AdjustmentRecord, domain string, instanceID string) error {
-	fmt.Printf("wngzhe RestoreCPUResource - Starting CPU restore for domain: %s, ruleGroupUUID: %s, instanceID: %s\n", domain, record.RuleGroupUUID, instanceID)
-	log.Printf("wngzhe RestoreCPUResource - Starting CPU restore for domain: %s, instanceID: %s", domain, instanceID)
 
 	var instance *model.Instance
 	var err error
 
-	// 如果提供了instanceID，直接使用它查询实例信息
+	// Get instance by ID if provided
 	if instanceID != "" {
-		fmt.Printf("wngzhe RestoreCPUResource - Using provided instanceID: %s\n", instanceID)
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance info by instanceID: %v", err)
-			return fmt.Errorf("failed to get instance info by instanceID: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
-		// 如果没有提供instanceID，则使用原来的方法通过domain查询
-		fmt.Printf("wngzhe RestoreCPUResource - No instanceID provided, querying by domain: %s\n", domain)
+		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
 			log.Printf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
-		fmt.Printf("wngzhe RestoreCPUResource - Got instance UUID: %s\n", uuid)
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance info: %v", err)
-			return fmt.Errorf("failed to get instance info: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
-	fmt.Printf("wngzhe RestoreCPUResource - Got instance info: Original CPU=%d, Hyper=%d\n", instance.Cpu, instance.Hyper)
 
-	// 构建命令
+	// Build command
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	fmt.Printf("wngzhe RestoreCPUResource - Control command: %s\n", control)
 
-	// 恢复CPU资源（移除限制）
+	// Restore CPU resources
 	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/adjust_cpu_hotplug.sh '%s' 'restore'",
 		domain)
-	fmt.Printf("wngzhe RestoreCPUResource - Executing restore command: %s\n", command)
 
-	// 执行命令
+	// Execute command
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
-		fmt.Printf("wngzhe RestoreCPUResource - Command execution failed: %v\n", err)
 		log.Printf("Failed to restore CPU: %v", err)
 		return fmt.Errorf("failed to restore CPU resources: %v", err)
 	}
 
-	// 成功恢复CPU后，更新自定义指标状态
+	// Update custom metric status
 	status := 0
 	updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status %d",
 		domain, fmt.Sprintf("%s-%s", domain, record.RuleGroupUUID), status)
-	fmt.Printf("wngzhe RestoreCPUResource - Updating CPU adjustment metric: %s\n", updateCommand)
 
 	err = common.HyperExecute(ctx, control, updateCommand)
 	if err != nil {
-		// 只记录警告，不影响主要操作的成功状态
-		fmt.Printf("wngzhe RestoreCPUResource - Warning: Failed to update CPU adjustment metric: %v\n", err)
 		log.Printf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
-	} else {
-		fmt.Printf("wngzhe RestoreCPUResource - Successfully updated CPU adjustment metric\n")
 	}
 
-	fmt.Printf("wngzhe RestoreCPUResource - CPU restore completed successfully: domain=%s, limits removed\n", domain)
 	log.Printf("Successfully restored CPU resources: domain=%s", domain)
 	return nil
 }
 
-// AdjustBandwidthResource 调整带宽资源
+// AdjustBandwidthResource adjusts bandwidth resources
 func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, limit bool, instanceID string) error {
 	var instance *model.Instance
 	var err error
 
-	// 如果提供了instanceID，直接使用它查询实例信息
+	// Get instance by ID if provided
 	if instanceID != "" {
-		fmt.Printf("wngzhe AdjustBandwidthResource - Using provided instanceID: %s\n", instanceID)
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance info by instanceID: %v", err)
-			return fmt.Errorf("failed to get instance info by instanceID: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
-		// 如果没有提供instanceID，则使用原来的方法通过domain查询
-		fmt.Printf("wngzhe AdjustBandwidthResource - No instanceID provided, querying by domain: %s\n", domain)
+		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
 			log.Printf("Failed to get instance UUID: %v", err)
@@ -588,20 +526,20 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance info: %v", err)
-			return fmt.Errorf("failed to get instance info: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
 
-	// 构建命令
+	// Build command
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 
-	// 获取接口的原始带宽配置
+	// Get target interface's original bandwidth configuration
 	var targetInterface *model.Interface
 	if device != "" {
 		targetInterface = findInterfaceByTargetDevice(instance, device)
 	} else {
-		// 如果没有提供device，则尝试通过target_device匹配
+		// Use target_device from record if device not provided
 		targetInterface = findInterfaceByTargetDevice(instance, record.TargetDevice)
 	}
 
@@ -610,70 +548,64 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		return fmt.Errorf("interface not found: device=%s", device)
 	}
 
-	// 获取接口的原始带宽配置
-	originalInBw := int(targetInterface.Inbound)   // 原始入站带宽 (Mbps)
-	originalOutBw := int(targetInterface.Outbound) // 原始出站带宽 (Mbps)
+	// Get original bandwidth configuration
+	originalInBw := int(targetInterface.Inbound)   // Original inbound bandwidth (Mbps)
+	originalOutBw := int(targetInterface.Outbound) // Original outbound bandwidth (Mbps)
 
-	fmt.Printf("wngzhe AdjustBandwidthResource - Original bandwidth: interface=%s, inbound=%d, outbound=%d\n",
+	log.Printf("Interface bandwidth config: name=%s, inBw=%d, outBw=%d",
 		targetInterface.Name, originalInBw, originalOutBw)
 
-	// 设置带宽限制值
-	inBw := originalInBw   // 默认保持原始值
-	outBw := originalOutBw // 默认保持原始值
+	// Set bandwidth limit values
+	inBw := originalInBw   // Default: keep original value
+	outBw := originalOutBw // Default: keep original value
 
-	// 检查是否需要实际执行带宽限制
+	// Check if actual bandwidth limiting is needed
 	needActualLimit := false
 	var bwType string
 
 	if limit {
-		// 获取带宽调整规则详情来计算限制值
+		// Get bandwidth adjustment rule details to calculate limit values
 		details, err := o.GetBWAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
 			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
 			return fmt.Errorf("failed to get bandwidth adjustment rule details: %v", err)
 		}
 
-		// 根据调整类型设置限制值
+		// Set limit values based on adjustment type
 		if record.AdjustType == "limit_in_bw" || record.AdjustType == model.RuleTypeAdjustInBW {
 			bwType = "in"
-			// 查找入站规则详情
+			// Find inbound rule details
 			for _, detail := range details {
 				if detail.Direction == "in" {
-					// 只有原始入站带宽大于0时才需要实际限制
+					// Only limit if original inbound bandwidth > 0
 					if originalInBw > 0 {
 						needActualLimit = true
-						// 限制入站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
-						inBw = detail.LimitValue / 1024 // 转换为 MB/s
+						// Limit inbound bandwidth to rule-defined value (convert from kB/s to MB/s)
+						inBw = detail.LimitValue / 1024 // Convert to MB/s
 						if inBw < 1 {
-							inBw = 1 // 最小1MB/s
+							inBw = 1 // Minimum 1MB/s
 						}
-						// 使用单向设置，不影响出站带宽
-						outBw = 0 // 占位符，实际不使用
-						fmt.Printf("wngzhe AdjustBandwidthResource - Will limit inbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalInBw, inBw)
-					} else {
-						fmt.Printf("wngzhe AdjustBandwidthResource - Original inbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
+						// Use unidirectional setting, don't affect outbound bandwidth
+						outBw = 0 // Placeholder, not actually used
 					}
 					break
 				}
 			}
 		} else if record.AdjustType == "limit_out_bw" || record.AdjustType == model.RuleTypeAdjustOutBW {
 			bwType = "out"
-			// 查找出站规则详情
+			// Find outbound rule details
 			for _, detail := range details {
 				if detail.Direction == "out" {
-					// 只有原始出站带宽大于0时才需要实际限制
+					// Only limit if original outbound bandwidth > 0
 					if originalOutBw > 0 {
 						needActualLimit = true
-						// 限制出站带宽到规则定义的值 (从 kB/s 转换为 MB/s)
-						outBw = detail.LimitValue / 1024 // 转换为 MB/s
+						// Limit outbound bandwidth to rule-defined value (convert from kB/s to MB/s)
+						outBw = detail.LimitValue / 1024 // Convert to MB/s
 						if outBw < 1 {
-							outBw = 1 // 最小1MB/s
+							outBw = 1 // Minimum 1MB/s
 						}
-						// 使用单向设置，不影响入站带宽
-						inBw = 0 // 占位符，实际不使用
-						fmt.Printf("wngzhe AdjustBandwidthResource - Will limit outbound bandwidth from %d to %d MB/s (using single-direction mode)\n", originalOutBw, outBw)
-					} else {
-						fmt.Printf("wngzhe AdjustBandwidthResource - Original outbound bandwidth is 0 (unlimited), skipping actual limit but setting metric\n")
+						// Use unidirectional setting, don't affect inbound bandwidth
+						inBw = 0 // Placeholder, not actually used
 					}
 					break
 				}
@@ -681,56 +613,45 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		}
 	}
 
-	// 使用target_device作为nic_name
+	// Use target_device as nic_name
 	nicName := record.TargetDevice
 	if nicName == "" {
-		// 如果target_device为空，使用device参数
+		// Use device parameter if target_device is empty
 		nicName = device
 	}
 
-	fmt.Printf("wngzhe AdjustBandwidthResource - Using nic_name: %s\n", nicName)
-
-	// 只有在需要时才执行实际的带宽限制命令
+	// Execute bandwidth limit command only if needed
 	if needActualLimit {
-		// 提取domain中的ID部分（去掉inst-前缀）
-		// domain格式为"inst-6"，需要提取出"6"传给脚本
+		// Extract ID from domain (remove inst- prefix)
+		// Domain format: "inst-6", need to extract "6" for script
 		vmID := domain
 		if strings.HasPrefix(domain, "inst-") {
 			vmID = strings.TrimPrefix(domain, "inst-")
 		}
-		fmt.Printf("wngzhe AdjustBandwidthResource - Extracted VM ID: %s from domain: %s\n", vmID, domain)
 
 		var command string
 		if bwType == "in" {
-			// 只限制入站带宽，使用单向模式
+			// Limit inbound bandwidth only, use unidirectional mode
 			command = fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '%d' '0' --inbound-only",
 				vmID, nicName, inBw)
-			fmt.Printf("wngzhe AdjustBandwidthResource - Executing inbound bandwidth limit: %d MB/s\n", inBw)
 		} else if bwType == "out" {
-			// 只限制出站带宽，使用单向模式
+			// Limit outbound bandwidth only, use unidirectional mode
 			command = fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '0' '%d' --outbound-only",
 				vmID, nicName, outBw)
-			fmt.Printf("wngzhe AdjustBandwidthResource - Executing outbound bandwidth limit: %d MB/s\n", outBw)
 		}
 
-		fmt.Printf("wngzhe AdjustBandwidthResource - Executing bandwidth limit command: %s\n", command)
-
-		// 执行命令
+		// Execute command
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
 			log.Printf("Failed to adjust bandwidth: %v", err)
 			return fmt.Errorf("failed to adjust bandwidth resources: %v", err)
 		}
-		fmt.Printf("wngzhe AdjustBandwidthResource - Successfully executed bandwidth limit\n")
-	} else {
-		fmt.Printf("wngzhe AdjustBandwidthResource - Skipped actual bandwidth limit operation\n")
 	}
 
-	// 成功调整带宽后，更新自定义指标状态
+	// Update custom metric status after successful bandwidth adjustment
 	status := 0
 	if limit {
-		status = 1 // 限制状态
-		// bwType 已在前面设置
+		status = 1 // Limited state
 	}
 
 	if bwType != "" {
@@ -738,15 +659,10 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		ruleID := fmt.Sprintf("adjust-bw-%s-%s", domain, record.RuleGroupUUID)
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)
-		fmt.Printf("wngzhe AdjustBandwidthResource - Updating bandwidth adjustment metric: %s\n", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
 		if err != nil {
-			// 只记录警告，不影响主要操作的成功状态
-			fmt.Printf("wngzhe AdjustBandwidthResource - Warning: Failed to update bandwidth adjustment metric: %v\n", err)
 			log.Printf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
-		} else {
-			fmt.Printf("wngzhe AdjustBandwidthResource - Successfully updated bandwidth adjustment metric\n")
 		}
 	}
 
@@ -755,22 +671,20 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	return nil
 }
 
-// RestoreBandwidthResource 恢复带宽资源
+// RestoreBandwidthResource restores bandwidth resources
 func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, instanceID string) error {
 	var instance *model.Instance
 	var err error
 
-	// 如果提供了instanceID，直接使用它查询实例信息
+	// Get instance by ID if provided
 	if instanceID != "" {
-		fmt.Printf("wngzhe RestoreBandwidthResource - Using provided instanceID: %s\n", instanceID)
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance info by instanceID: %v", err)
-			return fmt.Errorf("failed to get instance info by instanceID: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
-		// 如果没有提供instanceID，则使用原来的方法通过domain查询
-		fmt.Printf("wngzhe RestoreBandwidthResource - No instanceID provided, querying by domain: %s\n", domain)
+		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
 			log.Printf("Failed to get instance UUID: %v", err)
@@ -779,20 +693,20 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance info: %v", err)
-			return fmt.Errorf("failed to get instance info: %v", err)
+			log.Printf("Failed to get instance: %v", err)
+			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
 
-	// 构建命令
+	// Build command
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 
-	// 获取接口的原始带宽配置
+	// Get target interface's original bandwidth configuration
 	var targetInterface *model.Interface
 	if device != "" {
 		targetInterface = findInterfaceByTargetDevice(instance, device)
 	} else {
-		// 如果没有提供device，则尝试通过target_device匹配
+		// Use target_device from record if device not provided
 		targetInterface = findInterfaceByTargetDevice(instance, record.TargetDevice)
 	}
 
@@ -801,86 +715,70 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		return fmt.Errorf("interface not found: device=%s", device)
 	}
 
-	// 恢复到原始的带宽配置
-	originalInBw := int(targetInterface.Inbound)   // 原始入站带宽 (Mbps)
-	originalOutBw := int(targetInterface.Outbound) // 原始出站带宽 (Mbps)
+	// Restore to original bandwidth configuration
+	originalInBw := int(targetInterface.Inbound)   // Original inbound bandwidth (Mbps)
+	originalOutBw := int(targetInterface.Outbound) // Original outbound bandwidth (Mbps)
 
-	fmt.Printf("wngzhe RestoreBandwidthResource - Restoring to original bandwidth: interface=%s, inbound=%d, outbound=%d\n",
+	log.Printf("Restoring interface bandwidth: name=%s, inBw=%d, outBw=%d",
 		targetInterface.Name, originalInBw, originalOutBw)
 
-	// 检查是否需要实际执行带宽恢复
+	// Check if actual bandwidth restoration is needed
 	needActualRestore := false
 	var bwType string
 
-	// 根据调整类型确定之前限制的带宽方向，用于清理相应的指标
+	// Determine previously limited bandwidth direction based on adjustment type for metric cleanup
 	if record.AdjustType == model.RuleTypeAdjustInBW || record.AdjustType == "restore_in_bw" {
 		bwType = "in"
 	} else if record.AdjustType == model.RuleTypeAdjustOutBW || record.AdjustType == "restore_out_bw" {
 		bwType = "out"
 	}
 
-	// 对于恢复操作，如果原始带宽配置中有任何限制（非0值），就需要执行恢复
+	// For restore operation, execute if any original bandwidth limit exists (non-zero value)
 	if originalInBw > 0 || originalOutBw > 0 {
 		needActualRestore = true
-		fmt.Printf("wngzhe RestoreBandwidthResource - Will restore bandwidth to original: inbound=%d Mbps, outbound=%d Mbps\n", originalInBw, originalOutBw)
-	} else {
-		fmt.Printf("wngzhe RestoreBandwidthResource - Both original bandwidths are 0 (unlimited), skipping actual restore but clearing metric\n")
 	}
 
-	// 使用target_device作为nic_name
+	// Use target_device as nic_name
 	nicName := record.TargetDevice
 	if nicName == "" {
-		// 如果target_device为空，使用device参数
+		// Use device parameter if target_device is empty
 		nicName = device
 	}
 
-	fmt.Printf("wngzhe RestoreBandwidthResource - Using nic_name: %s\n", nicName)
-
-	// 只有在需要时才执行实际的带宽恢复命令
+	// Execute bandwidth restore command only if needed
 	if needActualRestore {
-		// 提取domain中的ID部分（去掉inst-前缀）
-		// domain格式为"inst-6"，需要提取出"6"传给脚本
+		// Extract ID from domain (remove inst- prefix)
+		// Domain format: "inst-6", need to extract "6" for script
 		vmID := domain
 		if strings.HasPrefix(domain, "inst-") {
 			vmID = strings.TrimPrefix(domain, "inst-")
 		}
-		fmt.Printf("wngzhe RestoreBandwidthResource - Extracted VM ID: %s from domain: %s\n", vmID, domain)
 
-		// 恢复带宽到原始配置值
+		// Restore bandwidth to original configuration values
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '%d' '%d'",
 			vmID, nicName, originalInBw, originalOutBw)
 
-		fmt.Printf("wngzhe RestoreBandwidthResource - Executing bandwidth restore command: %s\n", command)
-
-		// 执行命令
+		// Execute command
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
 			log.Printf("Failed to restore bandwidth: %v", err)
 			return fmt.Errorf("failed to restore bandwidth resources: %v", err)
 		}
-		fmt.Printf("wngzhe RestoreBandwidthResource - Successfully executed bandwidth restore\n")
-	} else {
-		fmt.Printf("wngzhe RestoreBandwidthResource - Skipped actual bandwidth restore operation\n")
 	}
 
-	// 成功恢复带宽后，更新自定义指标状态（清理指标）
+	// Update custom metric status after successful bandwidth restoration (cleanup metric)
 	status := 0
 
 	if bwType != "" {
 		// Generate proper rule_id format: adjust-bw-$DOMAIN-$UUID
-		// 必须与AdjustBandwidthResource函数使用完全相同的逻辑
+		// Must use exactly the same logic as AdjustBandwidthResource function
 		ruleID := fmt.Sprintf("adjust-bw-%s-%s", domain, record.RuleGroupUUID)
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)
-		fmt.Printf("wngzhe RestoreBandwidthResource - Updating bandwidth adjustment metric: %s\n", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
 		if err != nil {
-			// 只记录警告，不影响主要操作的成功状态
-			fmt.Printf("wngzhe RestoreBandwidthResource - Warning: Failed to update bandwidth adjustment metric: %v\n", err)
 			log.Printf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
-		} else {
-			fmt.Printf("wngzhe RestoreBandwidthResource - Successfully updated bandwidth adjustment metric\n")
 		}
 	}
 
@@ -889,50 +787,50 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	return nil
 }
 
-// GetAdjustmentCooldownConfig 从数据库获取调整冷却期配置
+// GetAdjustmentCooldownConfig retrieves adjustment cooldown configuration from database
 func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjustType string, groupUUID string) int {
-	// 默认冷却时间为5分钟（300秒）
+	// Default cooldown time is 5 minutes (300 seconds)
 	defaultCooldown := 300
 
-	// 根据调整类型获取对应的规则配置
+	// Get corresponding rule configuration based on adjustment type
 	switch adjustType {
 	case model.RuleTypeAdjustCPU, "limit_cpu", "restore_cpu":
-		// 查询CPU调整规则详情
+		// Query CPU adjustment rule details
 		details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("获取CPU调整规则详情失败或不存在: %v", err)
+			log.Printf("Failed to get CPU adjustment rule details: %v", err)
 			return defaultCooldown
 		}
-		// 使用恢复持续时间作为冷却期
+		// Use restore duration as cooldown period
 		return details[0].RestoreDuration
 	case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW, "limit_in_bw", "restore_in_bw", "limit_out_bw", "restore_out_bw":
-		// 查询带宽调整规则详情
+		// Query bandwidth adjustment rule details
 		details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("获取带宽调整规则详情失败或不存在: %v", err)
+			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
 			return defaultCooldown
 		}
-		// 使用第一个规则的恢复持续时间作为冷却期
+		// Use first rule's restore duration as cooldown period
 		return details[0].RestoreDuration
 	default:
-		log.Printf("未知的调整类型: %s，使用默认冷却期", adjustType)
+		log.Printf("Unknown adjustment type: %s, using default cooldown", adjustType)
 		return defaultCooldown
 	}
 }
 
-// SendAdjustmentNotification 发送资源调整实时通知
-// 发送调整通知，直接使用alert.Status作为状态
+// SendAdjustmentNotification sends real-time resource adjustment notifications
+// Sends adjustment notification using alert.Status directly as the status
 func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert AdjustAlert, success bool) error {
-	// 根据状态设置必要参数
+	// Set parameters based on status
 	endsAt := alert.EndsAt
 	summaryPrefix := "Resource adjustment"
 
 	if alert.Status == "resolved" {
-		endsAt = time.Now() // resolved状态设置当前时间
+		endsAt = time.Now() // Set current time for resolved status
 		summaryPrefix = "RESOLVED: Resource adjustment"
 	}
 
-	// 构造通知参数
+	// Construct notification parameters
 	notifyParams := NotifyParams{
 		Alerts: []struct {
 			State       string            `json:"state"`
@@ -945,8 +843,8 @@ func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert A
 				State: alert.Status,
 				Labels: map[string]string{
 					"alertname":     alert.Labels["alertname"],
-					"severity":      alert.Labels["severity"],       // 从labels中读取severity，不假设
-					"rule_id":       alert.Labels["global_rule_id"], // 改名：从global_rule_id改为rule_id
+					"severity":      alert.Labels["severity"],       // Read severity from labels, don't assume
+					"rule_id":       alert.Labels["global_rule_id"], // Renamed: from global_rule_id to rule_id
 					"domain":        alert.Labels["domain"],
 					"action_type":   alert.Labels["action_type"],
 					"target_device": alert.Labels["target_device"],
@@ -974,7 +872,7 @@ func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert A
 		},
 	}
 
-	// 创建AlarmOperator实例并发送通知
+	// Create AlarmOperator instance and send notification
 	alarmOperator := &AlarmOperator{}
 	if err := alarmOperator.SendNotificationToAllServices(ctx, notifyParams); err != nil {
 		log.Printf("Failed to send adjustment notification: %v", err)

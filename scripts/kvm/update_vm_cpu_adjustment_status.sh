@@ -168,4 +168,4 @@ if [[ -f "$METRICS_FILE" && ! -r "$METRICS_FILE" ]]; then
     exit 1
 fi
 
-echo "Operation completed successfully" 
+echo "Operation completed successfully"

@@ -85,12 +85,12 @@ type ListRuleGroupsParams struct {
 	Page      int
 	PageSize  int
 	GroupUUID string
-	RuleID    string // 新增：支持通过rule_id查询
+	RuleID    string // Added: Support query by rule_id
 }
 
-// AdaptiveQueryParams 自适应查询参数
+// AdaptiveQueryParams Adaptive query parameters
 type AdaptiveQueryParams struct {
-	ID       string // 可以是GroupUUID或RuleID
+	ID       string // Can be GroupUUID or RuleID
 	RuleType string
 	Page     int
 	PageSize int
@@ -107,7 +107,7 @@ type (
 	RuleGroupV2 struct {
 		ID         string    `gorm:"primaryKey;type:varchar(36)"`
 		Name       string    `gorm:"index;size:255"`
-		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw
+		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw/memory/disk/network-in/network-out
 		Enabled    bool      `gorm:"default:true"`
 		Owner      string    `gorm:"type:varchar(255);index"`
 		CreatedAt  time.Time `gorm:"autoCreateTime"`
@@ -119,9 +119,9 @@ type (
 		ID           int       `gorm:"primaryKey;autoIncrement"`
 		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
 		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // 阈值
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // 比较操作符: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // 持续时间(分钟)
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
@@ -132,9 +132,9 @@ type (
 		ID           int       `gorm:"primaryKey;autoIncrement"`
 		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
 		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // 阈值
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // 比较操作符: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // 持续时间(分钟)
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
@@ -167,7 +167,7 @@ type (
 		Name          string `gorm:"size:255"`
 		Status        string `gorm:"type:varchar(20)"`
 		RuleGroupUUID string `json:"rule_group"`
-		GlobalRuleID  string `gorm:"type:varchar(255)" json:"global_rule_id"` // 新增：全局规则ID
+		GlobalRuleID  string `gorm:"type:varchar(255)" json:"global_rule_id"` // Added: Global rule ID
 		Severity      string `gorm:"type:varchar(20)"`
 		Summary       string `gorm:"type:text"`
 		Description   string `gorm:"type:text"`
@@ -176,61 +176,61 @@ type (
 		CreatedAt     time.Time `gorm:"autoCreateTime"`
 		AlertType     string    `gorm:"type:varchar(20)" json:"alert_type"`
 		TargetDevice  string    `gorm:"type:varchar(255)" json:"target_device"`
-		RegionID      string    `gorm:"type:varchar(255)" json:"region_id"`   // 新增：区域ID
-		InstanceID    string    `gorm:"type:varchar(255)" json:"instance_id"` // 新增：实例ID
+		RegionID      string    `gorm:"type:varchar(255)" json:"region_id"`   // Added: Region ID
+		InstanceID    string    `gorm:"type:varchar(255)" json:"instance_id"` // Added: Instance ID
 	}
 )
 
-// 完善的配置结构
+// NodeAvailabilityConfig Complete configuration structure
 type NodeAvailabilityConfig struct {
 	NodeDownDuration     string `json:"node_down_duration"`
 	AlertDurationMinutes int    `json:"alert_duration_minutes"`
 }
 
 type ManagementConfig struct {
-	// CPU监控
+	// CPU monitoring
 	CPUUsageThreshold int    `json:"cpu_usage_threshold"`
 	CPUAlertDuration  string `json:"cpu_alert_duration"`
 	CPUAlertMinutes   int    `json:"cpu_alert_minutes"`
 
-	// 内存监控
+	// Memory monitoring
 	MemoryUsageThreshold int    `json:"memory_usage_threshold"`
 	MemoryAlertDuration  string `json:"memory_alert_duration"`
 	MemoryAlertMinutes   int    `json:"memory_alert_minutes"`
 
-	// 磁盘监控
+	// Disk monitoring
 	DiskSpaceThreshold int    `json:"disk_space_threshold"`
 	DiskAlertDuration  string `json:"disk_alert_duration"`
 	DiskAlertMinutes   int    `json:"disk_alert_minutes"`
 
-	// 网络监控 - 新增
+	// Network monitoring - Added
 	NetworkTrafficThresholdGB float64 `json:"network_traffic_threshold_gb"`
 	NetworkAlertDuration      string  `json:"network_alert_duration"`
 	NetworkAlertMinutes       int     `json:"network_alert_minutes"`
 }
 
 type ComputeConfig struct {
-	// CPU监控
+	// CPU monitoring
 	CPUUsageThreshold int    `json:"cpu_usage_threshold"`
 	CPUAlertDuration  string `json:"cpu_alert_duration"`
 	CPUAlertMinutes   int    `json:"cpu_alert_minutes"`
 
-	// 内存监控 - 新增
+	// Memory monitoring - Added
 	MemoryUsageThreshold int    `json:"memory_usage_threshold"`
 	MemoryAlertDuration  string `json:"memory_alert_duration"`
 	MemoryAlertMinutes   int    `json:"memory_alert_minutes"`
 
-	// 磁盘监控
+	// Disk monitoring
 	DiskSpaceThreshold int    `json:"disk_space_threshold"`
 	DiskAlertDuration  string `json:"disk_alert_duration"`
 	DiskAlertMinutes   int    `json:"disk_alert_minutes"`
 
-	// 核心网络监控
+	// Core network monitoring
 	NetworkTrafficThresholdGB float64 `json:"network_traffic_threshold_gb"`
 	NetworkAlertDuration      string  `json:"network_alert_duration"`
 	NetworkAlertMinutes       int     `json:"network_alert_minutes"`
 
-	// 多业务类型网络监控
+	// Multiple business type network monitoring
 	NetworkTypes map[string]NetworkTypeConfig `json:"network_types"`
 }
 
@@ -644,7 +644,7 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
 	}
-	// 新增：支持通过rule_id查询
+	// Added: Support query by rule_id
 	if params.RuleID != "" {
 		query = query.Where("rule_id = ?", params.RuleID)
 	}
@@ -816,7 +816,7 @@ func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, erro
 		if _, err := os.Stat(caCertPath); err == nil {
 			caCert, err := os.ReadFile(caCertPath)
 			if err != nil {
-				return nil, fmt.Errorf("读取CA证书失败: %v", err)
+				return nil, fmt.Errorf("failed to read CA certificate: %v", err)
 			}
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
@@ -893,7 +893,7 @@ func (c *PrometheusClient) ClientReadRuleFile(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	// 解析响应
+	// Parse response
 	var response RuleFileResponse
 	if err := json.Unmarshal(respBody, &response); err != nil {
 		log.Printf("parse response failed: %v", err)
@@ -1025,11 +1025,11 @@ func (c *PrometheusClient) ClientGetUser(username string) (int, int, error) {
 	}
 
 	if err := json.Unmarshal(resp, &response); err != nil {
-		return 0, 0, fmt.Errorf("解析响应失败: %v", err)
+		return 0, 0, fmt.Errorf("failed to parse response: %v", err)
 	}
 
 	if !response.Success {
-		return 0, 0, fmt.Errorf("获取用户信息失败: %s", response.Message)
+		return 0, 0, fmt.Errorf("failed to get user information: %s", response.Message)
 	}
 
 	return response.UID, response.GID, nil
@@ -1336,14 +1336,14 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
 
-	// 根据所有者确定规则文件路径
+	// Determine rule file path based on owner
 	var outputPath string
 	owner, ok := data["owner"].(string)
 	if !ok {
 		owner = ""
 	}
 
-	// 根据owner决定规则文件位置
+	// Determine rule file location based on owner
 	if owner == "admin" {
 		outputPath = filepath.Join(RulesGeneral, outputFile)
 	} else {
@@ -1465,7 +1465,7 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 
 	result := templateContent
 
-	// 1. 替换所有 data 中的变量（非 $labels.）
+	// 1. Replace all variables in data (excluding $labels.)
 	for key, value := range data {
 		if strings.HasPrefix(key, "$labels.") {
 			continue
@@ -1474,17 +1474,17 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 		strValue := fmt.Sprintf("%v", value)
 		result = strings.ReplaceAll(result, placeholder, strValue)
 
-		// 1.1 替换 {{ key | default("xxx") }} 形式
+		// 1.1 Replace {{ key | default("xxx") }} format
 		defaultPattern := regexp.MustCompile(fmt.Sprintf(`{{ %s \| default\("([^"]*)"\) }}`, key))
 		result = defaultPattern.ReplaceAllString(result, strValue)
 
-		// 1.2 替换 {{ key | default(xxx) }} 无引号形式
+		// 1.2 Replace {{ key | default(xxx) }} format without quotes
 		noQuotesPattern := regexp.MustCompile(fmt.Sprintf(`{{ *(?:\(?%s\)? *\| *default\(([^"\)]+)\)) *}}`, key))
 		result = noQuotesPattern.ReplaceAllString(result, strValue)
 	}
 
-	// 2. 替换剩余变量中 default 语法（如果 data 中没给值）
-	// 2.1 带引号 default
+	// 2. Replace remaining default syntax variables (if no value provided in data)
+	// 2.1 Default with quotes
 	defaultPattern := regexp.MustCompile(`{{ ([a-zA-Z0-9_]+) \| default\("([^"]*)"\) }}`)
 	result = defaultPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := defaultPattern.FindStringSubmatch(match)
@@ -1501,7 +1501,7 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 		return matches[2]
 	})
 
-	// 2.2 无引号 default
+	// 2.2 Default without quotes
 	noQuotesPattern := regexp.MustCompile(`{{ *(?:\(?([a-zA-Z0-9_]+)\)? *\| *default\(([^"\)]+)\)) *}}`)
 	result = noQuotesPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := noQuotesPattern.FindStringSubmatch(match)
@@ -1518,7 +1518,7 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 		return matches[2]
 	})
 
-	// 3. 解包 Prometheus 模板表达式，例如：
+	// 3. Unpack Prometheus template expressions, for example:
 	// {{ "{{ if $labels.xxx }}a{{ else }}b{{ end }}" }} -> {{ if $labels.xxx }}a{{ else }}b{{ end }}
 	promExprPattern := regexp.MustCompile(`{{ "{{ ([^{}]+) }}" }}`)
 	result = promExprPattern.ReplaceAllString(result, "{{ $1 }}")
@@ -1540,7 +1540,7 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 		return fmt.Errorf("config is required")
 	}
 
-	// 验证 config 是否为有效的 JSON
+	// Validate if config is valid JSON
 	var temp interface{}
 	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
 		return fmt.Errorf("config must be valid JSON")
@@ -1751,21 +1751,21 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 		rulesForTemplate = append(rulesForTemplate, ruleMap)
 	}
 
-	// 添加模板所需的数据
+	// Add data required for template
 	c.Data["Rules"] = rulesForTemplate
 	c.Data["Total"] = len(rules)
 	c.Data["Query"] = c.Query("q")
 	c.Data["Link"] = "/alarms/node"
 
-	// 确保 i18n 对象被正确设置
+	// Ensure i18n object is properly set
 	if c.Locale != nil {
 		c.Data["i18n"] = c.Locale
 	} else {
 		log.Printf("Warning: i18n object is nil")
-		c.Data["i18n"] = &i18n.Locale{} // 提供一个空的 i18n 对象作为后备
+		c.Data["i18n"] = &i18n.Locale{} // Provide an empty i18n object as fallback
 	}
 
-	// 复制其他必要的上下文数据
+	// Copy other necessary context data
 	if isAdmin, ok := c.Data["IsAdmin"].(bool); ok {
 		c.Data["IsAdmin"] = isAdmin
 	}
@@ -1865,9 +1865,9 @@ func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
 	c.HTML(200, "alarms_new")
 }
 
-// RemoteNotifyConfig 相关操作函数
+// RemoteNotifyConfig related operation functions
 
-// CreateRemoteNotifyConfig 创建远程通知配置
+// CreateRemoteNotifyConfig creates remote notify configuration
 func (a *AlarmOperator) CreateRemoteNotifyConfig(ctx context.Context, config *model.RemoteNotifyConfig) error {
 	ctx, db := common.GetContextDB(ctx)
 	config.UUID = uuid.NewString()
@@ -1878,7 +1878,7 @@ func (a *AlarmOperator) CreateRemoteNotifyConfig(ctx context.Context, config *mo
 	return nil
 }
 
-// GetRemoteNotifyConfigs 获取远程通知配置列表
+// GetRemoteNotifyConfigs gets remote notify configuration list
 func (a *AlarmOperator) GetRemoteNotifyConfigs(ctx context.Context) ([]model.RemoteNotifyConfig, error) {
 	ctx, db := common.GetContextDB(ctx)
 	var configs []model.RemoteNotifyConfig
@@ -1889,7 +1889,7 @@ func (a *AlarmOperator) GetRemoteNotifyConfigs(ctx context.Context) ([]model.Rem
 	return configs, nil
 }
 
-// GetRemoteNotifyConfigByName 根据名称获取远程通知配置
+// GetRemoteNotifyConfigByName gets remote notify configuration by name
 func (a *AlarmOperator) GetRemoteNotifyConfigByName(ctx context.Context, name string) (*model.RemoteNotifyConfig, error) {
 	ctx, db := common.GetContextDB(ctx)
 	var config model.RemoteNotifyConfig
@@ -1903,7 +1903,7 @@ func (a *AlarmOperator) GetRemoteNotifyConfigByName(ctx context.Context, name st
 	return &config, nil
 }
 
-// GetRemoteNotifyConfigsByType 根据类型获取远程通知配置列表
+// GetRemoteNotifyConfigsByType gets remote notify configuration list by type
 func (a *AlarmOperator) GetRemoteNotifyConfigsByType(ctx context.Context, configType string) ([]model.RemoteNotifyConfig, error) {
 	ctx, db := common.GetContextDB(ctx)
 	var configs []model.RemoteNotifyConfig
@@ -1914,7 +1914,7 @@ func (a *AlarmOperator) GetRemoteNotifyConfigsByType(ctx context.Context, config
 	return configs, nil
 }
 
-// DeleteRemoteNotifyConfig 删除远程通知配置
+// DeleteRemoteNotifyConfig deletes remote notify configuration
 func (a *AlarmOperator) DeleteRemoteNotifyConfig(ctx context.Context, name string) error {
 	ctx, db := common.GetContextDB(ctx)
 	result := db.Where("name = ?", name).Delete(&model.RemoteNotifyConfig{})
@@ -1928,9 +1928,9 @@ func (a *AlarmOperator) DeleteRemoteNotifyConfig(ctx context.Context, name strin
 	return nil
 }
 
-// 远程通知相关功能函数
+// Remote notification related functions
 
-// NotifyParams 通知参数
+// NotifyParams notification parameters
 type NotifyParams struct {
 	Alerts []struct {
 		State       string            `json:"state"`
@@ -1941,11 +1941,11 @@ type NotifyParams struct {
 	} `json:"alerts"`
 }
 
-// GetToken 获取Token（每次都重新获取，不缓存）
+// GetToken gets Token (re-fetch each time, no caching)
 func (a *AlarmOperator) GetToken(config model.RemoteNotifyConfig) (string, error) {
 	log.Printf("[GetToken] Starting token request for config: %s, TokenURL: %s", config.Name, config.TokenURL)
 
-	// 直接获取token，不搞任何缓存
+	// Get token directly without any caching
 	loginData := map[string]string{
 		"username": config.Username,
 		"password": config.Password,
@@ -2010,7 +2010,7 @@ func (a *AlarmOperator) GetToken(config model.RemoteNotifyConfig) (string, error
 	return result.Data.Token, nil
 }
 
-// SendNotificationToService 发送通知到单个远程服务
+// SendNotificationToService sends notification to a single remote service
 func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config model.RemoteNotifyConfig, params NotifyParams) error {
 	log.Printf("[SendNotification] Starting notification to service: %s, URL: %s", config.Name, config.NotifyURL)
 
@@ -2029,8 +2029,8 @@ func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config mo
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// 设置X-Region-Id头部（从告警标签中获取，如果没有则使用默认值）
-	regionID := "1" // 默认值
+	// Set X-Region-Id header (get from alert labels, use default if not found)
+	regionID := "1" // Default value
 	if len(params.Alerts) > 0 {
 		if alertRegion, exists := params.Alerts[0].Labels["region_id"]; exists && alertRegion != "" {
 			regionID = alertRegion
@@ -2043,7 +2043,7 @@ func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config mo
 
 	if config.TokenURL != "" {
 		log.Printf("[SendNotification] Using token authentication, TokenURL: %s", config.TokenURL)
-		// Token认证：用存储的用户名密码获取token
+		// Token authentication: use stored username and password to get token
 		token, err := a.GetToken(config)
 		if err != nil {
 			log.Printf("[SendNotification] Failed to get token: %v", err)
@@ -2053,12 +2053,12 @@ func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config mo
 		log.Printf("[SendNotification] Token authentication header set")
 	} else if config.Username != "" {
 		log.Printf("[SendNotification] Using basic authentication for user: %s", config.Username)
-		// 基础认证：直接用存储的用户名密码
+		// Basic authentication: use stored username and password directly
 		req.SetBasicAuth(config.Username, config.Password)
 	} else {
 		log.Printf("[SendNotification] No authentication configured")
 	}
-	// 无认证：什么都不加
+	// No authentication: add nothing
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	log.Printf("[SendNotification] Sending notification request...")
@@ -2081,11 +2081,11 @@ func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config mo
 	return nil
 }
 
-// SendNotificationToAllServices 发送通知到所有NOTIFY类型的远程服务
+// SendNotificationToAllServices sends notification to all NOTIFY type remote services
 func (a *AlarmOperator) SendNotificationToAllServices(ctx context.Context, params NotifyParams) error {
 	log.Printf("[SendNotificationToAllServices] Starting notification process")
 
-	// 只获取NOTIFY类型的配置
+	// Only get NOTIFY type configurations
 	configs, err := a.GetRemoteNotifyConfigsByType(ctx, model.RemoteConfigTypeNotify)
 	if err != nil {
 		log.Printf("[SendNotificationToAllServices] Failed to get NOTIFY type remote configs: %v", err)
@@ -2102,7 +2102,7 @@ func (a *AlarmOperator) SendNotificationToAllServices(ctx context.Context, param
 	for i, config := range configs {
 		log.Printf("[SendNotificationToAllServices] Processing NOTIFY config %d/%d: %s (type: %s)", i+1, len(configs), config.Name, config.Type)
 		if err := a.SendNotificationToService(ctx, config, params); err != nil {
-			// 记录错误但不中断其他通知
+			// Log error but don't interrupt other notifications
 			log.Printf("[SendNotificationToAllServices] Failed to send notification to %s: %v", config.Name, err)
 		} else {
 			log.Printf("[SendNotificationToAllServices] Successfully sent notification to %s", config.Name)

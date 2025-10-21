@@ -1,5 +1,5 @@
 ---
-# 资源自动调整相关的Ansible任务
+# Ansible tasks for automatic resource adjustment
 
 - name: Install jq on compute nodes for VM metrics migration
   become: true
@@ -61,7 +61,7 @@
         receiver: 'resource-adjustment-webhook'
         continue: true
 
-# ② 插入到 "  routes:" 之后，并整体右移 4 格（含首行）
+# Insert after "  routes:" and indent the entire block by 4 spaces (including the first line)
 - name: Add resource adjustment route to existing routes in Alertmanager
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -71,10 +71,6 @@
     marker: "    # {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Route"
     block: "{{ resource_adjustment_route_block | indent(4, true) }}"
     create: yes
-    # 可选：如有 amtool 或用容器校验，打开 validate 以防写入坏配置
-    # validate: 'amtool check-config %s'
-    # 或（容器校验示例，若主机无 amtool）：
-    # validate: 'docker run --rm -v /etc/alertmanager:/etc/alertmanager quay.io/prometheus/alertmanager:v0.26.0 --config.file=%s --log.level=error --config.check'
   tags: [monitor, resource_adjustment]
 
 - name: Add resource adjustment webhook receiver to Alertmanager receivers list

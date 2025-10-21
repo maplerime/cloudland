@@ -23,22 +23,22 @@ import (
 	"web/src/routes"
 )
 
-// AdjustAPI 资源自动调整API
+// AdjustAPI Resource auto-adjustment API
 type AdjustAPI struct {
 	operator *routes.AdjustOperator
 }
 
-// 全局变量
+// Global variable
 var adjustAPI = &AdjustAPI{
 	operator: &routes.AdjustOperator{},
 }
 
-// 资源调整配置文件路径常量
+// Resource adjustment configuration file path constants
 const (
 	PrometheusBasePath = "/etc/prometheus"
-	// 这里不再重复声明RulesGeneralPath, RulesSpecialPath, RulesEnabledPath
+	// Do not re-declare RulesGeneralPath, RulesSpecialPath, RulesEnabledPath here
 
-	// 模板文件
+	// Template files
 	CPUAdjustRuleTemplate        = "VM-cpu-adjust-rule.yml.j2"
 	ResourceAdjustAlertsTemplate = "resource-adjustment-alerts.yml.j2"
 	InBWAdjustRuleTemplate       = "VM-in-bw-adjust-rule.yml.j2"
@@ -163,7 +163,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 		ruleData := map[string]interface{}{
 			"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 			"rule_group_original": group.UUID,
-			"global_rule_id":      group.RuleID, // 用户指定的全局规则ID
+			"global_rule_id":      group.RuleID, // User-specified global rule ID
 			"high_threshold":      detail.HighThreshold,
 			"low_threshold":       detail.LowThreshold,
 			"smooth_window":       detail.SmoothWindow,
@@ -214,7 +214,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 	})
 }
 
-// GetCPUAdjustRules 获取CPU调整规则
+// GetCPUAdjustRules gets CPU adjustment rules
 func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -227,10 +227,9 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 		pageSize = 20
 	}
 
-	// 检查权限：只有admin可以查看调整规则
-	// 这里可以从请求中获取用户信息，暂时使用admin检查
-	// TODO: 从认证信息中获取当前用户
-	currentUser := "admin" // 临时设置，实际应该从认证信息获取
+	// Check permission: only admin can view adjustment rules
+	// TODO: Get current user from authentication info
+	currentUser := "admin" // Temporary setting, should get from authentication
 	if currentUser != "admin" {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can view adjustment rules, user: %s", currentUser)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can view adjustment rules"})
@@ -244,7 +243,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 	}
 
 	if identifier != "" {
-		// 双重标识查询：先尝试 rule_id，再尝试 group_uuid
+		// Dual identifier query: try rule_id first, then group_uuid
 		queryParams.RuleID = identifier
 		queryParams.GroupUUID = identifier
 		queryParams.PageSize = 1
@@ -273,7 +272,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 			}
 		}
 
-		// 构建规则数据
+		// Build rules data
 		rules := make([]gin.H, 0, len(details))
 		for _, detail := range details {
 			rules = append(rules, gin.H{
@@ -287,7 +286,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 			})
 		}
 
-		// 获取最近的调整历史
+		// Get recent adjustment history
 		history, _ := a.operator.GetAdjustmentHistory(c.Request.Context(), group.UUID, 5)
 		historyData := make([]gin.H, 0, len(history))
 		for _, h := range history {
@@ -325,7 +324,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 	})
 }
 
-// DeleteCPUAdjustRule 删除CPU调整规则
+// DeleteCPUAdjustRule deletes CPU adjustment rule
 func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 	identifier := c.Param("uuid")
 	if identifier == "" {
@@ -347,22 +346,22 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 检查权限：只有admin可以删除调整规则
+	// Check permission: only admin can delete adjustment rules
 	if group.Owner != "admin" {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can delete adjustment rules, owner: %s", group.Owner)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can delete adjustment rules"})
 		return
 	}
 
-	// 删除链接的VM
+	// Delete linked VMs
 	alarmOperator := &routes.AlarmOperator{}
 	_, _ = alarmOperator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
 
-	// 更新matched_vms.json
+	// Update matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", "adjust-cpu")
 
-	// 确定文件路径
+	// Determine file paths
 	var rulePath, alertPath string
 	if group.Owner == "admin" {
 		rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
@@ -372,14 +371,14 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
 	}
 
-	// 确定symlink路径
+	// Determine symlink paths
 	ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
 	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
 
-	// 删除symlink和规则文件
+	// Delete symlinks and rule files
 	deletedFiles := []string{}
 
-	// 删除symlink
+	// Delete symlinks
 	if err := routes.RemoveFile(ruleLinkPath); err == nil {
 		deletedFiles = append(deletedFiles, ruleLinkPath)
 		log.Printf("[ADJUST-INFO] Removed symlink: %s", ruleLinkPath)
@@ -394,7 +393,7 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-ERROR] Failed to remove symlink %s: %v", alertLinkPath, err)
 	}
 
-	// 删除规则文件
+	// Delete rule files
 	if err := routes.RemoveFile(rulePath); err == nil {
 		deletedFiles = append(deletedFiles, rulePath)
 		log.Printf("[ADJUST-INFO] Removed file: %s", rulePath)
@@ -409,28 +408,28 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
 	}
 
-	// 恢复所有关联VM的CPU资源
+	// Restore CPU resources for all linked VMs
 	log.Printf("[ADJUST-INFO] Restoring CPU resources for all linked VMs before rule deletion: %s", group.UUID)
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to get linked VMs for CPU restore: %v", err)
 	} else {
-		// 恢复每个VM的CPU资源
+		// Restore CPU resources for each VM
 		for _, link := range vmLinks {
-			// 获取VM的domain信息
+			// Get VM domain information
 			domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 			if err != nil {
 				log.Printf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
 				continue
 			}
 
-			// 创建恢复记录
+			// Create restore record
 			record := &routes.AdjustmentRecord{
 				RuleGroupUUID: group.UUID,
 				AdjustType:    "restore_cpu",
 			}
 
-			// 恢复CPU资源
+			// Restore CPU resources
 			err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, link.VMUUID)
 			if err != nil {
 				log.Printf("[ADJUST-WARNING] Failed to restore CPU for VM %s: %v", link.VMUUID, err)
@@ -440,21 +439,20 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 		}
 	}
 
-	// 清理计算节点上的调整状态指标
+	// Clean up adjustment status metrics on compute nodes
 	log.Printf("[ADJUST-INFO] Cleaning up CPU adjustment metrics for rule: %s", group.UUID)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), group.UUID, "cpu"); err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
-		// 不影响规则删除的成功状态，只记录警告
 	}
 
-	// 删除数据库记录
+	// Delete database records
 	err = a.operator.DeleteAdjustRuleGroupWithDependencies(c.Request.Context(), group.UUID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete rule: " + err.Error()})
 		return
 	}
 
-	// 重新加载Prometheus
+	// Reload Prometheus
 	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
 	if err := routes.ReloadPrometheus(); err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to reload Prometheus: %v", err)
@@ -470,7 +468,7 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 	})
 }
 
-// EnableAdjustRule 启用资源调整规则
+// EnableAdjustRule enables resource adjustment rule
 func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 	uuid := c.Param("uuid")
 	if uuid == "" {
@@ -478,24 +476,24 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 智能识别：先尝试作为rule_id查找，再尝试作为group_uuid查找
+	// Smart recognition: try as rule_id first, then as group_uuid
 	var group *model.AdjustRuleGroup
 	var err error
 	var identifierType string
 
-	// 1. 先尝试作为rule_id查找
+	// 1. Try as rule_id first
 	group, err = a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
 	if err == nil {
 		identifierType = "rule_id"
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 2. 如果rule_id找不到，尝试作为group_uuid查找
+		// 2. If rule_id not found, try as group_uuid
 		group, err = a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), uuid)
 		if err == nil {
 			identifierType = "group_uuid"
 		}
 	}
 
-	// 统一错误处理
+	// Unified error handling
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found"})
 		return
@@ -504,14 +502,14 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 检查权限：只有admin可以启用调整规则
+	// Check permission: only admin can enable adjustment rules
 	if group.Owner != "admin" {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can enable adjustment rules, owner: %s", group.Owner)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can enable adjustment rules"})
 		return
 	}
 
-	// 设置启用状态
+	// Set enabled status
 	group.AdjustEnabled = true
 
 	if err := dbs.DB().Save(group).Error; err != nil {
@@ -519,7 +517,7 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 根据规则类型确定文件路径
+	// Determine file paths based on rule type
 	var rulePaths []string
 	var alertPath string
 
@@ -532,7 +530,7 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		}
 		rulePaths = append(rulePaths, rulePath)
 	} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// 获取带宽调整规则详情，为每个方向生成文件路径
+		// Get bandwidth adjustment rule details, generate file paths for each direction
 		details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 		if err != nil {
 			log.Printf("[ADJUST-ERROR] Failed to get BW adjust rule details: %v", err)
@@ -562,7 +560,7 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 告警文件路径
+	// Alert file path
 	if group.Owner == "admin" {
 		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
 	} else {
@@ -571,15 +569,14 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 
 	log.Printf("[ADJUST-INFO] Enabling adjustment rule: identifier=%s, type=%s, group_uuid=%s, rule_id=%s", uuid, group.Type, group.UUID, group.RuleID)
 
-	// 创建规则文件的符号链接
+	// Create rule file symlinks
 	var createdLinks []string
 	for _, rulePath := range rulePaths {
 		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
 
-		// 使用routes.CreateSymlink而不是os.Symlink以支持远程Prometheus服务器
+		// Use routes.CreateSymlink instead of os.Symlink to support remote Prometheus server
 		if err := routes.CreateSymlink(rulePath, ruleLinkPath); err != nil {
 			log.Printf("[ADJUST-ERROR] Failed to create rule symlink: %v", err)
-			// 清理已创建的链接
 			for _, link := range createdLinks {
 				routes.RemoveFile(link)
 			}
@@ -589,11 +586,10 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		createdLinks = append(createdLinks, ruleLinkPath)
 	}
 
-	// 创建告警文件的符号链接
+	// Create alert file symlink
 	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
 	if err := routes.CreateSymlink(alertPath, alertLinkPath); err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to create alert symlink: %v", err)
-		// 如果告警链接失败，清理所有已创建的规则链接
 		for _, link := range createdLinks {
 			routes.RemoveFile(link)
 		}
@@ -601,7 +597,7 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 重新加载Prometheus
+	// Reload Prometheus
 	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
 	routes.ReloadPrometheus()
 
@@ -616,7 +612,7 @@ func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
 	})
 }
 
-// DisableAdjustRule 禁用资源调整规则
+// DisableAdjustRule disables resource adjustment rule
 func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 	uuid := c.Param("uuid")
 	if uuid == "" {
@@ -624,24 +620,24 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 智能识别：先尝试作为rule_id查找，再尝试作为group_uuid查找
+	// Smart recognition: try as rule_id first, then as group_uuid
 	var group *model.AdjustRuleGroup
 	var err error
 	var identifierType string
 
-	// 1. 先尝试作为rule_id查找
+	// 1. Try as rule_id first
 	group, err = a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
 	if err == nil {
 		identifierType = "rule_id"
 	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 2. 如果rule_id找不到，尝试作为group_uuid查找
+		// 2. If rule_id not found, try as group_uuid
 		group, err = a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), uuid)
 		if err == nil {
 			identifierType = "group_uuid"
 		}
 	}
 
-	// 统一错误处理
+	// Unified error handling
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found"})
 		return
@@ -650,14 +646,14 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 检查权限：只有admin可以禁用调整规则
+	// Check permission: only admin can disable adjustment rules
 	if group.Owner != "admin" {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can disable adjustment rules, owner: %s", group.Owner)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can disable adjustment rules"})
 		return
 	}
 
-	// 更新启用状态
+	// Update enabled status
 	group.Enabled = false
 	group.AdjustEnabled = false
 
@@ -666,7 +662,7 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 根据规则类型确定文件路径
+	// Determine file paths based on rule type
 	var rulePaths []string
 	var alertPath string
 
@@ -679,7 +675,7 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 		}
 		rulePaths = append(rulePaths, rulePath)
 	} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// 获取带宽调整规则详情，为每个方向生成文件路径
+		// Get bandwidth adjustment rule details, generate file paths for each direction
 		details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 		if err != nil {
 			log.Printf("[ADJUST-ERROR] Failed to get BW adjust rule details: %v", err)
@@ -709,7 +705,7 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 告警文件路径
+	// Alert file path
 	if group.Owner == "admin" {
 		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
 	} else {
@@ -718,25 +714,23 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 
 	log.Printf("[ADJUST-INFO] Disabling adjustment rule: identifier=%s, type=%s, group_uuid=%s, rule_id=%s", uuid, group.Type, group.UUID, group.RuleID)
 
-	// 删除规则文件的符号链接
+	// Delete rule file symlinks
 	for _, rulePath := range rulePaths {
 		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
 
-		// 使用routes.RemoveFile而不是os.Remove以支持远程Prometheus服务器
+		// Use routes.RemoveFile instead of os.Remove to support remote Prometheus server
 		if err := routes.RemoveFile(ruleLinkPath); err != nil {
 			log.Printf("[ADJUST-ERROR] Failed to remove rule symlink: %v", err)
-			// 不返回错误，继续尝试删除其他链接
 		}
 	}
 
-	// 删除告警文件的符号链接
+	// Delete alert file symlink
 	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
 	if err := routes.RemoveFile(alertLinkPath); err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to remove alert symlink: %v", err)
-		// 不返回错误，因为禁用操作仍然可以继续
 	}
 
-	// 重新加载Prometheus
+	// Reload Prometheus
 	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
 	routes.ReloadPrometheus()
 
@@ -751,18 +745,9 @@ func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
 	})
 }
 
-// ProcessResourceAdjustmentWebhook 处理资源自动调整的webhook
+// ProcessResourceAdjustmentWebhook processes resource auto-adjustment webhook
 func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
-	// 记录请求来源
-	requestIP := c.ClientIP()
-	requestMethod := c.Request.Method
-	requestURI := c.Request.RequestURI
-	requestUA := c.Request.UserAgent()
-
-	log.Printf("[ADJUST-DEBUG] Received resource adjustment webhook request: IP=%s, Method=%s, URI=%s, UserAgent=%s",
-		requestIP, requestMethod, requestURI, requestUA)
-
-	// 读取和记录原始请求数据
+	// Read request body
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to read request body: %v", err)
@@ -770,53 +755,41 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 		return
 	}
 
-	// 记录请求信息，限制日志大小
-	bodyStr := string(body)
-	if len(bodyStr) > 2000 {
-		log.Printf("[ADJUST-DEBUG] Original request body (truncated): %s...(truncated, full length: %d)", bodyStr[:2000], len(bodyStr))
-	} else {
-		log.Printf("[ADJUST-DEBUG] Original request body: %s", bodyStr)
-	}
-
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 
-	// 解析告警数据
+	// Parse alert data
 	var req routes.AlertWebhookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to parse request body: %v", err)
-		log.Printf("[ADJUST-ERROR] Request body content: %s", bodyStr)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid alert format", "code": "INVALID_FORMAT"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Received adjustment request, status: %s, number of alerts: %d", req.Status, len(req.Alerts))
+	log.Printf("[ADJUST-INFO] Processing %d adjustment alert(s) with status: %s", len(req.Alerts), req.Status)
 
-	// 记录处理的告警数量
+	// Track processing results
 	successCount := 0
 	failedCount := 0
 
-	// 处理每个告警
+	// Process each alert
 	for i, alert := range req.Alerts {
-		log.Printf("[ADJUST-INFO] Starting to process alert %d, status: %s", i+1, alert.Status)
-
-		// 创建一个请求追踪ID，用于关联日志
+		// Create request tracking ID
 		requestID := fmt.Sprintf("adjust-%s-%d", time.Now().Format("20060102-150405"), i)
 
-		// 处理告警的通用函数，减少代码重复
+		// Process alert adjustment
 		result := a.processAlertAdjustment(c.Request.Context(), alert, requestID)
 		if result {
 			successCount++
 		} else {
 			failedCount++
 		}
-		// 发送实时通知
+		// Send realtime notification
 		if err := a.operator.SendAdjustmentNotification(c.Request.Context(), alert, result); err != nil {
-			log.Printf("[ADJUST-WARNING] Failed to send realtime notification for alert %d: %v", i+1, err)
-			// 通知失败不影响主流程，继续处理
+			log.Printf("[ADJUST-WARNING] Failed to send notification for alert %d: %v", i+1, err)
 		}
 	}
 
-	log.Printf("[ADJUST-INFO] Resource adjustment processing completed: total=%d, success=%d, failed=%d",
+	log.Printf("[ADJUST-INFO] Adjustment completed: total=%d, success=%d, failed=%d",
 		len(req.Alerts), successCount, failedCount)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -829,41 +802,27 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 	})
 }
 
-// 处理单个告警的调整逻辑
+// processAlertAdjustment processes single alert adjustment logic
 func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.AdjustAlert, requestID string) bool {
 	startTime := time.Now()
 
-	// 提取所有标签供后续使用
+	// Extract all labels for subsequent use
 	domain := alert.Labels["domain"]
 	ruleID := alert.Labels["rule_id"]
 	actionType := alert.Labels["action_type"]
 	ruleGroup := alert.Labels["rule_group"]
-	instanceID := alert.Labels["instance_id"] // 提取instance_id
+	instanceID := alert.Labels["instance_id"]
 
-	log.Printf("[ADJUST-%s] Processing alert: domain=%s, ruleID=%s, actionType=%s, instanceID=%s",
-		requestID, domain, ruleID, actionType, instanceID)
-
-	// 参数验证
+	// Parameter validation
 	if domain == "" || ruleID == "" || actionType == "" {
 		log.Printf("[ADJUST-%s] Missing required parameters: domain=%s, ruleID=%s, actionType=%s",
 			requestID, domain, ruleID, actionType)
 		return false
 	}
 
-	fmt.Printf("[Processing alert] Domain: %s, Rule: %s, Action: %s\n", domain, ruleID, actionType)
+	log.Printf("[ADJUST-%s] Processing %s for domain=%s, rule=%s", requestID, actionType, domain, ruleID)
 
-	// 记录详细的标签信息
-	log.Printf("[ADJUST-%s] Alert status: %s", requestID, alert.Status)
-	log.Printf("[ADJUST-%s] Alert labels:", requestID)
-	for key, value := range alert.Labels {
-		log.Printf("[ADJUST-%s]   %s = %s", requestID, key, value)
-	}
-	log.Printf("[ADJUST-%s] Alert annotations:", requestID)
-	for key, value := range alert.Annotations {
-		log.Printf("[ADJUST-%s]   %s = %s", requestID, key, value)
-	}
-
-	// 创建调整记录
+	// Create adjustment record
 	record := &routes.AdjustmentRecord{
 		Name:          alert.Labels["alertname"],
 		RuleGroupUUID: ruleGroup,
@@ -874,7 +833,7 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 		TargetDevice:  alert.Labels["target_device"],
 	}
 
-	// 记录调整历史
+	// Record adjustment history
 	history := &model.AdjustmentHistory{
 		DomainName: domain,
 		RuleID:     ruleID,
@@ -885,62 +844,42 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 		AdjustTime: time.Now(),
 	}
 
-	// 根据操作类型执行相应的资源调整
+	// Execute resource adjustment based on action type
 	var err error
-	fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing actionType: %s, domain: %s, ruleGroup: %s\n", actionType, domain, ruleGroup)
 	switch actionType {
 	case "limit_cpu":
-		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Executing CPU limit operation for domain: %s\n", domain)
-		log.Printf("[ADJUST-%s] Executing CPU limit operation", requestID)
 		err = a.operator.AdjustCPUResource(ctx, record, domain, true, instanceID)
 	case "restore_cpu":
-		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Executing CPU restore operation for domain: %s\n", domain)
-		log.Printf("[ADJUST-%s] Executing CPU restore operation", requestID)
 		err = a.operator.RestoreCPUResource(ctx, record, domain, instanceID)
 	case "limit_in_bw":
-		log.Printf("[ADJUST-%s] Executing inbound bandwidth limit operation, device: %s", requestID, record.TargetDevice)
 		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID)
 	case "restore_in_bw":
-		log.Printf("[ADJUST-%s] Executing inbound bandwidth restore operation, device: %s", requestID, record.TargetDevice)
 		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
 	case "limit_out_bw":
-		log.Printf("[ADJUST-%s] Executing outbound bandwidth limit operation, device: %s", requestID, record.TargetDevice)
 		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID)
 	case "restore_out_bw":
-		log.Printf("[ADJUST-%s] Executing outbound bandwidth restore operation, device: %s", requestID, record.TargetDevice)
 		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
 	default:
 		log.Printf("[ADJUST-%s] Unknown adjustment type: %s", requestID, actionType)
 		history.Status = "failed"
 		history.Details = fmt.Sprintf("Unknown adjustment type: %s", actionType)
-		if dbErr := a.operator.SaveAdjustmentHistory(ctx, history); dbErr != nil {
-			log.Printf("[ADJUST-%s] Failed to save adjustment history: %v", requestID, dbErr)
-		}
+		a.operator.SaveAdjustmentHistory(ctx, history)
 		return false
 	}
 
-	// 更新历史记录状态
+	// Update history record status
 	if err != nil {
-		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing failed for domain %s, actionType %s: %v\n", domain, actionType, err)
-		log.Printf("[ADJUST-%s] Processing failed: %v", requestID, err)
+		log.Printf("[ADJUST-%s] Failed: %v", requestID, err)
 		history.Status = "failed"
 		history.Details = fmt.Sprintf("Processing %s failed: %v", actionType, err)
 	} else {
-		fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing successful for domain %s, actionType %s\n", domain, actionType)
-		log.Printf("[ADJUST-%s] Processing successful", requestID)
+		log.Printf("[ADJUST-%s] Completed successfully (%.2fs)", requestID, time.Since(startTime).Seconds())
 		history.Status = "completed"
-		history.Details = fmt.Sprintf("Successfully processed %s (domain: %s)", actionType, domain)
+		history.Details = fmt.Sprintf("Successfully processed %s", actionType)
 	}
 
-	// 保存调整历史
-	if dbErr := a.operator.SaveAdjustmentHistory(ctx, history); dbErr != nil {
-		log.Printf("[ADJUST-%s] Failed to save adjustment history: %v", requestID, dbErr)
-	}
-
-	elapsed := time.Since(startTime)
-	fmt.Printf("wngzhe ProcessResourceAdjustmentWebhook - Processing completed for domain %s, elapsed time: %v, success: %v\n", domain, elapsed, err == nil)
-	log.Printf("[ADJUST-%s] Processing completed, time taken: %v", requestID, elapsed)
-	fmt.Printf("[Processing completed] Domain: %s, Result: %v, Time taken: %v\n", domain, err == nil, elapsed)
+	// Save adjustment history
+	a.operator.SaveAdjustmentHistory(ctx, history)
 
 	return err == nil
 }
@@ -966,10 +905,8 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		LinkedVMs []struct {
 			VMUUID       string `json:"vm_uuid"`
 			TargetDevice string `json:"target_device"`
-		} `json:"linkedvms"` // 关联的虚拟机列表，可以为空
+		} `json:"linkedvms"`
 	}
-
-	log.Printf("[ADJUST-INFO] Creating bandwidth adjustment rule, request IP: %s", c.ClientIP())
 
 	if err := c.ShouldBindJSON(&req); err != nil {
 		log.Printf("[ADJUST-ERROR] Parameter parsing failed: %v", err)
@@ -1055,8 +992,6 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			LimitValue:      rule.LimitValue,
 		}
 
-		log.Printf("[ADJUST-INFO] Creating bandwidth adjustment rule detail: name=%s, direction=%s, high_threshold=%d, low_threshold=%d",
-			rule.Name, rule.Direction, rule.HighThreshold, rule.LowThreshold)
 		if err := a.operator.CreateBWAdjustRuleDetail(c.Request.Context(), detail); err != nil {
 			log.Printf("[ADJUST-ERROR] Failed to create rule detail: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
@@ -1067,7 +1002,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		ruleData := map[string]interface{}{
 			"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 			"rule_group_original": group.UUID,
-			"global_rule_id":      group.RuleID, // 用户指定的全局规则ID
+			"global_rule_id":      group.RuleID,
 			"high_threshold":      detail.HighThreshold,
 			"low_threshold":       detail.LowThreshold,
 			"smooth_window":       detail.SmoothWindow,
@@ -1079,14 +1014,11 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		}
 
 		// Generate record rules based on direction
-		log.Printf("[ADJUST-INFO] Generating bandwidth adjustment rule files for direction: %s", rule.Direction)
-
 		var template, filename string
 		switch rule.Direction {
 		case "in":
 			template = InBWAdjustRuleTemplate
 			filename = fmt.Sprintf("bw-in-adjust-%s-%s.yml", req.Owner, group.UUID)
-			// Set direction-specific template variables
 			ruleData["in_enabled"] = true
 			ruleData["in_high_threshold"] = detail.HighThreshold
 			ruleData["in_low_threshold"] = detail.LowThreshold
@@ -1094,22 +1026,17 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		case "out":
 			template = OutBWAdjustRuleTemplate
 			filename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", req.Owner, group.UUID)
-			// Set direction-specific template variables
 			ruleData["out_enabled"] = true
 			ruleData["out_high_threshold"] = detail.HighThreshold
 			ruleData["out_low_threshold"] = detail.LowThreshold
 			ruleData["in_enabled"] = false
 		}
 
-		log.Printf("[ADJUST-INFO] Generating %s bandwidth adjustment rule file: %s", rule.Direction, filename)
 		if err := routes.ProcessTemplate(template, filename, ruleData); err != nil {
 			log.Printf("[ADJUST-ERROR] Failed to render %s BW adjust rule: %v", rule.Direction, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s BW adjust rule", rule.Direction)})
 			return
 		}
-
-		// Create symlinks for rule files
-		log.Printf("[ADJUST-INFO] Creating symlinks for bandwidth adjustment rules")
 
 		// Create symlink for the generated rule file
 		var rulePath string
@@ -1130,7 +1057,6 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	// Generate alert rules (once per rule group)
-	log.Printf("[ADJUST-INFO] Generating resource adjustment alerts file")
 	alertRuleData := map[string]interface{}{
 		"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 		"rule_group_original": group.UUID,
@@ -1170,7 +1096,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 
 	// Link VMs
 	if len(req.LinkedVMs) > 0 {
-		// Validate LinkedVMs - each VM must have a valid UUID if provided
+		// Validate LinkedVMs
 		for i, vm := range req.LinkedVMs {
 			if vm.VMUUID == "" {
 				log.Printf("[ADJUST-ERROR] Empty VM UUID at index %d", i)
@@ -1179,11 +1105,10 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			}
 		}
 
-		log.Printf("[ADJUST-INFO] Linking virtual machines: count=%d", len(req.LinkedVMs))
 		// Use existing link function
 		alarmOperator := &routes.AlarmOperator{}
 
-		// First get all existing linked VMs for this group, then delete them one by one
+		// Get and delete existing linked VMs
 		existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 		if err != nil {
 			log.Printf("[ADJUST-WARN] Failed to get existing VM links for group %s: %v", group.UUID, err)
@@ -1193,13 +1118,12 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			}
 		}
 
-		// Create new VM links with correct target device mapping
+		// Create new VM links with target device mapping
 		for _, vm := range req.LinkedVMs {
-			// Create the link with target device as interface
 			_ = alarmOperator.BatchLinkVMs(c.Request.Context(), group.UUID, []string{vm.VMUUID}, vm.TargetDevice)
 		}
 
-		// Update matched_vms.json with target device for each VM
+		// Update matched_vms.json
 		alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 		for _, vm := range req.LinkedVMs {
 			_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{vm.VMUUID}, group.UUID, "add", "adjust-bw", vm.TargetDevice)
@@ -1207,7 +1131,6 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	// Reload Prometheus
-	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
 	routes.ReloadPrometheus()
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1222,7 +1145,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	})
 }
 
-// GetBWAdjustRules 获取带宽调整规则
+// GetBWAdjustRules gets bandwidth adjustment rules
 func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
@@ -1235,32 +1158,29 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 		pageSize = 20
 	}
 
-	// 检查权限：只有admin可以查看调整规则
-	// 这里可以从请求中获取用户信息，暂时使用admin检查
-	// TODO: 从认证信息中获取当前用户
-	currentUser := "admin" // 临时设置，实际应该从认证信息获取
+	// Check permission: only admin can view adjustment rules
+	// TODO: Get current user from authentication info
+	currentUser := "admin" // Temporary setting, should get from authentication
 	if currentUser != "admin" {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can view adjustment rules, user: %s", currentUser)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can view adjustment rules"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Getting bandwidth adjustment rules: page=%d, pageSize=%d, uuid=%s", page, pageSize, groupUUID)
-
-	// 需要分别查询入站和出站带宽规则
+	// Query inbound and outbound bandwidth rules separately
 	var groups []model.AdjustRuleGroup
 	var total int64
 	var err error
 
 	if groupUUID != "" {
-		// 支持双重标识查询：先匹配 rule_id，再匹配 group_uuid
+		// Dual identifier query: match rule_id first, then group_uuid
 		group, err := a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), groupUUID)
 		if err == nil && (group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW) {
 			groups = []model.AdjustRuleGroup{*group}
 			total = 1
 		}
 	} else {
-		// 分别查询入站和出站带宽规则
+		// Query inbound and outbound bandwidth rules separately
 		inBWParams := routes.ListAdjustRuleGroupsParams{
 			RuleType: model.RuleTypeAdjustInBW,
 			Page:     page,
@@ -1278,7 +1198,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 		if inBWErr != nil && outBWErr != nil {
 			err = inBWErr
 		} else {
-			// 合并结果
+			// Merge results
 			groups = append(groups, inBWGroups...)
 			groups = append(groups, outBWGroups...)
 			total = inBWTotal + outBWTotal
@@ -1286,7 +1206,6 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 	}
 
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to query bandwidth adjustment rule groups: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "query rules group failed: " + err.Error()})
 		return
 	}
@@ -1309,7 +1228,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 			}
 		}
 
-		// 构建规则数据
+		// Build rules data
 		rules := make([]gin.H, 0, len(details))
 		for _, detail := range details {
 			rules = append(rules, gin.H{
@@ -1325,7 +1244,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 			})
 		}
 
-		// 获取最近的调整历史
+		// Get recent adjustment history
 		history, _ := a.operator.GetAdjustmentHistory(c.Request.Context(), group.UUID, 5)
 		historyData := make([]gin.H, 0, len(history))
 		for _, h := range history {
@@ -1363,7 +1282,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 	})
 }
 
-// DeleteBWAdjustRule 删除带宽调整规则
+// DeleteBWAdjustRule deletes bandwidth adjustment rule
 func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	uuid := c.Param("uuid")
 	if uuid == "" {
@@ -1371,48 +1290,43 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Deleting bandwidth adjustment rule: uuid=%s", uuid)
-
 	group, err := a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		log.Printf("[ADJUST-ERROR] Bandwidth adjustment rule not found: %s", uuid)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found", "code": "NOT_FOUND"})
 		return
 	} else if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to retrieve rule information: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule information"})
 		return
 	}
 
 	if group.Type != model.RuleTypeAdjustInBW && group.Type != model.RuleTypeAdjustOutBW {
-		log.Printf("[ADJUST-ERROR] Invalid rule type: %s", group.Type)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule type", "code": "INVALID_RULE_TYPE"})
 		return
 	}
 
-	// 检查权限：只有admin可以删除调整规则
+	// Check permission: only admin can delete adjustment rules
 	if group.Owner != "admin" {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can delete adjustment rules, owner: %s", group.Owner)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can delete adjustment rules"})
 		return
 	}
 
-	// 删除链接的VM
+	// Delete linked VMs
 	alarmOperator := &routes.AlarmOperator{}
 	_, _ = alarmOperator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
 
-	// 更新matched_vms.json
+	// Update matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", "adjust-bw")
 
-	// 获取规则详情以确定需要删除的文件
+	// Get rule details to determine files to delete
 	details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 	if err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to get rule details for file cleanup: %v", err)
-		details = []model.BWAdjustRuleDetail{} // 继续执行，但没有详情信息
+		details = []model.BWAdjustRuleDetail{}
 	}
 
-	// 确定告警文件路径
+	// Determine alert file path
 	var alertPath string
 	if group.Owner == "admin" {
 		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
@@ -1421,10 +1335,10 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	}
 	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
 
-	// 删除symlink和规则文件
+	// Delete symlinks and rule files
 	deletedFiles := []string{}
 
-	// 删除每个规则对应的文件
+	// Delete file for each rule
 	for _, detail := range details {
 		var filename string
 		switch detail.Direction {
@@ -1442,7 +1356,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		}
 		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filename)
 
-		// 删除symlink
+		// Delete symlink
 		if err := routes.RemoveFile(ruleLinkPath); err == nil {
 			deletedFiles = append(deletedFiles, ruleLinkPath)
 			log.Printf("[ADJUST-INFO] Removed symlink: %s", ruleLinkPath)
@@ -1450,7 +1364,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 			log.Printf("[ADJUST-ERROR] Failed to remove symlink %s: %v", ruleLinkPath, err)
 		}
 
-		// 删除规则文件
+		// Delete rule file
 		if err := routes.RemoveFile(rulePath); err == nil {
 			deletedFiles = append(deletedFiles, rulePath)
 			log.Printf("[ADJUST-INFO] Removed file: %s", rulePath)
@@ -1459,7 +1373,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		}
 	}
 
-	// 删除告警规则文件
+	// Delete alert rule files
 	if err := routes.RemoveFile(alertLinkPath); err == nil {
 		deletedFiles = append(deletedFiles, alertLinkPath)
 		log.Printf("[ADJUST-INFO] Removed symlink: %s", alertLinkPath)
@@ -1473,29 +1387,29 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
 	}
 
-	// 恢复所有关联VM的带宽资源
+	// Restore bandwidth resources for all linked VMs
 	log.Printf("[ADJUST-INFO] Restoring bandwidth resources for all linked VMs before rule deletion: %s", group.UUID)
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to get linked VMs for bandwidth restore: %v", err)
 	} else {
-		// 恢复每个VM的带宽资源
+		// Restore bandwidth resources for each VM
 		for _, link := range vmLinks {
-			// 获取VM的domain信息
+			// Get VM domain information
 			domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 			if err != nil {
 				log.Printf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
 				continue
 			}
 
-			// 创建恢复记录
+			// Create restore record
 			record := &routes.AdjustmentRecord{
 				RuleGroupUUID: group.UUID,
 				AdjustType:    "restore_bw",
 				TargetDevice:  link.Interface,
 			}
 
-			// 恢复带宽资源
+			// Restore bandwidth resources
 			err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, link.Interface, link.VMUUID)
 			if err != nil {
 				log.Printf("[ADJUST-WARNING] Failed to restore bandwidth for VM %s: %v", link.VMUUID, err)
@@ -1505,27 +1419,22 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		}
 	}
 
-	// 清理计算节点上的调整状态指标
+	// Clean up adjustment status metrics on compute nodes
 	log.Printf("[ADJUST-INFO] Cleaning up bandwidth adjustment metrics for rule: %s", group.UUID)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), group.UUID, "bandwidth"); err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
-		// 不影响规则删除的成功状态，只记录警告
 	}
 
-	// 删除数据库记录
+	// Delete database records
 	err = a.operator.DeleteAdjustRuleGroupWithDependencies(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to delete rule group and its dependencies: %v", err)
+		log.Printf("[ADJUST-ERROR] Failed to delete rule group: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete rule: " + err.Error()})
 		return
 	}
 
-	// 重新加载Prometheus
-	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("[ADJUST-WARN] Failed to reload Prometheus: %v", err)
-	}
-
-	log.Printf("[ADJUST-INFO] Bandwidth adjustment rule deleted successfully: uuid=%s", group.UUID)
+	// Reload Prometheus
+	routes.ReloadPrometheus()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
@@ -1536,7 +1445,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	})
 }
 
-// LinkAdjustRuleRequest 链接调整规则请求
+// LinkAdjustRuleRequest Link adjustment rule request
 type LinkAdjustRuleRequest struct {
 	GroupUUID string `json:"group_uuid" binding:"required"`
 	LinkedVMs []struct {
@@ -1545,14 +1454,14 @@ type LinkAdjustRuleRequest struct {
 	} `json:"linked_vms" binding:"required"`
 }
 
-// UnlinkAdjustRuleRequest 取消链接调整规则请求
+// UnlinkAdjustRuleRequest Unlink adjustment rule request
 type UnlinkAdjustRuleRequest struct {
 	GroupUUID    string   `json:"group_uuid" binding:"required"`
 	VMUUIDs      []string `json:"vm_uuids,omitempty"`
 	TargetDevice string   `json:"target_device,omitempty"`
 }
 
-// LinkedVMInfo 链接的VM信息
+// LinkedVMInfo Linked VM information
 type LinkedVMInfo struct {
 	VMUUID       string `json:"vm_uuid"`
 	Domain       string `json:"domain"`
@@ -1560,7 +1469,7 @@ type LinkedVMInfo struct {
 	RuleID       string `json:"rule_id"`
 }
 
-// LinkAdjustRule 将VM链接到调整规则组
+// LinkAdjustRule Link VM to adjustment rule group
 func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	var req struct {
 		GroupUUID string `json:"group_uuid,omitempty"`
@@ -1575,7 +1484,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 验证必须提供 group_uuid 或 rule_id 其中之一
+	// Validate that either group_uuid or rule_id must be provided
 	if req.GroupUUID == "" && req.RuleID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
 		return
@@ -1585,7 +1494,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	var err error
 	var identifier string
 
-	// 优先使用 rule_id，如果没有则使用 group_uuid
+	// Prioritize rule_id, use group_uuid if not provided
 	if req.RuleID != "" {
 		identifier = req.RuleID
 		group, err = a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), req.RuleID)
@@ -1603,26 +1512,26 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	log.Printf("[ADJUST-INFO] Linking VM to adjustment rule: identifier=%s, vm_uuid=%s, interface=%s",
 		identifier, req.VMUUID, req.Interface)
 
-	// 根据规则类型验证interface参数
+	// Validate interface parameter based on rule type
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// BW类型必须提供interface参数
+		// BW type requires interface parameter
 		if req.Interface == "" {
 			log.Printf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "interface parameter is required for bandwidth adjustment rules"})
 			return
 		}
 	} else {
-		// CPU类型不需要interface参数，清空它
+		// CPU type doesn't need interface parameter, clear it
 		req.Interface = ""
 	}
 
-	// 检查VM是否已经链接到该规则组
+	// Check if VM is already linked to this rule group
 	alarmOperator := &routes.AlarmOperator{}
 	existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err == nil {
 		for _, link := range existingLinks {
 			if link.VMUUID == req.VMUUID {
-				// 对于BW类型，还需要检查interface是否相同
+				// For BW type, also check if interface is the same
 				if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 					if link.Interface == req.Interface {
 						log.Printf("[ADJUST-WARN] VM already linked to rule group with same interface: vm_uuid=%s, group_uuid=%s, interface=%s",
@@ -1631,7 +1540,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 						return
 					}
 				} else {
-					// CPU类型，VM已链接
+					// CPU type, VM already linked
 					log.Printf("[ADJUST-WARN] VM already linked to rule group: vm_uuid=%s, group_uuid=%s", req.VMUUID, group.UUID)
 					c.JSON(http.StatusConflict, gin.H{"error": "VM already linked to this rule group"})
 					return
@@ -1640,7 +1549,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 		}
 	}
 
-	// 创建链接
+	// Create link
 	err = alarmOperator.BatchLinkVMs(c.Request.Context(), group.UUID, []string{req.VMUUID}, req.Interface)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to create VM link: %v", err)
@@ -1648,7 +1557,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 更新matched_vms.json
+	// Update matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	ruleType := "adjust-cpu"
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
@@ -1658,7 +1567,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	err = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{req.VMUUID}, group.UUID, "add", ruleType, req.Interface)
 	if err != nil {
 		log.Printf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
-		// 不返回错误，因为数据库操作已成功
+		// Don't return error as database operation was successful
 	}
 
 	log.Printf("[ADJUST-INFO] Successfully linked VM to adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
@@ -1677,7 +1586,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	})
 }
 
-// UnlinkAdjustRule 将VM从调整规则中取消链接
+// UnlinkAdjustRule Unlink VM from adjustment rule
 func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	var req struct {
 		GroupUUID string `json:"group_uuid,omitempty"`
@@ -1692,7 +1601,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 验证必须提供 group_uuid 或 rule_id 其中之一
+	// Validate that either group_uuid or rule_id must be provided
 	if req.GroupUUID == "" && req.RuleID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
 		return
@@ -1702,7 +1611,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	var err error
 	var identifier string
 
-	// 优先使用 rule_id，如果没有则使用 group_uuid
+	// Prioritize rule_id, use group_uuid if not provided
 	if req.RuleID != "" {
 		identifier = req.RuleID
 		group, err = a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), req.RuleID)
@@ -1720,20 +1629,20 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	log.Printf("[ADJUST-INFO] Unlinking VM from adjustment rule: identifier=%s, vm_uuid=%s, interface=%s",
 		identifier, req.VMUUID, req.Interface)
 
-	// 根据规则类型验证interface参数
+	// Validate interface parameter based on rule type
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// BW类型必须提供interface参数
+		// BW type requires interface parameter
 		if req.Interface == "" {
 			log.Printf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "interface parameter is required for bandwidth adjustment rules"})
 			return
 		}
 	} else {
-		// CPU类型不需要interface参数，清空它
+		// CPU type doesn't need interface parameter, clear it
 		req.Interface = ""
 	}
 
-	// 检查VM是否链接到该规则组
+	// Check if VM is linked to this rule group
 	alarmOperator := &routes.AlarmOperator{}
 	existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err != nil {
@@ -1748,18 +1657,18 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 
 	for _, link := range existingLinks {
 		if link.VMUUID == req.VMUUID {
-			// 对于BW类型，还需要检查interface是否相同
+			// For BW type, also need to check if interface is the same
 			if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 				if link.Interface == req.Interface {
 					linkExists = true
 					break
 				} else {
-					// VM存在但interface不匹配
+					// VM exists but interface doesn't match
 					vmFoundWithDifferentInterface = true
 					existingInterface = link.Interface
 				}
 			} else {
-				// CPU类型，VM已链接
+				// CPU type, VM already linked
 				linkExists = true
 				break
 			}
@@ -1768,7 +1677,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 
 	if !linkExists {
 		if vmFoundWithDifferentInterface {
-			// VM存在但interface不匹配，提供具体的错误信息
+			// VM exists but interface doesn't match, provide specific error message
 			log.Printf("[ADJUST-ERROR] VM linked with different interface: vm_uuid=%s, requested_interface=%s, actual_interface=%s",
 				req.VMUUID, req.Interface, existingInterface)
 			c.JSON(http.StatusBadRequest, gin.H{
@@ -1782,7 +1691,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 				},
 			})
 		} else {
-			// VM完全没有链接到该规则组
+			// VM is not linked to this rule group at all
 			log.Printf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s, interface=%s",
 				req.VMUUID, group.UUID, req.Interface)
 			c.JSON(http.StatusNotFound, gin.H{"error": "VM not linked to this rule group"})
@@ -1790,35 +1699,35 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 获取VM的domain信息
+	// Get VM domain information
 	domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), req.VMUUID)
 	vmExists := true
 	if err != nil {
 		log.Printf("[ADJUST-WARN] Failed to get domain for VM %s (VM may have been deleted): %v", req.VMUUID, err)
 		vmExists = false
-		domain = "" // 设置为空，避免后续操作使用无效的domain
+		domain = "" // Set to empty to avoid subsequent operations using invalid domain
 	}
 
-	// 检查VM是否正在被限速，如果是则执行恢复操作
+	// Check if VM is currently limited, perform restore if yes
 	if vmExists {
 		log.Printf("[ADJUST-INFO] Checking if VM is currently being limited: domain=%s", domain)
 	} else {
 		log.Printf("[ADJUST-INFO] VM %s does not exist, skipping resource restoration", req.VMUUID)
 	}
 
-	// 创建恢复记录
+	// Create restore record
 	record := &routes.AdjustmentRecord{
 		RuleGroupUUID: group.UUID,
 		TargetDevice:  req.Interface,
 	}
 
-	// 根据规则类型执行相应的恢复操作（仅在VM存在时执行）
+	// Execute corresponding restore operation based on rule type (only if VM exists)
 	if vmExists {
 		if group.Type == model.RuleTypeAdjustCPU {
-			// CPU类型：检查并恢复CPU资源
+			// CPU type: check and restore CPU resources
 			log.Printf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
 
-			// 检查CPU调整状态指标
+			// Check CPU adjustment status metrics
 			isCPULimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "cpu", group.UUID)
 			if err != nil {
 				log.Printf("[ADJUST-WARN] Failed to check CPU adjustment status: %v", err)
@@ -1835,10 +1744,10 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 				log.Printf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
 			}
 		} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-			// 带宽类型：检查并恢复带宽资源
+			// Bandwidth type: check and restore bandwidth resources
 			log.Printf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
 
-			// 检查带宽调整状态指标
+			// Check bandwidth adjustment status metrics
 			isBWLimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "bandwidth", group.UUID)
 			if err != nil {
 				log.Printf("[ADJUST-WARN] Failed to check bandwidth adjustment status: %v", err)
@@ -1859,7 +1768,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-INFO] Skipping resource restoration for deleted VM: %s", req.VMUUID)
 	}
 
-	// 删除链接
+	// Delete link
 	_, err = alarmOperator.DeleteVMLink(c.Request.Context(), group.UUID, req.VMUUID, req.Interface)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to delete VM link: %v", err)
@@ -1867,7 +1776,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 清理自定义指标
+	// Clean up custom metrics
 	ruleType := "cpu"
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 		ruleType = "bandwidth"
@@ -1876,10 +1785,10 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	log.Printf("[ADJUST-INFO] Cleaning up %s adjustment metrics for rule: %s", ruleType, group.UUID)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), group.UUID, ruleType); err != nil {
 		log.Printf("[ADJUST-WARN] Failed to cleanup rule metrics: %v", err)
-		// 不返回错误，因为数据库操作已成功
+		// Don't return error as database operation was successful
 	}
 
-	// 更新matched_vms.json
+	// Update matched_vms.json
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	ruleType = "adjust-cpu"
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
@@ -1889,7 +1798,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	err = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{req.VMUUID}, group.UUID, "remove", ruleType, req.Interface)
 	if err != nil {
 		log.Printf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
-		// 不返回错误，因为数据库操作已成功
+		// Don't return error as database operation was successful
 	}
 
 	log.Printf("[ADJUST-INFO] Successfully unlinked VM from adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
@@ -1907,24 +1816,24 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	})
 }
 
-// checkVMAdjustmentStatus 检查VM是否正在被限速
+// checkVMAdjustmentStatus Check if VM is currently being limited
 func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricType, ruleGroupUUID string) (bool, error) {
-	// 构建查询语句
+	// Build query statement
 	query := ""
 	if metricType == "cpu" {
-		// 查询CPU调整状态
+		// Query CPU adjustment status
 		query = fmt.Sprintf("vm_cpu_adjustment_status{domain=\"%s\", rule_id=~\"adjust-cpu-.*-%s\"}", domain, ruleGroupUUID)
 	} else if metricType == "bandwidth" {
-		// 查询带宽调整状态
+		// Query bandwidth adjustment status
 		query = fmt.Sprintf("vm_bandwidth_adjustment_status{domain=\"%s\", rule_id=~\"adjust-bw-.*-%s\"}", domain, ruleGroupUUID)
 	} else {
 		return false, fmt.Errorf("unsupported metric type: %s", metricType)
 	}
 
-	// 构建Prometheus URL，使用monitor.go中的配置
+	// Build Prometheus URL using configuration from monitor.go
 	prometheusURL := fmt.Sprintf("http://%s:%d/api/v1/query", prometheusIP, prometheusPort)
 
-	// 发送HTTP请求
+	// Send HTTP request
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", prometheusURL, nil)
 	if err != nil {
@@ -1943,7 +1852,7 @@ func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricT
 	}
 	defer resp.Body.Close()
 
-	// 解析响应
+	// Parse response
 	var result struct {
 		Status string `json:"status"`
 		Data   struct {
@@ -1957,7 +1866,7 @@ func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricT
 		return false, fmt.Errorf("failed to parse Prometheus response: %v", err)
 	}
 
-	// 检查是否有结果且状态为1（限速中）
+	// Check if there are results and status is 1 (being limited)
 	if result.Status == "success" && len(result.Data.Result) > 0 {
 		for _, r := range result.Data.Result {
 			if len(r.Values) > 0 && len(r.Values[0]) >= 2 {
@@ -1971,15 +1880,15 @@ func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricT
 	return false, nil
 }
 
-// cleanupVMMetrics 清理VM的自定义指标
+// cleanupVMMetrics Clean up VM custom metrics
 func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID string, ruleType string) error {
-	// 获取VM实例信息
+	// Get VM instance information
 	instance, err := routes.GetInstanceByUUIDWithAuth(ctx, vmUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get instance info: %v", err)
 	}
 
-	// 获取VM的domain信息
+	// Get VM domain information
 	domain, err := routes.GetDomainByInstanceUUID(ctx, vmUUID)
 	if err != nil {
 		return fmt.Errorf("failed to get domain for VM: %v", err)
@@ -1987,9 +1896,9 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 
-	// 根据规则类型清理相应的指标
+	// Clean up corresponding metrics based on rule type
 	if ruleType == model.RuleTypeAdjustCPU {
-		// 清理CPU调整指标
+		// Clean up CPU adjustment metrics
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status 0",
 			domain, fmt.Sprintf("%s-%s", domain, ruleGroupUUID))
 
@@ -1998,8 +1907,8 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 			return fmt.Errorf("failed to cleanup CPU metrics: %v", err)
 		}
 	} else if ruleType == model.RuleTypeAdjustInBW || ruleType == model.RuleTypeAdjustOutBW {
-		// 清理带宽调整指标
-		// 需要确定带宽类型（in/out）
+		// Clean up bandwidth adjustment metrics
+		// Need to determine bandwidth type (in/out)
 		bwType := "in"
 		if ruleType == model.RuleTypeAdjustOutBW {
 			bwType = "out"
@@ -2017,7 +1926,7 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 	return nil
 }
 
-// GetLinkAdjustRule 获取调整规则的VM链接信息
+// GetLinkAdjustRule Get VM link information for adjustment rule
 func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 	groupUUID := c.Query("group_uuid")
 	if groupUUID == "" {
@@ -2028,7 +1937,7 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 
 	log.Printf("[ADJUST-INFO] Getting adjustment rule links: group_uuid=%s", groupUUID)
 
-	// 检查规则组是否存在
+	// Check if rule group exists
 	group, err := a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), groupUUID)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
@@ -2036,7 +1945,7 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 获取链接的VM列表
+	// Get linked VM list
 	alarmOperator := &routes.AlarmOperator{}
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
@@ -2045,17 +1954,17 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 		return
 	}
 
-	// 构建返回数据
+	// Build response data
 	linkedVMs := make([]gin.H, 0, len(vmLinks))
 	for _, link := range vmLinks {
-		// 获取domain信息
+		// Get domain information
 		domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 		if err != nil {
 			log.Printf("[ADJUST-WARN] Failed to get domain for VM %s: %v", link.VMUUID, err)
 			domain = "unknown"
 		}
 
-		// 生成rule_id
+		// Generate rule_id
 		var ruleID string
 		if group.Type == model.RuleTypeAdjustCPU {
 			ruleID = fmt.Sprintf("adjust-cpu-%s-%s", domain, groupUUID)
@@ -2087,11 +1996,11 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 	})
 }
 
-// cleanupRuleMetricsOnNodes 清理计算节点上的规则相关指标
+// cleanupRuleMetricsOnNodes Clean up rule-related metrics on compute nodes
 func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID, ruleType string) error {
 	log.Printf("[ADJUST-INFO] Starting cleanup of %s metrics for rule group: %s", ruleType, ruleGroupUUID)
 
-	// 获取与该规则组关联的VM列表
+	// Get list of VMs associated with this rule group
 	alarmOperator := &routes.AlarmOperator{}
 	vmLinks, err := alarmOperator.GetLinkedVMs(ctx, ruleGroupUUID)
 	if err != nil {
@@ -2106,11 +2015,11 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 
 	log.Printf("[ADJUST-INFO] Found %d VMs linked to rule group %s", len(vmLinks), ruleGroupUUID)
 
-	// 获取这些VM所在的计算节点
+	// Get compute nodes where these VMs are located
 	hyperNodes := make(map[int32]bool)
 	instanceAdmin := &routes.InstanceAdmin{}
 	for _, link := range vmLinks {
-		// 获取VM实例信息以确定其所在的计算节点
+		// Get VM instance information to determine its compute node
 		instance, err := instanceAdmin.GetInstanceByUUID(ctx, link.VMUUID)
 		if err != nil {
 			log.Printf("[ADJUST-WARNING] Failed to get instance info for VM %s: %v", link.VMUUID, err)
@@ -2128,7 +2037,7 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 
 	log.Printf("[ADJUST-INFO] Will cleanup metrics on %d compute nodes", len(hyperNodes))
 
-	// 在每个计算节点上执行清理操作
+	// Execute cleanup operations on each compute node
 	var cleanupErrors []string
 	for hyperID := range hyperNodes {
 		log.Printf("[ADJUST-INFO] Cleaning up %s metrics on compute node %d for rule %s", ruleType, hyperID, ruleGroupUUID)

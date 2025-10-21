@@ -8,12 +8,12 @@ source ../cloudrc
 vm_ID=$1
 domain_name="inst-$vm_ID"
 
-# 指标文件配置
+# Metrics file configuration
 METRICS_DIR="/var/lib/node_exporter"
 CPU_METRICS_FILE="$METRICS_DIR/vm_cpu_adjustment_status.prom"
 BANDWIDTH_METRICS_FILE="$METRICS_DIR/vm_bandwidth_adjustment_status.prom"
 
-# 函数：清理指标文件中的特定domain记录
+# Function: Clean up specific domain records from metrics file
 cleanup_metrics_file() {
     local metrics_file=$1
     local domain=$2
@@ -26,17 +26,17 @@ cleanup_metrics_file() {
     
     echo "Cleaning $metrics_type metrics for domain: $domain"
     
-    # 检查是否存在该domain的指标
+    # Check if metrics exist for this domain
     if ! grep -q "domain=\"$domain\"" "$metrics_file"; then
         echo "No $metrics_type metrics found for domain: $domain"
         return 0
     fi
     
-    # 创建临时文件，移除该domain的所有指标行
+    # Create temporary file, remove all metrics lines for this domain
     local temp_file="$metrics_file.tmp"
     grep -v "domain=\"$domain\"" "$metrics_file" > "$temp_file"
     
-    # 检查清理后是否还有指标行（除了注释）
+    # Check if any metrics lines remain after cleanup (excluding comments)
     if ! grep -q "^vm_" "$temp_file"; then
         echo "All $metrics_type metrics cleared - removing metrics file"
         rm -f "$temp_file" "$metrics_file"
@@ -51,10 +51,10 @@ cleanup_metrics_file() {
 
 echo "Starting cleanup of custom metrics for VM ID: $vm_ID (domain: $domain_name)"
 
-# 清理CPU调整指标
+# Clean up CPU adjustment metrics
 cleanup_metrics_file "$CPU_METRICS_FILE" "$domain_name" "CPU adjustment"
 
-# 清理带宽调整指标  
+# Clean up bandwidth adjustment metrics
 cleanup_metrics_file "$BANDWIDTH_METRICS_FILE" "$domain_name" "bandwidth adjustment"
 
-echo "Custom metrics cleanup completed for domain: $domain_name" 
+echo "Custom metrics cleanup completed for domain: $domain_name"

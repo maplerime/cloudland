@@ -19,9 +19,6 @@ import (
 
 var logger = log.MustGetLogger("apis")
 
-// 删除在此处重复定义的alarmAPI变量
-// alarmAPI在alarms.go中已经声明
-
 func Run() (err error) {
 	logger.Info("Start to run cloudland api service")
 	r := Register()
@@ -51,7 +48,6 @@ func Register() (r *gin.Engine) {
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
-	// 添加资源调整webhook端点
 	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
@@ -211,6 +207,7 @@ func Register() (r *gin.Engine) {
 			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
 			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
 			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
+			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)

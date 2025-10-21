@@ -251,4 +251,4 @@ echo "CPU Status: $cpu_status $(if [[ -n "$cpu_rule_id" ]]; then echo "(Rule: $c
 echo "Bandwidth Status: $bandwidth_status $(if [[ -n "$bandwidth_rule_id" ]]; then echo "(Rule: $bandwidth_rule_id)"; fi) $(if [[ -n "$bandwidth_timestamp" ]]; then echo "(Timestamp: $bandwidth_timestamp)"; fi)"
 echo "Metrics migration completed successfully"
 
-exit 0 
+exit 0

@@ -129,4 +129,4 @@ elif [[ "$RULE_TYPE" == "bandwidth" ]]; then
 fi
 
 echo "$RULE_TYPE adjustment metrics cleanup completed successfully for rule ID: $RULE_ID"
-exit 0 
+exit 0

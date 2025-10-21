@@ -2,17 +2,17 @@ groups:
 - name: vm_in_bw_adjustment_{{ rule_group }}
   interval: 15s
   rules:
-  # 原始入站带宽速度 (每个接口单独, 单位: kB/s)
+  # Raw inbound bandwidth speed (per interface, unit: kB/s)
   - record: vm_in_bw_speed_raw_{{ rule_group }}
     expr: |
       rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024
 
-  # 平滑入站带宽速度(5分钟移动平均, 单位: kB/s)
+  # Smoothed inbound bandwidth speed (5-minute moving average, unit: kB/s)
   - record: vm_in_bw_speed_{{ rule_group }}
     expr: |
       avg_over_time(vm_in_bw_speed_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
 
-  # 与规则组关联的VM接口的入站带宽速度
+  # Inbound bandwidth speed for VM interfaces associated with the rule group
   - record: vm_in_bw_speed_by_rule_{{ rule_group }}
     expr: |
       vm_in_bw_speed_{{ rule_group }} * on(domain, target_device) group_right()
@@ -20,7 +20,7 @@ groups:
         up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
       )
 
-  # 需要限制入站带宽的VM接口 (仅当状态为normal时)
+  # VM interfaces that require inbound bandwidth limit (only when status is normal)
   - record: vm_requires_in_bw_limit_{{ rule_group }}
     expr: |
       (vm_in_bw_speed_by_rule_{{ rule_group }} > {{ in_high_threshold }})
@@ -30,7 +30,7 @@ groups:
         (max by (domain, target_device, rule_id, instance_id) (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1) unless vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"})
       )
 
-  # 可以恢复入站带宽的VM接口 (仅当状态为limited时)
+  # VM interfaces ready for inbound bandwidth restore (only when status is limited)
   - record: vm_ready_for_in_bw_restore_{{ rule_group }}
     expr: |
       (vm_in_bw_speed_by_rule_{{ rule_group }} < {{ in_low_threshold }})
