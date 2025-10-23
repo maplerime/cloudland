@@ -262,8 +262,10 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if payload.AllowSpoofing != nil {
 		allowSpoofing = *payload.AllowSpoofing
 	}
-	secgroups := iface.SecurityGroups
-	if payload.SecurityGroups != nil {
+	secgroups := []*model.SecurityGroup{}
+	if payload.SecurityGroups == nil {
+		secgroups = iface.SecurityGroups
+	} else {
 		if len(payload.SecurityGroups) > 0 {
 			for _, sg := range payload.SecurityGroups {
 				var secgroup *model.SecurityGroup
