@@ -218,164 +218,218 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 	return nil
 }
 
-func (a *AlarmAPI) LinkRuleToVM(c *gin.Context) {
-	var req struct {
-		GroupUUID string   `json:"group_uuid,omitempty"`
-		RuleID    string   `json:"rule_id,omitempty"`
-		VMUUIDs   []string `json:"vm_uuids" binding:"required"`
-		Interface string   `json:"interface"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
+// LinkRuleToVMWithType returns a closure that handles VM linking based on rule category
+// This supports incremental addition of VMs to rules (alarm or adjust)
+func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			GroupUUID string   `json:"group_uuid,omitempty"`
+			RuleID    string   `json:"rule_id,omitempty"`
+			VMUUIDs   []string `json:"vm_uuids" binding:"required"`
+			Interface string   `json:"interface"`
+		}
 
-	// Validate that either group_uuid or rule_id must be provided
-	if req.GroupUUID == "" && req.RuleID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
-		return
-	}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
 
-	var group *model.RuleGroupV2
-	var err error
+		// Validate that either group_uuid or rule_id must be provided
+		if req.GroupUUID == "" && req.RuleID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
+			return
+		}
 
-	// Prioritize rule_id, fallback to group_uuid if not provided
-	if req.RuleID != "" {
-		group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
-	} else {
-		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
-	}
+		// Validate vm_uuids is not empty (Link is for adding VMs, not removing)
+		if len(req.VMUUIDs) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "vm_uuids cannot be empty",
+				"hint":  "To remove VMs from this rule, use the unlink API instead",
+			})
+			return
+		}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Error retrieving rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
-		return
-	}
+		var group *model.RuleGroupV2
+		var err error
 
-	groupUUID := group.UUID
-	if !group.Enabled {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Rule group is not enabled, please enable the rule group before linking it to a virtual machine",
-			"code":       "RULE_GROUP_DISABLED",
-			"group_uuid": groupUUID,
+		// Prioritize rule_id, fallback to group_uuid if not provided
+		if req.RuleID != "" {
+			group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+		} else {
+			group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+		}
+
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+			return
+		} else if err != nil {
+			log.Printf("Error retrieving rule group: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+			return
+		}
+
+		groupUUID := group.UUID
+		if !group.Enabled {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error":      "Rule group is not enabled",
+				"code":       "RULE_GROUP_DISABLED",
+				"group_uuid": groupUUID,
+			})
+			return
+		}
+
+		// Incremental DB insertion with deduplication
+		var newlyAdded []string
+		for _, vmUUID := range req.VMUUIDs {
+			exists := a.operator.CheckVMLinkExists(
+				c.Request.Context(),
+				groupUUID,
+				vmUUID,
+				req.Interface,
+			)
+
+			if !exists {
+				err := a.operator.CreateVMLink(
+					c.Request.Context(),
+					groupUUID,
+					vmUUID,
+					req.Interface,
+				)
+				if err == nil {
+					newlyAdded = append(newlyAdded, vmUUID)
+				} else {
+					log.Printf("Failed to create VM link: %v", err)
+				}
+			}
+		}
+
+		// Construct alarm type based on rule category
+		alarmType := ruleCategory + "-" + group.Type
+
+		// Incremental file update (only add newly added VMs)
+		if len(newlyAdded) > 0 {
+			_ = a.updateMatchedVMsJSON(
+				c.Request.Context(),
+				newlyAdded,
+				groupUUID,
+				"add",
+				alarmType,
+				req.Interface,
+			)
+		}
+
+		// Query final linked VMs for response
+		vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+		linkedVMs := []string{}
+		for _, link := range vmLinks {
+			linkedVMs = append(linkedVMs, link.VMUUID)
+		}
+
+		// Force reload Prometheus configuration
+		if err := routes.ReloadPrometheus(); err != nil {
+			log.Printf("Warning: Failed to reload Prometheus: %v", err)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data": gin.H{
+				"rule_category":    ruleCategory,
+				"group_uuid":       groupUUID,
+				"rule_id":          group.RuleID,
+				"added_vms":        newlyAdded,
+				"total_linked_vms": linkedVMs,
+			},
 		})
-		return
 	}
-	// Full overwrite of VMRuleLink
-	_, _ = a.operator.DeleteVMLink(c.Request.Context(), groupUUID, "", req.Interface)
-	_ = a.operator.BatchLinkVMs(c.Request.Context(), groupUUID, req.VMUUIDs, req.Interface)
-
-	// Update VM matching information
-	if len(req.VMUUIDs) > 0 {
-		// Update matched_vms.json with VM information
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.VMUUIDs, group.UUID, "add", "alarm-"+group.Type, req.Interface)
-	} else {
-		// If no VMs, remove related entries from matched_vms.json
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", "alarm-"+group.Type, req.Interface)
-	}
-
-	// Query latest linked VMs
-	vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	linkedVMs := []string{}
-	for _, link := range vmLinks {
-		linkedVMs = append(linkedVMs, link.VMUUID)
-	}
-
-	// Force reload Prometheus configuration to apply rules and match lists
-	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Warning: Failed to reload Prometheus after linking VMs: %v", err)
-		// Don't return error as VM linking operation succeeded
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"group_uuid": groupUUID,
-			"rule_id":    group.RuleID,
-			"linked_vms": linkedVMs,
-		},
-	})
 }
 
-func (a *AlarmAPI) UnlinkRuleFromVM(c *gin.Context) {
-	var req struct {
-		GroupUUID string `json:"group_uuid,omitempty"`
-		RuleID    string `json:"rule_id,omitempty"`
-		VMUUID    string `json:"vm_uuid" binding:"required"`
-		Interface string `json:"interface"`
+// UnlinkRuleFromVMWithType returns a closure that handles VM unlinking based on rule category
+func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			GroupUUID string `json:"group_uuid,omitempty"`
+			RuleID    string `json:"rule_id,omitempty"`
+			VMUUID    string `json:"vm_uuid" binding:"required"`
+			Interface string `json:"interface"`
+		}
+
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
+
+		// Validate that either group_uuid or rule_id must be provided
+		if req.GroupUUID == "" && req.RuleID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
+			return
+		}
+
+		var group *model.RuleGroupV2
+		var err error
+
+		// Prioritize rule_id, fallback to group_uuid if not provided
+		if req.RuleID != "" {
+			group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+		} else {
+			group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+		}
+
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+			return
+		} else if err != nil {
+			log.Printf("Error retrieving rule group: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+			return
+		}
+
+		groupUUID := group.UUID
+		vmUUID := req.VMUUID
+
+		deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
+		if err != nil {
+			log.Printf("VM unlinking failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to operate vm link db: " + err.Error()})
+			return
+		}
+
+		if deletedCount == 0 {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":      "VM link not found",
+				"group_uuid": groupUUID,
+				"vm_uuid":    vmUUID,
+			})
+			return
+		}
+
+		// Construct alarm type based on rule category
+		alarmType := ruleCategory + "-" + group.Type
+
+		// Remove VM from matched_vms.json
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{vmUUID}, groupUUID, "remove", alarmType, req.Interface)
+
+		// Query remaining linked VMs for response
+		vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+		linkedVMs := []string{}
+		for _, link := range vmLinks {
+			linkedVMs = append(linkedVMs, link.VMUUID)
+		}
+
+		// Force reload Prometheus configuration
+		if err := routes.ReloadPrometheus(); err != nil {
+			log.Printf("Warning: Failed to reload Prometheus: %v", err)
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data": gin.H{
+				"rule_category":  ruleCategory,
+				"unlinked_group": groupUUID,
+				"unlinked_vm":    vmUUID,
+				"remaining_vms":  linkedVMs,
+			},
+		})
 	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
-
-	// Validate that either group_uuid or rule_id must be provided
-	if req.GroupUUID == "" && req.RuleID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
-		return
-	}
-
-	var group *model.RuleGroupV2
-	var err error
-
-	// Prioritize rule_id, fallback to group_uuid if not provided
-	if req.RuleID != "" {
-		group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
-	} else {
-		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
-	}
-
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Error retrieving rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
-		return
-	}
-
-	groupUUID := group.UUID
-	vmUUID := req.VMUUID
-
-	deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
-	if err != nil {
-		log.Printf("VM unlinking failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to operate vm link db: " + err.Error()})
-		return
-	}
-	if deletedCount == 0 {
-		log.Printf("VM unlinking failed: no matching record")
-		c.JSON(http.StatusNotFound, gin.H{"error": "vm association not found"})
-		return
-	}
-
-	// Update matched_vms.json to remove the unlinked VM
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{vmUUID}, group.UUID, "remove", "alarm-"+group.Type, req.Interface)
-
-	// Force reload Prometheus configuration to apply the updated VM associations
-	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Warning: Failed to reload Prometheus after unlinking VM: %v", err)
-		// Don't return error as VM unlinking operation succeeded
-	}
-
-	// Query remaining linked VMs for response
-	vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	linkedVMs := []string{}
-	for _, link := range vmLinks {
-		linkedVMs = append(linkedVMs, link.VMUUID)
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"unlinked_group": groupUUID,
-			"unlinked_vm":    vmUUID,
-			"remaining_vms":  linkedVMs,
-		},
-	})
 }
 
 func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
@@ -1959,6 +2013,55 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 
 // SyncAllVMRuleMappings synchronizes all VM-rule mappings to matched_vms.json
 // This ensures consistency between database and the mapping file
+// processRuleMappings processes rule groups and generates VM mappings
+func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, ruleType string, needsInterface bool) []map[string]interface{} {
+	var mappings []map[string]interface{}
+	var groupList []struct{ UUID string }
+
+	// Convert groups to common format
+	switch v := groups.(type) {
+	case []model.RuleGroupV2:
+		for _, g := range v {
+			groupList = append(groupList, struct{ UUID string }{UUID: g.UUID})
+		}
+	case []model.AdjustRuleGroup:
+		for _, g := range v {
+			groupList = append(groupList, struct{ UUID string }{UUID: g.UUID})
+		}
+	}
+
+	for _, group := range groupList {
+		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
+		if err != nil {
+			log.Printf("Failed to get linked VMs for %s group %s: %v", ruleType, group.UUID, err)
+			continue
+		}
+
+		for _, link := range vmLinks {
+			domain, err := routes.GetDomainByInstanceUUID(ctx, link.VMUUID)
+			if err != nil {
+				log.Printf("Failed to get domain for instance %s: %v", link.VMUUID, err)
+				continue
+			}
+
+			labels := map[string]interface{}{
+				"domain":      domain,
+				"rule_id":     fmt.Sprintf("%s-%s-%s", ruleType, domain, group.UUID),
+				"instance_id": link.VMUUID,
+			}
+			if needsInterface {
+				labels["target_device"] = link.Interface
+			}
+
+			mappings = append(mappings, map[string]interface{}{
+				"targets": []string{"localhost:9090"},
+				"labels":  labels,
+			})
+		}
+	}
+	return mappings
+}
+
 // @Summary Synchronize all VM rule mappings
 // @Description Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database
 // @Tags alarm
@@ -1969,292 +2072,88 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 // @Router /api/v1/metrics/alarm/sync-mappings [post]
 func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 	log.Printf("Starting full synchronization of VM rule mappings")
-
 	ctx := c.Request.Context()
-	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
 
-	// Get all rule groups (both alarm and adjust rules)
-	var allRuleGroups []string
-
-	// Get CPU rule groups
-	cpuParams := routes.ListRuleGroupsParams{
-		RuleType: routes.RuleTypeCPU,
-		Page:     1,
-		PageSize: 1000,
-	}
-	cpuGroups, _, err := a.operator.ListRuleGroups(ctx, cpuParams)
-	if err != nil {
-		log.Printf("Failed to get CPU rule groups: %v", err)
-	} else {
-		for _, group := range cpuGroups {
-			allRuleGroups = append(allRuleGroups, group.UUID)
-		}
+	// Define all rule types to process
+	type ruleConfig struct {
+		name       string
+		ruleType   interface{}
+		isAdjust   bool
+		needsIface bool
 	}
 
-	// Get BW rule groups
-	bwParams := routes.ListRuleGroupsParams{
-		RuleType: routes.RuleTypeBW,
-		Page:     1,
-		PageSize: 1000,
-	}
-	bwGroups, _, err := a.operator.ListRuleGroups(ctx, bwParams)
-	if err != nil {
-		log.Printf("Failed to get BW rule groups: %v", err)
-	} else {
-		for _, group := range bwGroups {
-			allRuleGroups = append(allRuleGroups, group.UUID)
-		}
+	configs := []ruleConfig{
+		{"alarm-cpu", routes.RuleTypeCPU, false, false},
+		{"alarm-memory", routes.RuleTypeMemory, false, false},
+		{"alarm-bw", routes.RuleTypeBW, false, true},
+		{"adjust-cpu", model.RuleTypeAdjustCPU, true, false},
+		{"adjust-bw", model.RuleTypeAdjustInBW, true, true},
+		{"adjust-bw", model.RuleTypeAdjustOutBW, true, true},
 	}
 
-	// Get adjust rule groups
+	var allMappings []map[string]interface{}
+	stats := make(map[string]int)
 	adjustOperator := &routes.AdjustOperator{}
 
-	// Get CPU adjust rule groups
-	cpuAdjustParams := routes.ListAdjustRuleGroupsParams{
-		RuleType: model.RuleTypeAdjustCPU,
-		Page:     1,
-		PageSize: 1000,
-	}
-	cpuAdjustGroups, _, err := adjustOperator.ListAdjustRuleGroups(ctx, cpuAdjustParams)
-	if err != nil {
-		log.Printf("Failed to get CPU adjust rule groups: %v", err)
-	}
+	// Process each rule type
+	for _, cfg := range configs {
+		var groups interface{}
+		var count int
 
-	// Get BW adjust rule groups (both in and out)
-	inBWAdjustParams := routes.ListAdjustRuleGroupsParams{
-		RuleType: model.RuleTypeAdjustInBW,
-		Page:     1,
-		PageSize: 1000,
-	}
-	inBWAdjustGroups, _, err := adjustOperator.ListAdjustRuleGroups(ctx, inBWAdjustParams)
-	if err != nil {
-		log.Printf("Failed to get inbound BW adjust rule groups: %v", err)
-	}
-
-	outBWAdjustParams := routes.ListAdjustRuleGroupsParams{
-		RuleType: model.RuleTypeAdjustOutBW,
-		Page:     1,
-		PageSize: 1000,
-	}
-	outBWAdjustGroups, _, err := adjustOperator.ListAdjustRuleGroups(ctx, outBWAdjustParams)
-	if err != nil {
-		log.Printf("Failed to get outbound BW adjust rule groups: %v", err)
-	}
-
-	// Build complete mapping data
-	var allMappings []map[string]interface{}
-
-	// Process CPU rule groups
-	for _, group := range cpuGroups {
-		groupUUID := group.UUID
-		// Get all VMs linked to this rule group
-		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
-		if err != nil {
-			log.Printf("Failed to get linked VMs for group %s: %v", groupUUID, err)
-			continue
-		}
-
-		for _, link := range vmLinks {
-			instanceID := link.VMUUID
-			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
+		if cfg.isAdjust {
+			g, _, err := adjustOperator.ListAdjustRuleGroups(ctx, routes.ListAdjustRuleGroupsParams{
+				RuleType: cfg.ruleType.(string),
+				Page:     1,
+				PageSize: 1000,
+			})
 			if err != nil {
-				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
+				log.Printf("Failed to get %s rule groups: %v", cfg.name, err)
 				continue
 			}
-
-			// Create mapping entry for CPU alarm rules
-			mapping := map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels": map[string]interface{}{
-					"domain":      domain,
-					"rule_id":     fmt.Sprintf("alarm-cpu-%s-%s", domain, groupUUID),
-					"instance_id": instanceID,
-				},
-			}
-
-			allMappings = append(allMappings, mapping)
-			log.Printf("Added CPU alarm mapping: domain=%s, rule_id=alarm-cpu-%s-%s, instance_id=%s",
-				domain, domain, groupUUID, instanceID)
-		}
-	}
-
-	// Process BW rule groups
-	for _, group := range bwGroups {
-		groupUUID := group.UUID
-		// Get all VMs linked to this rule group
-		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
-		if err != nil {
-			log.Printf("Failed to get linked VMs for group %s: %v", groupUUID, err)
-			continue
-		}
-
-		for _, link := range vmLinks {
-			instanceID := link.VMUUID
-			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
+			groups = g
+			count = len(g)
+		} else {
+			g, _, err := a.operator.ListRuleGroups(ctx, routes.ListRuleGroupsParams{
+				RuleType: cfg.ruleType.(string),
+				Page:     1,
+				PageSize: 1000,
+			})
 			if err != nil {
-				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
+				log.Printf("Failed to get %s rule groups: %v", cfg.name, err)
 				continue
 			}
-
-			// Create mapping entry for BW alarm rules
-			mapping := map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels": map[string]interface{}{
-					"domain":        domain,
-					"rule_id":       fmt.Sprintf("alarm-bw-%s-%s", domain, groupUUID),
-					"instance_id":   instanceID,
-					"target_device": link.Interface, // BW rules need target_device
-				},
-			}
-
-			allMappings = append(allMappings, mapping)
-			log.Printf("Added BW alarm mapping: domain=%s, rule_id=alarm-bw-%s-%s, instance_id=%s, target_device=%s",
-				domain, domain, groupUUID, instanceID, link.Interface)
+			groups = g
+			count = len(g)
 		}
+
+		mappings := a.processRuleMappings(ctx, groups, cfg.name, cfg.needsIface)
+		allMappings = append(allMappings, mappings...)
+		stats[cfg.name] += count
 	}
 
-	// Process CPU adjust rule groups
-	for _, group := range cpuAdjustGroups {
-		groupUUID := group.UUID
-		// Get all VMs linked to this adjust rule group
-		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
-		if err != nil {
-			log.Printf("Failed to get linked VMs for CPU adjust group %s: %v", groupUUID, err)
-			continue
-		}
-
-		for _, link := range vmLinks {
-			instanceID := link.VMUUID
-			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
-			if err != nil {
-				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
-				continue
-			}
-
-			// Create mapping entry for CPU adjust rules
-			mapping := map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels": map[string]interface{}{
-					"domain":      domain,
-					"rule_id":     fmt.Sprintf("adjust-cpu-%s-%s", domain, groupUUID),
-					"instance_id": instanceID,
-				},
-			}
-
-			allMappings = append(allMappings, mapping)
-			log.Printf("Added CPU adjust mapping: domain=%s, rule_id=adjust-cpu-%s-%s, instance_id=%s",
-				domain, domain, groupUUID, instanceID)
-		}
-	}
-
-	// Process inbound BW adjust rule groups
-	for _, group := range inBWAdjustGroups {
-		groupUUID := group.UUID
-		// Get all VMs linked to this adjust rule group
-		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
-		if err != nil {
-			log.Printf("Failed to get linked VMs for inbound BW adjust group %s: %v", groupUUID, err)
-			continue
-		}
-
-		for _, link := range vmLinks {
-			instanceID := link.VMUUID
-			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
-			if err != nil {
-				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
-				continue
-			}
-
-			// Create mapping entry for inbound BW adjust rules
-			mapping := map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels": map[string]interface{}{
-					"domain":        domain,
-					"rule_id":       fmt.Sprintf("adjust-bw-%s-%s", domain, groupUUID),
-					"instance_id":   instanceID,
-					"target_device": link.Interface, // BW adjust rules need target_device
-				},
-			}
-
-			allMappings = append(allMappings, mapping)
-			log.Printf("Added inbound BW adjust mapping: domain=%s, rule_id=adjust-bw-%s-%s, instance_id=%s, target_device=%s",
-				domain, domain, groupUUID, instanceID, link.Interface)
-		}
-	}
-
-	// Process outbound BW adjust rule groups
-	for _, group := range outBWAdjustGroups {
-		groupUUID := group.UUID
-		// Get all VMs linked to this adjust rule group
-		vmLinks, err := a.operator.GetLinkedVMs(ctx, groupUUID)
-		if err != nil {
-			log.Printf("Failed to get linked VMs for outbound BW adjust group %s: %v", groupUUID, err)
-			continue
-		}
-
-		for _, link := range vmLinks {
-			instanceID := link.VMUUID
-			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceID)
-			if err != nil {
-				log.Printf("Failed to get domain for instance %s: %v", instanceID, err)
-				continue
-			}
-
-			// Create mapping entry for outbound BW adjust rules
-			mapping := map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels": map[string]interface{}{
-					"domain":        domain,
-					"rule_id":       fmt.Sprintf("adjust-bw-%s-%s", domain, groupUUID),
-					"instance_id":   instanceID,
-					"target_device": link.Interface, // BW adjust rules need target_device
-				},
-			}
-
-			allMappings = append(allMappings, mapping)
-			log.Printf("Added outbound BW adjust mapping: domain=%s, rule_id=adjust-bw-%s-%s, instance_id=%s, target_device=%s",
-				domain, domain, groupUUID, instanceID, link.Interface)
-		}
-	}
-
-	// Save complete mapping data
+	// Write mappings to file
 	mappingData, err := json.MarshalIndent(allMappings, "", "  ")
 	if err != nil {
 		log.Printf("Failed to marshal matched_vms.json: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "error",
-			"error":  "Failed to marshal mapping data",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to marshal mapping data"})
 		return
 	}
 
-	err = routes.WriteFile(matchedVMsFile, mappingData, 0644)
-	if err != nil {
+	if err := routes.WriteFile("/etc/prometheus/lists/matched_vms.json", mappingData, 0644); err != nil {
 		log.Printf("Failed to write matched_vms.json: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "error",
-			"error":  "Failed to write mapping file",
-		})
+		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to write mapping file"})
 		return
 	}
 
-	// Force reload Prometheus configuration
+	// Reload Prometheus
 	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Warning: Failed to reload Prometheus after full sync: %v", err)
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "partial_success",
-			"message": "Mappings synchronized but failed to reload Prometheus",
-			"count":   len(allMappings),
-		})
+		log.Printf("Warning: Failed to reload Prometheus: %v", err)
+		c.JSON(http.StatusOK, gin.H{"status": "partial_success", "message": "Mappings synchronized but failed to reload Prometheus", "count": len(allMappings), "stats": stats})
 		return
 	}
 
-	log.Printf("Successfully synchronized all VM rule mappings, total entries: %d", len(allMappings))
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "VM rule mappings synchronized successfully",
-		"count":   len(allMappings),
-	})
+	log.Printf("Successfully synchronized VM mappings: total=%d, stats=%+v", len(allMappings), stats)
+	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "VM rule mappings synchronized successfully", "count": len(allMappings), "stats": stats})
 }
 
 // VMAlarmMapping is used for serialization to vm_alarm_mapping.yml

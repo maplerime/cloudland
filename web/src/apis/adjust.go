@@ -1525,32 +1525,29 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 		req.Interface = ""
 	}
 
-	// Check if VM is already linked to this rule group
+	// Check if VM is already linked (incremental logic with deduplication)
 	alarmOperator := &routes.AlarmOperator{}
-	existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
-	if err == nil {
-		for _, link := range existingLinks {
-			if link.VMUUID == req.VMUUID {
-				// For BW type, also check if interface is the same
-				if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-					if link.Interface == req.Interface {
-						log.Printf("[ADJUST-WARN] VM already linked to rule group with same interface: vm_uuid=%s, group_uuid=%s, interface=%s",
-							req.VMUUID, group.UUID, req.Interface)
-						c.JSON(http.StatusConflict, gin.H{"error": "VM already linked to this rule group with the same interface"})
-						return
-					}
-				} else {
-					// CPU type, VM already linked
-					log.Printf("[ADJUST-WARN] VM already linked to rule group: vm_uuid=%s, group_uuid=%s", req.VMUUID, group.UUID)
-					c.JSON(http.StatusConflict, gin.H{"error": "VM already linked to this rule group"})
-					return
-				}
-			}
-		}
+	exists := alarmOperator.CheckVMLinkExists(c.Request.Context(), group.UUID, req.VMUUID, req.Interface)
+
+	if exists {
+		log.Printf("[ADJUST-INFO] VM already linked to rule group, skipping: vm_uuid=%s, group_uuid=%s, interface=%s",
+			req.VMUUID, group.UUID, req.Interface)
+		c.JSON(http.StatusOK, gin.H{
+			"status":  "success",
+			"message": "VM already linked to adjustment rule (idempotent operation)",
+			"data": gin.H{
+				"group_uuid": group.UUID,
+				"rule_id":    group.RuleID,
+				"vm_uuid":    req.VMUUID,
+				"interface":  req.Interface,
+				"rule_type":  group.Type,
+			},
+		})
+		return
 	}
 
-	// Create link
-	err = alarmOperator.BatchLinkVMs(c.Request.Context(), group.UUID, []string{req.VMUUID}, req.Interface)
+	// Create link (incremental)
+	err = alarmOperator.CreateVMLink(c.Request.Context(), group.UUID, req.VMUUID, req.Interface)
 	if err != nil {
 		log.Printf("[ADJUST-ERROR] Failed to create VM link: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create VM link: " + err.Error()})
@@ -1926,22 +1923,53 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 	return nil
 }
 
-// GetLinkAdjustRule Get VM link information for adjustment rule
-func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
-	groupUUID := c.Query("group_uuid")
-	if groupUUID == "" {
-		log.Printf("[ADJUST-ERROR] Missing group_uuid parameter")
-		c.JSON(http.StatusBadRequest, gin.H{"error": "group_uuid parameter is required"})
+// GetRuleLinks Get VM link information for alarm or adjustment rules
+// Supports both alarm rules and adjustment rules
+// Parameter: rule_id (can be rule_id or UUID)
+func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
+	ruleID := c.Query("rule_id")
+	if ruleID == "" {
+		log.Printf("[RULE-ERROR] Missing rule_id parameter")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_id parameter is required"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Getting adjustment rule links: group_uuid=%s", groupUUID)
+	log.Printf("[RULE-INFO] Getting rule links: rule_id=%s", ruleID)
 
-	// Check if rule group exists
-	group, err := a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "adjustment rule group not found"})
+	// Try to find the rule in both alarm and adjustment rule tables
+	var groupUUID, ruleType, ruleName, ruleSource string
+	var found bool
+
+	// First, try to find in adjustment rules
+	adjustOperator := &routes.AdjustOperator{}
+	adjustGroup, err := adjustOperator.GetAdjustRulesByIdentifier(c.Request.Context(), ruleID)
+	if err == nil {
+		groupUUID = adjustGroup.UUID
+		ruleType = adjustGroup.Type
+		ruleName = adjustGroup.Name
+		ruleSource = "adjust"
+		found = true
+		log.Printf("[RULE-INFO] Found adjustment rule: rule_id=%s, uuid=%s, type=%s", ruleID, groupUUID, ruleType)
+	}
+
+	// If not found in adjustment rules, try alarm rules
+	if !found {
+		alarmOperator := &routes.AlarmOperator{}
+		alarmGroup, err := alarmOperator.GetRulesByRuleID(c.Request.Context(), ruleID)
+		if err == nil {
+			groupUUID = alarmGroup.UUID
+			ruleType = alarmGroup.Type
+			ruleName = alarmGroup.Name
+			ruleSource = "alarm"
+			found = true
+			log.Printf("[RULE-INFO] Found alarm rule: rule_id=%s, uuid=%s, type=%s", ruleID, groupUUID, ruleType)
+		}
+	}
+
+	// If still not found, return error
+	if !found {
+		log.Printf("[RULE-ERROR] Rule not found: rule_id=%s", ruleID)
+		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found, please check rule_id"})
 		return
 	}
 
@@ -1949,7 +1977,7 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 	alarmOperator := &routes.AlarmOperator{}
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get linked VMs: %v", err)
+		log.Printf("[RULE-ERROR] Failed to get linked VMs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get linked VMs: " + err.Error()})
 		return
 	}
@@ -1960,36 +1988,37 @@ func (a *AdjustAPI) GetLinkAdjustRule(c *gin.Context) {
 		// Get domain information
 		domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 		if err != nil {
-			log.Printf("[ADJUST-WARN] Failed to get domain for VM %s: %v", link.VMUUID, err)
+			log.Printf("[RULE-WARN] Failed to get domain for VM %s: %v", link.VMUUID, err)
 			domain = "unknown"
 		}
 
-		// Generate rule_id
-		var ruleID string
-		if group.Type == model.RuleTypeAdjustCPU {
-			ruleID = fmt.Sprintf("adjust-cpu-%s-%s", domain, groupUUID)
-		} else {
-			ruleID = fmt.Sprintf("adjust-bw-%s-%s", domain, groupUUID)
+		vmInfo := gin.H{
+			"vm_uuid":    link.VMUUID,
+			"domain":     domain,
+			"created_at": link.CreatedAt.Format(time.RFC3339),
+			"updated_at": link.UpdatedAt.Format(time.RFC3339),
 		}
 
-		linkedVMs = append(linkedVMs, gin.H{
-			"vm_uuid":       link.VMUUID,
-			"domain":        domain,
-			"target_device": link.Interface,
-			"rule_id":       ruleID,
-			"created_at":    link.CreatedAt.Format(time.RFC3339),
-			"updated_at":    link.UpdatedAt.Format(time.RFC3339),
-		})
+		// For bandwidth rules, include target_device (network interface)
+		// Alarm rules use "bw", adjust rules use "adjust_in_bw" or "adjust_out_bw"
+		if ruleType == "bw" || ruleType == model.RuleTypeAdjustInBW || ruleType == model.RuleTypeAdjustOutBW {
+			vmInfo["target_device"] = link.Interface
+		}
+
+		linkedVMs = append(linkedVMs, vmInfo)
 	}
 
-	log.Printf("[ADJUST-INFO] Retrieved adjustment rule links: group_uuid=%s, link_count=%d", groupUUID, len(linkedVMs))
+	log.Printf("[RULE-INFO] Retrieved rule links: rule_id=%s, source=%s, type=%s, link_count=%d",
+		ruleID, ruleSource, ruleType, len(linkedVMs))
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
+			"rule_id":      ruleID,
 			"group_uuid":   groupUUID,
-			"rule_type":    group.Type,
-			"rule_name":    group.Name,
+			"rule_source":  ruleSource,
+			"rule_type":    ruleType,
+			"rule_name":    ruleName,
 			"linked_count": len(linkedVMs),
 			"linked_vms":   linkedVMs,
 		},

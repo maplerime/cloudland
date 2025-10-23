@@ -206,8 +206,8 @@ func Register() (r *gin.Engine) {
 			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
 			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
 			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
-			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
-			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
+			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVMWithType("alarm"))
+			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVMWithType("alarm"))
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
@@ -235,9 +235,11 @@ func Register() (r *gin.Engine) {
 			authGroup.POST("/api/v1/adjust/:uuid/disable", adjustAPI.DisableAdjustRule)
 
 			// VM adjust rule link management
-			metricsGroup.POST("/adjust/link", adjustAPI.LinkAdjustRule)
-			metricsGroup.DELETE("/adjust/unlink", adjustAPI.UnlinkAdjustRule)
-			metricsGroup.GET("/adjust/links", adjustAPI.GetLinkAdjustRule)
+			metricsGroup.POST("/adjust/link", alarmAPI.LinkRuleToVMWithType("adjust"))
+			metricsGroup.DELETE("/adjust/unlink", alarmAPI.UnlinkRuleFromVMWithType("adjust"))
+
+			// Unified rule links query (supports both alarm and adjust rules)
+			authGroup.GET("/api/v1/rules/links", adjustAPI.GetRuleLinks)
 		}
 
 	}

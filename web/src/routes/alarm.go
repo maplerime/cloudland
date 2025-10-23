@@ -499,6 +499,37 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 	})
 }
 
+// CheckVMLinkExists checks if a VM link already exists
+func (a *AlarmOperator) CheckVMLinkExists(ctx context.Context, groupUUID, vmUUID, iface string) bool {
+	ctx, db := common.GetContextDB(ctx)
+	var count int64
+	query := db.Model(&model.VMRuleLink{}).
+		Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID)
+
+	if iface != "" {
+		query = query.Where("interface = ?", iface)
+	}
+
+	query.Count(&count)
+	return count > 0
+}
+
+// CreateVMLink creates a single VM link
+func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, iface string) error {
+	ctx, db := common.GetContextDB(ctx)
+	link := &model.VMRuleLink{
+		GroupUUID: groupUUID,
+		VMUUID:    vmUUID,
+		Interface: iface,
+	}
+	if err := db.Create(link).Error; err != nil {
+		log.Printf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+			groupUUID, vmUUID, iface, err)
+		return fmt.Errorf("create link failed: %w", err)
+	}
+	return nil
+}
+
 func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUUIDs []string, iface string) error {
 	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
