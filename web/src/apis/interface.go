@@ -262,40 +262,42 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	if payload.AllowSpoofing != nil {
 		allowSpoofing = *payload.AllowSpoofing
 	}
-	secgroups := []*model.SecurityGroup{}
-	if len(payload.SecurityGroups) > 0 {
-		for _, sg := range payload.SecurityGroups {
-			var secgroup *model.SecurityGroup
-			secgroup, err = secgroupAdmin.GetSecurityGroup(ctx, sg)
-			if err != nil {
-				logger.Errorf("Get security group failed, %+v", err)
-				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
-				return
+	secgroups := iface.SecurityGroups
+	if payload.SecurityGroups != nil {
+		if len(payload.SecurityGroups) > 0 {
+			for _, sg := range payload.SecurityGroups {
+				var secgroup *model.SecurityGroup
+				secgroup, err = secgroupAdmin.GetSecurityGroup(ctx, sg)
+				if err != nil {
+					logger.Errorf("Get security group failed, %+v", err)
+					ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
+					return
+				}
+				if secgroup.RouterID != iface.Address.Subnet.RouterID {
+					err = fmt.Errorf("Security group not in instance vpc")
+					ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
+					return
+				}
+				secgroups = append(secgroups, secgroup)
 			}
-			if secgroup.RouterID != iface.Address.Subnet.RouterID {
-				err = fmt.Errorf("Security group not in instance vpc")
-				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
-				return
+		} else {
+			var secgroup *model.SecurityGroup
+			if instance.Router != nil {
+				secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
+				if err != nil {
+					logger.Errorf("Get security group failed, %+v", err)
+					ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
+					return
+				}
+			} else {
+				secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
+				if err != nil {
+					logger.Error("Get default security group failed", err)
+					return
+				}
 			}
 			secgroups = append(secgroups, secgroup)
 		}
-	} else {
-		var secgroup *model.SecurityGroup
-		if instance.Router != nil {
-			secgroup, err = secgroupAdmin.Get(ctx, instance.Router.DefaultSG)
-			if err != nil {
-				logger.Errorf("Get security group failed, %+v", err)
-				ErrorResponse(c, http.StatusBadRequest, "Invalid security group", err)
-				return
-			}
-		} else {
-			secgroup, err = secgroupAdmin.GetDefaultSecgroup(ctx)
-			if err != nil {
-				logger.Error("Get default security group failed", err)
-				return
-			}
-		}
-		secgroups = append(secgroups, secgroup)
 	}
 	var ifaceSubnets []*model.Subnet
 	var publicIps []*model.FloatingIp

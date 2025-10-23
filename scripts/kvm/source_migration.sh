@@ -18,7 +18,7 @@ vm_xml=$(virsh dumpxml $vm_ID)
 if [ "$migration_type" = "warm" ]; then
     virsh migrate --persistent --live $vm_ID qemu+ssh://$target_hyper/system
     if [ $? -ne 0 ]; then
-        ./clear_source_vhost.sh
+        ./clear_source_vhost.sh $ID
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
 	exit 1
     fi
@@ -37,7 +37,7 @@ virsh undefine $vm_ID
 if [ $? -ne 0 ]; then
     virsh undefine --nvram $vm_ID
 fi
-./clear_source_vhost.sh
+./clear_source_vhost.sh $ID
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
@@ -45,6 +45,11 @@ for (( i=1; i <= $count; i++ )); do
     ./clear_sg_chain.sh $vif_dev
 done
 ./clear_local_router.sh $router
+
+# Update vm_instance_map metrics - remove VM from source hypervisor
+echo "Updating vm_instance_map metrics: removing VM $vm_ID from source hypervisor"
+./generate_vm_instance_map.sh remove $vm_ID
+
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 state="source_prepared"

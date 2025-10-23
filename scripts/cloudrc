@@ -3,6 +3,7 @@ localrc="${BASH_SOURCE[0]}.local"
 source "$localrc"
 guest_userid_template=ZCC%05X
 run_dir=/opt/cloudland/run
+log_dir=/opt/cloudland/log
 async_job_dir=$run_dir/async_job
 cache_dir=/opt/cloudland/cache
 cache_tmp_dir=$cache_dir/tmp
@@ -61,16 +62,14 @@ function apply_fw()
     shift
     rule=$*
     if [ "$action" = '-I' -o "$action" = '-A' ]; then
-        iptables -C $chain $rule 2>/dev/null
-        [ $? -eq 0 ] && return
-        if [ "$action" = '-I' ]; then
-            iptables $action $chain 2 $rule
-            return
-        fi
+        rule_no=""
+        [ "$chain" = "FORWARD" ] && rule_no=2
+        iptables -C $chain $rule 2>/dev/null || iptables $action $chain $rule_no $rule
+        return
     elif [ "$action" = '-N' ]; then
         iptables -S $chain || iptables -N $chain
     fi
-    iptables $action $chain $rule
+    iptables $action $chain $rule 2>/dev/null || true
 }
 
 function apply_vnic()
