@@ -31,7 +31,6 @@ type BackendAdmin struct{}
 type BackendView struct{}
 
 func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *model.Listener, loadBalancer *model.LoadBalancer) (err error) {
-	ctx, db := GetContextDB(ctx)
 	listeners := loadBalancer.Listeners
 	listenerCfgs := []*ListenerConfig{}
 	for _, listener := range listeners {
@@ -58,31 +57,17 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 		logger.Errorf("Failed to marshal load balancer json data, %v", err)
 		return
 	}
-	vrrpID := loadBalancer.VrrpInstanceID
-	vrrpIface1 := &model.Interface{}
-	vrrpIface2 := &model.Interface{}
-	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'master' and device = ?", vrrpID).Take(vrrpIface1).Error
+	hyperGroup, _, _, err := GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
 	if err != nil {
-		logger.Error("Failed to query vrrp interface 1", err)
+		logger.Errorf("Failed to get hyper group, %v", err)
 		return
 	}
-	err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'backup' and device = ?", vrrpID).Take(vrrpIface2).Error
+	control := "toall=" + hyperGroup
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, jsonData)
+	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Failed to query vrrp interface 2", err)
+		logger.Error("create haproxy conf execution failed", err)
 		return
-	}
-	control := fmt.Sprintf("toall=group-vrrp-%d", vrrpID)
-	if vrrpIface1.Hyper >= 0 {
-		control = fmt.Sprintf("%s:%d", control, vrrpIface1.Hyper)
-		if vrrpIface1.Hyper >= 0 {
-			control = fmt.Sprintf("%s,%d", control, vrrpIface2.Hyper)
-		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, jsonData)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("create_keepalived_conf.sh execution failed", err)
-			return
-		}
 	}
 	return
 }

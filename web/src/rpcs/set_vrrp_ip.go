@@ -8,7 +8,6 @@ package rpcs
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 
@@ -85,7 +84,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'backup'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface2.MacAddr, vrrpIface2.Address.Address, vrrpIface.MacAddr, vrrpIface.Address.Address)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("create_keepalived_conf.sh execution failed", err)
+			logger.Error("set vrrp ip execution failed", err)
 			return
 		}
 	}

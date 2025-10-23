@@ -161,16 +161,30 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener) (e
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
+	_, backends, err := backendAdmin.List(ctx, 0, -1, "", listener)
+	if err != nil {
+		logger.Error("Failed to list backends", err)
+		err = NewCLError(ErrBackendListFailed, "Failed to list backends", err)
+		return
+	}
+	for _, backend := range backends {
+		err = backendAdmin.Delete(ctx, backend)
+		if err != nil {
+			logger.Error("Failed to delete backend", err)
+			err = NewCLError(ErrBackendListFailed, "Failed to delete backend", err)
+			return
+		}
+	}
 	listener.Name = fmt.Sprintf("%s-%d", listener.Name, listener.CreatedAt.Unix())
 	err = db.Model(listener).Update("name", listener.Name).Error
 	if err != nil {
 		logger.Error("DB failed to update listsner name", err)
-		err = NewCLError(ErrSubnetUpdateFailed, "DB failed to update listener name", err)
+		err = NewCLError(ErrListenerUpdateFailed, "DB failed to update listener name", err)
 		return
 	}
 	if err = db.Delete(listener).Error; err != nil {
 		logger.Error("DB failed to delete listener", err)
-		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete listener", err)
+		err = NewCLError(ErrListenerDeleteFailed, "Failed to delete listener", err)
 		return
 	}
 	return
