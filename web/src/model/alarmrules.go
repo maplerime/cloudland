@@ -7,10 +7,12 @@ import (
 	"log"
 	"web/src/dbs"
 
+	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
 )
 
 func init() {
+	// 1. Migrate schema fields (RemoteNotifyConfig.Name no longer uses unique_index tag)
 	dbs.AutoMigrate(
 		&RuleGroupV2{},
 		&CPURuleDetail{},
@@ -20,6 +22,41 @@ func init() {
 		&NodeAlarmRule{},
 		&RemoteNotifyConfig{},
 	)
+
+	// 2. Create partial unique index for RemoteNotifyConfig (supports soft delete scenario)
+	dbs.AutoUpgrade("create_remote_notify_name_partial_unique_index", func(db *gorm.DB) error {
+		// 2.1 Clean up legacy global unique indexes that may have been created by unique_index tag
+		//     GORM v1 tag-generated index names are typically idx_<table>_<column> or uix_<table>_<column>
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_remote_notify_config_name`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_remote_notify_config_name`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_remote_notify_name`).Error
+
+		// 2.2 Create partial unique index for "only active records" (non-soft-deleted)
+		//     Try CONCURRENTLY first (recommended for production to avoid blocking writes)
+		err := db.Exec(`
+			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_remote_notify_name_active
+			ON remote_notify_config (name)
+			WHERE deleted_at IS NULL
+		`).Error
+
+		if err != nil {
+			// If CONCURRENTLY fails (possibly due to running in transaction or other reasons),
+			// fallback to non-concurrent version (briefly blocks writes, but guarantees success)
+			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			err = db.Exec(`
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_notify_name_active
+				ON remote_notify_config (name)
+				WHERE deleted_at IS NULL
+			`).Error
+			if err != nil {
+				log.Printf("Failed to create partial unique index for remote_notify_config: %v", err)
+				return err
+			}
+		}
+
+		log.Printf("Successfully created partial unique index idx_remote_notify_name_active")
+		return nil
+	})
 }
 func (RuleGroupV2) TableName() string {
 	return "rule_group_v2"
@@ -142,7 +179,7 @@ const (
 // RemoteNotifyConfig Remote notification configuration
 type RemoteNotifyConfig struct {
 	Model
-	Name      string `gorm:"type:varchar(128);unique_index:idx_remote_notify_name;column:name" json:"name"`
+	Name      string `gorm:"type:varchar(128);column:name" json:"name"` // Uniqueness is enforced by partial unique index in database (idx_remote_notify_name_active)
 	Type      string `gorm:"type:varchar(50);not null;column:type;index" json:"type"`
 	NotifyURL string `gorm:"type:varchar(500);not null;column:notify_url" json:"notify_url"`
 	Username  string `gorm:"type:varchar(255);column:username" json:"username"`

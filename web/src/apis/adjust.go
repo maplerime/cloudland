@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"io"
 	"web/src/common"
-	"web/src/dbs"
 	"web/src/model"
 	"web/src/routes"
 )
@@ -36,7 +35,7 @@ var adjustAPI = &AdjustAPI{
 // Resource adjustment configuration file path constants
 const (
 	PrometheusBasePath = "/etc/prometheus"
-	// Do not re-declare RulesGeneralPath, RulesSpecialPath, RulesEnabledPath here
+	// Note: Use routes.RulesGeneral and routes.RulesEnabled from routes/alarm.go
 
 	// Template files
 	CPUAdjustRuleTemplate        = "VM-cpu-adjust-rule.yml.j2"
@@ -361,15 +360,9 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	_ = alarmAPI.updateMatchedVMsJSON(c.Request.Context(), []string{}, group.UUID, "remove", "adjust-cpu")
 
-	// Determine file paths
-	var rulePath, alertPath string
-	if group.Owner == "admin" {
-		rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-	} else {
-		rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-	}
+	// Determine file paths (all rules now stored in general_rules)
+	rulePath := fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
+	alertPath := fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
 
 	// Determine symlink paths
 	ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
@@ -464,283 +457,6 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 			"group_uuid":    group.UUID,
 			"rule_id":       group.RuleID,
 			"deleted_files": deletedFiles,
-		},
-	})
-}
-
-// EnableAdjustRule enables resource adjustment rule
-func (a *AdjustAPI) EnableAdjustRule(c *gin.Context) {
-	uuid := c.Param("uuid")
-	if uuid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "UUID is required"})
-		return
-	}
-
-	// Smart recognition: try as rule_id first, then as group_uuid
-	var group *model.AdjustRuleGroup
-	var err error
-	var identifierType string
-
-	// 1. Try as rule_id first
-	group, err = a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
-	if err == nil {
-		identifierType = "rule_id"
-	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 2. If rule_id not found, try as group_uuid
-		group, err = a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), uuid)
-		if err == nil {
-			identifierType = "group_uuid"
-		}
-	}
-
-	// Unified error handling
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found"})
-		return
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get rule information"})
-		return
-	}
-
-	// Check permission: only admin can enable adjustment rules
-	if group.Owner != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can enable adjustment rules, owner: %s", group.Owner)
-		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can enable adjustment rules"})
-		return
-	}
-
-	// Set enabled status
-	group.AdjustEnabled = true
-
-	if err := dbs.DB().Save(group).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to enable rule"})
-		return
-	}
-
-	// Determine file paths based on rule type
-	var rulePaths []string
-	var alertPath string
-
-	if group.Type == model.RuleTypeAdjustCPU {
-		var rulePath string
-		if group.Owner == "admin" {
-			rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-		} else {
-			rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-		}
-		rulePaths = append(rulePaths, rulePath)
-	} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// Get bandwidth adjustment rule details, generate file paths for each direction
-		details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
-		if err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to get BW adjust rule details: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get rule details"})
-			return
-		}
-
-		for _, detail := range details {
-			var filename string
-			switch detail.Direction {
-			case "in":
-				filename = fmt.Sprintf("bw-in-adjust-%s-%s.yml", group.Owner, group.UUID)
-			case "out":
-				filename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", group.Owner, group.UUID)
-			}
-
-			var rulePath string
-			if group.Owner == "admin" {
-				rulePath = fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
-			} else {
-				rulePath = fmt.Sprintf("%s/%s", routes.RulesSpecial, filename)
-			}
-			rulePaths = append(rulePaths, rulePath)
-		}
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported rule type"})
-		return
-	}
-
-	// Alert file path
-	if group.Owner == "admin" {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-	} else {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-	}
-
-	log.Printf("[ADJUST-INFO] Enabling adjustment rule: identifier=%s, type=%s, group_uuid=%s, rule_id=%s", uuid, group.Type, group.UUID, group.RuleID)
-
-	// Create rule file symlinks
-	var createdLinks []string
-	for _, rulePath := range rulePaths {
-		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
-
-		// Use routes.CreateSymlink instead of os.Symlink to support remote Prometheus server
-		if err := routes.CreateSymlink(rulePath, ruleLinkPath); err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to create rule symlink: %v", err)
-			for _, link := range createdLinks {
-				routes.RemoveFile(link)
-			}
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule symlink"})
-			return
-		}
-		createdLinks = append(createdLinks, ruleLinkPath)
-	}
-
-	// Create alert file symlink
-	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
-	if err := routes.CreateSymlink(alertPath, alertLinkPath); err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to create alert symlink: %v", err)
-		for _, link := range createdLinks {
-			routes.RemoveFile(link)
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create alert symlink"})
-		return
-	}
-
-	// Reload Prometheus
-	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
-	routes.ReloadPrometheus()
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"group_uuid":      group.UUID,
-			"rule_id":         group.RuleID,
-			"enabled":         true,
-			"identifier_type": identifierType,
-		},
-	})
-}
-
-// DisableAdjustRule disables resource adjustment rule
-func (a *AdjustAPI) DisableAdjustRule(c *gin.Context) {
-	uuid := c.Param("uuid")
-	if uuid == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "UUID is required"})
-		return
-	}
-
-	// Smart recognition: try as rule_id first, then as group_uuid
-	var group *model.AdjustRuleGroup
-	var err error
-	var identifierType string
-
-	// 1. Try as rule_id first
-	group, err = a.operator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
-	if err == nil {
-		identifierType = "rule_id"
-	} else if errors.Is(err, gorm.ErrRecordNotFound) {
-		// 2. If rule_id not found, try as group_uuid
-		group, err = a.operator.GetAdjustRulesByGroupUUID(c.Request.Context(), uuid)
-		if err == nil {
-			identifierType = "group_uuid"
-		}
-	}
-
-	// Unified error handling
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule not found"})
-		return
-	} else if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule information"})
-		return
-	}
-
-	// Check permission: only admin can disable adjustment rules
-	if group.Owner != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can disable adjustment rules, owner: %s", group.Owner)
-		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can disable adjustment rules"})
-		return
-	}
-
-	// Update enabled status
-	group.Enabled = false
-	group.AdjustEnabled = false
-
-	if err := dbs.DB().Save(group).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to disable rule"})
-		return
-	}
-
-	// Determine file paths based on rule type
-	var rulePaths []string
-	var alertPath string
-
-	if group.Type == model.RuleTypeAdjustCPU {
-		var rulePath string
-		if group.Owner == "admin" {
-			rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-		} else {
-			rulePath = fmt.Sprintf("%s/cpu-adjust-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-		}
-		rulePaths = append(rulePaths, rulePath)
-	} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
-		// Get bandwidth adjustment rule details, generate file paths for each direction
-		details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
-		if err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to get BW adjust rule details: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get rule details"})
-			return
-		}
-
-		for _, detail := range details {
-			var filename string
-			switch detail.Direction {
-			case "in":
-				filename = fmt.Sprintf("bw-in-adjust-%s-%s.yml", group.Owner, group.UUID)
-			case "out":
-				filename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", group.Owner, group.UUID)
-			}
-
-			var rulePath string
-			if group.Owner == "admin" {
-				rulePath = fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
-			} else {
-				rulePath = fmt.Sprintf("%s/%s", routes.RulesSpecial, filename)
-			}
-			rulePaths = append(rulePaths, rulePath)
-		}
-	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported rule type"})
-		return
-	}
-
-	// Alert file path
-	if group.Owner == "admin" {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-	} else {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-	}
-
-	log.Printf("[ADJUST-INFO] Disabling adjustment rule: identifier=%s, type=%s, group_uuid=%s, rule_id=%s", uuid, group.Type, group.UUID, group.RuleID)
-
-	// Delete rule file symlinks
-	for _, rulePath := range rulePaths {
-		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
-
-		// Use routes.RemoveFile instead of os.Remove to support remote Prometheus server
-		if err := routes.RemoveFile(ruleLinkPath); err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to remove rule symlink: %v", err)
-		}
-	}
-
-	// Delete alert file symlink
-	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
-	if err := routes.RemoveFile(alertLinkPath); err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to remove alert symlink: %v", err)
-	}
-
-	// Reload Prometheus
-	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
-	routes.ReloadPrometheus()
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"group_uuid":      group.UUID,
-			"rule_id":         group.RuleID,
-			"enabled":         false,
-			"identifier_type": identifierType,
 		},
 	})
 }
@@ -1037,23 +753,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s BW adjust rule", rule.Direction)})
 			return
 		}
-
-		// Create symlink for the generated rule file
-		var rulePath string
-		if req.Owner == "admin" {
-			rulePath = fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
-		} else {
-			rulePath = fmt.Sprintf("%s/%s", routes.RulesSpecial, filename)
-		}
-		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
-
-		fmt.Printf("wngzhe CreateBWAdjustRule - rulePath: %s, ruleLinkPath: %s", rulePath, ruleLinkPath)
-		if err := routes.CreateSymlink(rulePath, ruleLinkPath); err != nil {
-			fmt.Printf("wngzhe CreateBWAdjustRule - Failed to create rule symlink: %v", err)
-			log.Printf("[ADJUST-ERROR] Failed to create rule symlink: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule symlink"})
-			return
-		}
+		// Note: ProcessTemplate automatically creates symlink to rules_enabled (see alarm.go line 1390-1395)
 	}
 
 	// Generate alert rules (once per rule group)
@@ -1074,25 +774,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render resource adjustment alerts"})
 		return
 	}
-
-	// Create symlinks for alert files
-	var alertPath string
-	if req.Owner == "admin" {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, req.Owner, group.UUID)
-	} else {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, req.Owner, group.UUID)
-	}
-
-	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
-	fmt.Printf("wngzhe CreateBWAdjustRule - alertPath: %s, alertLinkPath: %s", alertPath, alertLinkPath)
-	fmt.Printf("wngzhe CreateBWAdjustRule - isRemotePrometheus: %t", routes.IsRemotePrometheus())
-
-	if err := routes.CreateSymlink(alertPath, alertLinkPath); err != nil {
-		fmt.Printf("wngzhe CreateBWAdjustRule - Failed to create alert symlink: %v", err)
-		log.Printf("[ADJUST-ERROR] Failed to create alert symlink: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create alert symlink"})
-		return
-	}
+	// Note: ProcessTemplate automatically creates symlink to rules_enabled (see alarm.go line 1390-1395)
 
 	// Link VMs
 	if len(req.LinkedVMs) > 0 {
@@ -1326,13 +1008,8 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		details = []model.BWAdjustRuleDetail{}
 	}
 
-	// Determine alert file path
-	var alertPath string
-	if group.Owner == "admin" {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-	} else {
-		alertPath = fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesSpecial, group.Owner, group.UUID)
-	}
+	// Determine alert file path (all rules now stored in general_rules)
+	alertPath := fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
 	alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
 
 	// Delete symlinks and rule files
@@ -1348,12 +1025,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 			filename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", group.Owner, group.UUID)
 		}
 
-		var rulePath string
-		if group.Owner == "admin" {
-			rulePath = fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
-		} else {
-			rulePath = fmt.Sprintf("%s/%s", routes.RulesSpecial, filename)
-		}
+		rulePath := fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
 		ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filename)
 
 		// Delete symlink

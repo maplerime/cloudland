@@ -876,14 +876,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	// Delete symlink and rule file (paths consistent with creation)
 	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
 	linkPath := filepath.Join(routes.RulesEnabled, fileName)
-
-	// Determine rule file location based on owner
-	var rulePath string
-	if owner == "admin" {
-		rulePath = filepath.Join(routes.RulesGeneral, fileName)
-	} else {
-		rulePath = filepath.Join(routes.RulesSpecial, fileName)
-	}
+	rulePath := filepath.Join(routes.RulesGeneral, fileName) // All rules now stored in general_rules
 
 	// Track deleted file paths
 	deletedFiles := []string{}
@@ -1050,182 +1043,6 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 			"rule_id":       group.RuleID,
 			"deleted_files": deletedFiles,
 			"linked_vms":    linkedVMs,
-		},
-	})
-}
-
-func (a *AlarmAPI) EnableRules(c *gin.Context) {
-	groupUUID := c.Param("id")
-
-	// Retrieve rule group with details using operator
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Failed to retrieve rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-
-	if group.Enabled {
-		c.JSON(http.StatusOK, gin.H{"status": "already enabled"})
-		return
-	}
-	// Generate rule paths
-	generalPath, specialPath := routes.RulePaths(group.Type, groupUUID)
-
-	// Create symbolic links
-	enabledLinks := make([]string, 0, 2)
-
-	// link general rules
-	generalLink := filepath.Join(routes.RulesEnabled, fmt.Sprintf("%s-general-%s.yml", group.Type, groupUUID))
-	if err = routes.CreateSymlink(generalPath, generalLink); err != nil && !os.IsExist(err) {
-		log.Printf("Failed to create general symlink: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symlink"})
-		return
-	}
-	//link special links
-	enabledLinks = append(enabledLinks, generalLink)
-	status, err := routes.CheckFileExists(specialPath)
-	if err != nil {
-		log.Printf("Failed to check special file existence: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check file existence"})
-		return
-	}
-	if status {
-		specialLink := filepath.Join(routes.RulesEnabled, fmt.Sprintf("%s-special-%s.yml", group.Type, groupUUID))
-		if err = routes.CreateSymlink(specialPath, specialLink); err != nil && !os.IsExist(err) {
-			log.Printf("Failed to create special symlink: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create symlink"})
-			return
-		}
-		enabledLinks = append(enabledLinks, specialLink)
-	}
-
-	// Update DB status
-	if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupUUID, true); err != nil {
-		log.Printf("Failed to update rule group status: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Status update failed"})
-		return
-	}
-
-	// Reload Prometheus configuration
-	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload Prometheus"})
-		return
-	}
-
-	// Query latest group information and linked VMs
-	group, _ = a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	linkedVMs := []string{}
-	for _, link := range vmLinks {
-		linkedVMs = append(linkedVMs, link.VMUUID)
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"group_uuid": groupUUID,
-			"enabled":    group.Enabled,
-			"linked_vms": linkedVMs,
-		},
-	})
-}
-
-func (a *AlarmAPI) DisableRules(c *gin.Context) {
-	groupUUID := c.Param("id")
-
-	group, err := a.operator.GetRulesByGroupUUID(c.Request.Context(), groupUUID)
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Failed to retrieve rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal server error"})
-		return
-	}
-
-	if !group.Enabled {
-		c.JSON(http.StatusOK, gin.H{"status": "already disabled"})
-		return
-	}
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err != nil {
-		log.Printf("Error getting linked VMs: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check VM associations"})
-		return
-	}
-	if len(vmLinks) > 0 {
-		vmUUIDs := make([]string, 0, len(vmLinks))
-		for _, link := range vmLinks {
-			vmUUIDs = append(vmUUIDs, link.VMUUID)
-		}
-
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Rule group is linked to virtual machines, please unlink them before disabling",
-			"code":       "RULE_GROUP_LINKED",
-			"group_uuid": groupUUID,
-			"linked_vms": vmUUIDs,
-		})
-		return
-	}
-
-	deletedFiles := make([]string, 0)
-	specialLink := filepath.Join(routes.RulesEnabled, fmt.Sprintf("%s-special-%s.yml", group.Type, groupUUID))
-	//unlink special rules
-	status, err := routes.CheckFileExists(specialLink)
-	if err != nil {
-		log.Printf("Failed to check special link existence: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check file existence"})
-		return
-	}
-	if status {
-		if err := routes.RemoveFile(specialLink); err != nil && !os.IsNotExist(err) {
-			log.Printf("Failed to remove special link: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove symlink"})
-			return
-		}
-		deletedFiles = append(deletedFiles, specialLink)
-	}
-
-	generalLink := filepath.Join(routes.RulesEnabled, fmt.Sprintf("%s-general-%s.yml", group.Type, groupUUID))
-	// unlink general rules
-	status, err = routes.CheckFileExists(generalLink)
-	if err != nil {
-		log.Printf("Failed to check general link existence: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check file existence"})
-		return
-	}
-	if status {
-		if err := routes.RemoveFile(generalLink); err != nil && !os.IsNotExist(err) {
-			log.Printf("Failed to remove general link: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to remove symlink"})
-			return
-		}
-		deletedFiles = append(deletedFiles, generalLink)
-	}
-	// Update DB status
-	if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupUUID, false); err != nil {
-		log.Printf("Failed to update rule group status: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Status update failed"})
-		return
-	}
-
-	// Reload Prometheus
-	if err := routes.ReloadPrometheus(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload Prometheus"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data": gin.H{
-			"deleted_links": deletedFiles,
-			"group_uuid":    groupUUID,
 		},
 	})
 }
@@ -1868,16 +1685,8 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	outFile := fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
 	linkIn := filepath.Join(routes.RulesEnabled, inFile)
 	linkOut := filepath.Join(routes.RulesEnabled, outFile)
-
-	// Determine rule file location based on owner
-	var ruleIn, ruleOut string
-	if owner == "admin" {
-		ruleIn = filepath.Join(routes.RulesGeneral, inFile)
-		ruleOut = filepath.Join(routes.RulesGeneral, outFile)
-	} else {
-		ruleIn = filepath.Join(routes.RulesSpecial, inFile)
-		ruleOut = filepath.Join(routes.RulesSpecial, outFile)
-	}
+	ruleIn := filepath.Join(routes.RulesGeneral, inFile)   // All rules now stored in general_rules
+	ruleOut := filepath.Join(routes.RulesGeneral, outFile) // All rules now stored in general_rules
 
 	// Delete symlink和规则文件，记录成功删除的文件路径
 	if err := routes.RemoveFile(linkIn); err == nil {
@@ -2208,7 +2017,7 @@ func (a *AlarmAPI) CreateRemoteNotifyConfig(c *gin.Context) {
 		return
 	}
 
-	// Check if name already exists
+	// Check if name already exists (防止常规重复)
 	existing, err := a.operator.GetRemoteNotifyConfigByName(c.Request.Context(), req.Name)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing config"})
@@ -2220,6 +2029,13 @@ func (a *AlarmAPI) CreateRemoteNotifyConfig(c *gin.Context) {
 	}
 
 	if err := a.operator.CreateRemoteNotifyConfig(c.Request.Context(), &req); err != nil {
+		// 检查是否是唯一约束冲突（处理并发竞态条件）
+		if strings.Contains(err.Error(), "duplicate key") ||
+			strings.Contains(err.Error(), "unique constraint") ||
+			strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			c.JSON(http.StatusConflict, gin.H{"error": "Config with this name already exists"})
+			return
+		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create config: " + err.Error()})
 		return
 	}
@@ -2309,4 +2125,129 @@ func (a *AlarmAPI) DeleteRemoteNotifyConfig(c *gin.Context) {
 		"status":  "success",
 		"message": "Config deleted successfully",
 	})
+}
+
+// ToggleRuleStatus - Toggle rule status (enable/disable) by managing Prometheus symlinks
+// ruleType: "alarm" or "adjust"
+// action: "enable" or "disable"
+func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		uuid := c.Param("id")
+		if uuid == "" {
+			uuid = c.Param("uuid")
+		}
+		if uuid == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ID or UUID is required"})
+			return
+		}
+
+		// Get group
+		db := c.MustGet("db").(*gorm.DB)
+		var group *model.RuleGroupV2
+		var err error
+
+		if ruleType == "alarm" {
+			// Smart recognition: try as rule_id first, then as group_uuid
+			if ruleID, parseErr := strconv.ParseInt(uuid, 10, 64); parseErr == nil {
+				// Check if it's a CPU rule detail
+				var cpuRule model.CPURuleDetail
+				if err = db.Where("id = ?", ruleID).First(&cpuRule).Error; err == nil {
+					uuid = cpuRule.GroupUUID
+				}
+			}
+		}
+
+		// Find group by UUID
+		if err = db.Where("uuid = ?", uuid).First(&group).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+			} else {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query rule group"})
+			}
+			return
+		}
+
+		// Determine rule paths and alert path based on rule type
+		var rulePaths []string
+		var alertPath string
+
+		if ruleType == "alarm" {
+			// Alarm rules in node_rules directory
+			rulePathPrefix := fmt.Sprintf("%s/rule-%s-%s", routes.RulesNode, group.Owner, group.UUID)
+			for _, rType := range []string{routes.RuleTypeCPU, routes.RuleTypeMemory, routes.RuleTypeBW, routes.RuleTypeCompute, routes.RuleTypeControl, routes.RuleTypeAvailable} {
+				rulePaths = append(rulePaths, fmt.Sprintf("%s-%s.yml", rulePathPrefix, rType))
+			}
+			alertPath = fmt.Sprintf("%s/alert-%s-%s.yml", routes.RulesNode, group.Owner, group.UUID)
+		} else {
+			// Adjust rules in general_rules directory
+			rulePathPrefix := fmt.Sprintf("%s/resource-adjustment-rules-%s-%s", routes.RulesGeneral, group.Owner, group.UUID)
+			for _, rType := range []string{"cpu", "memory", "disk"} {
+				rulePaths = append(rulePaths, fmt.Sprintf("%s-%s.yml", rulePathPrefix, rType))
+			}
+			alertPath = fmt.Sprintf("%s/resource-adjustment-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
+		}
+
+		// Execute enable or disable action
+		isEnable := (action == "enable")
+		var createdLinks []string
+
+		for _, rulePath := range rulePaths {
+			ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(rulePath))
+
+			if isEnable {
+				if err := routes.CreateSymlink(rulePath, ruleLinkPath); err != nil && !os.IsExist(err) {
+					log.Printf("[%s-%s-ERROR] Failed to create rule symlink: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+					for _, link := range createdLinks {
+						routes.RemoveSymlink(link)
+					}
+					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create rule symlink"})
+					return
+				}
+				createdLinks = append(createdLinks, ruleLinkPath)
+				log.Printf("[%s-%s-INFO] Created rule symlink: %s -> %s", strings.ToUpper(ruleType), strings.ToUpper(action), ruleLinkPath, rulePath)
+			} else {
+				if err := routes.RemoveSymlink(ruleLinkPath); err != nil {
+					log.Printf("[%s-%s-ERROR] Failed to remove rule symlink: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+				} else {
+					log.Printf("[%s-%s-INFO] Removed rule symlink: %s", strings.ToUpper(ruleType), strings.ToUpper(action), ruleLinkPath)
+				}
+			}
+		}
+
+		// Handle alert file
+		alertLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filepath.Base(alertPath))
+		if isEnable {
+			if err := routes.CreateSymlink(alertPath, alertLinkPath); err != nil && !os.IsExist(err) {
+				log.Printf("[%s-%s-ERROR] Failed to create alert symlink: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+				for _, link := range createdLinks {
+					routes.RemoveSymlink(link)
+				}
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create alert symlink"})
+				return
+			}
+			log.Printf("[%s-%s-INFO] Created alert symlink: %s -> %s", strings.ToUpper(ruleType), strings.ToUpper(action), alertLinkPath, alertPath)
+		} else {
+			if err := routes.RemoveSymlink(alertLinkPath); err != nil {
+				log.Printf("[%s-%s-ERROR] Failed to remove alert symlink: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+			} else {
+				log.Printf("[%s-%s-INFO] Removed alert symlink: %s", strings.ToUpper(ruleType), strings.ToUpper(action), alertLinkPath)
+			}
+		}
+
+		// Reload Prometheus
+		log.Printf("[%s-%s-INFO] Reloading Prometheus configuration", strings.ToUpper(ruleType), strings.ToUpper(action))
+		if err := routes.ReloadPrometheus(); err != nil {
+			log.Printf("[%s-%s-WARNING] Failed to reload Prometheus: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+		}
+
+		// Update database status
+		group.Enabled = isEnable
+		if err := db.Save(group).Error; err != nil {
+			log.Printf("[%s-%s-ERROR] Failed to update group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule status"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("%s rule %sd successfully", ruleType, action)})
+	}
 }

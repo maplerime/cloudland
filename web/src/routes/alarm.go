@@ -41,11 +41,8 @@ const (
 	RuleTypeAvailable = "node_available"
 	RulesEnabled      = "/etc/prometheus/rules_enabled"
 	RulesGeneral      = "/etc/prometheus/general_rules"
-	RulesSpecial      = "/etc/prometheus/special_rules"
 	RulesNode         = "/etc/prometheus/node_rules"
 	RuleTemplate      = "/etc/prometheus/node_templates"
-	CPU_relabelPath   = "/etc/prometheus/cpu_mapping_dir"
-	BW_relabelPath    = "/etc/prometheus/bw_mapping_dir"
 )
 
 var (
@@ -1214,15 +1211,6 @@ func ReloadPrometheus() error {
 	}
 }
 
-func RulePaths(ruleType, groupID string) (generalPath string, specialPath string) {
-	const (
-		RulesGeneral = "/etc/prometheus/general_rules"
-		RulesSpecial = "/etc/prometheus/special_rules"
-	)
-	return fmt.Sprintf("%s/%s-general-%s.yml", RulesGeneral, ruleType, groupID),
-		fmt.Sprintf("%s/%s-special-%s.yml", RulesSpecial, ruleType, groupID)
-}
-
 func RemoveFile(path string) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
@@ -1367,19 +1355,8 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
 
-	// Determine rule file path based on owner
-	var outputPath string
-	owner, ok := data["owner"].(string)
-	if !ok {
-		owner = ""
-	}
-
-	// Determine rule file location based on owner
-	if owner == "admin" {
-		outputPath = filepath.Join(RulesGeneral, outputFile)
-	} else {
-		outputPath = filepath.Join(RulesSpecial, outputFile)
-	}
+	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
+	outputPath := filepath.Join(RulesGeneral, outputFile)
 
 	// Read template content
 	templateContent, err := ReadFile(templatePath)

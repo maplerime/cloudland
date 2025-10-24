@@ -204,8 +204,8 @@ func Register() (r *gin.Engine) {
 
 			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
 			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
-			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
-			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
+			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.ToggleRuleStatus("alarm", "enable"))
+			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.ToggleRuleStatus("alarm", "disable"))
 			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVMWithType("alarm"))
 			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVMWithType("alarm"))
 
@@ -231,8 +231,8 @@ func Register() (r *gin.Engine) {
 			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
 
 			// Enable/disable resource adjustment rules
-			authGroup.POST("/api/v1/adjust/:uuid/enable", adjustAPI.EnableAdjustRule)
-			authGroup.POST("/api/v1/adjust/:uuid/disable", adjustAPI.DisableAdjustRule)
+			authGroup.POST("/api/v1/adjust/:uuid/enable", alarmAPI.ToggleRuleStatus("adjust", "enable"))
+			authGroup.POST("/api/v1/adjust/:uuid/disable", alarmAPI.ToggleRuleStatus("adjust", "disable"))
 
 			// VM adjust rule link management
 			metricsGroup.POST("/adjust/link", alarmAPI.LinkRuleToVMWithType("adjust"))
