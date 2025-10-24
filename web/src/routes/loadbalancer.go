@@ -83,17 +83,16 @@ func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (h
 }
 
 func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
-	ctx, db := GetContextDB(ctx)
 	if loadBalancer == nil || (loadBalancer.Status != "available") {
 		logger.Error("Load balancer is not available")
 		err = NewCLError(ErrLoadBalancerNotFound, "Load balancer is not available", nil)
 		return
 	}
-	floatingIps := []*model.FloatingIp{}
-	err = db.Preload("Subnet").Where("load_balancer_id = ?", loadBalancer.ID).Find(&floatingIps).Error
+	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
+	_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
 	if err != nil {
-		logger.Error("DB failed to query load balancer floating ips, %v", err)
-		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
+		logger.Error("Failed to list floating ips", err)
+		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
 		return
 	}
 	lbFloatingIps := []*LoadBalancerFloatingIp{}
@@ -360,7 +359,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		return
 	}
 	for _, listener := range listeners {
-		err = listenerAdmin.Delete(ctx, listener)
+		err = listenerAdmin.Delete(ctx, listener, loadBalancer)
 		if err != nil {
 			logger.Error("Failed to delete listener", err)
 			err = NewCLError(ErrListenerDeleteFailed, "Failed to delete listener", err)
@@ -368,7 +367,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		}
 	}
 	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
-	err = db.Model(loadBalancer).Update("name", loadBalancer.Name).Error
+	err = db.Model(&model.LoadBalancer{Model: model.Model{ID: loadBalancer.ID}}).Update("name", loadBalancer.Name).Error
 	if err != nil {
 		logger.Error("DB failed to update loadBalancer name", err)
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
@@ -405,6 +404,20 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		logger.Error("DB failed to delete load balancer", err)
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
 		return
+	}
+	total, _, err := floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
+	if err != nil {
+		logger.Error("Failed to list floating ips", err)
+		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
+		return
+	}
+	if total == 0 {
+		err = subnetAdmin.Delete(ctx, vrrpSubnet)
+		if err != nil {
+			logger.Error("Failed to list floating ips", err)
+			err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
+			return
+		}
 	}
 	return
 }

@@ -83,3 +83,7 @@ EOF
     done
     let i=$i+1
 done
+
+haproxy_pid=$(cat $lb_dir/haproxy.pid)
+kill -HUP $haproxy_pid
+[ $? -ne 0 ] && ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf

@@ -521,6 +521,14 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		err = NewCLError(ErrAddressDeleteFailed, "Database delete ip address failed", err)
 		return
 	}
+	if subnet.Type == "vrrp" && subnet.RouterID > 0 {
+		err = db.Model(&model.Router{Model: model.Model{ID: subnet.RouterID}}).Updates(map[string]interface{}{"vrrp_subnet_id": 0}).Error
+		if err != nil {
+			logger.Error("DB failed to update router vrrp subnet", err)
+		err = NewCLError(ErrDatabaseError, "Database failed to update router vrrp subnet", err)
+			return
+		}
+	}
 	// delete floatingip
 	var floatingIps []*model.FloatingIp
 	err = db.Where("subnet_id = ?", subnet.ID).Find(&floatingIps).Error

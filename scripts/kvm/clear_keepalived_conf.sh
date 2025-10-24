@@ -16,7 +16,9 @@ peer_ip=$7
 role=$8
 ext_dev=te-$1-$ext_link
 
-rm -rf $router_dir/$router/lb-$vrrp_ID
+router_dir=$router_dir/$router
+keepalived_pid=$(cat $router_dir/keepalived.pid)
+ip netns exec $router kill $keepalived_pid
 
 # clear either local or peer IPs
 bridge fdb del $local_mac dev v-$vrrp_vlan

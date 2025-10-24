@@ -197,7 +197,7 @@ func (a *BackendAdmin) Update(ctx context.Context, backend *model.Backend, backe
 	return
 }
 
-func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend) (err error) {
+func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, listener *model.Listener, loadBalancer *model.LoadBalancer) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -211,7 +211,7 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend) (err 
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the router", nil)
 		return
 	}
-	backend.BackendAddr = fmt.Sprintf("%s-%d", backend.BackendAddr, backend.CreatedAt.Unix())
+	backend.BackendAddr = fmt.Sprintf("%s-%d", backend.BackendAddr, backend.CreatedAt.UnixNano())
 	err = db.Model(backend).Update("backend_addr", backend.BackendAddr).Error
 	if err != nil {
 		logger.Error("DB failed to update backend address", err)
@@ -222,6 +222,36 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend) (err 
 		logger.Error("DB failed to delete backend", err)
 		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete backend", err)
 		return
+	}
+	total, _, err := backendAdmin.List(ctx, 0, -1, "", listener)
+	if err != nil {
+		logger.Error("DB failed to count backends, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count backends", err)
+		return
+	}
+	if total == 0 {
+		hyperGroup := ""
+		hyperGroup, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+		if err != nil {
+			logger.Errorf("Failed to get hyper group, %v", err)
+			err = NewCLError(ErrExecuteOnHyperFailed, "Failed to get hyper group", err)
+			return
+		}
+		control := "toall=" + hyperGroup
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_haproxy_conf.sh '%d' '%d'", loadBalancer.RouterID, loadBalancer.ID)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Clear haproxy conf execution failed", err)
+			err = NewCLError(ErrExecuteOnHyperFailed, "Clear haproxy conf execution failed", err)
+			return
+		}
+	} else {
+		err = a.CreateHaproxyConf(ctx, listener, loadBalancer)
+		if err != nil {
+			logger.Error("Failed to delete haproxy conf ", err)
+			err = NewCLError(ErrBackendDeleteFailed, "Failed to delete haproxy conf", err)
+			return
+		}
 	}
 	return
 }
@@ -401,7 +431,7 @@ func (v *BackendView) Delete(c *macaron.Context, store session.Store) (err error
 		c.Error(http.StatusBadRequest)
 		return
 	}
-	err = backendAdmin.Delete(ctx, backend)
+	err = backendAdmin.Delete(ctx, backend, listener, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to delete backend, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

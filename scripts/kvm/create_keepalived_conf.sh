@@ -13,9 +13,9 @@ local_ip=$4
 peer_ip=$5
 role=$6
 
-lb_dir=$router_dir/$router/lb-$vrrp_ID
-[ ! -d "$lb_dir" ] && mkdir -p $lb_dir
-cat >$lb_dir/keepalived.conf <<EOF
+router_dir=$router_dir/$router
+[ ! -d "$router_dir" ] && mkdir -p $router_dir
+cat >$router_dir/keepalived.conf <<EOF
 vrrp_instance load_balancer_${vrrp_ID} {
     state $role
     interface ns-$vrrp_vlan
@@ -43,14 +43,14 @@ while [ $i -lt $nvip ]; do
     suffix=${ID}-${ext_vlan}
     ext_dev=te-$suffix
     ./create_veth.sh $router ext-$suffix te-$suffix
-    cat >>$lb_dir/keepalived.conf <<EOF
+    cat >>$router_dir/keepalived.conf <<EOF
         $virtual_ip dev $ext_dev
 EOF
     let i=$i+1
 done
-cat >>$lb_dir/keepalived.conf <<EOF
+cat >>$router_dir/keepalived.conf <<EOF
     }
 }
 EOF
 
-ip netns exec $router keepalived -p $lb_dir/keepalived.pid -f $lb_dir/keepalived.conf
+ip netns exec $router keepalived -p $router_dir/keepalived.pid -f $router_dir/keepalived.conf
