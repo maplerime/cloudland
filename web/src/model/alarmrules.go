@@ -57,6 +57,70 @@ func init() {
 		log.Printf("Successfully created partial unique index idx_remote_notify_name_active")
 		return nil
 	})
+
+	// 3. Create partial unique index for RuleGroupV2.RuleID (supports soft delete scenario)
+	dbs.AutoUpgrade("create_rule_group_v2_rule_id_partial_unique_index", func(db *gorm.DB) error {
+		// 3.1 Clean up legacy global unique indexes that may have been created by unique_index tag
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_id`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_id`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_group_v2_rule_id`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_group_v2_rule_id`).Error
+
+		// 3.2 Create partial unique index for "only active records" (non-soft-deleted)
+		err := db.Exec(`
+			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_rule_id_active
+			ON rule_group_v2 (rule_id)
+			WHERE deleted_at IS NULL
+		`).Error
+
+		if err != nil {
+			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			err = db.Exec(`
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_id_active
+				ON rule_group_v2 (rule_id)
+				WHERE deleted_at IS NULL
+			`).Error
+			if err != nil {
+				log.Printf("Failed to create partial unique index for rule_group_v2.rule_id: %v", err)
+				return err
+			}
+		}
+
+		log.Printf("Successfully created partial unique index idx_rule_id_active")
+		return nil
+	})
+
+	// 4. Create partial unique index for RuleGroupV2.Name (supports soft delete scenario)
+	dbs.AutoUpgrade("create_rule_group_v2_name_partial_unique_index", func(db *gorm.DB) error {
+		// 4.1 Clean up legacy global unique indexes
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_group_name`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_group_name`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_group_v2_name`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_group_v2_name`).Error
+
+		// 4.2 Create partial unique index for "only active records"
+		err := db.Exec(`
+			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_rule_group_name_active
+			ON rule_group_v2 (name)
+			WHERE deleted_at IS NULL
+		`).Error
+
+		if err != nil {
+			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			err = db.Exec(`
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_group_name_active
+				ON rule_group_v2 (name)
+				WHERE deleted_at IS NULL
+			`).Error
+			if err != nil {
+				log.Printf("Failed to create partial unique index for rule_group_v2.name: %v", err)
+				return err
+			}
+		}
+
+		log.Printf("Successfully created partial unique index idx_rule_group_name_active")
+		return nil
+	})
 }
 func (RuleGroupV2) TableName() string {
 	return "rule_group_v2"

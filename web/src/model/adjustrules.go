@@ -1,9 +1,11 @@
 package model
 
 import (
+	"log"
 	"time"
 	"web/src/dbs"
 
+	"github.com/jinzhu/gorm"
 	_ "github.com/lib/pq"
 )
 
@@ -14,12 +16,45 @@ const (
 )
 
 func init() {
+	// 1. Migrate schema fields (AdjustRuleGroup.RuleID no longer uses unique_index tag)
 	dbs.AutoMigrate(
 		&AdjustRuleGroup{},
 		&CPUAdjustRuleDetail{},
 		&BWAdjustRuleDetail{},
 		&AdjustmentHistory{},
 	)
+
+	// 2. Create partial unique index for AdjustRuleGroup.RuleID (supports soft delete scenario)
+	dbs.AutoUpgrade("create_adjust_rule_group_rule_id_partial_unique_index", func(db *gorm.DB) error {
+		// 2.1 Clean up legacy global unique indexes that may have been created by unique_index tag
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_adjust_rule_id`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_adjust_rule_id`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS idx_adjust_rule_group_rule_id`).Error
+		_ = db.Exec(`DROP INDEX IF EXISTS uix_adjust_rule_group_rule_id`).Error
+
+		// 2.2 Create partial unique index for "only active records" (non-soft-deleted)
+		err := db.Exec(`
+			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_adjust_rule_id_active
+			ON adjust_rule_group (rule_id)
+			WHERE deleted_at IS NULL
+		`).Error
+
+		if err != nil {
+			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			err = db.Exec(`
+				CREATE UNIQUE INDEX IF NOT EXISTS idx_adjust_rule_id_active
+				ON adjust_rule_group (rule_id)
+				WHERE deleted_at IS NULL
+			`).Error
+			if err != nil {
+				log.Printf("Failed to create partial unique index for adjust_rule_group.rule_id: %v", err)
+				return err
+			}
+		}
+
+		log.Printf("Successfully created partial unique index idx_adjust_rule_id_active")
+		return nil
+	})
 }
 
 func (AdjustRuleGroup) TableName() string {

@@ -1676,36 +1676,41 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	// Remove related entries from matched_vms.json
 	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-bw")
 
+	// Get BW rule details to determine which files to delete
+	details, err := a.operator.GetBWRuleDetails(c.Request.Context(), groupUUID)
+	if err != nil {
+		log.Printf("[BW-WARNING] Failed to get rule details for file cleanup: %v", err)
+		details = []model.BWRuleDetail{}
+	}
+
 	// Delete symlink and rule file (paths consistent with creation)
 	// Track deleted file paths
 	deletedFiles := []string{}
 
-	// No need to iterate rule names, use fixed format filenames
-	inFile := fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
-	outFile := fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
-	linkIn := filepath.Join(routes.RulesEnabled, inFile)
-	linkOut := filepath.Join(routes.RulesEnabled, outFile)
-	ruleIn := filepath.Join(routes.RulesGeneral, inFile)   // All rules now stored in general_rules
-	ruleOut := filepath.Join(routes.RulesGeneral, outFile) // All rules now stored in general_rules
+	// Only delete files for directions that actually exist in the rule
+	for _, detail := range details {
+		var filename string
+		switch detail.Direction {
+		case "in":
+			filename = fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
+		case "out":
+			filename = fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
+		default:
+			log.Printf("[BW-WARNING] Unknown direction: %s", detail.Direction)
+			continue
+		}
 
-	// Delete symlink和规则文件，记录成功删除的文件路径
-	if err := routes.RemoveFile(linkIn); err == nil {
-		deletedFiles = append(deletedFiles, linkIn)
-	}
-	if err := routes.RemoveFile(ruleIn); err == nil {
-		deletedFiles = append(deletedFiles, ruleIn)
-	}
-	if err := routes.RemoveFile(linkOut); err == nil {
-		deletedFiles = append(deletedFiles, linkOut)
-	}
-	if err := routes.RemoveFile(ruleOut); err == nil {
-		deletedFiles = append(deletedFiles, ruleOut)
-	}
+		linkPath := filepath.Join(routes.RulesEnabled, filename)
+		rulePath := filepath.Join(routes.RulesGeneral, filename) // All rules now stored in general_rules
 
-	// Track mapping file path if exists
-	mappingFile := ""
-	if mappingFile != "" {
-		deletedFiles = append(deletedFiles, mappingFile)
+		// Delete symlink
+		if err := routes.RemoveFile(linkPath); err == nil {
+			deletedFiles = append(deletedFiles, linkPath)
+		}
+		// Delete rule file
+		if err := routes.RemoveFile(rulePath); err == nil {
+			deletedFiles = append(deletedFiles, rulePath)
+		}
 	}
 
 	// Delete rule-related table data
