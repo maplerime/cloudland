@@ -565,7 +565,6 @@
   with_items:
     - /etc/prometheus/rules_enabled
     - /etc/prometheus/general_rules
-    - /etc/prometheus/special_rules
     - /var/log/prometheus
   tags: [monitor]
 
