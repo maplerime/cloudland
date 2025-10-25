@@ -717,6 +717,7 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 			"linkedvms": linkedVMs,
 			"region_id": group.RegionID,
 			"level":     group.Level,
+			"enable":    group.Enabled,
 		})
 	}
 
@@ -793,6 +794,7 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 			"linkedvms": linkedVMs,
 			"region_id": group.RegionID,
 			"level":     group.Level,
+			"enable":    group.Enabled,
 		})
 	}
 
