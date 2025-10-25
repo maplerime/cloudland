@@ -347,10 +347,11 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			GroupUUID string `json:"group_uuid,omitempty"`
-			RuleID    string `json:"rule_id,omitempty"`
-			VMUUID    string `json:"vm_uuid" binding:"required"`
-			Interface string `json:"interface"`
+			GroupUUID string   `json:"group_uuid,omitempty"`
+			RuleID    string   `json:"rule_id,omitempty"`
+			VMUUID    string   `json:"vm_uuid,omitempty"`  // Single VM (backward compatible)
+			VMUUIDs   []string `json:"vm_uuids,omitempty"` // Multiple VMs (new feature)
+			Interface string   `json:"interface"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -361,6 +362,21 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		// Validate that either group_uuid or rule_id must be provided
 		if req.GroupUUID == "" && req.RuleID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
+			return
+		}
+
+		// Validate that either vm_uuid or vm_uuids must be provided
+		// Support both single vm_uuid and multiple vm_uuids for backward compatibility
+		var vmUUIDs []string
+		if req.VMUUID != "" {
+			vmUUIDs = []string{req.VMUUID}
+		} else if len(req.VMUUIDs) > 0 {
+			vmUUIDs = req.VMUUIDs
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": "either vm_uuid or vm_uuids must be provided",
+				"hint":  "Use vm_uuid for single VM or vm_uuids array for multiple VMs",
+			})
 			return
 		}
 
@@ -384,20 +400,41 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		groupUUID := group.UUID
-		vmUUID := req.VMUUID
 
-		deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
-		if err != nil {
-			log.Printf("VM unlinking failed: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to operate vm link db: " + err.Error()})
-			return
+		// Process unlink for each VM
+		var successVMs []string
+		var failedVMs []map[string]interface{}
+		totalDeleted := int64(0)
+
+		for _, vmUUID := range vmUUIDs {
+			deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
+			if err != nil {
+				log.Printf("VM unlinking failed for %s: %v", vmUUID, err)
+				failedVMs = append(failedVMs, map[string]interface{}{
+					"vm_uuid": vmUUID,
+					"error":   "failed to operate vm link db: " + err.Error(),
+				})
+				continue
+			}
+
+			if deletedCount == 0 {
+				failedVMs = append(failedVMs, map[string]interface{}{
+					"vm_uuid": vmUUID,
+					"error":   "VM link not found",
+				})
+				continue
+			}
+
+			successVMs = append(successVMs, vmUUID)
+			totalDeleted += deletedCount
 		}
 
-		if deletedCount == 0 {
+		// If all VMs failed to unlink, return error
+		if len(successVMs) == 0 {
 			c.JSON(http.StatusNotFound, gin.H{
-				"error":      "VM link not found",
+				"error":      "No VMs were unlinked",
 				"group_uuid": groupUUID,
-				"vm_uuid":    vmUUID,
+				"failed_vms": failedVMs,
 			})
 			return
 		}
@@ -405,8 +442,8 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		// Construct alarm type based on rule category
 		alarmType := ruleCategory + "-" + group.Type
 
-		// Remove VM from matched_vms.json
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{vmUUID}, groupUUID, "remove", alarmType, req.Interface)
+		// Remove successfully unlinked VMs from matched_vms.json
+		_ = a.updateMatchedVMsJSON(c.Request.Context(), successVMs, groupUUID, "remove", alarmType, req.Interface)
 
 		// Query remaining linked VMs for response
 		vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
@@ -420,14 +457,29 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			log.Printf("Warning: Failed to reload Prometheus: %v", err)
 		}
 
+		// Build response data
+		responseData := gin.H{
+			"rule_category":  ruleCategory,
+			"unlinked_group": groupUUID,
+			"unlinked_vms":   successVMs,
+			"unlinked_count": len(successVMs),
+			"remaining_vms":  linkedVMs,
+		}
+
+		// Add failed VMs info if any
+		if len(failedVMs) > 0 {
+			responseData["failed_vms"] = failedVMs
+			responseData["failed_count"] = len(failedVMs)
+		}
+
+		// Maintain backward compatibility: if only one VM was requested, include unlinked_vm field
+		if len(vmUUIDs) == 1 {
+			responseData["unlinked_vm"] = successVMs[0]
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"status": "success",
-			"data": gin.H{
-				"rule_category":  ruleCategory,
-				"unlinked_group": groupUUID,
-				"unlinked_vm":    vmUUID,
-				"remaining_vms":  linkedVMs,
-			},
+			"data":   responseData,
 		})
 	}
 }
