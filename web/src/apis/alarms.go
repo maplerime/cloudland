@@ -223,10 +223,12 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			GroupUUID string   `json:"group_uuid,omitempty"`
-			RuleID    string   `json:"rule_id,omitempty"`
-			VMUUIDs   []string `json:"vm_uuids" binding:"required"`
-			Interface string   `json:"interface"`
+			GroupUUID string `json:"group_uuid,omitempty"`
+			RuleID    string `json:"rule_id,omitempty"`
+			VMLinks   []struct {
+				VMUUID    string `json:"vm_uuid" binding:"required"`
+				Interface string `json:"interface"`
+			} `json:"vm_links" binding:"required,min=1"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -237,15 +239,6 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		// Validate that either group_uuid or rule_id must be provided
 		if req.GroupUUID == "" && req.RuleID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
-			return
-		}
-
-		// Validate vm_uuids is not empty (Link is for adding VMs, not removing)
-		if len(req.VMUUIDs) == 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "vm_uuids cannot be empty",
-				"hint":  "To remove VMs from this rule, use the unlink API instead",
-			})
 			return
 		}
 
@@ -279,24 +272,32 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		}
 
 		// Incremental DB insertion with deduplication
-		var newlyAdded []string
-		for _, vmUUID := range req.VMUUIDs {
+		type VMInterfacePair struct {
+			VMUUID    string
+			Interface string
+		}
+		var newlyAdded []VMInterfacePair
+
+		for _, link := range req.VMLinks {
 			exists := a.operator.CheckVMLinkExists(
 				c.Request.Context(),
 				groupUUID,
-				vmUUID,
-				req.Interface,
+				link.VMUUID,
+				link.Interface,
 			)
 
 			if !exists {
 				err := a.operator.CreateVMLink(
 					c.Request.Context(),
 					groupUUID,
-					vmUUID,
-					req.Interface,
+					link.VMUUID,
+					link.Interface,
 				)
 				if err == nil {
-					newlyAdded = append(newlyAdded, vmUUID)
+					newlyAdded = append(newlyAdded, VMInterfacePair{
+						VMUUID:    link.VMUUID,
+						Interface: link.Interface,
+					})
 				} else {
 					log.Printf("Failed to create VM link: %v", err)
 				}
@@ -307,22 +308,31 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		alarmType := ruleCategory + "-" + group.Type
 
 		// Incremental file update (only add newly added VMs)
-		if len(newlyAdded) > 0 {
+		// Group by interface for batch processing
+		interfaceGroups := make(map[string][]string)
+		for _, pair := range newlyAdded {
+			interfaceGroups[pair.Interface] = append(interfaceGroups[pair.Interface], pair.VMUUID)
+		}
+
+		for iface, vmUUIDs := range interfaceGroups {
 			_ = a.updateMatchedVMsJSON(
 				c.Request.Context(),
-				newlyAdded,
+				vmUUIDs,
 				groupUUID,
 				"add",
 				alarmType,
-				req.Interface,
+				iface,
 			)
 		}
 
 		// Query final linked VMs for response
 		vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-		linkedVMs := []string{}
+		var linkedVMsList []map[string]string
 		for _, link := range vmLinks {
-			linkedVMs = append(linkedVMs, link.VMUUID)
+			linkedVMsList = append(linkedVMsList, map[string]string{
+				"vm_uuid":   link.VMUUID,
+				"interface": link.Interface,
+			})
 		}
 
 		// Force reload Prometheus configuration
@@ -336,8 +346,8 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 				"rule_category":    ruleCategory,
 				"group_uuid":       groupUUID,
 				"rule_id":          group.RuleID,
-				"added_vms":        newlyAdded,
-				"total_linked_vms": linkedVMs,
+				"added_count":      len(newlyAdded),
+				"total_linked_vms": linkedVMsList,
 			},
 		})
 	}
@@ -347,11 +357,12 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var req struct {
-			GroupUUID string   `json:"group_uuid,omitempty"`
-			RuleID    string   `json:"rule_id,omitempty"`
-			VMUUID    string   `json:"vm_uuid,omitempty"`  // Single VM (backward compatible)
-			VMUUIDs   []string `json:"vm_uuids,omitempty"` // Multiple VMs (new feature)
-			Interface string   `json:"interface"`
+			GroupUUID string `json:"group_uuid,omitempty"`
+			RuleID    string `json:"rule_id,omitempty"`
+			VMLinks   []struct {
+				VMUUID    string `json:"vm_uuid" binding:"required"`
+				Interface string `json:"interface"`
+			} `json:"vm_links" binding:"required,min=1"`
 		}
 
 		if err := c.ShouldBindJSON(&req); err != nil {
@@ -362,21 +373,6 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		// Validate that either group_uuid or rule_id must be provided
 		if req.GroupUUID == "" && req.RuleID == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "either group_uuid or rule_id must be provided"})
-			return
-		}
-
-		// Validate that either vm_uuid or vm_uuids must be provided
-		// Support both single vm_uuid and multiple vm_uuids for backward compatibility
-		var vmUUIDs []string
-		if req.VMUUID != "" {
-			vmUUIDs = []string{req.VMUUID}
-		} else if len(req.VMUUIDs) > 0 {
-			vmUUIDs = req.VMUUIDs
-		} else {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": "either vm_uuid or vm_uuids must be provided",
-				"hint":  "Use vm_uuid for single VM or vm_uuids array for multiple VMs",
-			})
 			return
 		}
 
@@ -401,36 +397,77 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 
 		groupUUID := group.UUID
 
-		// Process unlink for each VM
-		var successVMs []string
+		// Check if this is batch delete (all interfaces are empty) or specific delete
+		isBatchDelete := len(req.VMLinks) > 0 && req.VMLinks[0].Interface == ""
+
+		type DeletedLink struct {
+			VMUUID    string
+			Interface string
+		}
+		var successfulDeletes []DeletedLink
 		var failedVMs []map[string]interface{}
 		totalDeleted := int64(0)
 
-		for _, vmUUID := range vmUUIDs {
-			deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, vmUUID, req.Interface)
-			if err != nil {
-				log.Printf("VM unlinking failed for %s: %v", vmUUID, err)
-				failedVMs = append(failedVMs, map[string]interface{}{
-					"vm_uuid": vmUUID,
-					"error":   "failed to operate vm link db: " + err.Error(),
-				})
-				continue
-			}
+		if isBatchDelete {
+			// Batch delete: delete all interfaces for each VM
+			for _, link := range req.VMLinks {
+				deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, link.VMUUID, "")
+				if err != nil {
+					log.Printf("VM unlinking failed for %s: %v", link.VMUUID, err)
+					failedVMs = append(failedVMs, map[string]interface{}{
+						"vm_uuid": link.VMUUID,
+						"error":   "failed to operate vm link db: " + err.Error(),
+					})
+					continue
+				}
 
-			if deletedCount == 0 {
-				failedVMs = append(failedVMs, map[string]interface{}{
-					"vm_uuid": vmUUID,
-					"error":   "VM link not found",
-				})
-				continue
-			}
+				if deletedCount == 0 {
+					failedVMs = append(failedVMs, map[string]interface{}{
+						"vm_uuid": link.VMUUID,
+						"error":   "VM link not found",
+					})
+					continue
+				}
 
-			successVMs = append(successVMs, vmUUID)
-			totalDeleted += deletedCount
+				successfulDeletes = append(successfulDeletes, DeletedLink{
+					VMUUID:    link.VMUUID,
+					Interface: "",
+				})
+				totalDeleted += deletedCount
+			}
+		} else {
+			// Specific delete: delete specific (vm_uuid, interface) pairs
+			for _, link := range req.VMLinks {
+				deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, link.VMUUID, link.Interface)
+				if err != nil {
+					log.Printf("VM unlinking failed for %s (interface: %s): %v", link.VMUUID, link.Interface, err)
+					failedVMs = append(failedVMs, map[string]interface{}{
+						"vm_uuid":   link.VMUUID,
+						"interface": link.Interface,
+						"error":     "failed to operate vm link db: " + err.Error(),
+					})
+					continue
+				}
+
+				if deletedCount == 0 {
+					failedVMs = append(failedVMs, map[string]interface{}{
+						"vm_uuid":   link.VMUUID,
+						"interface": link.Interface,
+						"error":     "VM link not found",
+					})
+					continue
+				}
+
+				successfulDeletes = append(successfulDeletes, DeletedLink{
+					VMUUID:    link.VMUUID,
+					Interface: link.Interface,
+				})
+				totalDeleted += deletedCount
+			}
 		}
 
 		// If all VMs failed to unlink, return error
-		if len(successVMs) == 0 {
+		if len(successfulDeletes) == 0 {
 			c.JSON(http.StatusNotFound, gin.H{
 				"error":      "No VMs were unlinked",
 				"group_uuid": groupUUID,
@@ -443,13 +480,24 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		alarmType := ruleCategory + "-" + group.Type
 
 		// Remove successfully unlinked VMs from matched_vms.json
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), successVMs, groupUUID, "remove", alarmType, req.Interface)
+		// Group by interface for batch processing
+		interfaceGroups := make(map[string][]string)
+		for _, deleted := range successfulDeletes {
+			interfaceGroups[deleted.Interface] = append(interfaceGroups[deleted.Interface], deleted.VMUUID)
+		}
+
+		for iface, vmUUIDs := range interfaceGroups {
+			_ = a.updateMatchedVMsJSON(c.Request.Context(), vmUUIDs, groupUUID, "remove", alarmType, iface)
+		}
 
 		// Query remaining linked VMs for response
 		vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-		linkedVMs := []string{}
+		var remainingVMsList []map[string]string
 		for _, link := range vmLinks {
-			linkedVMs = append(linkedVMs, link.VMUUID)
+			remainingVMsList = append(remainingVMsList, map[string]string{
+				"vm_uuid":   link.VMUUID,
+				"interface": link.Interface,
+			})
 		}
 
 		// Force reload Prometheus configuration
@@ -458,23 +506,29 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		// Build response data
+		var unlinkedList []map[string]string
+		for _, deleted := range successfulDeletes {
+			unlinkedList = append(unlinkedList, map[string]string{
+				"vm_uuid":   deleted.VMUUID,
+				"interface": deleted.Interface,
+			})
+		}
+
 		responseData := gin.H{
-			"rule_category":  ruleCategory,
-			"unlinked_group": groupUUID,
-			"unlinked_vms":   successVMs,
-			"unlinked_count": len(successVMs),
-			"remaining_vms":  linkedVMs,
+			"rule_category":   ruleCategory,
+			"group_uuid":      groupUUID,
+			"rule_id":         group.RuleID,
+			"unlinked_vms":    unlinkedList,
+			"unlinked_count":  len(successfulDeletes),
+			"remaining_vms":   remainingVMsList,
+			"total_deleted":   totalDeleted,
+			"is_batch_delete": isBatchDelete,
 		}
 
 		// Add failed VMs info if any
 		if len(failedVMs) > 0 {
 			responseData["failed_vms"] = failedVMs
 			responseData["failed_count"] = len(failedVMs)
-		}
-
-		// Maintain backward compatibility: if only one VM was requested, include unlinked_vm field
-		if len(vmUUIDs) == 1 {
-			responseData["unlinked_vm"] = successVMs[0]
 		}
 
 		c.JSON(http.StatusOK, gin.H{
