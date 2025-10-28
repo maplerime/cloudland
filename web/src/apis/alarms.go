@@ -214,7 +214,7 @@ func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 	}
 
 	// Force reload Prometheus configuration
-	if err := routes.ReloadPrometheus(); err != nil {
+	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
 		// Don't return error as the file update was successful
 	} else {
@@ -342,7 +342,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		}
 
 		// Force reload Prometheus configuration
-		if err := routes.ReloadPrometheus(); err != nil {
+		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 			log.Printf("Warning: Failed to reload Prometheus: %v", err)
 		}
 
@@ -507,7 +507,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		// Force reload Prometheus configuration
-		if err := routes.ReloadPrometheus(); err != nil {
+		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 			log.Printf("Warning: Failed to reload Prometheus: %v", err)
 		}
 
@@ -641,7 +641,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		return
 	}
 
-	routes.ReloadPrometheus()
+	routes.ReloadPrometheusViaHTTP()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
@@ -781,7 +781,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		return
 	}
 
-	routes.ReloadPrometheus()
+	routes.ReloadPrometheusViaHTTP()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
@@ -1047,7 +1047,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		return
 	}
 
-	if err := routes.ReloadPrometheus(); err != nil {
+	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to reload Prometheus",
@@ -1168,7 +1168,7 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 		return
 	}
 
-	if err := routes.ReloadPrometheus(); err != nil {
+	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to reload Prometheus",
@@ -1660,7 +1660,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			return
 		}
 	}
-	routes.ReloadPrometheus()
+	routes.ReloadPrometheusViaHTTP()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
@@ -1867,7 +1867,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		return
 	}
 
-	if err := routes.ReloadPrometheus(); err != nil {
+	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to reload Prometheus",
@@ -2108,7 +2108,7 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 	}
 
 	// Reload Prometheus
-	if err := routes.ReloadPrometheus(); err != nil {
+	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Warning: Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusOK, gin.H{"status": "partial_success", "message": "Mappings synchronized but failed to reload Prometheus", "count": len(allMappings), "stats": stats})
 		return
@@ -2483,7 +2483,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 
 		// Step 8: Reload Prometheus
 		log.Printf("[%s-%s-INFO] Reloading Prometheus configuration", strings.ToUpper(ruleType), strings.ToUpper(action))
-		if err := routes.ReloadPrometheus(); err != nil {
+		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 			log.Printf("[%s-%s-ERROR] Failed to reload Prometheus: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status": "error",

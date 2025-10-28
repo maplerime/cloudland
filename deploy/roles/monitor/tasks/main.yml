@@ -646,7 +646,8 @@
         --storage.tsdb.retention.time=720h \
         --storage.tsdb.path=/var/lib/prometheus/data \
         --log.level=info \
-        --log.format=json
+        --log.format=json \
+        --web.enable-lifecycle
     mode: 0644
   tags: [monitor]
 

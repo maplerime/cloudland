@@ -1211,6 +1211,60 @@ func ReloadPrometheus() error {
 	}
 }
 
+// ReloadPrometheusViaHTTP reloads Prometheus configuration via HTTP API (requires --web.enable-lifecycle)
+func ReloadPrometheusViaHTTP() error {
+	var reloadURL string
+
+	// Step 1: Construct reload URL
+	if isRemotePrometheus {
+		// Remote scenario: use Prometheus IP and port
+		prometheusIP := GetPrometheusIP()
+		prometheusPort := GetPrometheusPort()
+		reloadURL = fmt.Sprintf("http://%s:%d/-/reload", prometheusIP, prometheusPort)
+		log.Printf("Reloading remote Prometheus via HTTP: %s", reloadURL)
+	} else {
+		// Local scenario: use localhost
+		reloadURL = "http://localhost:9090/-/reload"
+		log.Printf("Reloading local Prometheus via HTTP: %s", reloadURL)
+	}
+
+	// Step 2: Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// Step 3: Send POST request
+	resp, err := client.Post(reloadURL, "", nil)
+	if err != nil {
+		log.Printf("Failed to send reload request to Prometheus: %v", err)
+		return fmt.Errorf("failed to reload Prometheus via HTTP: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Step 4: Check response status code
+	if resp.StatusCode != 200 {
+		// Read response body for detailed error information
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Prometheus reload failed with status %d: %s", resp.StatusCode, string(body))
+
+		// Handle 403 error specifically (lifecycle API not enabled)
+		if resp.StatusCode == 403 {
+			return fmt.Errorf("Prometheus lifecycle API is not enabled (HTTP 403). Please add --web.enable-lifecycle flag")
+		}
+
+		return fmt.Errorf("reload failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Step 5: Success log
+	if isRemotePrometheus {
+		log.Printf("Successfully reloaded remote Prometheus configuration via HTTP API")
+	} else {
+		log.Printf("Successfully reloaded local Prometheus configuration via HTTP API")
+	}
+
+	return nil
+}
+
 func RemoveFile(path string) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
@@ -1623,7 +1677,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		}
 	}
 
-	if err := ReloadPrometheus(); err != nil {
+	if err := ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus: %v", err)
 	}
 
@@ -1841,7 +1895,7 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		}
 	}
 
-	if err := ReloadPrometheus(); err != nil {
+	if err := ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus configuration: error=%v", err)
 	}
 

@@ -201,7 +201,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 	}
 
 	// Reload Prometheus
-	routes.ReloadPrometheus()
+	routes.ReloadPrometheusViaHTTP()
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
@@ -447,7 +447,7 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 
 	// Reload Prometheus
 	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
-	if err := routes.ReloadPrometheus(); err != nil {
+	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("[ADJUST-WARNING] Failed to reload Prometheus: %v", err)
 	}
 
@@ -813,7 +813,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	// Reload Prometheus
-	routes.ReloadPrometheus()
+	routes.ReloadPrometheusViaHTTP()
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
@@ -1106,7 +1106,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	}
 
 	// Reload Prometheus
-	routes.ReloadPrometheus()
+	routes.ReloadPrometheusViaHTTP()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
