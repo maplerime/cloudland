@@ -1,24 +1,18 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 7 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_mac> <local_ip> <peer_mac> <peer_ip>"
+[ $# -lt 7 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_ip> <local_mac> <peer_ip> <peer_mac>"
 
 router_ID=$1
 router=router-$router_ID
 vrrp_ID=$2
 vrrp_vlan=$3
-local_mac=$4
-local_ip=$5
-peer_mac=$6
-peer_ip=$7
-role=$8
-ext_dev=te-$1-$ext_link
-
-router_dir=$router_dir/$router
-keepalived_pid=$(cat $router_dir/keepalived.pid)
-ip netns exec $router kill $keepalived_pid
+local_ip=$4
+local_mac=$5
+peer_ip=$6
+peer_mac=$7
 
 # clear either local or peer IPs
 bridge fdb del $local_mac dev v-$vrrp_vlan

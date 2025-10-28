@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_mac> <local_ip> <peer_mac> <peer_ip> <role> <virtual_ip>"
+[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_mac> <local_ip> <peer_mac> <peer_ip> <role>"
 
 router=$1
 [ "${router/router-/}" = "$router" ] && router=router-$1
@@ -14,8 +14,6 @@ local_ip=$5
 peer_mac=$6
 peer_ip=$7
 role=$8
-virtual_ip=$9
-ext_dev=te-$1-$ext_link
 
 ./create_local_router.sh $router
 ./create_link.sh $vrrp_vlan

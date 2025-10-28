@@ -18,10 +18,10 @@ type Interface struct {
 	Owner           int64  `gorm:"default:1"` /* The organization ID of the resource */
 	Name            string `gorm:"type:varchar(32)"`
 	MacAddr         string `gorm:"type:varchar(32)"`
-	Instance        int64
-	Device          int64
+	Instance        int64 `gorm:"index"`
+	Device          int64 `gorm:"index"`
 	Dhcp            int64
-	FloatingIp      int64
+	FloatingIp      int64 `gorm:"index"`
 	Subnet          int64
 	RouterID        int64
 	AddressID       int64

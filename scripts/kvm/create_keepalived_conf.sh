@@ -15,14 +15,18 @@ peer_ip=$6
 peer_mac=$7
 role=$8
 
+router_dir=$router_dir/$router
 vips=$(cat)
 nvip=$(jq length <<< $vips)
 if [ $nvip -eq 0 ]; then
-    ./clear_keepalived_config.sh $@
+    keepalived_pid=$(cat $router_dir/keepalived.pid)
+    [ $keepalived_pid -gt 0 ] && ip netns exec $router kill $keepalived_pid
     exit 0
 fi
 
-router_dir=$router_dir/$router
+ip netns exec $router ip link show ns-$vrrp_vlan | grep $local_mac 
+[ $? -ne 0 ] && ./set_vrrp_ip.sh $@
+
 [ ! -d "$router_dir" ] && mkdir -p $router_dir
 cat >$router_dir/keepalived.conf <<EOF
 vrrp_instance load_balancer_${vrrp_ID} {

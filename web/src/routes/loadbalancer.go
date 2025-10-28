@@ -218,7 +218,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
-		logger.Error("Delete vm command execution failed ", err)
+		logger.Error("Set vrrp ip command execution failed ", err)
 		return
 	}
 	return
@@ -398,11 +398,32 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
 	}
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance)
+	vrrpInstance := loadBalancer.VrrpInstance
+	vrrpSubnet := vrrpInstance.VrrpSubnet
+	routerID := loadBalancer.RouterID
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance)
 	if err != nil {
 		logger.Error("Failed to get vrrp interfaces", err)
 		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
 		return
+	}
+	if vrrpIface1.Hyper >= 0 {
+		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Set vrrp ip command execution failed ", err)
+			return
+		}
+	}
+	if vrrpIface2.Hyper >= 0 {
+		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", routerID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Set vrrp ip command execution failed ", err)
+			return
+		}
 	}
 	err = DeleteInterface(ctx, vrrpIface1)
 	if err != nil {
