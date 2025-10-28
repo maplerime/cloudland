@@ -48,11 +48,15 @@ type LoadBalancerConfig struct {
 }
 
 type LoadBalancerFloatingIp struct {
-	Address string `json:"address"`
-	Vlan    int64  `json:"vlan"`
+	Address  string `json:"address"`
+	Vlan     int64  `json:"vlan"`
+	Gateway  string `json:"gateway"`
+	MarkID   int64  `json:"mark_id"`
+	Inbound  int32  `json:"inbound"`
+	Outbound int32  `json:"outbound"`
 }
 
-func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (hyperGroup string, vrrpIface1, vrrpIface2 *model.Interface, err error) {
+func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	vrrpID := vrrpInstance.ID
 	vrrpIface1 = &model.Interface{}
@@ -67,7 +71,15 @@ func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (h
 		logger.Error("Failed to query vrrp interface 2", err)
 		return
 	}
+	return
+}
+
+func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (hyperGroup string, vrrpIface1, vrrpIface2 *model.Interface, err error) {
 	hyperList := ""
+	vrrpIface1, vrrpIface2, err = GetVrrpInterfaces(ctx, vrrpInstance)
+	if err != nil {
+		return
+	}
 	if vrrpIface1.Hyper >= 0 {
 		hyperList = fmt.Sprintf("%d,", vrrpIface1.Hyper)
 	}
@@ -78,16 +90,11 @@ func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (h
 		err = fmt.Errorf("No valid hyper for vrrp interfaces")
 		return
 	}
-	hyperGroup = fmt.Sprintf("group-vrrp-%d:%s", vrrpID, hyperList)
+	hyperGroup = fmt.Sprintf("group-vrrp-%d:%s", vrrpInstance.ID, hyperList)
 	return
 }
 
-func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
-	if loadBalancer == nil || (loadBalancer.Status != "available") {
-		logger.Error("Load balancer is not available")
-		err = NewCLError(ErrLoadBalancerNotFound, "Load balancer is not available", nil)
-		return
-	}
+func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) (jsonData []byte, err error) {
 	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
 	_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
 	if err != nil {
@@ -98,26 +105,44 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	lbFloatingIps := []*LoadBalancerFloatingIp{}
 	for _, fip := range floatingIps {
 		lbFloatingIps = append(lbFloatingIps, &LoadBalancerFloatingIp{
-			Address: fip.FipAddress,
-			Vlan:    fip.Subnet.Vlan,
+			Address:  fip.FipAddress,
+			Vlan:     fip.Subnet.Vlan,
+			Gateway:  fip.Subnet.Gateway,
+			MarkID:   fip.ID,
+			Inbound:  fip.Inbound,
+			Outbound: fip.Outbound,
 		})
 	}
-	routerID := loadBalancer.RouterID
-	vrrpID := loadBalancer.VrrpInstanceID
-	vrrpVlan := loadBalancer.VrrpInstance.VrrpSubnet.Vlan
-	jsonData, err := json.Marshal(lbFloatingIps)
+	jsonData, err = json.Marshal(lbFloatingIps)
 	if err != nil {
 		logger.Errorf("Failed to marshal load balancer floating ip json data, %v", err)
 		return
 	}
-	_, vrrpIface1, vrrpIface2, err := GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+	return
+}
+
+func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
+	if loadBalancer == nil || (loadBalancer.Status != "available") {
+		logger.Error("Load balancer is not available")
+		err = NewCLError(ErrLoadBalancerNotFound, "Load balancer is not available", nil)
+		return
+	}
+	routerID := loadBalancer.RouterID
+	vrrpID := loadBalancer.VrrpInstanceID
+	vrrpVlan := loadBalancer.VrrpInstance.VrrpSubnet.Vlan
+	jsonData, err := GetLBFloatingIpJson(ctx, loadBalancer)
+	if err != nil {
+		logger.Errorf("Failed to get load balancer floating ip json data, %v", err)
+		return
+	}
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance)
 	if err != nil {
 		logger.Error("No valid hypervisor", err)
 		return
 	}
 	if vrrpIface1.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface2.Address.Address, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute MASTER keepalived conf failed", err)
@@ -126,7 +151,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface2.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface1.Address.Address, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute BACKUP create keepalived conf failed", err)
@@ -373,19 +398,10 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
 	}
-	vrrpInstance := loadBalancer.VrrpInstance
-	vrrpSubnet := vrrpInstance.VrrpSubnet
-	hyperGroup, vrrpIface1, vrrpIface2, err := GetVrrpHyperGroup(ctx, vrrpInstance)
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance)
 	if err != nil {
-		logger.Error("Failed to query vrrp hyper group and interfaces", err)
-		return
-	}
-	control := "toall=" + hyperGroup
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", loadBalancer.RouterID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
-	err = HyperExecute(ctx, control, command)
-	if err != nil {
-		logger.Error("Clear keepalived conf command execution failed ", err)
-		err = NewCLError(ErrExecuteOnHyperFailed, "Clear keepalived conf command execution failed", err)
+		logger.Error("Failed to get vrrp interfaces", err)
+		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
 		return
 	}
 	err = DeleteInterface(ctx, vrrpIface1)
@@ -405,14 +421,15 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
 		return
 	}
-	total, _, err := floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
+	count := 0
+	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", loadBalancer.RouterID).Count(&count).Error
 	if err != nil {
-		logger.Error("Failed to list floating ips", err)
-		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
+		logger.Error("Failed to count load balancer")
+		err = NewCLError(ErrDatabaseError, "Failed to count load balancer in the router", err)
 		return
 	}
-	if total == 0 {
-		err = subnetAdmin.Delete(ctx, vrrpSubnet)
+	if count == 0 {
+		err = subnetAdmin.Delete(ctx, loadBalancer.VrrpInstance.VrrpSubnet)
 		if err != nil {
 			logger.Error("Failed to list floating ips", err)
 			err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)

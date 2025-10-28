@@ -232,7 +232,7 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 		return
 	}
 	count = 0
-	err = db.Model(&model.Subnet{}).Where("router_id = ?", router.ID).Count(&count).Error
+	err = db.Model(&model.Subnet{}).Where("router_id = ? and type <> 'vrrp'", router.ID).Count(&count).Error
 	if err != nil {
 		logger.Error("Failed to count subnet")
 		err = NewCLError(ErrDatabaseError, "Failed to count subnet in the router", err)
@@ -254,12 +254,36 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 		err = NewCLError(ErrRouterHasPortmaps, "There are associated portmaps", nil)
 		return
 	}
+	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", router.ID).Count(&count).Error
+	if err != nil {
+		logger.Error("Failed to count load balancer")
+		err = NewCLError(ErrDatabaseError, "Failed to count load balancer in the router", err)
+		return
+	}
+	if count > 0 {
+		logger.Error("There are associated load balancers")
+		err = NewCLError(ErrRouterHasPortmaps, "There are associated load balancers", nil)
+		return
+	}
 	control := "toall="
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_local_router.sh '%d'", router.ID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete master failed")
 		return
+	}
+	if router.VrrpSubnetID > 0 {
+		var vrrpSubnet *model.Subnet
+		vrrpSubnet, err = subnetAdmin.Get(ctx, router.VrrpSubnetID)
+		if err != nil {
+			logger.Error("Failed to get vrrp subnet", err)
+			return
+		}
+		err = subnetAdmin.Delete(ctx, vrrpSubnet)
+		if err != nil {
+			logger.Error("Failed to list floating ips", err)
+			return
+		}
 	}
 	router.Name = fmt.Sprintf("%s-%d", router.Name, router.CreatedAt.Unix())
 	err = db.Model(router).Update("name", router.Name).Error

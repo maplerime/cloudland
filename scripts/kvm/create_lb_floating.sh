@@ -35,13 +35,14 @@ suffix=${ID}-${ext_vlan}
 ext_dev=te-$suffix
 ./create_veth.sh $router ext-$suffix te-$suffix
 
-ip netns exec $router ip addr add $ext_cidr dev $ext_dev
 ip netns exec $router ip route replace default via $ext_gw table $table
 ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | while read ns_link ns_gw; do
     ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')
     ip netns exec $router ip route add $ip_net dev $ns_link table $table
 done
+ip netns exec $router ip rule del from $ext_ip lookup $table
 ip netns exec $router ip rule add from $ext_ip lookup $table
+ip netns exec $router ip rule del to $ext_ip lookup $table
 ip netns exec $router ip rule add to $ext_ip lookup $table
 async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
 

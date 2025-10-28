@@ -42,10 +42,12 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 	memberShip := GetMemberShip(ctx)
 	floatingIps := make([]*model.FloatingIp, 0)
 	publicType := string(PublicFloating)
+	routerID := int64(0)
 	loadBalancerID := int64(0)
 	if loadBalancer != nil {
 		publicType = string(PublicLoadBalancer)
 		loadBalancerID = loadBalancer.ID
+		routerID = loadBalancer.RouterID
 	}
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
@@ -54,7 +56,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		if group != nil && group.ID != 0 {
 			groupID = group.ID
 		}
-		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: publicType, GroupID: groupID, LoadBalancerID: loadBalancerID}
+		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: publicType, GroupID: groupID, LoadBalancerID: loadBalancerID, RouterID: routerID}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
 			return nil, NewCLError(ErrFIPCreateFailed, "Failed to create floating ip", err)
@@ -216,6 +218,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	if loadBalancer != nil {
 		err = CreateVrrpConf(ctx, loadBalancer)
 		if err != nil {
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 			return
 		}
 	}
@@ -500,7 +503,7 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 		err = NewCLError(ErrInvalidParameter, errorStr, nil)
 		return
 	}
-	ctx, _, newTransaction := StartTransaction(ctx)
+	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
@@ -517,6 +520,34 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 	if err != nil {
 		logger.Error("DB failed to deallocate floating ip", err)
 		return
+	}
+	if floatingIp.LoadBalancerID > 0 {
+		loadBalancer := &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
+		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(loadBalancer).Error
+		if err != nil {
+			logger.Error("DB failed to query load balancer ", err)
+			return
+		}
+		hyperGroup := ""
+		hyperGroup, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+		if err != nil {
+			logger.Error("Failed to query vrrp hyper group and interfaces", err)
+			return
+		}
+		control := "toall=" + hyperGroup
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_lb_floating.sh '%d' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.Subnet.Vlan, floatingIp.ID)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Clear lb floating ip execution failed ", err)
+			err = NewCLError(ErrExecuteOnHyperFailed, "Clear lb floating execution failed", err)
+			return
+		}
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			logger.Error("Recreate keepalived config failed", err)
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
+			return
+		}
 	}
 	return
 }

@@ -1,17 +1,26 @@
-#!/bin/bash -xv
+#!/bin/bash
 
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 6 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_ip> <peer_ip> <role>"
+[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_ip> <local_mac> <peer_ip> <peer_mac> <role>"
 
 ID=$1
 router=router-$ID
 vrrp_ID=$2
 vrrp_vlan=$3
 local_ip=$4
-peer_ip=$5
-role=$6
+local_mac=$5
+peer_ip=$6
+peer_mac=$7
+role=$8
+
+vips=$(cat)
+nvip=$(jq length <<< $vips)
+if [ $nvip -eq 0 ]; then
+    ./clear_keepalived_config.sh $@
+    exit 0
+fi
 
 router_dir=$router_dir/$router
 [ ! -d "$router_dir" ] && mkdir -p $router_dir
@@ -35,14 +44,13 @@ vrrp_instance load_balancer_${vrrp_ID} {
 
     virtual_ipaddress {
 EOF
-vips=$(cat)
-nvip=$(jq length <<< $vips)
 i=0
 while [ $i -lt $nvip ]; do
-    read -d'\n' -r virtual_ip ext_vlan < <(jq -r ".[$i].address, .[$i].vlan" <<<$vips)
+    read -d'\n' -r virtual_ip ext_vlan ext_gw mark_id inbound outbound< <(jq -r ".[$i].address, .[$i].vlan, .[$i].gateway, .[$i].mark_id, .[$i].inbound, .[$i].outbound" <<<$vips)
     suffix=${ID}-${ext_vlan}
     ext_dev=te-$suffix
     ./create_veth.sh $router ext-$suffix te-$suffix
+    ./create_lb_floating.sh $ID $virtual_ip $ext_gw $ext_vlan $mark_id $inbound $outbound
     cat >>$router_dir/keepalived.conf <<EOF
         $virtual_ip dev $ext_dev
 EOF
@@ -53,4 +61,7 @@ cat >>$router_dir/keepalived.conf <<EOF
 }
 EOF
 
-ip netns exec $router keepalived -p $router_dir/keepalived.pid -f $router_dir/keepalived.conf
+keepalived_pid=$(cat $router_dir/keepalived.pid)
+[ $keepalived_pid -gt 0 ] && kill -HUP $keepalived_pid
+[ $? -ne 0 ] && ip netns exec $router keepalived -p $router_dir/keepalived.pid -f $router_dir/keepalived.conf
+exit 0
