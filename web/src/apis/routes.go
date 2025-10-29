@@ -48,6 +48,7 @@ func Register() (r *gin.Engine) {
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
 	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
+	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
@@ -183,17 +184,25 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
 			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
 
+			metricsGroup.POST("/alarm/memory/rules", alarmAPI.CreateMemoryRule)
+			metricsGroup.GET("/alarm/memory/rules", alarmAPI.GetMemoryRules)
+			metricsGroup.GET("/alarm/memory/rule/:uuid", alarmAPI.GetMemoryRules)
+			metricsGroup.DELETE("/alarm/memory/rule/:uuid", alarmAPI.DeleteMemoryRule)
+
 			metricsGroup.POST("/alarm/bw/rules", alarmAPI.CreateBWRule)
 			metricsGroup.GET("/alarm/bw/rules", alarmAPI.GetBWRules)
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
 
+			// Add new endpoint for synchronizing VM rule mappings
+			metricsGroup.POST("/alarm/sync-mappings", alarmAPI.SyncAllVMRuleMappings)
+
 			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
 			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
-			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.EnableRules)
-			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.DisableRules)
-			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVM)
-			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVM)
+			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.ToggleRuleStatus("alarm", "enable"))
+			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.ToggleRuleStatus("alarm", "disable"))
+			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVMWithType("alarm"))
+			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVMWithType("alarm"))
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
@@ -204,6 +213,31 @@ func Register() (r *gin.Engine) {
 			authGroup.GET("/api/v1/openmeter/metrics/:instance_id/:subject", openMeterAPI.QueryInstanceMetricsBySubject)
 			authGroup.GET("/api/v1/openmeter/subjects", openMeterAPI.GetAvailableSubjects)
 
+			// Resource auto adjustment route
+			metricsGroup.POST("/adjust/cpu/rules", adjustAPI.CreateCPUAdjustRule)
+			metricsGroup.GET("/adjust/cpu/rules", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.GET("/adjust/cpu/rule/:uuid", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.DELETE("/adjust/cpu/rule/:uuid", adjustAPI.DeleteCPUAdjustRule)
+
+			// Bandwidth auto adjustment route
+			metricsGroup.POST("/adjust/bw/rules", adjustAPI.CreateBWAdjustRule)
+			metricsGroup.GET("/adjust/bw/rules", adjustAPI.GetBWAdjustRules)
+			metricsGroup.GET("/adjust/bw/rule/:uuid", adjustAPI.GetBWAdjustRules)
+			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
+
+			// Enable/disable resource adjustment rules
+			authGroup.POST("/api/v1/adjust/:uuid/enable", alarmAPI.ToggleRuleStatus("adjust", "enable"))
+			authGroup.POST("/api/v1/adjust/:uuid/disable", alarmAPI.ToggleRuleStatus("adjust", "disable"))
+
+			// VM adjust rule link management
+			metricsGroup.POST("/adjust/link", alarmAPI.LinkRuleToVMWithType("adjust"))
+			metricsGroup.DELETE("/adjust/unlink", alarmAPI.UnlinkRuleFromVMWithType("adjust"))
+
+			// Unified rule links query (supports both alarm and adjust rules)
+			authGroup.GET("/api/v1/rules/links", adjustAPI.GetRuleLinks)
+
+			// Bandwidth configuration metrics regeneration
+			authGroup.POST("/api/v1/adjust/regenerate-bandwidth-metrics", adjustAPI.RegenerateBandwidthConfigMetrics)
 		}
 
 	}
