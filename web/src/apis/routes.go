@@ -194,11 +194,6 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
 
-			metricsGroup.POST("/alarm/remote-notify-configs", alarmAPI.CreateRemoteNotifyConfig)
-			metricsGroup.GET("/alarm/remote-notify-configs", alarmAPI.GetRemoteNotifyConfigs)
-			metricsGroup.GET("/alarm/remote-notify-config/:name", alarmAPI.GetRemoteNotifyConfig)
-			metricsGroup.DELETE("/alarm/remote-notify-config/:name", alarmAPI.DeleteRemoteNotifyConfig)
-
 			// Add new endpoint for synchronizing VM rule mappings
 			metricsGroup.POST("/alarm/sync-mappings", alarmAPI.SyncAllVMRuleMappings)
 

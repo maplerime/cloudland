@@ -1402,27 +1402,63 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 			target_device = alert.Labels["target_device"]
 		}
 
-		alertRecord := &routes.Alert{
-			Name:          alertName,
-			Status:        status,
-			RuleGroupUUID: rule_group_uuid,
-			GlobalRuleID:  global_rule_id,
-			Severity:      severity,
-			Summary:       summary,
-			Description:   description,
-			StartsAt:      alert.StartsAt,
-			AlertType:     alert_type,
-			TargetDevice:  target_device,
-			RegionID:      region_id,
-			InstanceID:    instance_id,
-		}
-
 		log.Printf("Alert %s: %s (type=%s, severity=%s, owner=%s, rule_id=%s)",
 			status, alertName, alert_type, severity, owner, global_rule_id)
 
-		// Notify realtime alert system
-		if err := a.notifyRealtimeAlert(alertRecord); err != nil {
-			log.Printf("Failed to notify realtime alert %s: %v", alertName, err)
+		// Send notification using notify_url from alert labels (same pattern as adjust rules)
+		notifyURL := alert.Labels["notify_url"]
+		if notifyURL != "" {
+			// Construct notification parameters
+			endsAt := alert.EndsAt
+			summaryText := summary
+			descriptionText := description
+
+			if status == "resolved" {
+				endsAt = time.Now()
+				summaryText = fmt.Sprintf("RESOLVED: %s", summary)
+				descriptionText = fmt.Sprintf("Alert resolved: %s", description)
+			}
+
+			notifyParams := routes.NotifyParams{
+				Alerts: []struct {
+					State       string            `json:"state"`
+					Labels      map[string]string `json:"labels"`
+					Annotations map[string]string `json:"annotations"`
+					StartsAt    time.Time         `json:"startsAt"`
+					EndsAt      time.Time         `json:"endsAt"`
+				}{
+					{
+						State: status,
+						Labels: map[string]string{
+							"alert_type":    alert_type,
+							"alertname":     alertName,
+							"rule_id":       global_rule_id,
+							"rule_group":    rule_group_uuid,
+							"region_id":     region_id,
+							"instance_id":   instance_id,
+							"severity":      severity,
+							"target_device": target_device,
+							"owner":         owner,
+						},
+						Annotations: map[string]string{
+							"description": descriptionText,
+							"summary":     summaryText,
+						},
+						StartsAt: alert.StartsAt,
+						EndsAt:   endsAt,
+					},
+				},
+			}
+
+			// Use AlarmOperator's SendNotification directly
+			if err := a.operator.SendNotification(c.Request.Context(), notifyURL, notifyParams); err != nil {
+				log.Printf("[ALARM-WARNING] Failed to send notification for alert %s: %v", alertName, err)
+			} else {
+				log.Printf("[ALARM-INFO] Successfully sent notification for alert: %s, rule_id: %s",
+					alertName, global_rule_id)
+			}
+		} else {
+			log.Printf("[ALARM-WARNING] No notify_url found in alert labels for alert: %s", alertName)
 		}
 	}
 
@@ -1431,63 +1467,6 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 		"alerts":  len(notification.Alerts),
 		"message": "alarm process completed",
 	})
-}
-
-// notifyRealtimeAlert sends alert notifications to configured remote services
-func (a *AlarmAPI) notifyRealtimeAlert(alert *routes.Alert) error {
-	status := alert.Status
-
-	var endsAt time.Time
-	var summary, description string
-
-	if status == "resolved" {
-		endsAt = time.Now()
-		summary = fmt.Sprintf("RESOLVED: %s", alert.Summary)
-		description = fmt.Sprintf("Alert resolved: %s", alert.Description)
-	} else {
-		endsAt = alert.EndsAt
-		summary = alert.Summary
-		description = alert.Description
-	}
-
-	// Construct notification parameters
-	notifyParams := routes.NotifyParams{
-		Alerts: []struct {
-			State       string            `json:"state"`
-			Labels      map[string]string `json:"labels"`
-			Annotations map[string]string `json:"annotations"`
-			StartsAt    time.Time         `json:"startsAt"`
-			EndsAt      time.Time         `json:"endsAt"`
-		}{
-			{
-				State: status,
-				Labels: map[string]string{
-					"alert_type":    alert.AlertType,
-					"alertname":     alert.Name,
-					"rule_id":       alert.GlobalRuleID,
-					"region_id":     alert.RegionID,
-					"instance_id":   alert.InstanceID,
-					"severity":      alert.Severity,
-					"target_device": alert.TargetDevice,
-				},
-				Annotations: map[string]string{
-					"description": description,
-					"summary":     summary,
-				},
-				StartsAt: alert.StartsAt,
-				EndsAt:   endsAt,
-			},
-		},
-	}
-
-	// Send notification to all configured services
-	if err := a.operator.SendNotificationToAllServices(context.Background(), notifyParams); err != nil {
-		log.Printf("Failed to send %s notification for alert %s: %v", status, alert.Name, err)
-		return err
-	}
-
-	log.Printf("Notification sent successfully for alert %s (%s)", alert.Name, status)
-	return nil
 }
 
 // GetActiveRules retrieves active rules from Prometheus
@@ -2124,162 +2103,6 @@ type VMAlarmMapping struct {
 	Labels  map[string]string `yaml:"labels"`
 }
 
-// Remote Notify Config API
-
-// CreateRemoteNotifyConfig creates a remote notification configuration
-func (a *AlarmAPI) CreateRemoteNotifyConfig(c *gin.Context) {
-	var req model.RemoteNotifyConfig
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	// Validate required fields
-	if req.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
-		return
-	}
-	if req.Type == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "type is required"})
-		return
-	}
-	if req.NotifyURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "notify_url is required"})
-		return
-	}
-
-	// Validate configuration type
-	validTypes := []string{
-		model.RemoteConfigTypeNotify,
-		model.RemoteConfigTypeWebhook,
-		model.RemoteConfigTypeSync,
-		model.RemoteConfigTypeMetrics,
-		model.RemoteConfigTypeLog,
-	}
-	isValidType := false
-	for _, validType := range validTypes {
-		if req.Type == validType {
-			isValidType = true
-			break
-		}
-	}
-	if !isValidType {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "invalid type, must be one of: " + strings.Join(validTypes, ", "),
-		})
-		return
-	}
-
-	// Check if name already exists (prevent regular duplicates)
-	existing, err := a.operator.GetRemoteNotifyConfigByName(c.Request.Context(), req.Name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check existing config"})
-		return
-	}
-	if existing != nil {
-		c.JSON(http.StatusConflict, gin.H{"error": "Config with this name already exists"})
-		return
-	}
-
-	if err := a.operator.CreateRemoteNotifyConfig(c.Request.Context(), &req); err != nil {
-		// Check for unique constraint violation (handle concurrent race conditions)
-		if strings.Contains(err.Error(), "duplicate key") ||
-			strings.Contains(err.Error(), "unique constraint") ||
-			strings.Contains(err.Error(), "UNIQUE constraint failed") {
-			c.JSON(http.StatusConflict, gin.H{"error": "Config with this name already exists"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create config: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data":   req,
-	})
-}
-
-// GetRemoteNotifyConfigs retrieves list of remote notification configurations
-func (a *AlarmAPI) GetRemoteNotifyConfigs(c *gin.Context) {
-	// Support filtering by type
-	configType := c.Query("type")
-
-	var configs []model.RemoteNotifyConfig
-	var err error
-
-	if configType != "" {
-		// Get configurations by type
-		configs, err = a.operator.GetRemoteNotifyConfigsByType(c.Request.Context(), configType)
-	} else {
-		// Get all configurations
-		configs, err = a.operator.GetRemoteNotifyConfigs(c.Request.Context())
-	}
-
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get configs: " + err.Error()})
-		return
-	}
-
-	response := gin.H{
-		"status": "success",
-		"data":   configs,
-		"count":  len(configs),
-	}
-
-	if configType != "" {
-		response["filter_type"] = configType
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
-// GetRemoteNotifyConfig retrieves a single remote notification configuration
-func (a *AlarmAPI) GetRemoteNotifyConfig(c *gin.Context) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name parameter is required"})
-		return
-	}
-
-	config, err := a.operator.GetRemoteNotifyConfigByName(c.Request.Context(), name)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get config: " + err.Error()})
-		return
-	}
-	if config == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Config not found"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data":   config,
-	})
-}
-
-// DeleteRemoteNotifyConfig deletes a remote notification configuration
-func (a *AlarmAPI) DeleteRemoteNotifyConfig(c *gin.Context) {
-	name := c.Param("name")
-	if name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "name parameter is required"})
-		return
-	}
-
-	if err := a.operator.DeleteRemoteNotifyConfig(c.Request.Context(), name); err != nil {
-		if strings.Contains(err.Error(), "not found") {
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete config: " + err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status":  "success",
-		"message": "Config deleted successfully",
-	})
-}
-
 // ToggleRuleStatus - Toggle rule status (enable/disable) by managing Prometheus symlinks
 // ruleType: "alarm" or "adjust"
 // action: "enable" or "disable"
@@ -2306,32 +2129,58 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			return
 		}
 
-		// Step 2: Get rule group information
-		// Try as rule_id first, fallback to group_uuid if not found
-		group, err := a.operator.GetRulesByRuleID(c.Request.Context(), uuid)
-		if err != nil {
-			// If not found by rule_id, try as group_uuid
-			group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), uuid)
+		// Step 2: Get rule group information based on ruleType
+		var groupUUID, groupType, groupOwner string
+		var groupEnabled bool
+
+		if ruleType == "adjust" {
+			// Query adjust_rule_group table using AdjustOperator
+			adjustOperator := &routes.AdjustOperator{}
+			adjustGroup, err := adjustOperator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
 			if err != nil {
-				log.Printf("[%s-%s-ERROR] Rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
+				log.Printf("[%s-%s-ERROR] Adjust rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
 				c.JSON(http.StatusNotFound, gin.H{
 					"status": "error",
-					"error":  "Rule group not found",
+					"error":  "Adjust rule group not found",
 				})
 				return
 			}
+			groupUUID = adjustGroup.UUID
+			groupType = adjustGroup.Type
+			groupOwner = adjustGroup.Owner
+			groupEnabled = adjustGroup.Enabled
+		} else {
+			// Query rule_group_v2 table using AlarmOperator (original logic)
+			// Try as rule_id first, fallback to group_uuid if not found
+			group, err := a.operator.GetRulesByRuleID(c.Request.Context(), uuid)
+			if err != nil {
+				// If not found by rule_id, try as group_uuid
+				group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), uuid)
+				if err != nil {
+					log.Printf("[%s-%s-ERROR] Alarm rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
+					c.JSON(http.StatusNotFound, gin.H{
+						"status": "error",
+						"error":  "Alarm rule group not found",
+					})
+					return
+				}
+			}
+			groupUUID = group.UUID
+			groupType = group.Type
+			groupOwner = group.Owner
+			groupEnabled = group.Enabled
 		}
 
 		// Step 3: Check current status to prevent duplicate operations
 		isEnable := (action == "enable")
-		if isEnable && group.Enabled {
+		if isEnable && groupEnabled {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"status": "error",
 				"error":  "Rule is already enabled",
 			})
 			return
 		}
-		if !isEnable && !group.Enabled {
+		if !isEnable && !groupEnabled {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"status": "error",
 				"error":  "Rule is already disabled",
@@ -2348,7 +2197,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		var filePaths []FilePair
 
 		// Determine if this is an adjust rule by checking the rule type
-		if strings.Contains(group.Type, "adjust") {
+		if strings.Contains(groupType, "adjust") {
 			ruleSource = "adjust"
 		} else {
 			ruleSource = "alarm"
@@ -2358,13 +2207,13 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		if ruleSource == "alarm" {
 			// Alarm rules: only 1 file
 			// Format: {rule_type}-{owner}-{group_uuid}.yml
-			rulePath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesGeneral, group.Type, group.Owner, group.UUID)
-			ruleLinkPath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesEnabled, group.Type, group.Owner, group.UUID)
+			rulePath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesGeneral, groupType, groupOwner, groupUUID)
+			ruleLinkPath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesEnabled, groupType, groupOwner, groupUUID)
 			filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
 		} else {
 			// Adjust rules: 2 files
 			var ruleTypePrefix string
-			switch group.Type {
+			switch groupType {
 			case "cpu_adjust":
 				ruleTypePrefix = "cpu-adjust"
 			case "bw_adjust_in":
@@ -2372,17 +2221,17 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			case "bw_adjust_out":
 				ruleTypePrefix = "bw-out-adjust"
 			default:
-				ruleTypePrefix = strings.Replace(group.Type, "_", "-", -1)
+				ruleTypePrefix = strings.Replace(groupType, "_", "-", -1)
 			}
 
 			// File 1: Adjust rule file
-			rulePath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesGeneral, ruleTypePrefix, group.Owner, group.UUID)
-			ruleLinkPath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesEnabled, ruleTypePrefix, group.Owner, group.UUID)
+			rulePath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesGeneral, ruleTypePrefix, groupOwner, groupUUID)
+			ruleLinkPath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesEnabled, ruleTypePrefix, groupOwner, groupUUID)
 			filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
 
 			// File 2: Alert file
-			alertPath := fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, group.Owner, group.UUID)
-			alertLinkPath := fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesEnabled, group.Owner, group.UUID)
+			alertPath := fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesGeneral, groupOwner, groupUUID)
+			alertLinkPath := fmt.Sprintf("%s/resource-adjust-alerts-%s-%s.yml", routes.RulesEnabled, groupOwner, groupUUID)
 			filePaths = append(filePaths, FilePair{source: alertPath, link: alertLinkPath})
 		}
 
@@ -2492,14 +2341,28 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			return
 		}
 
-		// Step 9: Update database status
-		if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), group.UUID, isEnable); err != nil {
-			log.Printf("[%s-%s-ERROR] Failed to update group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status": "error",
-				"error":  "Failed to update rule status in database",
-			})
-			return
+		// Step 9: Update database status based on ruleType
+		if ruleType == "adjust" {
+			// Update adjust_rule_group table
+			adjustOperator := &routes.AdjustOperator{}
+			if err := adjustOperator.UpdateAdjustRuleGroupStatus(c.Request.Context(), groupUUID, isEnable); err != nil {
+				log.Printf("[%s-%s-ERROR] Failed to update adjust group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"status": "error",
+					"error":  "Failed to update adjust rule status in database",
+				})
+				return
+			}
+		} else {
+			// Update rule_group_v2 table
+			if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupUUID, isEnable); err != nil {
+				log.Printf("[%s-%s-ERROR] Failed to update alarm group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"status": "error",
+					"error":  "Failed to update alarm rule status in database",
+				})
+				return
+			}
 		}
 
 		// Step 10: Return success response
@@ -2512,13 +2375,12 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"status": "success",
 			"data": gin.H{
-				"rule_id":      group.RuleID,
-				"group_uuid":   group.UUID,
-				"rule_type":    group.Type,
+				"group_uuid":   groupUUID,
+				"rule_type":    groupType,
 				"rule_source":  ruleSource,
 				"action":       action,
 				"enabled":      isEnable,
-				"owner":        group.Owner,
+				"owner":        groupOwner,
 				"target_files": targetFiles,
 			},
 		})

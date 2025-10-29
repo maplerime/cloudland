@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	// 1. Migrate schema fields (RemoteNotifyConfig.Name no longer uses unique_index tag)
+	// 1. Migrate schema fields
 	dbs.AutoMigrate(
 		&RuleGroupV2{},
 		&CPURuleDetail{},
@@ -20,53 +20,17 @@ func init() {
 		&BWRuleDetail{},
 		&VMRuleLink{},
 		&NodeAlarmRule{},
-		&RemoteNotifyConfig{},
 	)
 
-	// 2. Create partial unique index for RemoteNotifyConfig (supports soft delete scenario)
-	dbs.AutoUpgrade("create_remote_notify_name_partial_unique_index", func(db *gorm.DB) error {
-		// 2.1 Clean up legacy global unique indexes that may have been created by unique_index tag
-		//     GORM v1 tag-generated index names are typically idx_<table>_<column> or uix_<table>_<column>
-		_ = db.Exec(`DROP INDEX IF EXISTS idx_remote_notify_config_name`).Error
-		_ = db.Exec(`DROP INDEX IF EXISTS uix_remote_notify_config_name`).Error
-		_ = db.Exec(`DROP INDEX IF EXISTS idx_remote_notify_name`).Error
-
-		// 2.2 Create partial unique index for "only active records" (non-soft-deleted)
-		//     Try CONCURRENTLY first (recommended for production to avoid blocking writes)
-		err := db.Exec(`
-			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_remote_notify_name_active
-			ON remote_notify_config (name)
-			WHERE deleted_at IS NULL
-		`).Error
-
-		if err != nil {
-			// If CONCURRENTLY fails (possibly due to running in transaction or other reasons),
-			// fallback to non-concurrent version (briefly blocks writes, but guarantees success)
-			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
-			err = db.Exec(`
-				CREATE UNIQUE INDEX IF NOT EXISTS idx_remote_notify_name_active
-				ON remote_notify_config (name)
-				WHERE deleted_at IS NULL
-			`).Error
-			if err != nil {
-				log.Printf("Failed to create partial unique index for remote_notify_config: %v", err)
-				return err
-			}
-		}
-
-		log.Printf("Successfully created partial unique index idx_remote_notify_name_active")
-		return nil
-	})
-
-	// 3. Create partial unique index for RuleGroupV2.RuleID (supports soft delete scenario)
+	// 2. Create partial unique index for RuleGroupV2.RuleID (supports soft delete scenario)
 	dbs.AutoUpgrade("create_rule_group_v2_rule_id_partial_unique_index", func(db *gorm.DB) error {
-		// 3.1 Clean up legacy global unique indexes that may have been created by unique_index tag
+		// 2.1 Clean up legacy global unique indexes that may have been created by unique_index tag
 		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_id`).Error
 		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_id`).Error
 		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_group_v2_rule_id`).Error
 		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_group_v2_rule_id`).Error
 
-		// 3.2 Create partial unique index for "only active records" (non-soft-deleted)
+		// 2.2 Create partial unique index for "only active records" (non-soft-deleted)
 		err := db.Exec(`
 			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_rule_id_active
 			ON rule_group_v2 (rule_id)
@@ -90,15 +54,15 @@ func init() {
 		return nil
 	})
 
-	// 4. Create partial unique index for RuleGroupV2.Name (supports soft delete scenario)
+	// 3. Create partial unique index for RuleGroupV2.Name (supports soft delete scenario)
 	dbs.AutoUpgrade("create_rule_group_v2_name_partial_unique_index", func(db *gorm.DB) error {
-		// 4.1 Clean up legacy global unique indexes
+		// 3.1 Clean up legacy global unique indexes
 		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_group_name`).Error
 		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_group_name`).Error
 		_ = db.Exec(`DROP INDEX IF EXISTS idx_rule_group_v2_name`).Error
 		_ = db.Exec(`DROP INDEX IF EXISTS uix_rule_group_v2_name`).Error
 
-		// 4.2 Create partial unique index for "only active records"
+		// 3.2 Create partial unique index for "only active records"
 		err := db.Exec(`
 			CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_rule_group_name_active
 			ON rule_group_v2 (name)
@@ -229,28 +193,4 @@ func (c ConfigWrapper) Value() (driver.Value, error) {
 		return nil, nil
 	}
 	return string(c.RawMessage), nil
-}
-
-// Remote configuration type constants
-const (
-	RemoteConfigTypeNotify  = "NOTIFY"
-	RemoteConfigTypeWebhook = "WEBHOOK"
-	RemoteConfigTypeSync    = "SYNC"
-	RemoteConfigTypeMetrics = "METRICS"
-	RemoteConfigTypeLog     = "LOG"
-)
-
-// RemoteNotifyConfig Remote notification configuration
-type RemoteNotifyConfig struct {
-	Model
-	Name      string `gorm:"type:varchar(128);column:name" json:"name"` // Uniqueness is enforced by partial unique index in database (idx_remote_notify_name_active)
-	Type      string `gorm:"type:varchar(50);not null;column:type;index" json:"type"`
-	NotifyURL string `gorm:"type:varchar(500);not null;column:notify_url" json:"notify_url"`
-	Username  string `gorm:"type:varchar(255);column:username" json:"username"`
-	Password  string `gorm:"type:varchar(255);column:password" json:"password"`
-	TokenURL  string `gorm:"type:varchar(500);column:token_url" json:"token_url"`
-}
-
-func (RemoteNotifyConfig) TableName() string {
-	return "remote_notify_config"
 }

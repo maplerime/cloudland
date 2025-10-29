@@ -47,12 +47,12 @@ const (
 // CreateCPUAdjustRule creates CPU adjustment rule
 func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 	var req struct {
-		Name     string `json:"name" binding:"required"`
-		Owner    string `json:"owner" binding:"required"`
-		Email    string `json:"email"`
-		RegionID string `json:"region_id" binding:"required"`
-		RuleID   string `json:"rule_id" binding:"required"`
-		Rules    []struct {
+		Name      string `json:"name" binding:"required"`
+		Owner     string `json:"owner" binding:"required"`
+		RegionID  string `json:"region_id" binding:"required"`
+		RuleID    string `json:"rule_id" binding:"required"`
+		NotifyURL string `json:"notify_url" binding:"required"`
+		Rules     []struct {
 			Name            string  `json:"name"`
 			HighThreshold   float64 `json:"high_threshold"`
 			SmoothWindow    int     `json:"smooth_window"`
@@ -91,14 +91,13 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 
 	// Create rule group
 	group := &model.AdjustRuleGroup{
-		Name:          req.Name,
-		Type:          model.RuleTypeAdjustCPU,
-		Owner:         req.Owner,
-		Enabled:       true,
-		Email:         "",
-		AdjustEnabled: true, // Always set to true
-		RegionID:      req.RegionID,
-		RuleID:        req.RuleID,
+		Name:      req.Name,
+		Type:      model.RuleTypeAdjustCPU,
+		Owner:     req.Owner,
+		Enabled:   true,
+		RegionID:  req.RegionID,
+		RuleID:    req.RuleID,
+		NotifyURL: req.NotifyURL,
 	}
 
 	if err := a.operator.CreateAdjustRuleGroup(c.Request.Context(), group); err != nil {
@@ -161,8 +160,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 			"trigger_duration":    detail.TriggerDuration,
 			"limit_duration":      detail.LimitDuration,
 			"owner":               req.Owner,
-			"email":               "",
-			"adjust_enabled":      true,
+			"notify_url":          req.NotifyURL,
 		}
 
 		// Generate record rules
@@ -297,6 +295,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 			"create_time": group.CreatedAt.Format(time.RFC3339),
 			"region_id":   group.RegionID,
 			"rule_id":     group.RuleID,
+			"notify_url":  group.NotifyURL,
 			"rules":       rules,
 			"linked_vms":  linkedVMs,
 			"history":     historyData,
@@ -490,9 +489,60 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 		} else {
 			failedCount++
 		}
-		// Send realtime notification
-		if err := a.operator.SendAdjustmentNotification(c.Request.Context(), alert, result); err != nil {
-			log.Printf("[ADJUST-WARNING] Failed to send notification for alert %d: %v", i+1, err)
+
+		// Send realtime notification using notify_url from alert labels
+		notifyURL := alert.Labels["notify_url"]
+		if notifyURL != "" {
+			// Construct notification parameters
+			endsAt := alert.EndsAt
+			summaryPrefix := "Resource adjustment"
+			if alert.Status == "resolved" {
+				endsAt = time.Now()
+				summaryPrefix = "RESOLVED: Resource adjustment"
+			}
+
+			notifyParams := routes.NotifyParams{
+				Alerts: []struct {
+					State       string            `json:"state"`
+					Labels      map[string]string `json:"labels"`
+					Annotations map[string]string `json:"annotations"`
+					StartsAt    time.Time         `json:"startsAt"`
+					EndsAt      time.Time         `json:"endsAt"`
+				}{
+					{
+						State: alert.Status,
+						Labels: map[string]string{
+							"alertname":         alert.Labels["alertname"],
+							"severity":          alert.Labels["severity"],
+							"rule_id":           alert.Labels["global_rule_id"],
+							"domain":            alert.Labels["domain"],
+							"action_type":       alert.Labels["action_type"],
+							"target_device":     alert.Labels["target_device"],
+							"instance_id":       alert.Labels["instance_id"],
+							"adjustment_status": map[bool]string{true: "success", false: "failed"}[result],
+						},
+						Annotations: map[string]string{
+							"summary": fmt.Sprintf("%s %s: %s", summaryPrefix,
+								map[bool]string{true: "completed successfully", false: "failed"}[result],
+								alert.Annotations["summary"]),
+							"description": alert.Annotations["description"],
+						},
+						StartsAt: alert.StartsAt,
+						EndsAt:   endsAt,
+					},
+				},
+			}
+
+			// Use AlarmOperator's SendNotification directly
+			alarmOperator := &routes.AlarmOperator{}
+			if err := alarmOperator.SendNotification(c.Request.Context(), notifyURL, notifyParams); err != nil {
+				log.Printf("[ADJUST-WARNING] Failed to send notification for alert %d: %v", i+1, err)
+			} else {
+				log.Printf("[ADJUST-INFO] Successfully sent notification for domain: %s, action: %s, success: %v",
+					alert.Labels["domain"], alert.Labels["action_type"], result)
+			}
+		} else {
+			log.Printf("[ADJUST-WARNING] No notify_url found in alert labels for alert %d", i+1)
 		}
 	}
 
@@ -594,11 +644,12 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 // CreateBWAdjustRule creates bandwidth adjustment rule
 func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	var req struct {
-		Name     string `json:"name" binding:"required"`
-		Owner    string `json:"owner" binding:"required"`
-		RegionID string `json:"region_id" binding:"required"`
-		RuleID   string `json:"rule_id" binding:"required"`
-		Rules    []struct {
+		Name      string `json:"name" binding:"required"`
+		Owner     string `json:"owner" binding:"required"`
+		RegionID  string `json:"region_id" binding:"required"`
+		RuleID    string `json:"rule_id" binding:"required"`
+		NotifyURL string `json:"notify_url" binding:"required"`
+		Rules     []struct {
 			Name            string `json:"name" binding:"required"`
 			Enabled         bool   `json:"enabled"`
 			Direction       string `json:"direction" binding:"required,oneof=in out"`
@@ -648,14 +699,13 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	group := &model.AdjustRuleGroup{
-		Name:          req.Name,
-		Type:          ruleType,
-		Owner:         req.Owner,
-		Enabled:       true,
-		Email:         "",   // Email notifications handled by other modules
-		AdjustEnabled: true, // Always set to true
-		RegionID:      req.RegionID,
-		RuleID:        req.RuleID,
+		Name:      req.Name,
+		Type:      ruleType,
+		Owner:     req.Owner,
+		Enabled:   true,
+		RegionID:  req.RegionID,
+		RuleID:    req.RuleID,
+		NotifyURL: req.NotifyURL,
 	}
 
 	log.Printf("[ADJUST-INFO] Creating bandwidth adjustment rule group: name=%s, type=%s", req.Name, ruleType)
@@ -699,8 +749,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			"trigger_duration":    detail.TriggerDuration,
 			"limit_duration":      detail.LimitDuration,
 			"owner":               req.Owner,
-			"email":               "",
-			"adjust_enabled":      true,
+			"notify_url":          req.NotifyURL,
 		}
 
 		// Generate record rules based on direction
@@ -739,8 +788,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		"trigger_duration":    firstRule.TriggerDuration,
 		"limit_duration":      firstRule.LimitDuration,
 		"owner":               req.Owner,
-		"email":               "",
-		"adjust_enabled":      true,
+		"notify_url":          req.NotifyURL,
 	}
 
 	if err := routes.ProcessTemplate(ResourceAdjustAlertsTemplate, fmt.Sprintf("resource-adjust-alerts-%s-%s.yml", req.Owner, group.UUID), alertRuleData); err != nil {
@@ -917,6 +965,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 			"name":        group.Name,
 			"owner":       group.Owner,
 			"enabled":     group.Enabled,
+			"notify_url":  group.NotifyURL,
 			"create_time": group.CreatedAt.Format(time.RFC3339),
 			"region_id":   group.RegionID,
 			"rule_id":     group.RuleID,

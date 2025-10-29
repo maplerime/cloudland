@@ -1927,71 +1927,6 @@ func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
 	c.HTML(200, "alarms_new")
 }
 
-// RemoteNotifyConfig related operation functions
-
-// CreateRemoteNotifyConfig creates remote notify configuration
-func (a *AlarmOperator) CreateRemoteNotifyConfig(ctx context.Context, config *model.RemoteNotifyConfig) error {
-	ctx, db := common.GetContextDB(ctx)
-	config.UUID = uuid.NewString()
-	if err := db.Create(config).Error; err != nil {
-		log.Printf("create remote notify config failed: name=%s, error=%v", config.Name, err)
-		return fmt.Errorf("create remote notify config failed: %w", err)
-	}
-	return nil
-}
-
-// GetRemoteNotifyConfigs gets remote notify configuration list
-func (a *AlarmOperator) GetRemoteNotifyConfigs(ctx context.Context) ([]model.RemoteNotifyConfig, error) {
-	ctx, db := common.GetContextDB(ctx)
-	var configs []model.RemoteNotifyConfig
-	if err := db.Find(&configs).Error; err != nil {
-		log.Printf("get remote notify configs failed: error=%v", err)
-		return nil, fmt.Errorf("get remote notify configs failed: %w", err)
-	}
-	return configs, nil
-}
-
-// GetRemoteNotifyConfigByName gets remote notify configuration by name
-func (a *AlarmOperator) GetRemoteNotifyConfigByName(ctx context.Context, name string) (*model.RemoteNotifyConfig, error) {
-	ctx, db := common.GetContextDB(ctx)
-	var config model.RemoteNotifyConfig
-	if err := db.Where("name = ?", name).First(&config).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return nil, nil
-		}
-		log.Printf("get remote notify config by name failed: name=%s, error=%v", name, err)
-		return nil, fmt.Errorf("get remote notify config by name failed: %w", err)
-	}
-	return &config, nil
-}
-
-// GetRemoteNotifyConfigsByType gets remote notify configuration list by type
-func (a *AlarmOperator) GetRemoteNotifyConfigsByType(ctx context.Context, configType string) ([]model.RemoteNotifyConfig, error) {
-	ctx, db := common.GetContextDB(ctx)
-	var configs []model.RemoteNotifyConfig
-	if err := db.Where("type = ?", configType).Find(&configs).Error; err != nil {
-		log.Printf("get remote notify configs by type failed: type=%s, error=%v", configType, err)
-		return nil, fmt.Errorf("get remote notify configs by type failed: %w", err)
-	}
-	return configs, nil
-}
-
-// DeleteRemoteNotifyConfig deletes remote notify configuration
-func (a *AlarmOperator) DeleteRemoteNotifyConfig(ctx context.Context, name string) error {
-	ctx, db := common.GetContextDB(ctx)
-	result := db.Where("name = ?", name).Delete(&model.RemoteNotifyConfig{})
-	if result.Error != nil {
-		log.Printf("delete remote notify config failed: name=%s, error=%v", name, result.Error)
-		return fmt.Errorf("delete remote notify config failed: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("remote notify config not found: %s", name)
-	}
-	return nil
-}
-
-// Remote notification related functions
-
 // NotifyParams notification parameters
 type NotifyParams struct {
 	Alerts []struct {
@@ -2003,87 +1938,17 @@ type NotifyParams struct {
 	} `json:"alerts"`
 }
 
-// GetToken gets Token (re-fetch each time, no caching)
-func (a *AlarmOperator) GetToken(config model.RemoteNotifyConfig) (string, error) {
-	log.Printf("[GetToken] Starting token request for config: %s, TokenURL: %s", config.Name, config.TokenURL)
-
-	// Get token directly without any caching
-	loginData := map[string]string{
-		"username": config.Username,
-		"password": config.Password,
-	}
-
-	jsonData, err := json.Marshal(loginData)
-	if err != nil {
-		log.Printf("[GetToken] Failed to marshal login data: %v", err)
-		return "", fmt.Errorf("failed to marshal login data: %w", err)
-	}
-	log.Printf("[GetToken] Login data prepared: %s", string(jsonData))
-
-	log.Printf("[GetToken] Sending POST request to: %s", config.TokenURL)
-	resp, err := http.Post(config.TokenURL, "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		log.Printf("[GetToken] HTTP request failed: %v", err)
-		return "", fmt.Errorf("failed to request token: %w", err)
-	}
-	defer resp.Body.Close()
-	log.Printf("[GetToken] Received response with status: %d", resp.StatusCode)
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[GetToken] Token request failed with status %d, response body: %s", resp.StatusCode, string(body))
-		return "", fmt.Errorf("token request failed with status: %d", resp.StatusCode)
-	}
-
-	var result struct {
-		Code int `json:"code"`
-		Data struct {
-			User struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"user"`
-			Team struct {
-				ID   string `json:"id"`
-				Name string `json:"name"`
-			} `json:"team"`
-			Token string `json:"token"`
-			Role  string `json:"role"`
-		} `json:"data"`
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		log.Printf("[GetToken] Failed to read response body: %v", err)
-		return "", fmt.Errorf("failed to read token response: %w", err)
-	}
-	log.Printf("[GetToken] Raw response body: %s", string(body))
-
-	if err := json.Unmarshal(body, &result); err != nil {
-		log.Printf("[GetToken] Failed to parse JSON response: %v", err)
-		return "", fmt.Errorf("failed to parse token response: %w", err)
-	}
-
-	if result.Code != 0 {
-		log.Printf("[GetToken] Token request returned error code: %d", result.Code)
-		return "", fmt.Errorf("token request returned error code: %d", result.Code)
-	}
-
-	log.Printf("[GetToken] Successfully obtained token (length: %d chars)", len(result.Data.Token))
-	return result.Data.Token, nil
-}
-
-// SendNotificationToService sends notification to a single remote service
-func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config model.RemoteNotifyConfig, params NotifyParams) error {
-	log.Printf("[SendNotification] Starting notification to service: %s, URL: %s", config.Name, config.NotifyURL)
-
+// SendNotification sends notification directly to the specified URL without authentication
+// This is a generic notification function that can be used by both alarm and adjust rules
+func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, params NotifyParams) error {
+	// Send notification directly to notify_url (no authentication)
 	jsonData, err := json.Marshal(params)
 	if err != nil {
 		log.Printf("[SendNotification] Failed to marshal params: %v", err)
 		return fmt.Errorf("failed to marshal params: %w", err)
 	}
-	log.Printf("[SendNotification] Notification payload: %s", string(jsonData))
 
-	req, err := http.NewRequestWithContext(ctx, "POST", config.NotifyURL, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", notifyURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		log.Printf("[SendNotification] Failed to create request: %v", err)
 		return fmt.Errorf("failed to create request: %w", err)
@@ -2091,86 +1956,20 @@ func (a *AlarmOperator) SendNotificationToService(ctx context.Context, config mo
 
 	req.Header.Set("Content-Type", "application/json")
 
-	// Set X-Region-Id header (get from alert labels, use default if not found)
-	regionID := "1" // Default value
-	if len(params.Alerts) > 0 {
-		if alertRegion, exists := params.Alerts[0].Labels["region_id"]; exists && alertRegion != "" {
-			regionID = alertRegion
-		}
-	}
-	req.Header.Set("X-Region-Id", regionID)
-	log.Printf("[SendNotification] Set X-Region-Id header: %s", regionID)
-
-	log.Printf("[SendNotification] Request created for URL: %s", config.NotifyURL)
-
-	if config.TokenURL != "" {
-		log.Printf("[SendNotification] Using token authentication, TokenURL: %s", config.TokenURL)
-		// Token authentication: use stored username and password to get token
-		token, err := a.GetToken(config)
-		if err != nil {
-			log.Printf("[SendNotification] Failed to get token: %v", err)
-			return fmt.Errorf("failed to get token: %w", err)
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-		log.Printf("[SendNotification] Token authentication header set")
-	} else if config.Username != "" {
-		log.Printf("[SendNotification] Using basic authentication for user: %s", config.Username)
-		// Basic authentication: use stored username and password directly
-		req.SetBasicAuth(config.Username, config.Password)
-	} else {
-		log.Printf("[SendNotification] No authentication configured")
-	}
-	// No authentication: add nothing
-
 	client := &http.Client{Timeout: 10 * time.Second}
-	log.Printf("[SendNotification] Sending notification request...")
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("[SendNotification] HTTP request failed: %v", err)
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
-	log.Printf("[SendNotification] Received response with status: %d", resp.StatusCode)
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[SendNotification] Request failed with status %d, response body: %s", resp.StatusCode, string(body))
-		return fmt.Errorf("remote service returned status %d", resp.StatusCode)
+		log.Printf("[SendNotification] Request failed with status %d, response: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("notification service returned status %d", resp.StatusCode)
 	}
 
-	body, _ := io.ReadAll(resp.Body)
-	log.Printf("[SendNotification] Notification sent successfully, response: %s", string(body))
-	return nil
-}
-
-// SendNotificationToAllServices sends notification to all NOTIFY type remote services
-func (a *AlarmOperator) SendNotificationToAllServices(ctx context.Context, params NotifyParams) error {
-	log.Printf("[SendNotificationToAllServices] Starting notification process")
-
-	// Only get NOTIFY type configurations
-	configs, err := a.GetRemoteNotifyConfigsByType(ctx, model.RemoteConfigTypeNotify)
-	if err != nil {
-		log.Printf("[SendNotificationToAllServices] Failed to get NOTIFY type remote configs: %v", err)
-		return fmt.Errorf("failed to get NOTIFY type remote configs: %w", err)
-	}
-
-	log.Printf("[SendNotificationToAllServices] Found %d NOTIFY type remote configs", len(configs))
-
-	if len(configs) == 0 {
-		log.Printf("[SendNotificationToAllServices] No NOTIFY type remote configs found, skipping notification")
-		return nil
-	}
-
-	for i, config := range configs {
-		log.Printf("[SendNotificationToAllServices] Processing NOTIFY config %d/%d: %s (type: %s)", i+1, len(configs), config.Name, config.Type)
-		if err := a.SendNotificationToService(ctx, config, params); err != nil {
-			// Log error but don't interrupt other notifications
-			log.Printf("[SendNotificationToAllServices] Failed to send notification to %s: %v", config.Name, err)
-		} else {
-			log.Printf("[SendNotificationToAllServices] Successfully sent notification to %s", config.Name)
-		}
-	}
-
-	log.Printf("[SendNotificationToAllServices] NOTIFY notification process completed")
+	log.Printf("[SendNotification] Successfully sent notification to %s", notifyURL)
 	return nil
 }

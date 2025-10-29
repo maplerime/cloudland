@@ -64,14 +64,13 @@ func (AdjustRuleGroup) TableName() string {
 // AdjustRuleGroup Resource auto-adjustment rule group
 type AdjustRuleGroup struct {
 	Model
-	Name          string `gorm:"type:varchar(128)"`
-	Type          string `gorm:"type:varchar(32)"`
-	Owner         string `gorm:"type:varchar(128)"`
-	Enabled       bool   `gorm:"default:true"`
-	Email         string `gorm:"type:varchar(255)"`
-	AdjustEnabled bool   `gorm:"default:true"`
-	RegionID      string `gorm:"type:varchar(64);index"`
-	RuleID        string `gorm:"type:varchar(128);unique_index:idx_adjust_rule_id;column:rule_id"`
+	Name      string `gorm:"type:varchar(128)"`
+	Type      string `gorm:"type:varchar(32)"`
+	Owner     string `gorm:"type:varchar(128)"`
+	Enabled   bool   `gorm:"default:true"`
+	RegionID  string `gorm:"type:varchar(64);index"`
+	RuleID    string `gorm:"type:varchar(128);unique_index:idx_adjust_rule_id;column:rule_id"`
+	NotifyURL string `gorm:"type:varchar(500);not null"`
 }
 
 // CPUAdjustRuleDetail CPU adjustment rule detail

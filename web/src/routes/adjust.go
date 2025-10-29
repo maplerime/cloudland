@@ -289,6 +289,24 @@ func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID s
 	return details, nil
 }
 
+// UpdateAdjustRuleGroupStatus updates adjust rule group enabled status
+func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupUUID string, enabled bool) error {
+	result := dbs.DB().Model(&model.AdjustRuleGroup{}).
+		Where("uuid = ?", groupUUID).
+		Update("enabled", enabled)
+
+	if result.Error != nil {
+		log.Printf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
+		return fmt.Errorf("update adjust rule group status failed: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("adjust rule group not found")
+	}
+
+	return nil
+}
+
 // DeleteAdjustRuleGroupWithDependencies deletes resource adjustment rule group and its dependencies
 func (o *AdjustOperator) DeleteAdjustRuleGroupWithDependencies(ctx context.Context, groupUUID string) error {
 	tx := dbs.DB().Begin()
@@ -801,8 +819,8 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 			log.Printf("Failed to get CPU adjustment rule details: %v", err)
 			return defaultCooldown
 		}
-		// Use restore duration as cooldown period
-		return details[0].RestoreDuration
+		// Use limit duration as cooldown period
+		return details[0].LimitDuration
 	case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW, "limit_in_bw", "restore_in_bw", "limit_out_bw", "restore_out_bw":
 		// Query bandwidth adjustment rule details
 		details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
@@ -810,76 +828,10 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
 			return defaultCooldown
 		}
-		// Use first rule's restore duration as cooldown period
-		return details[0].RestoreDuration
+		// Use first rule's limit duration as cooldown period
+		return details[0].LimitDuration
 	default:
 		log.Printf("Unknown adjustment type: %s, using default cooldown", adjustType)
 		return defaultCooldown
 	}
-}
-
-// SendAdjustmentNotification sends real-time resource adjustment notifications
-// Sends adjustment notification using alert.Status directly as the status
-func (o *AdjustOperator) SendAdjustmentNotification(ctx context.Context, alert AdjustAlert, success bool) error {
-	// Set parameters based on status
-	endsAt := alert.EndsAt
-	summaryPrefix := "Resource adjustment"
-
-	if alert.Status == "resolved" {
-		endsAt = time.Now() // Set current time for resolved status
-		summaryPrefix = "RESOLVED: Resource adjustment"
-	}
-
-	// Construct notification parameters
-	notifyParams := NotifyParams{
-		Alerts: []struct {
-			State       string            `json:"state"`
-			Labels      map[string]string `json:"labels"`
-			Annotations map[string]string `json:"annotations"`
-			StartsAt    time.Time         `json:"startsAt"`
-			EndsAt      time.Time         `json:"endsAt"`
-		}{
-			{
-				State: alert.Status,
-				Labels: map[string]string{
-					"alertname":     alert.Labels["alertname"],
-					"severity":      alert.Labels["severity"],       // Read severity from labels, don't assume
-					"rule_id":       alert.Labels["global_rule_id"], // Renamed: from global_rule_id to rule_id
-					"domain":        alert.Labels["domain"],
-					"action_type":   alert.Labels["action_type"],
-					"target_device": alert.Labels["target_device"],
-					"instance_id":   alert.Labels["instance_id"],
-					"adjustment_status": func() string {
-						if success {
-							return "success"
-						}
-						return "failed"
-					}(),
-				},
-				Annotations: map[string]string{
-					"summary": fmt.Sprintf("%s %s: %s", summaryPrefix,
-						func() string {
-							if success {
-								return "completed successfully"
-							}
-							return "failed"
-						}(), alert.Annotations["summary"]),
-					"description": alert.Annotations["description"],
-				},
-				StartsAt: alert.StartsAt,
-				EndsAt:   endsAt,
-			},
-		},
-	}
-
-	// Create AlarmOperator instance and send notification
-	alarmOperator := &AlarmOperator{}
-	if err := alarmOperator.SendNotificationToAllServices(ctx, notifyParams); err != nil {
-		log.Printf("Failed to send adjustment notification: %v", err)
-		return err
-	}
-
-	log.Printf("Successfully sent adjustment notification for domain: %s, action: %s, success: %v",
-		alert.Labels["domain"], alert.Labels["action_type"], success)
-	return nil
 }
