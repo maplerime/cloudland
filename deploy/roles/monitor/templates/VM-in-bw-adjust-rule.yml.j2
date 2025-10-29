@@ -30,9 +30,9 @@ groups:
         (max by (domain, target_device, rule_id, instance_id) (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1) unless vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"})
       )
 
-  # VM interfaces ready for inbound bandwidth restore (only when status is limited)
-  - record: vm_ready_for_in_bw_restore_{{ rule_group }}
+  # Calculate elapsed time since inbound bandwidth limit started (in seconds)
+  - record: vm_bandwidth_in_limit_elapsed_seconds_{{ rule_group }}
     expr: |
-      (vm_in_bw_speed_by_rule_{{ rule_group }} < {{ in_low_threshold }})
-      and on(domain, rule_id, target_device)
+      (time() - vm_bandwidth_limit_start_timestamp{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"} / 1000)
+      * on(domain, rule_id, target_device)
       (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="in"} == 1)

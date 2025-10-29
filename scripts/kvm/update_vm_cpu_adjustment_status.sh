@@ -83,10 +83,18 @@ if [[ ! -d "$METRICS_DIR" ]]; then
     exit 1
 fi
 
-# Build metric line
+# Build metric lines
 #METRIC_LINE="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$RULE_ID\"} $STATUS"
 PROMETHEUS_RULE_ID="cpu-$RULE_ID"
-METRIC_LINE="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"} $STATUS"
+STATUS_METRIC_LINE="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"} $STATUS"
+
+# For status=1 (limited), also add timestamp metric
+TIMESTAMP_METRIC_LINE=""
+if [[ "$STATUS" == "1" ]]; then
+    # Get current timestamp in milliseconds
+    TIMESTAMP=$(date +%s%3N)
+    TIMESTAMP_METRIC_LINE="vm_cpu_limit_start_timestamp{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"} $TIMESTAMP"
+fi
 
 # Check if this is a recovery operation (status = 0)
 if [[ "$STATUS" == "0" ]]; then
@@ -98,9 +106,10 @@ if [[ "$STATUS" == "0" ]]; then
     fi
     
     # Check if the specific metric exists
-    PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
-    if ! grep -q "^$PATTERN" "$METRICS_FILE"; then
-        echo "Warning: No existing metric found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
+    STATUS_PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
+    TIMESTAMP_PATTERN="vm_cpu_limit_start_timestamp{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
+    if ! grep -q "^$STATUS_PATTERN" "$METRICS_FILE" && ! grep -q "^$TIMESTAMP_PATTERN" "$METRICS_FILE"; then
+        echo "Warning: No existing metrics found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
         echo "No action needed - VM is already in normal state"
         exit 0
     fi
@@ -111,53 +120,60 @@ if [[ ! -f "$METRICS_FILE" ]]; then
     echo "Creating new metrics file: $METRICS_FILE"
     echo "# VM CPU adjustment status metrics" > "$TEMP_FILE"
     echo "# 0 = normal, 1 = limited" >> "$TEMP_FILE"
-    echo "$METRIC_LINE" >> "$TEMP_FILE"
+    echo "$STATUS_METRIC_LINE" >> "$TEMP_FILE"
+    if [[ -n "$TIMESTAMP_METRIC_LINE" ]]; then
+        echo "$TIMESTAMP_METRIC_LINE" >> "$TEMP_FILE"
+    fi
     mv "$TEMP_FILE" "$METRICS_FILE"
     echo "CPU adjustment status updated successfully (new file created)"
     exit 0
 fi
 
 # Check if metric with same domain and rule_id already exists
-PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
+STATUS_PATTERN="vm_cpu_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
+TIMESTAMP_PATTERN="vm_cpu_limit_start_timestamp{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\"}"
 
-if grep -q "^$PATTERN" "$METRICS_FILE"; then
-    # Update existing metric
-    echo "Updating existing metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
+if grep -q "^$STATUS_PATTERN" "$METRICS_FILE" || grep -q "^$TIMESTAMP_PATTERN" "$METRICS_FILE"; then
+    # Update existing metrics
+    echo "Updating existing metrics for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
     
-    # For recovery (status=0), remove the metric line entirely
+    # For recovery (status=0), remove both metric lines entirely
     if [[ "$STATUS" == "0" ]]; then
-        # Remove the specific metric line and keep others
-        grep -v "^$PATTERN" "$METRICS_FILE" > "$TEMP_FILE"
+        # Remove both status and timestamp metrics
+        grep -v "^$STATUS_PATTERN" "$METRICS_FILE" | grep -v "^$TIMESTAMP_PATTERN" > "$TEMP_FILE"
         
         # Check if file is now empty (only comments remain)
-        if ! grep -q "^vm_cpu_adjustment_status" "$TEMP_FILE"; then
+        if ! grep -q "^vm_cpu_adjustment_status\|^vm_cpu_limit_start_timestamp" "$TEMP_FILE"; then
             echo "All CPU adjustment metrics cleared - removing metrics file"
             rm -f "$TEMP_FILE" "$METRICS_FILE"
         else
             mv "$TEMP_FILE" "$METRICS_FILE"
         fi
-        echo "CPU adjustment status recovered successfully (metric removed)"
+        echo "CPU adjustment status recovered successfully (both metrics removed)"
     else
-        # Update existing metric with new status
-        while IFS= read -r line; do
-            if [[ "$line" =~ ^$PATTERN ]]; then
-                echo "$METRIC_LINE"
-            else
-                echo "$line"
-            fi
-        done < "$METRICS_FILE" > "$TEMP_FILE"
+        # Update existing metrics with new values
+        # First, remove old metrics
+        grep -v "^$STATUS_PATTERN" "$METRICS_FILE" | grep -v "^$TIMESTAMP_PATTERN" > "$TEMP_FILE"
+        # Then, add updated metrics
+        echo "$STATUS_METRIC_LINE" >> "$TEMP_FILE"
+        if [[ -n "$TIMESTAMP_METRIC_LINE" ]]; then
+            echo "$TIMESTAMP_METRIC_LINE" >> "$TEMP_FILE"
+        fi
         
         mv "$TEMP_FILE" "$METRICS_FILE"
-        echo "CPU adjustment status updated successfully (existing metric updated)"
+        echo "CPU adjustment status updated successfully (existing metrics updated)"
     fi
 else
-    # Add new metric (only for status=1, limiting case)
+    # Add new metrics (only for status=1, limiting case)
     if [[ "$STATUS" == "1" ]]; then
-        echo "Adding new metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
-        echo "$METRIC_LINE" >> "$METRICS_FILE"
-        echo "CPU adjustment status updated successfully (new metric added)"
+        echo "Adding new metrics for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
+        echo "$STATUS_METRIC_LINE" >> "$METRICS_FILE"
+        if [[ -n "$TIMESTAMP_METRIC_LINE" ]]; then
+            echo "$TIMESTAMP_METRIC_LINE" >> "$METRICS_FILE"
+        fi
+        echo "CPU adjustment status updated successfully (new metrics added)"
     else
-        echo "No existing metric to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
+        echo "No existing metrics to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID"
         echo "No action needed - VM is already in normal state"
     fi
 fi

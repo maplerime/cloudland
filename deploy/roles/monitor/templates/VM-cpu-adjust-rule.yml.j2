@@ -28,9 +28,9 @@ groups:
       unless on(domain, rule_id)
       (vm_cpu_adjustment_status{rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} == 1)
 
-  # VMs ready for CPU restore (only when status is limited)
-  - record: vm_ready_for_cpu_restore_{{ rule_group }}
+  # Calculate elapsed time since CPU limit started (in seconds)
+  - record: vm_cpu_limit_elapsed_seconds_{{ rule_group }}
     expr: |
-      (vm_cpu_usage_by_rule_{{ rule_group }} < {{ low_threshold }})
-      and on(domain, rule_id)
+      (time() - vm_cpu_limit_start_timestamp{rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} / 1000)
+      * on(domain, rule_id)
       (vm_cpu_adjustment_status{rule_id=~"adjust-cpu-.*-{{ rule_group_original }}"} == 1)

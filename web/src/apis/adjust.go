@@ -55,10 +55,9 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 		Rules    []struct {
 			Name            string  `json:"name"`
 			HighThreshold   float64 `json:"high_threshold"`
-			LowThreshold    float64 `json:"low_threshold"`
 			SmoothWindow    int     `json:"smooth_window"`
 			TriggerDuration int     `json:"trigger_duration"`
-			RestoreDuration int     `json:"restore_duration"`
+			LimitDuration   int     `json:"limit_duration"`
 			LimitPercent    int     `json:"limit_percent"`
 		} `json:"rules"`
 		LinkedVMs []string `json:"linkedvms"`
@@ -114,10 +113,9 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 			GroupUUID:       group.UUID,
 			Name:            rule.Name,
 			HighThreshold:   rule.HighThreshold,
-			LowThreshold:    rule.LowThreshold,
 			SmoothWindow:    rule.SmoothWindow,
 			TriggerDuration: rule.TriggerDuration,
-			RestoreDuration: rule.RestoreDuration,
+			LimitDuration:   rule.LimitDuration,
 			LimitPercent:    rule.LimitPercent,
 		}
 
@@ -125,11 +123,6 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 		if detail.HighThreshold == 0 {
 			log.Printf("[ADJUST-ERROR] High threshold cannot be zero")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "High threshold cannot be zero"})
-			return
-		}
-		if detail.LowThreshold == 0 {
-			log.Printf("[ADJUST-ERROR] Low threshold cannot be zero")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Low threshold cannot be zero"})
 			return
 		}
 		if detail.SmoothWindow == 0 {
@@ -142,9 +135,9 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Trigger duration cannot be zero"})
 			return
 		}
-		if detail.RestoreDuration == 0 {
-			log.Printf("[ADJUST-ERROR] Restore duration cannot be zero")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Restore duration cannot be zero"})
+		if detail.LimitDuration == 0 {
+			log.Printf("[ADJUST-ERROR] Limit duration cannot be zero")
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit duration cannot be zero"})
 			return
 		}
 		if detail.LimitPercent == 0 {
@@ -164,10 +157,9 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 			"rule_group_original": group.UUID,
 			"global_rule_id":      group.RuleID, // User-specified global rule ID
 			"high_threshold":      detail.HighThreshold,
-			"low_threshold":       detail.LowThreshold,
 			"smooth_window":       detail.SmoothWindow,
 			"trigger_duration":    detail.TriggerDuration,
-			"restore_duration":    detail.RestoreDuration,
+			"limit_duration":      detail.LimitDuration,
 			"owner":               req.Owner,
 			"email":               "",
 			"adjust_enabled":      true,
@@ -277,10 +269,9 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 			rules = append(rules, gin.H{
 				"name":             detail.Name,
 				"high_threshold":   detail.HighThreshold,
-				"low_threshold":    detail.LowThreshold,
 				"smooth_window":    detail.SmoothWindow,
 				"trigger_duration": detail.TriggerDuration,
-				"restore_duration": detail.RestoreDuration,
+				"limit_duration":   detail.LimitDuration,
 				"limit_percent":    detail.LimitPercent,
 			})
 		}
@@ -612,10 +603,9 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			Enabled         bool   `json:"enabled"`
 			Direction       string `json:"direction" binding:"required,oneof=in out"`
 			HighThreshold   int64  `json:"high_threshold" binding:"required,min=1"`
-			LowThreshold    int64  `json:"low_threshold" binding:"required,min=1"`
 			SmoothWindow    int    `json:"smooth_window" binding:"required,min=1"`
 			TriggerDuration int    `json:"trigger_duration" binding:"required,min=1"`
-			RestoreDuration int    `json:"restore_duration" binding:"required,min=1"`
+			LimitDuration   int    `json:"limit_duration" binding:"required,min=1"`
 			LimitValue      int    `json:"limit_value" binding:"required,min=1"`
 		} `json:"rules" binding:"required,min=1"`
 		LinkedVMs []struct {
@@ -642,20 +632,6 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		log.Printf("[ADJUST-ERROR] Permission denied: only admin can create adjustment rules")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can create adjustment rules"})
 		return
-	}
-
-	// Validate rules
-	for _, rule := range req.Rules {
-		if !rule.Enabled {
-			continue // Skip disabled rules
-		}
-
-		// Validate threshold logic
-		if rule.LowThreshold >= rule.HighThreshold {
-			log.Printf("[ADJUST-ERROR] Low threshold must be less than high threshold")
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Low threshold must be less than high threshold"})
-			return
-		}
 	}
 
 	// Create rule group - use the first enabled rule's direction as primary type
@@ -701,10 +677,9 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			Name:            rule.Name,
 			Direction:       rule.Direction,
 			HighThreshold:   rule.HighThreshold,
-			LowThreshold:    rule.LowThreshold,
 			SmoothWindow:    rule.SmoothWindow,
 			TriggerDuration: rule.TriggerDuration,
-			RestoreDuration: rule.RestoreDuration,
+			LimitDuration:   rule.LimitDuration,
 			LimitValue:      rule.LimitValue,
 		}
 
@@ -720,10 +695,9 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			"rule_group_original": group.UUID,
 			"global_rule_id":      group.RuleID,
 			"high_threshold":      detail.HighThreshold,
-			"low_threshold":       detail.LowThreshold,
 			"smooth_window":       detail.SmoothWindow,
 			"trigger_duration":    detail.TriggerDuration,
-			"restore_duration":    detail.RestoreDuration,
+			"limit_duration":      detail.LimitDuration,
 			"owner":               req.Owner,
 			"email":               "",
 			"adjust_enabled":      true,
@@ -737,14 +711,12 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			filename = fmt.Sprintf("bw-in-adjust-%s-%s.yml", req.Owner, group.UUID)
 			ruleData["in_enabled"] = true
 			ruleData["in_high_threshold"] = detail.HighThreshold
-			ruleData["in_low_threshold"] = detail.LowThreshold
 			ruleData["out_enabled"] = false
 		case "out":
 			template = OutBWAdjustRuleTemplate
 			filename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", req.Owner, group.UUID)
 			ruleData["out_enabled"] = true
 			ruleData["out_high_threshold"] = detail.HighThreshold
-			ruleData["out_low_threshold"] = detail.LowThreshold
 			ruleData["in_enabled"] = false
 		}
 
@@ -757,13 +729,15 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	// Generate alert rules (once per rule group)
+	// Use the first rule's parameters for alert generation
+	firstRule := req.Rules[0]
 	alertRuleData := map[string]interface{}{
 		"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 		"rule_group_original": group.UUID,
 		"global_rule_id":      group.RuleID,
-		"smooth_window":       5, // Default value
-		"trigger_duration":    30,
-		"restore_duration":    300,
+		"smooth_window":       firstRule.SmoothWindow,
+		"trigger_duration":    firstRule.TriggerDuration,
+		"limit_duration":      firstRule.LimitDuration,
 		"owner":               req.Owner,
 		"email":               "",
 		"adjust_enabled":      true,
@@ -918,10 +892,9 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 				"enabled":          true, // All stored rules are enabled
 				"direction":        detail.Direction,
 				"high_threshold":   detail.HighThreshold,
-				"low_threshold":    detail.LowThreshold,
 				"smooth_window":    detail.SmoothWindow,
 				"trigger_duration": detail.TriggerDuration,
-				"restore_duration": detail.RestoreDuration,
+				"limit_duration":   detail.LimitDuration,
 				"limit_value":      detail.LimitValue,
 			})
 		}
