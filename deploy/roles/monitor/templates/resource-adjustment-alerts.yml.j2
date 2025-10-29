@@ -50,7 +50,10 @@ groups:
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} requires inbound bandwidth limitation"
       
   - alert: ResourceAdjustment_RestoreInBW_{{ rule_group }}
-    expr: vm_bandwidth_in_limit_elapsed_seconds_{{ rule_group }} > {{ limit_duration }}
+    expr: |
+      (vm_bandwidth_in_limit_elapsed_seconds_{{ rule_group }} > {{ limit_duration }})
+      * on(domain, target_device) group_left()
+      vm_in_bw_total_mbps_{{ rule_group }}
     for: 10s
     labels:
       severity: info
@@ -63,7 +66,7 @@ groups:
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM ready for inbound bandwidth restoration (limit duration exceeded)"
-      description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} has been limited for {{ limit_duration }} seconds and is ready for inbound bandwidth restoration"
+      description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} has been limited for {{ limit_duration }} seconds and is ready for inbound bandwidth restoration. Total bandwidth: {{ "{{ $value }}" }} Mbps"
       
   - alert: ResourceAdjustment_LimitOutBW_{{ rule_group }}
     expr: vm_requires_out_bw_limit_{{ rule_group }} > 0
@@ -82,7 +85,10 @@ groups:
       description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} requires outbound bandwidth limitation"
       
   - alert: ResourceAdjustment_RestoreOutBW_{{ rule_group }}
-    expr: vm_bandwidth_out_limit_elapsed_seconds_{{ rule_group }} > {{ limit_duration }}
+    expr: |
+      (vm_bandwidth_out_limit_elapsed_seconds_{{ rule_group }} > {{ limit_duration }})
+      * on(domain, target_device) group_left()
+      vm_out_bw_total_mbps_{{ rule_group }}
     for: 10s
     labels:
       severity: info
@@ -95,4 +101,23 @@ groups:
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM ready for outbound bandwidth restoration (limit duration exceeded)"
-      description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} has been limited for {{ limit_duration }} seconds and is ready for outbound bandwidth restoration"
+      description: "VM {{ "{{ $labels.domain }}" }} with rule {{ "{{ $labels.rule_id }}" }} has been limited for {{ limit_duration }} seconds and is ready for outbound bandwidth restoration. Total bandwidth: {{ "{{ $value }}" }} Mbps"
+
+  - alert: ResourceAdjustment_ConfigMissing_{{ rule_group }}
+    expr: |
+      up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
+      unless on(domain, target_device)
+      vm_interface_bandwidth_config_mbps
+    for: 5m
+    labels:
+      severity: warning
+      alert_type: resource_adjustment
+      action_type: config_missing
+      rule_group: "{{ rule_group_original }}"
+      global_rule_id: "{{ global_rule_id }}"
+      owner: "{{ owner }}"
+      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
+      notify_url: "{{ notify_url }}"
+    annotations:
+      summary: "VM bandwidth configuration metrics missing"
+      description: "VM {{ "{{ $labels.domain }}" }} interface {{ "{{ $labels.target_device }}" }} is missing bandwidth configuration metrics, intelligent adjustment will not function. Check /var/lib/node_exporter/vm_interface_bandwidth_config.prom on the compute node or call the regenerate API to fix."

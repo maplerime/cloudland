@@ -1,10 +1,12 @@
 package apis
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"path/filepath"
@@ -15,9 +17,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 
-	"bytes"
-	"io"
 	"web/src/common"
+	"web/src/dbs"
 	"web/src/model"
 	"web/src/routes"
 )
@@ -601,6 +602,28 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 		AdjustTime: time.Now(),
 	}
 
+	// Parse total bandwidth from alert value (Prometheus alert value is the total bandwidth in Mbps)
+	var totalInBw, totalOutBw int
+	if alert.Value != "" {
+		// Parse as float first (Prometheus returns floating point), then convert to int
+		var totalBw float64
+		if _, err := fmt.Sscanf(alert.Value, "%f", &totalBw); err == nil {
+			// For inbound alerts, value is total inbound bandwidth
+			if actionType == "limit_in_bw" || actionType == "restore_in_bw" {
+				totalInBw = int(totalBw)
+			}
+			// For outbound alerts, value is total outbound bandwidth
+			if actionType == "limit_out_bw" || actionType == "restore_out_bw" {
+				totalOutBw = int(totalBw)
+			}
+			log.Printf("[ADJUST-%s] Parsed total bandwidth from alert value: %s -> in=%d, out=%d",
+				requestID, alert.Value, totalInBw, totalOutBw)
+		} else {
+			log.Printf("[ADJUST-%s] Failed to parse bandwidth from alert value: %s, error: %v",
+				requestID, alert.Value, err)
+		}
+	}
+
 	// Execute resource adjustment based on action type
 	var err error
 	switch actionType {
@@ -609,13 +632,18 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 	case "restore_cpu":
 		err = a.operator.RestoreCPUResource(ctx, record, domain, instanceID)
 	case "limit_in_bw":
-		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID)
+		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID, totalInBw, totalOutBw)
 	case "restore_in_bw":
 		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
 	case "limit_out_bw":
-		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID)
+		err = a.operator.AdjustBandwidthResource(ctx, record, domain, record.TargetDevice, true, instanceID, totalInBw, totalOutBw)
 	case "restore_out_bw":
 		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
+	case "config_missing":
+		// Bandwidth configuration missing - only log and send notification, no action or DB record
+		log.Printf("[ADJUST-%s] Bandwidth config missing for VM %s interface %s - notification only, no DB record",
+			requestID, domain, record.TargetDevice)
+		return true // Return success as this is just a notification
 	default:
 		log.Printf("[ADJUST-%s] Unknown adjustment type: %s", requestID, actionType)
 		history.Status = "failed"
@@ -650,14 +678,14 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		RuleID    string `json:"rule_id" binding:"required"`
 		NotifyURL string `json:"notify_url" binding:"required"`
 		Rules     []struct {
-			Name            string `json:"name" binding:"required"`
-			Enabled         bool   `json:"enabled"`
-			Direction       string `json:"direction" binding:"required,oneof=in out"`
-			HighThreshold   int64  `json:"high_threshold" binding:"required,min=1"`
-			SmoothWindow    int    `json:"smooth_window" binding:"required,min=1"`
-			TriggerDuration int    `json:"trigger_duration" binding:"required,min=1"`
-			LimitDuration   int    `json:"limit_duration" binding:"required,min=1"`
-			LimitValue      int    `json:"limit_value" binding:"required,min=1"`
+			Name             string `json:"name" binding:"required"`
+			Enabled          bool   `json:"enabled"`
+			Direction        string `json:"direction" binding:"required,oneof=in out"`
+			HighThresholdPct int    `json:"high_threshold_pct" binding:"required,min=1,max=100"`
+			SmoothWindow     int    `json:"smooth_window" binding:"required,min=1"`
+			TriggerDuration  int    `json:"trigger_duration" binding:"required,min=1"`
+			LimitDuration    int    `json:"limit_duration" binding:"required,min=1"`
+			LimitValuePct    int    `json:"limit_value_pct" binding:"required,min=1,max=100"`
 		} `json:"rules" binding:"required,min=1"`
 		LinkedVMs []struct {
 			VMUUID       string `json:"vm_uuid"`
@@ -723,14 +751,14 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 
 		// Create rule details
 		detail := &model.BWAdjustRuleDetail{
-			GroupUUID:       group.UUID,
-			Name:            rule.Name,
-			Direction:       rule.Direction,
-			HighThreshold:   rule.HighThreshold,
-			SmoothWindow:    rule.SmoothWindow,
-			TriggerDuration: rule.TriggerDuration,
-			LimitDuration:   rule.LimitDuration,
-			LimitValue:      rule.LimitValue,
+			GroupUUID:        group.UUID,
+			Name:             rule.Name,
+			Direction:        rule.Direction,
+			HighThresholdPct: rule.HighThresholdPct,
+			SmoothWindow:     rule.SmoothWindow,
+			TriggerDuration:  rule.TriggerDuration,
+			LimitDuration:    rule.LimitDuration,
+			LimitValuePct:    rule.LimitValuePct,
 		}
 
 		if err := a.operator.CreateBWAdjustRuleDetail(c.Request.Context(), detail); err != nil {
@@ -744,7 +772,6 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 			"rule_group_original": group.UUID,
 			"global_rule_id":      group.RuleID,
-			"high_threshold":      detail.HighThreshold,
 			"smooth_window":       detail.SmoothWindow,
 			"trigger_duration":    detail.TriggerDuration,
 			"limit_duration":      detail.LimitDuration,
@@ -759,13 +786,13 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 			template = InBWAdjustRuleTemplate
 			filename = fmt.Sprintf("bw-in-adjust-%s-%s.yml", req.Owner, group.UUID)
 			ruleData["in_enabled"] = true
-			ruleData["in_high_threshold"] = detail.HighThreshold
+			ruleData["in_high_threshold_pct"] = detail.HighThresholdPct
 			ruleData["out_enabled"] = false
 		case "out":
 			template = OutBWAdjustRuleTemplate
 			filename = fmt.Sprintf("bw-out-adjust-%s-%s.yml", req.Owner, group.UUID)
 			ruleData["out_enabled"] = true
-			ruleData["out_high_threshold"] = detail.HighThreshold
+			ruleData["out_high_threshold_pct"] = detail.HighThresholdPct
 			ruleData["in_enabled"] = false
 		}
 
@@ -936,14 +963,14 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 		rules := make([]gin.H, 0, len(details))
 		for _, detail := range details {
 			rules = append(rules, gin.H{
-				"name":             detail.Name,
-				"enabled":          true, // All stored rules are enabled
-				"direction":        detail.Direction,
-				"high_threshold":   detail.HighThreshold,
-				"smooth_window":    detail.SmoothWindow,
-				"trigger_duration": detail.TriggerDuration,
-				"limit_duration":   detail.LimitDuration,
-				"limit_value":      detail.LimitValue,
+				"name":               detail.Name,
+				"enabled":            true, // All stored rules are enabled
+				"direction":          detail.Direction,
+				"high_threshold_pct": detail.HighThresholdPct,
+				"smooth_window":      detail.SmoothWindow,
+				"trigger_duration":   detail.TriggerDuration,
+				"limit_duration":     detail.LimitDuration,
+				"limit_value_pct":    detail.LimitValuePct,
 			})
 		}
 
@@ -1784,4 +1811,116 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 
 	log.Printf("[ADJUST-INFO] Successfully cleaned up %s metrics for rule group %s on all compute nodes", ruleType, ruleGroupUUID)
 	return nil
+}
+
+// RegenerateBandwidthConfigMetrics regenerates bandwidth configuration metrics for all VMs or specific hyper node
+func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
+	ctx := c.Request.Context()
+
+	// Optional: specify hyper_id to regenerate only for specific node
+	hyperIDStr := c.Query("hyper_id")
+
+	// Step 1: Get all active instances with interfaces preloaded
+	var instances []model.Instance
+	query := dbs.DB().Preload("Interfaces").Where("status = ?", "active")
+
+	if hyperIDStr != "" {
+		// Filter by specific hyper node if provided
+		hyperID, err := strconv.Atoi(hyperIDStr)
+		if err != nil {
+			log.Printf("[ADJUST-ERROR] Invalid hyper_id parameter: %v", err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid hyper_id parameter"})
+			return
+		}
+		query = query.Where("hyper = ?", hyperID)
+		log.Printf("[ADJUST-INFO] Regenerating bandwidth config metrics for hyper node %d", hyperID)
+	} else {
+		log.Printf("[ADJUST-INFO] Regenerating bandwidth config metrics for all instances")
+	}
+
+	if err := query.Find(&instances).Error; err != nil {
+		log.Printf("[ADJUST-ERROR] Failed to query instances: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query instances"})
+		return
+	}
+
+	log.Printf("[ADJUST-INFO] Found %d active instances to process", len(instances))
+
+	// Step 2: Group interfaces by hyper node
+	type InterfaceInfo struct {
+		Domain       string
+		TargetDevice string
+		Inbound      int
+		Outbound     int
+	}
+
+	hyperInterfaces := make(map[int][]InterfaceInfo)
+
+	for _, instance := range instances {
+		domain := fmt.Sprintf("inst-%d", instance.ID)
+		hyperID := int(instance.Hyper)
+
+		for _, iface := range instance.Interfaces {
+			// Calculate target_device from MAC address
+			macParts := strings.Split(iface.MacAddr, ":")
+			if len(macParts) >= 3 {
+				lastThree := strings.Join(macParts[len(macParts)-3:], "")
+				targetDevice := fmt.Sprintf("tap%s", lastThree)
+
+				hyperInterfaces[hyperID] = append(hyperInterfaces[hyperID], InterfaceInfo{
+					Domain:       domain,
+					TargetDevice: targetDevice,
+					Inbound:      int(iface.Inbound),
+					Outbound:     int(iface.Outbound),
+				})
+			}
+		}
+	}
+
+	log.Printf("[ADJUST-INFO] Grouped interfaces across %d hyper nodes", len(hyperInterfaces))
+
+	// Step 3: Update metrics for each hyper node
+	results := make(map[string]interface{})
+	successCount := 0
+	failedCount := 0
+
+	for hyperID, interfaces := range hyperInterfaces {
+		log.Printf("[ADJUST-INFO] Processing hyper %d with %d interfaces", hyperID, len(interfaces))
+
+		interfaceCount := 0
+		var lastErr error
+
+		for _, ifaceInfo := range interfaces {
+			// Use operator function to update metric
+			if err := a.operator.UpdateVMBandwidthMetric(ctx, hyperID, ifaceInfo.Domain, ifaceInfo.TargetDevice,
+				ifaceInfo.Inbound, ifaceInfo.Outbound); err != nil {
+				log.Printf("[ADJUST-ERROR] Failed to update metric for %s/%s on hyper %d: %v",
+					ifaceInfo.Domain, ifaceInfo.TargetDevice, hyperID, err)
+				lastErr = err
+			} else {
+				interfaceCount++
+			}
+		}
+
+		// Record result for this hyper node
+		if lastErr != nil {
+			results[fmt.Sprintf("hyper_%d", hyperID)] = fmt.Sprintf("Partial success (%d/%d interfaces), last error: %v",
+				interfaceCount, len(interfaces), lastErr)
+			failedCount++
+		} else {
+			log.Printf("[ADJUST-INFO] Successfully updated bandwidth config metrics on hyper %d (%d interfaces)",
+				hyperID, interfaceCount)
+			results[fmt.Sprintf("hyper_%d", hyperID)] = fmt.Sprintf("Success (%d interfaces)", interfaceCount)
+			successCount++
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":        "completed",
+		"total_nodes":   len(hyperInterfaces),
+		"success_count": successCount,
+		"failed_count":  failedCount,
+		"results":       results,
+		"message":       "Bandwidth config metrics regeneration completed",
+	})
 }

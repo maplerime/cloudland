@@ -235,6 +235,9 @@ func Register() (r *gin.Engine) {
 
 			// Unified rule links query (supports both alarm and adjust rules)
 			authGroup.GET("/api/v1/rules/links", adjustAPI.GetRuleLinks)
+
+			// Bandwidth configuration metrics regeneration
+			authGroup.POST("/api/v1/adjust/regenerate-bandwidth-metrics", adjustAPI.RegenerateBandwidthConfigMetrics)
 		}
 
 	}

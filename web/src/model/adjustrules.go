@@ -88,14 +88,14 @@ type CPUAdjustRuleDetail struct {
 // BWAdjustRuleDetail Bandwidth adjustment rule detail
 type BWAdjustRuleDetail struct {
 	Model
-	GroupUUID       string `gorm:"column:group_uuid;type:varchar(64);index;not null;references:adjust_rule_group(uuid)"`
-	Name            string `gorm:"type:varchar(128)"`
-	Direction       string `gorm:"type:varchar(8);check:direction IN ('in','out')"`
-	HighThreshold   int64  `gorm:"check:high_threshold > 0"`
-	SmoothWindow    int    `gorm:"default:5;check:smooth_window > 0"`
-	TriggerDuration int    `gorm:"default:30;check:trigger_duration > 0"`
-	LimitDuration   int    `gorm:"default:300;check:limit_duration > 0"`
-	LimitValue      int    `gorm:"default:1024;check:limit_value > 0"`
+	GroupUUID        string `gorm:"column:group_uuid;type:varchar(64);index;not null;references:adjust_rule_group(uuid)"`
+	Name             string `gorm:"type:varchar(128)"`
+	Direction        string `gorm:"type:varchar(8);check:direction IN ('in','out')"`
+	HighThresholdPct int    `gorm:"check:high_threshold_pct >= 1 AND high_threshold_pct <= 100"`
+	SmoothWindow     int    `gorm:"default:5;check:smooth_window > 0"`
+	TriggerDuration  int    `gorm:"default:30;check:trigger_duration > 0"`
+	LimitDuration    int    `gorm:"default:300;check:limit_duration > 0"`
+	LimitValuePct    int    `gorm:"check:limit_value_pct >= 1 AND limit_value_pct <= 100"`
 }
 
 // AdjustmentHistory Adjustment history record

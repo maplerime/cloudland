@@ -127,11 +127,10 @@ if [[ "$STATUS" == "0" ]]; then
         exit 0
     fi
     
-    # Check if the specific metrics exist
-    STATUS_PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
-    TIMESTAMP_PATTERN="vm_bandwidth_limit_start_timestamp{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
-    if ! grep -q "^$STATUS_PATTERN" "$METRICS_FILE" && ! grep -q "^$TIMESTAMP_PATTERN" "$METRICS_FILE"; then
-        echo "Warning: No existing metrics found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
+    # Check if the specific metric exists
+    PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
+    if ! grep -q "^$PATTERN" "$METRICS_FILE"; then
+        echo "Warning: No existing metric found for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
         echo "No action needed - VM bandwidth is already in normal state"
         exit 0
     fi
@@ -143,60 +142,53 @@ if [[ ! -f "$METRICS_FILE" ]]; then
     echo "# VM bandwidth adjustment status metrics" > "$TEMP_FILE"
     echo "# 0 = normal, 1 = limited" >> "$TEMP_FILE"
     echo "# type: in = inbound, out = outbound" >> "$TEMP_FILE"
-    echo "$STATUS_METRIC_LINE" >> "$TEMP_FILE"
-    if [[ -n "$TIMESTAMP_METRIC_LINE" ]]; then
-        echo "$TIMESTAMP_METRIC_LINE" >> "$TEMP_FILE"
-    fi
+    echo "$METRIC_LINE" >> "$TEMP_FILE"
     mv "$TEMP_FILE" "$METRICS_FILE"
     echo "Bandwidth adjustment status updated successfully (new file created)"
     exit 0
 fi
 
 # Check if metric with same domain, rule_id, type and target_device already exists
-STATUS_PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
-TIMESTAMP_PATTERN="vm_bandwidth_limit_start_timestamp{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
+PATTERN="vm_bandwidth_adjustment_status{domain=\"$DOMAIN\", rule_id=\"$PROMETHEUS_RULE_ID\", type=\"$TYPE\", target_device=\"$TARGET_DEVICE\"}"
 
-if grep -q "^$STATUS_PATTERN" "$METRICS_FILE" || grep -q "^$TIMESTAMP_PATTERN" "$METRICS_FILE"; then
-    # Update existing metrics
-    echo "Updating existing metrics for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
+if grep -q "^$PATTERN" "$METRICS_FILE"; then
+    # Update existing metric
+    echo "Updating existing metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
     
-    # For recovery (status=0), remove both metric lines entirely
+    # For recovery (status=0), remove the metric line entirely
     if [[ "$STATUS" == "0" ]]; then
-        # Remove both status and timestamp metrics
-        grep -v "^$STATUS_PATTERN" "$METRICS_FILE" | grep -v "^$TIMESTAMP_PATTERN" > "$TEMP_FILE"
+        # Remove the specific metric line and keep others
+        grep -v "^$PATTERN" "$METRICS_FILE" > "$TEMP_FILE"
         
         # Check if file is now empty (only comments remain)
-        if ! grep -q "^vm_bandwidth_adjustment_status\|^vm_bandwidth_limit_start_timestamp" "$TEMP_FILE"; then
+        if ! grep -q "^vm_bandwidth_adjustment_status" "$TEMP_FILE"; then
             echo "All bandwidth adjustment metrics cleared - removing metrics file"
             rm -f "$TEMP_FILE" "$METRICS_FILE"
         else
             mv "$TEMP_FILE" "$METRICS_FILE"
         fi
-        echo "Bandwidth adjustment status recovered successfully (both metrics removed)"
+        echo "Bandwidth adjustment status recovered successfully (metric removed)"
     else
-        # Update existing metrics with new values
-        # First, remove old metrics
-        grep -v "^$STATUS_PATTERN" "$METRICS_FILE" | grep -v "^$TIMESTAMP_PATTERN" > "$TEMP_FILE"
-        # Then, add updated metrics
-        echo "$STATUS_METRIC_LINE" >> "$TEMP_FILE"
-        if [[ -n "$TIMESTAMP_METRIC_LINE" ]]; then
-            echo "$TIMESTAMP_METRIC_LINE" >> "$TEMP_FILE"
-        fi
+        # Update existing metric with new status
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^$PATTERN ]]; then
+                echo "$METRIC_LINE"
+            else
+                echo "$line"
+            fi
+        done < "$METRICS_FILE" > "$TEMP_FILE"
         
         mv "$TEMP_FILE" "$METRICS_FILE"
-        echo "Bandwidth adjustment status updated successfully (existing metrics updated)"
+        echo "Bandwidth adjustment status updated successfully (existing metric updated)"
     fi
 else
-    # Add new metrics (only for status=1, limiting case)
+    # Add new metric (only for status=1, limiting case)
     if [[ "$STATUS" == "1" ]]; then
-        echo "Adding new metrics for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE"
-        echo "$STATUS_METRIC_LINE" >> "$METRICS_FILE"
-        if [[ -n "$TIMESTAMP_METRIC_LINE" ]]; then
-            echo "$TIMESTAMP_METRIC_LINE" >> "$METRICS_FILE"
-        fi
-        echo "Bandwidth adjustment status updated successfully (new metrics added)"
+        echo "Adding new metric for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE"
+        echo "$METRIC_LINE" >> "$METRICS_FILE"
+        echo "Bandwidth adjustment status updated successfully (new metric added)"
     else
-        echo "No existing metrics to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
+        echo "No existing metric to recover for domain=$DOMAIN, rule_id=$PROMETHEUS_RULE_ID, type=$TYPE, target_device=$TARGET_DEVICE"
         echo "No action needed - VM bandwidth is already in normal state"
     fi
 fi

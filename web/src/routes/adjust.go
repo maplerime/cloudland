@@ -523,7 +523,8 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 }
 
 // AdjustBandwidthResource adjusts bandwidth resources
-func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, limit bool, instanceID string) error {
+// totalInBw and totalOutBw are the total bandwidth configuration in Mbps (from Prometheus alert value)
+func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *AdjustmentRecord, domain string, device string, limit bool, instanceID string, totalInBw int, totalOutBw int) error {
 	var instance *model.Instance
 	var err error
 
@@ -552,26 +553,25 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	// Build command
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 
-	// Get target interface's original bandwidth configuration
-	var targetInterface *model.Interface
-	if device != "" {
-		targetInterface = findInterfaceByTargetDevice(instance, device)
-	} else {
+	// Determine target device name
+	targetDevice := device
+	if targetDevice == "" {
 		// Use target_device from record if device not provided
-		targetInterface = findInterfaceByTargetDevice(instance, record.TargetDevice)
+		targetDevice = record.TargetDevice
 	}
 
-	if targetInterface == nil {
-		log.Printf("Interface not found: device=%s, instanceID=%s", device, instanceID)
-		return fmt.Errorf("interface not found: device=%s", device)
+	if targetDevice == "" {
+		log.Printf("Target device not specified for instance %s", instanceID)
+		return fmt.Errorf("target device not specified")
 	}
 
-	// Get original bandwidth configuration
-	originalInBw := int(targetInterface.Inbound)   // Original inbound bandwidth (Mbps)
-	originalOutBw := int(targetInterface.Outbound) // Original outbound bandwidth (Mbps)
+	// Use total bandwidth from Prometheus alert value (passed as parameters)
+	// This avoids remote calls to read metrics file
+	originalInBw := totalInBw
+	originalOutBw := totalOutBw
 
-	log.Printf("Interface bandwidth config: name=%s, inBw=%d, outBw=%d",
-		targetInterface.Name, originalInBw, originalOutBw)
+	log.Printf("[BW-ADJUST] Total bandwidth from alert: domain=%s, device=%s, inBw=%d Mbps, outBw=%d Mbps",
+		domain, targetDevice, originalInBw, originalOutBw)
 
 	// Set bandwidth limit values
 	inBw := originalInBw   // Default: keep original value
@@ -595,16 +595,18 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 			// Find inbound rule details
 			for _, detail := range details {
 				if detail.Direction == "in" {
-					// Only limit if original inbound bandwidth > 0
+					// Only limit if original inbound bandwidth > 0 (0 means unlimited)
 					if originalInBw > 0 {
 						needActualLimit = true
-						// Limit inbound bandwidth to rule-defined value (convert from kB/s to MB/s)
-						inBw = detail.LimitValue / 1024 // Convert to MB/s
-						if inBw < 1 {
-							inBw = 1 // Minimum 1MB/s
-						}
+						// Calculate limit value from percentage: limitValue = totalBandwidth × limitPct / 100
+						inBw = originalInBw * detail.LimitValuePct / 100
 						// Use unidirectional setting, don't affect outbound bandwidth
 						outBw = 0 // Placeholder, not actually used
+
+						log.Printf("[BW-ADJUST] Calculated inbound limit: %d%% of %d Mbps = %d Mbps",
+							detail.LimitValuePct, originalInBw, inBw)
+					} else {
+						log.Printf("[BW-ADJUST] Skip inbound limit: interface has unlimited bandwidth (0)")
 					}
 					break
 				}
@@ -614,16 +616,18 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 			// Find outbound rule details
 			for _, detail := range details {
 				if detail.Direction == "out" {
-					// Only limit if original outbound bandwidth > 0
+					// Only limit if original outbound bandwidth > 0 (0 means unlimited)
 					if originalOutBw > 0 {
 						needActualLimit = true
-						// Limit outbound bandwidth to rule-defined value (convert from kB/s to MB/s)
-						outBw = detail.LimitValue / 1024 // Convert to MB/s
-						if outBw < 1 {
-							outBw = 1 // Minimum 1MB/s
-						}
+						// Calculate limit value from percentage: limitValue = totalBandwidth × limitPct / 100
+						outBw = originalOutBw * detail.LimitValuePct / 100
 						// Use unidirectional setting, don't affect inbound bandwidth
 						inBw = 0 // Placeholder, not actually used
+
+						log.Printf("[BW-ADJUST] Calculated outbound limit: %d%% of %d Mbps = %d Mbps",
+							detail.LimitValuePct, originalOutBw, outBw)
+					} else {
+						log.Printf("[BW-ADJUST] Skip outbound limit: interface has unlimited bandwidth (0)")
 					}
 					break
 				}
@@ -834,4 +838,20 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 		log.Printf("Unknown adjustment type: %s, using default cooldown", adjustType)
 		return defaultCooldown
 	}
+}
+
+// UpdateVMBandwidthMetric updates bandwidth configuration metric for a single VM interface
+func (o *AdjustOperator) UpdateVMBandwidthMetric(ctx context.Context, hyperID int, domain string, targetDevice string, inBw int, outBw int) error {
+	control := fmt.Sprintf("inter=%d", hyperID)
+	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_interface_bandwidth.sh 'add' '%s' '%s' %d %d",
+		domain, targetDevice, inBw, outBw)
+
+	err := common.HyperExecute(ctx, control, command)
+	if err != nil {
+		return fmt.Errorf("failed to update bandwidth metric: %v", err)
+	}
+
+	log.Printf("[BW-METRIC] Updated bandwidth metric: hyper=%d, domain=%s, device=%s, in=%d, out=%d",
+		hyperID, domain, targetDevice, inBw, outBw)
+	return nil
 }
