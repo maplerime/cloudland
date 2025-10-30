@@ -75,6 +75,14 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
 	},
+	"detach_volume_wds_vhost": {
+		ResourceType: ResourceTypeVolume,
+		IDArgIndex:   2,
+	},
+	"delete_volume": {
+		ResourceType: ResourceTypeVolume,
+		IDArgIndex:   1,
+	},
 	"resize_volume": {
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
