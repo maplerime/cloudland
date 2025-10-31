@@ -20,6 +20,7 @@ import (
 	"time"
 
 	. "web/src/common"
+	"web/src/callback"
 	"web/src/model"
 
 	"golang.org/x/net/context"
@@ -130,7 +131,11 @@ func (fb *FrontbackService) dispatchExecute(ctx context.Context, cmd string, arg
 		logger.Debugf("RPC callback: [%s] %+v", cmd, args)
 	}
 	if command := Get(cmd); command != nil {
+		// 执行命令
 		status, err = command(ctx, args)
+
+		// 命令执行完成后，提取资源信息并推送事件到回调队列
+		callback.ExtractAndPushEvent(ctx, cmd, args, err)
 	} else {
 		err = fmt.Errorf("no command %s found", cmd)
 		logger.Error("Command dispatch error: ", err)
