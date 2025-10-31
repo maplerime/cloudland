@@ -138,6 +138,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
 				if err != nil {
 					logger.Error("Failed to ensure subnet_id", err)
+					err = nil
 					continue
 				}
 

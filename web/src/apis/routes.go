@@ -112,6 +112,22 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/security_groups/:id/rules/:rule_id", secruleAPI.Get)
 		authGroup.DELETE("/api/v1/security_groups/:id/rules/:rule_id", secruleAPI.Delete)
 
+		authGroup.GET("/api/v1/load_balancers", loadBalancerAPI.List)
+		authGroup.POST("/api/v1/load_balancers", loadBalancerAPI.Create)
+		authGroup.GET("/api/v1/load_balancers/:id", loadBalancerAPI.Get)
+		authGroup.DELETE("/api/v1/load_balancers/:id", loadBalancerAPI.Delete)
+		authGroup.PATCH("/api/v1/load_balancers/:id", loadBalancerAPI.Patch)
+
+		authGroup.GET("/api/v1/load_balancers/:id/listeners", listenerAPI.List)
+		authGroup.POST("/api/v1/load_balancers/:id/listeners", listenerAPI.Create)
+		authGroup.GET("/api/v1/load_balancers/:id/listeners/:listener_id", listenerAPI.Get)
+		authGroup.DELETE("/api/v1/load_balancers/:id/listeners/:listener_id", listenerAPI.Delete)
+
+		authGroup.GET("/api/v1/load_balancers/:id/listeners/:listener_id/backends", backendAPI.List)
+		authGroup.POST("/api/v1/load_balancers/:id/listeners:listener_id/backends", backendAPI.Create)
+		authGroup.GET("/api/v1/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Get)
+		authGroup.DELETE("/api/v1/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Delete)
+
 		authGroup.GET("/api/v1/floating_ips", floatingIpAPI.List)
 		authGroup.POST("/api/v1/floating_ips", floatingIpAPI.Create)
 		authGroup.GET("/api/v1/floating_ips/:id", floatingIpAPI.Get)

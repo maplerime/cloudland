@@ -74,7 +74,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 	return
 }
 
-func (a *BackendAdmin) Create(ctx context.Context, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (backend *model.Backend, err error) {
+func (a *BackendAdmin) Create(ctx context.Context, name, backendAddr string, listener *model.Listener, loadBalancer *model.LoadBalancer) (backend *model.Backend, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -89,7 +89,7 @@ func (a *BackendAdmin) Create(ctx context.Context, backendAddr string, listener 
 			EndTransaction(ctx, err)
 		}
 	}()
-	backend = &model.Backend{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, ListenerID: listener.ID, BackendAddr: backendAddr, Status: "available"}
+	backend = &model.Backend{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, ListenerID: listener.ID, Name: name, BackendAddr: backendAddr, Status: "available"}
 	err = db.Create(backend).Error
 	if err != nil {
 		logger.Error("DB failed to create backend ", err)
@@ -638,8 +638,9 @@ func (v *BackendView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	name := c.QueryTrim("name")
 	backendAddr := c.QueryTrim("backend_addr")
-	_, err = backendAdmin.Create(ctx, backendAddr, listener, loadBalancer)
+	_, err = backendAdmin.Create(ctx, name, backendAddr, listener, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create backend, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
