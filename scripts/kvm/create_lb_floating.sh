@@ -35,6 +35,8 @@ suffix=${ID}-${ext_vlan}
 ext_dev=te-$suffix
 ./create_veth.sh $router ext-$suffix te-$suffix
 
+routes_file=$router_dir/$router/routes
+echo "ip route replace default via $ext_gw table $table" >>$routes_file
 ip netns exec $router ip route replace default via $ext_gw table $table
 ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | while read ns_link ns_gw; do
     ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')

@@ -12,3 +12,4 @@ lb_ID=$2
 lb_dir=$router_dir/$router/lb-$lb_ID
 haproxy_pid=$(cat $lb_dir/haproxy.pid)
 ip netns exec $router kill $haproxy_pid
+rm -rf $lb_dir
