@@ -27,6 +27,8 @@
 									{{ end }}
 									<th>{{.i18n.Tr "UUID"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
+			                        <th>{{.i18n.Tr "Public IPs"}}</th>
+			                        <th>{{.i18n.Tr "Listeners"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
 			                        <th>{{.i18n.Tr "VPC"}}</th>
 		   			        {{ if $.IsAdmin }}
@@ -44,6 +46,16 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 			                        <td><a href="{{$Link}}?router_id={{.ID}}">{{.Name}}</td>
+			                        <td>
+							{{ range .FloatingIps}}
+								{{.FipAddress }}<br>
+							{{ end }}
+                                    		</td>
+			                        <td>
+							{{ range .Listeners}}
+								{{.Name }}<br>
+							{{ end }}
+                                    		</td>
 			                        <td>{{ $.i18n.Tr .Status }}</td>
 			                        <td>
 						{{ if .Router }}

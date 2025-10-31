@@ -59,11 +59,18 @@ i=0
 while [ $i -lt $nlistener ]; do
     listener=$(jq -r .[$i] <<< $listeners)
     echo $listener
-    read -d'\n' -r name mode port< <(jq -r ".name, .mode, .port" <<<$listener)
+    read -d'\n' -r name mode port key cert< <(jq -r ".name, .mode, .port, .key, .cert" <<<$listener)
+    if [ -n "$key" -a -n "$cert" ]; then
+        base64 -d <<<"$key" >$lb_dir/$name.pem
+	echo >>$lb_dir/$name.pem
+        base64 -d <<<"$cert" >>$lb_dir/$name.pem
+	echo >>$lb_dir/$name.pem
+        ssl_config="ssl crt $lb_dir/$name.pem"
+    fi
     cat >>$lb_dir/haproxy.conf <<EOF
 
 frontend ${name}_front
-    bind *:$port
+    bind *:$port $ssl_config
     mode $mode
     default_backend ${name}_back
 

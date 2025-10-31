@@ -9,6 +9,7 @@ package routes
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -29,7 +30,7 @@ var (
 type ListenerAdmin struct{}
 type ListenerView struct{}
 
-func (a *ListenerAdmin) Create(ctx context.Context, name, mode string, port int32, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
+func (a *ListenerAdmin) Create(ctx context.Context, name, mode, key, cert string, port int32, loadBalancer *model.LoadBalancer) (listener *model.Listener, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -44,7 +45,7 @@ func (a *ListenerAdmin) Create(ctx context.Context, name, mode string, port int3
 			EndTransaction(ctx, err)
 		}
 	}()
-	listener = &model.Listener{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Mode: mode, Port: port, LoadBalancerID: loadBalancer.ID, Status: "available"}
+	listener = &model.Listener{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, Mode: mode, Key: base64.StdEncoding.EncodeToString([]byte(key)), Certificate: base64.StdEncoding.EncodeToString([]byte(cert)), Port: port, LoadBalancerID: loadBalancer.ID, Status: "available"}
 	err = db.Create(listener).Error
 	if err != nil {
 		logger.Error("DB failed to create listener ", err)
@@ -467,6 +468,8 @@ func (v *ListenerView) Create(c *macaron.Context, store session.Store) {
 	}
 	name := c.QueryTrim("name")
 	mode := c.QueryTrim("mode")
+	key := c.QueryTrim("key")
+	cert := c.QueryTrim("cert")
 	port := c.QueryInt("port")
 	if port <= 0 {
 		logger.Errorf("Invalid port %d", port)
@@ -474,7 +477,7 @@ func (v *ListenerView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(404, "404")
 		return
 	}
-	_, err = listenerAdmin.Create(ctx, name, mode, int32(port), loadBalancer)
+	_, err = listenerAdmin.Create(ctx, name, mode, key, cert, int32(port), loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create listener, %v", err)
 		c.Data["ErrorMsg"] = err.Error()

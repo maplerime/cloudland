@@ -39,6 +39,8 @@ type BackendConfig struct {
 type ListenerConfig struct {
 	Name     string           `json:"name"`
 	Mode     string           `json:"mode"`
+	Key      string           `json:"key"`
+	Cert     string           `json:"cert"`
 	Port     int32            `json:"port"`
 	Backends []*BackendConfig `json:"backends"`
 }
@@ -264,7 +266,7 @@ func (a *LoadBalancerAdmin) Get(ctx context.Context, id int64) (loadBalancer *mo
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	loadBalancer = &model.LoadBalancer{Model: model.Model{ID: id}}
-	if err = db.Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where).Take(loadBalancer).Error; err != nil {
+	if err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where).Take(loadBalancer).Error; err != nil {
 		logger.Error("Failed to query load balancer", err)
 		err = NewCLError(ErrLoadBalancerNotFound, "Failed to find load balancer", err)
 		return
@@ -482,7 +484,7 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
+	if err = db.Preload("FloatingIps").Preload("Listeners").Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
 		logger.Error("DB failed to query load balancers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
 		return
