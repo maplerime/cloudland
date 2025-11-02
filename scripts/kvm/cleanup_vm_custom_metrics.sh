@@ -12,6 +12,7 @@ domain_name="inst-$vm_ID"
 METRICS_DIR="/var/lib/node_exporter"
 CPU_METRICS_FILE="$METRICS_DIR/vm_cpu_adjustment_status.prom"
 BANDWIDTH_METRICS_FILE="$METRICS_DIR/vm_bandwidth_adjustment_status.prom"
+BANDWIDTH_CONFIG_FILE="$METRICS_DIR/vm_interface_bandwidth_config.prom"
 
 # Function: Clean up specific domain records from metrics file
 cleanup_metrics_file() {
@@ -56,5 +57,8 @@ cleanup_metrics_file "$CPU_METRICS_FILE" "$domain_name" "CPU adjustment"
 
 # Clean up bandwidth adjustment metrics
 cleanup_metrics_file "$BANDWIDTH_METRICS_FILE" "$domain_name" "bandwidth adjustment"
+
+# Clean up bandwidth configuration metrics
+/opt/cloudland/scripts/kvm/update_vm_interface_bandwidth.sh delete_domain "$domain_name" 2>&1 | logger -t cleanup_vm_custom_metrics || true
 
 echo "Custom metrics cleanup completed for domain: $domain_name"

@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jinzhu/gorm"
 	"github.com/spf13/viper"
-	"gorm.io/gorm"
 
 	"web/src/common"
 	"web/src/dbs"
@@ -854,4 +854,198 @@ func (o *AdjustOperator) UpdateVMBandwidthMetric(ctx context.Context, hyperID in
 	log.Printf("[BW-METRIC] Updated bandwidth metric: hyper=%d, domain=%s, device=%s, in=%d, out=%d",
 		hyperID, domain, targetDevice, inBw, outBw)
 	return nil
+}
+
+// SyncVMLinks synchronizes VM links for rule group (CPU rules, simple VM list only)
+// Returns: (added, removed, toAddVMs, toRemoveVMs, error)
+func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newVMUUIDs []string) (int, int, []string, []string, error) {
+	alarmOperator := &AlarmOperator{}
+
+	// 1. Get existing VM links
+	existingLinks, err := alarmOperator.GetLinkedVMs(ctx, groupUUID)
+	if err != nil {
+		return 0, 0, nil, nil, fmt.Errorf("failed to get existing VM links: %w", err)
+	}
+
+	// 2. Build existing VM UUID set
+	existingVMs := make(map[string]bool)
+	for _, link := range existingLinks {
+		existingVMs[link.VMUUID] = true
+	}
+
+	// 3. Build new VM UUID set
+	newVMs := make(map[string]bool)
+	for _, vmUUID := range newVMUUIDs {
+		newVMs[vmUUID] = true
+	}
+
+	// 4. Calculate difference
+	var toAdd []string
+	var toRemove []string
+
+	// VMs to add: in new but not in existing
+	for vmUUID := range newVMs {
+		if !existingVMs[vmUUID] {
+			toAdd = append(toAdd, vmUUID)
+		}
+	}
+
+	// VMs to remove: in existing but not in new
+	for vmUUID := range existingVMs {
+		if !newVMs[vmUUID] {
+			toRemove = append(toRemove, vmUUID)
+		}
+	}
+
+	// 5. Execute database operations
+	added := 0
+	removed := 0
+
+	// Add new VMs
+	for _, vmUUID := range toAdd {
+		if err := alarmOperator.CreateVMLink(ctx, groupUUID, vmUUID, ""); err != nil {
+			log.Printf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
+		} else {
+			added++
+		}
+	}
+
+	// Remove old VMs
+	for _, vmUUID := range toRemove {
+		if deletedCount, err := alarmOperator.DeleteVMLink(ctx, groupUUID, vmUUID, ""); err != nil {
+			log.Printf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
+		} else {
+			removed += int(deletedCount)
+		}
+	}
+
+	log.Printf("[SYNC-INFO] VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
+	return added, removed, toAdd, toRemove, nil
+}
+
+// SyncVMLinksWithDevice synchronizes VM links for BW rules (with target_device dimension)
+// Returns: (added, removed, toAddByDevice, toRemoveByDevice, error)
+// toAddByDevice/toRemoveByDevice: map[device][]vmUUID
+func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID string, newVMLinks []struct {
+	InstanceID   string
+	TargetDevice string
+}) (int, int, map[string][]string, map[string][]string, error) {
+	alarmOperator := &AlarmOperator{}
+
+	// 1. Get existing VM links
+	existingLinks, err := alarmOperator.GetLinkedVMs(ctx, groupUUID)
+	if err != nil {
+		return 0, 0, nil, nil, fmt.Errorf("failed to get existing VM links: %w", err)
+	}
+
+	// 2. Build existing (vmUUID, device) pair set
+	type VMDevicePair struct {
+		VMUUID string
+		Device string
+	}
+	existingPairs := make(map[VMDevicePair]bool)
+	for _, link := range existingLinks {
+		existingPairs[VMDevicePair{VMUUID: link.VMUUID, Device: link.Interface}] = true
+	}
+
+	// 3. Build new (vmUUID, device) pair set
+	newPairs := make(map[VMDevicePair]bool)
+	for _, link := range newVMLinks {
+		newPairs[VMDevicePair{VMUUID: link.InstanceID, Device: link.TargetDevice}] = true
+	}
+
+	// 4. Calculate difference
+	toAddByDevice := make(map[string][]string)
+	toRemoveByDevice := make(map[string][]string)
+
+	// Pairs to add: in new but not in existing
+	for pair := range newPairs {
+		if !existingPairs[pair] {
+			toAddByDevice[pair.Device] = append(toAddByDevice[pair.Device], pair.VMUUID)
+		}
+	}
+
+	// Pairs to remove: in existing but not in new
+	for pair := range existingPairs {
+		if !newPairs[pair] {
+			toRemoveByDevice[pair.Device] = append(toRemoveByDevice[pair.Device], pair.VMUUID)
+		}
+	}
+
+	// 5. Execute database operations
+	added := 0
+	removed := 0
+
+	// Add new VM-device pairs
+	for device, vmUUIDs := range toAddByDevice {
+		for _, vmUUID := range vmUUIDs {
+			if err := alarmOperator.CreateVMLink(ctx, groupUUID, vmUUID, device); err != nil {
+				log.Printf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
+					groupUUID, vmUUID, device, err)
+			} else {
+				added++
+			}
+		}
+	}
+
+	// Remove old VM-device pairs
+	for device, vmUUIDs := range toRemoveByDevice {
+		for _, vmUUID := range vmUUIDs {
+			if deletedCount, err := alarmOperator.DeleteVMLink(ctx, groupUUID, vmUUID, device); err != nil {
+				log.Printf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
+					groupUUID, vmUUID, device, err)
+			} else {
+				removed += int(deletedCount)
+			}
+		}
+	}
+
+	log.Printf("[SYNC-INFO] BW VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
+	return added, removed, toAddByDevice, toRemoveByDevice, nil
+}
+
+// UpdateCPUAdjustRuleDetails updates CPU adjustment rule details (delete-and-recreate strategy)
+func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, groupUUID string, newDetails []model.CPUAdjustRuleDetail) error {
+	return dbs.DB().Transaction(func(tx *gorm.DB) error {
+		// 1. Delete old details
+		if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.CPUAdjustRuleDetail{}).Error; err != nil {
+			log.Printf("[UPDATE-ERROR] Failed to delete old CPU details: groupUUID=%s, error=%v", groupUUID, err)
+			return fmt.Errorf("failed to delete old CPU details: %w", err)
+		}
+
+		// 2. Create new details
+		for i := range newDetails {
+			newDetails[i].GroupUUID = groupUUID
+			if err := tx.Create(&newDetails[i]).Error; err != nil {
+				log.Printf("[UPDATE-ERROR] Failed to create new CPU detail: groupUUID=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("failed to create new CPU detail: %w", err)
+			}
+		}
+
+		log.Printf("[UPDATE-INFO] CPU adjustment rule details updated: groupUUID=%s, count=%d", groupUUID, len(newDetails))
+		return nil
+	})
+}
+
+// UpdateBWAdjustRuleDetails updates BW adjustment rule details (delete-and-recreate strategy)
+func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUID string, newDetails []model.BWAdjustRuleDetail) error {
+	return dbs.DB().Transaction(func(tx *gorm.DB) error {
+		// 1. Delete old details
+		if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.BWAdjustRuleDetail{}).Error; err != nil {
+			log.Printf("[UPDATE-ERROR] Failed to delete old BW details: groupUUID=%s, error=%v", groupUUID, err)
+			return fmt.Errorf("failed to delete old BW details: %w", err)
+		}
+
+		// 2. Create new details
+		for i := range newDetails {
+			newDetails[i].GroupUUID = groupUUID
+			if err := tx.Create(&newDetails[i]).Error; err != nil {
+				log.Printf("[UPDATE-ERROR] Failed to create new BW detail: groupUUID=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("failed to create new BW detail: %w", err)
+			}
+		}
+
+		log.Printf("[UPDATE-INFO] BW adjustment rule details updated: groupUUID=%s, count=%d", groupUUID, len(newDetails))
+		return nil
+	})
 }

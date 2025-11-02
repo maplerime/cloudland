@@ -33,195 +33,16 @@ var alarmAPI = &AlarmAPI{
 	alarmAdmin: &routes.AlarmAdmin{},
 }
 
-// updateMatchedVMsJSON updates the matched_vms.json file, supporting one VM matching multiple rule groups
+// UpdateMatchedVMsJSON updates the matched_vms.json file, supporting one VM matching multiple rule groups
 // Parameters:
 //   - ctx: context
 //   - vmUUIDs: list of VM UUIDs
 //   - groupUUID: rule group UUID
 //   - operation: operation type, "add" for add/update, "remove" for delete
 //   - ruleType: rule type ("cpu" or "bw") for generating typed rule_id
-func (a *AlarmAPI) updateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) error {
-	// Path to matched_vms.json file
-	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
-
-	// Read existing matched_vms.json
-	var matchedVMs []map[string]interface{}
-	existingData, err := routes.ReadFile(matchedVMsFile)
-	if err == nil && len(existingData) > 0 {
-		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
-			log.Printf("Failed to parse existing matched_vms.json: %v", err)
-			// Even if parsing fails, initialize an empty array to avoid losing operations
-			matchedVMs = []map[string]interface{}{}
-		}
-	} else {
-		// File doesn't exist or is empty, create new array
-		matchedVMs = []map[string]interface{}{}
-		log.Printf("Creating new matched_vms.json file")
-	}
-
-	// Process based on operation type
-	if operation == "add" {
-		log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
-		// Add or update VM entries
-		var notFoundVMs []string
-		for _, instanceid := range vmUUIDs {
-			domain, err := routes.GetDomainByInstanceUUID(ctx, instanceid)
-			if err != nil {
-				log.Printf("Failed to get domain for instanceid=%s: %v", instanceid, err)
-				notFoundVMs = append(notFoundVMs, instanceid)
-				continue
-			}
-
-			// Create new entry with instance_id field and typed rule_id
-			ruleID := fmt.Sprintf("%s-%s-%s", ruleType, domain, groupUUID)
-
-			// Extract target_device value from variadic parameter
-			var targetDeviceValue string
-			if len(targetDevice) > 0 {
-				targetDeviceValue = targetDevice[0]
-			}
-
-			newEntry := map[string]interface{}{
-				"targets": []string{"localhost:9090"},
-				"labels": map[string]interface{}{
-					"domain":        domain,
-					"rule_id":       ruleID,
-					"instance_id":   instanceid,
-					"target_device": targetDeviceValue, // Add target_device field
-				},
-			}
-
-			// Check if the same domain+group combination already exists with the same target_device
-			entryExists := false
-			for i, vm := range matchedVMs {
-				labels, ok := vm["labels"].(map[string]interface{})
-				if !ok {
-					continue
-				}
-
-				domainVal, hasDomain := labels["domain"].(string)
-				existingRuleID, hasRuleID := labels["rule_id"].(string)
-				expectedRuleID := ruleID
-
-				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == expectedRuleID {
-					// Update existing entry
-					entryExists = true
-					matchedVMs[i] = newEntry
-					log.Printf("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
-					break
-				}
-			}
-
-			// If it doesn't exist, add a new entry
-			if !entryExists {
-				matchedVMs = append(matchedVMs, newEntry)
-				log.Printf("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
-			}
-		}
-
-		// If any VMs were not found, return an error
-		if len(notFoundVMs) > 0 {
-			return fmt.Errorf("instances not found: %v", notFoundVMs)
-		}
-	} else if operation == "remove" {
-		// If targetDevice is provided (optional variadic parameter), delete by triple match;
-		// Otherwise, use the original "delete all by groupUUID" logic (unchanged).
-		hasDeviceFilter := len(targetDevice) > 0
-
-		filteredVMs := []map[string]interface{}{}
-		removedCount := 0
-
-		for _, vm := range matchedVMs {
-			labels, ok := vm["labels"].(map[string]interface{})
-			if !ok {
-				filteredVMs = append(filteredVMs, vm)
-				continue
-			}
-
-			ruleID, ok := labels["rule_id"].(string)
-			if !ok {
-				filteredVMs = append(filteredVMs, vm)
-				continue
-			}
-
-			// No device filter: maintain original logic, delete all by group
-			if !hasDeviceFilter {
-				if strings.HasSuffix(ruleID, "-"+groupUUID) {
-					domain, _ := labels["domain"].(string)
-					instanceID, _ := labels["instance_id"].(string)
-					log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
-					removedCount++
-					continue
-				}
-				filteredVMs = append(filteredVMs, vm)
-				continue
-			}
-
-			// Device filter: require all three conditions to match
-			// 1) Belongs to the group
-			// 2) instance_id in vmUUIDs
-			// 3) target_device in targetDevice
-			if !strings.HasSuffix(ruleID, "-"+groupUUID) {
-				filteredVMs = append(filteredVMs, vm)
-				continue
-			}
-
-			instanceID, _ := labels["instance_id"].(string)
-			devStr, _ := labels["target_device"].(string)
-
-			inVM := false
-			for _, id := range vmUUIDs {
-				if id == instanceID {
-					inVM = true
-					break
-				}
-			}
-			inDev := false
-			for _, d := range targetDevice {
-				if d == devStr {
-					inDev = true
-					break
-				}
-			}
-
-			if inVM && inDev {
-				domain, _ := labels["domain"].(string)
-				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
-					domain, ruleID, instanceID, devStr)
-				removedCount++
-				continue
-			}
-
-			// Keep if triple condition not matched
-			filteredVMs = append(filteredVMs, vm)
-		}
-
-		matchedVMs = filteredVMs
-		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
-	}
-
-	// Save updated matched_vms.json
-	matchedVMsData, err := json.MarshalIndent(matchedVMs, "", "  ")
-	if err != nil {
-		log.Printf("Failed to marshal matched_vms.json: %v", err)
-		return err
-	}
-
-	err = routes.WriteFile(matchedVMsFile, matchedVMsData, 0644)
-	if err != nil {
-		log.Printf("Failed to write matched_vms.json: %v", err)
-		return err
-	}
-
-	// Force reload Prometheus configuration
-	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
-		// Don't return error as the file update was successful
-	} else {
-		log.Printf("Successfully reloaded Prometheus configuration after updating matched_vms.json")
-	}
-
-	return nil
+func (a *AlarmAPI) UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) error {
+	// Call the public function in routes package
+	return routes.UpdateMatchedVMsJSON(ctx, vmUUIDs, groupUUID, operation, ruleType, targetDevice...)
 }
 
 // LinkRuleToVMWithType returns a closure that handles VM linking based on rule category
@@ -321,7 +142,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		}
 
 		for iface, vmUUIDs := range interfaceGroups {
-			_ = a.updateMatchedVMsJSON(
+			_ = a.UpdateMatchedVMsJSON(
 				c.Request.Context(),
 				vmUUIDs,
 				groupUUID,
@@ -493,7 +314,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		for iface, vmUUIDs := range interfaceGroups {
-			_ = a.updateMatchedVMsJSON(c.Request.Context(), vmUUIDs, groupUUID, "remove", alarmType, iface)
+			_ = a.UpdateMatchedVMsJSON(c.Request.Context(), vmUUIDs, groupUUID, "remove", alarmType, iface)
 		}
 
 		// Query remaining linked VMs for response
@@ -595,7 +416,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
 
 		// Update matched_vms.json with VM information
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-cpu")
+		_ = a.UpdateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-cpu")
 	}
 	// Validate: only one rule can be created at a time
 	if len(req.Rules) != 1 {
@@ -736,7 +557,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		}
 
 		// Update matched_vms.json with VM information
-		if err := a.updateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-memory"); err != nil {
+		if err := a.UpdateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-memory"); err != nil {
 			log.Printf("Failed to update matched_vms.json: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update VM metadata: " + err.Error()})
 			return
@@ -1018,7 +839,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	}
 
 	// Remove related entries from matched_vms.json
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-cpu")
+	_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-cpu")
 
 	// Delete symlink and rule file (paths consistent with creation)
 	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
@@ -1132,7 +953,7 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 
 	// Remove from matched_vms.json
 	if len(linkedVMs) > 0 {
-		_ = a.updateMatchedVMsJSON(c.Request.Context(), linkedVMs, groupUUID, "remove", "alarm-memory")
+		_ = a.UpdateMatchedVMsJSON(c.Request.Context(), linkedVMs, groupUUID, "remove", "alarm-memory")
 	}
 
 	owner := group.Owner
@@ -1604,7 +1425,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 
 		// Update matched VMs JSON for each VM with its target_device
 		for _, vm := range req.LinkedVMs {
-			_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{vm.InstanceID}, group.UUID, "add", "alarm-bw", vm.TargetDevice)
+			_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{vm.InstanceID}, group.UUID, "add", "alarm-bw", vm.TargetDevice)
 		}
 	}
 	// Render templates for each rule direction
@@ -1798,7 +1619,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	}
 
 	// Remove related entries from matched_vms.json
-	_ = a.updateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-bw")
+	_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-bw")
 
 	// Get BW rule details to determine which files to delete
 	details, err := a.operator.GetBWRuleDetails(c.Request.Context(), groupUUID)
@@ -2384,5 +2205,300 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				"target_files": targetFiles,
 			},
 		})
+	}
+}
+
+// BatchGetRulesRequest 批量获取规则请求
+type BatchGetRulesRequest struct {
+	Identifiers      []string `json:"identifiers" binding:"required"`
+	IncludeDetails   *bool    `json:"include_details"`
+	IncludeLinkedVMs *bool    `json:"include_linked_vms"`
+}
+
+// BatchGetRulesResponse 批量获取规则响应
+type BatchGetRulesResponse struct {
+	Success     bool     `json:"success"`
+	Total       int      `json:"total"`
+	Found       int      `json:"found"`
+	NotFound    int      `json:"not_found"`
+	Rules       []gin.H  `json:"rules"`
+	NotFoundIDs []string `json:"not_found_ids"`
+}
+
+// BatchGetRules 批量获取规则信息 (支持告警和调整规则)
+func (a *AlarmAPI) BatchGetRules(c *gin.Context) {
+	var req BatchGetRulesRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+		return
+	}
+
+	// 默认值处理
+	includeDetails := true
+	includeLinkedVMs := true
+	if req.IncludeDetails != nil {
+		includeDetails = *req.IncludeDetails
+	}
+	if req.IncludeLinkedVMs != nil {
+		includeLinkedVMs = *req.IncludeLinkedVMs
+	}
+
+	ctx := c.Request.Context()
+	rules := make([]gin.H, 0)
+	notFoundIDs := make([]string, 0)
+
+	// 遍历每个标识符
+	for _, identifier := range req.Identifiers {
+		ruleData, err := a.getSingleRuleByIdentifier(ctx, identifier, includeDetails, includeLinkedVMs)
+		if err != nil {
+			log.Printf("[BatchGetRules] Failed to get rule: identifier=%s, error=%v", identifier, err)
+			notFoundIDs = append(notFoundIDs, identifier)
+			continue
+		}
+		rules = append(rules, ruleData)
+	}
+
+	// 构建响应
+	response := BatchGetRulesResponse{
+		Success:     true,
+		Total:       len(req.Identifiers),
+		Found:       len(rules),
+		NotFound:    len(notFoundIDs),
+		Rules:       rules,
+		NotFoundIDs: notFoundIDs,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// getSingleRuleByIdentifier 通过标识符获取单个规则 (支持uuid和rule_id)
+func (a *AlarmAPI) getSingleRuleByIdentifier(ctx context.Context, identifier string, includeDetails, includeLinkedVMs bool) (gin.H, error) {
+	// 策略1: 尝试从调整规则表查询
+	adjustOperator := &routes.AdjustOperator{}
+	adjustGroup, err := adjustOperator.GetAdjustRulesByIdentifier(ctx, identifier)
+	if err == nil {
+		return a.buildAdjustRuleResponse(ctx, adjustGroup, includeDetails, includeLinkedVMs)
+	}
+
+	// 策略2: 尝试从告警规则表查询 (支持uuid)
+	groups, _, err := a.operator.ListRuleGroups(ctx, routes.ListRuleGroupsParams{
+		GroupUUID: identifier,
+		PageSize:  1,
+	})
+	if err == nil && len(groups) > 0 {
+		return a.buildAlarmRuleResponse(ctx, &groups[0], includeDetails, includeLinkedVMs)
+	}
+
+	// 策略3: 尝试从告警规则表查询 (支持rule_id)
+	groups, _, err = a.operator.ListRuleGroups(ctx, routes.ListRuleGroupsParams{
+		RuleID:   identifier,
+		PageSize: 1,
+	})
+	if err == nil && len(groups) > 0 {
+		return a.buildAlarmRuleResponse(ctx, &groups[0], includeDetails, includeLinkedVMs)
+	}
+
+	return nil, fmt.Errorf("rule not found: %s", identifier)
+}
+
+// buildAlarmRuleResponse 构建告警规则响应
+func (a *AlarmAPI) buildAlarmRuleResponse(ctx context.Context, group *model.RuleGroupV2, includeDetails, includeLinkedVMs bool) (gin.H, error) {
+	response := gin.H{
+		"identifier":    group.UUID,
+		"rule_source":   "alarm",
+		"uuid":          group.UUID,
+		"rule_id":       group.RuleID,
+		"name":          group.Name,
+		"type":          group.Type,
+		"owner":         group.Owner,
+		"enabled":       group.Enabled,
+		"trigger_count": group.TriggerCnt,
+		"created_at":    group.CreatedAt,
+	}
+
+	// 包含详情
+	if includeDetails {
+		details, err := a.getRuleDetails(ctx, group.UUID, group.Type)
+		if err != nil {
+			log.Printf("[buildAlarmRuleResponse] Failed to get details: uuid=%s, error=%v", group.UUID, err)
+			response["rules"] = []gin.H{}
+		} else {
+			response["rules"] = details
+		}
+	}
+
+	// 包含关联VM
+	if includeLinkedVMs {
+		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
+		if err != nil {
+			log.Printf("[buildAlarmRuleResponse] Failed to get linked VMs: uuid=%s, error=%v", group.UUID, err)
+			response["linked_vms"] = []gin.H{}
+		} else {
+			linkedVMs := make([]gin.H, 0, len(vmLinks))
+			for _, link := range vmLinks {
+				linkedVMs = append(linkedVMs, gin.H{
+					"instance_id":   link.VMUUID,
+					"target_device": link.Interface,
+				})
+			}
+			response["linked_vms"] = linkedVMs
+		}
+	}
+
+	return response, nil
+}
+
+// getRuleDetails 根据规则类型获取详情
+func (a *AlarmAPI) getRuleDetails(ctx context.Context, groupUUID, ruleType string) ([]gin.H, error) {
+	switch ruleType {
+	case routes.RuleTypeCPU:
+		details, err := a.operator.GetCPURuleDetails(ctx, groupUUID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]gin.H, 0, len(details))
+		for _, d := range details {
+			result = append(result, gin.H{
+				"name":          d.Name,
+				"rule":          d.Rule,
+				"limit":         d.Limit,
+				"duration":      d.Duration,
+				"over":          d.Over,
+				"down_to":       d.DownTo,
+				"down_duration": d.DownDuration,
+			})
+		}
+		return result, nil
+
+	case routes.RuleTypeMemory:
+		details, err := a.operator.GetMemoryRuleDetails(ctx, groupUUID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]gin.H, 0, len(details))
+		for _, d := range details {
+			result = append(result, gin.H{
+				"name":          d.Name,
+				"rule":          d.Rule,
+				"limit":         d.Limit,
+				"duration":      d.Duration,
+				"over":          d.Over,
+				"down_to":       d.DownTo,
+				"down_duration": d.DownDuration,
+			})
+		}
+		return result, nil
+
+	case routes.RuleTypeBW:
+		details, err := a.operator.GetBWRuleDetails(ctx, groupUUID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]gin.H, 0, len(details))
+		for _, d := range details {
+			result = append(result, gin.H{
+				"direction": d.Direction,
+				"name":      d.Name,
+				"limit":     d.Limit,
+				"duration":  d.Duration,
+			})
+		}
+		return result, nil
+
+	default:
+		return []gin.H{}, fmt.Errorf("unsupported rule type: %s", ruleType)
+	}
+}
+
+// buildAdjustRuleResponse 构建调整规则响应
+func (a *AlarmAPI) buildAdjustRuleResponse(ctx context.Context, group *model.AdjustRuleGroup, includeDetails, includeLinkedVMs bool) (gin.H, error) {
+	adjustOperator := &routes.AdjustOperator{}
+
+	response := gin.H{
+		"identifier":  group.UUID,
+		"rule_source": "adjust",
+		"uuid":        group.UUID,
+		"rule_id":     group.RuleID,
+		"name":        group.Name,
+		"type":        group.Type,
+		"owner":       group.Owner,
+		"enabled":     group.Enabled,
+		"created_at":  group.CreatedAt,
+	}
+
+	// 包含详情
+	if includeDetails {
+		details, err := a.getAdjustRuleDetails(ctx, group.UUID, group.Type, adjustOperator)
+		if err != nil {
+			log.Printf("[buildAdjustRuleResponse] Failed to get details: uuid=%s, error=%v", group.UUID, err)
+			response["rules"] = []gin.H{}
+		} else {
+			response["rules"] = details
+		}
+	}
+
+	// 包含关联VM
+	if includeLinkedVMs {
+		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
+		if err != nil {
+			log.Printf("[buildAdjustRuleResponse] Failed to get linked VMs: uuid=%s, error=%v", group.UUID, err)
+			response["linked_vms"] = []gin.H{}
+		} else {
+			linkedVMs := make([]gin.H, 0, len(vmLinks))
+			for _, link := range vmLinks {
+				linkedVMs = append(linkedVMs, gin.H{
+					"instance_id":   link.VMUUID,
+					"target_device": link.Interface,
+				})
+			}
+			response["linked_vms"] = linkedVMs
+		}
+	}
+
+	return response, nil
+}
+
+// getAdjustRuleDetails 根据调整规则类型获取详情
+func (a *AlarmAPI) getAdjustRuleDetails(ctx context.Context, groupUUID, ruleType string, operator *routes.AdjustOperator) ([]gin.H, error) {
+	switch ruleType {
+	case model.RuleTypeAdjustCPU:
+		details, err := operator.GetCPUAdjustRuleDetails(ctx, groupUUID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]gin.H, 0, len(details))
+		for _, d := range details {
+			result = append(result, gin.H{
+				"name":             d.Name,
+				"high_threshold":   d.HighThreshold,
+				"smooth_window":    d.SmoothWindow,
+				"trigger_duration": d.TriggerDuration,
+				"limit_duration":   d.LimitDuration,
+				"limit_percent":    d.LimitPercent,
+			})
+		}
+		return result, nil
+
+	case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW:
+		details, err := operator.GetBWAdjustRuleDetails(ctx, groupUUID)
+		if err != nil {
+			return nil, err
+		}
+		result := make([]gin.H, 0, len(details))
+		for _, d := range details {
+			result = append(result, gin.H{
+				"name":               d.Name,
+				"direction":          d.Direction,
+				"high_threshold_pct": d.HighThresholdPct,
+				"smooth_window":      d.SmoothWindow,
+				"trigger_duration":   d.TriggerDuration,
+				"limit_duration":     d.LimitDuration,
+				"limit_value_pct":    d.LimitValuePct,
+			})
+		}
+		return result, nil
+
+	default:
+		return []gin.H{}, fmt.Errorf("unsupported adjust rule type: %s", ruleType)
 	}
 }

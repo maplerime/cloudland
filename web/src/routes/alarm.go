@@ -600,6 +600,104 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 	return links, nil
 }
 
+// GetInstanceRuleLinks retrieves all rule links for specific instances
+// Input: instanceUUIDs - list of instance UUIDs to query
+// Output: map[instanceUUID][]VMRuleLink - grouped by instance UUID
+func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs []string) (map[string][]model.VMRuleLink, error) {
+	if len(instanceUUIDs) == 0 {
+		return map[string][]model.VMRuleLink{}, nil
+	}
+
+	ctx, db := common.GetContextDB(ctx)
+	var links []model.VMRuleLink
+
+	if err := db.Where("vm_uuid IN ?", instanceUUIDs).Find(&links).Error; err != nil {
+		log.Printf("[GetInstanceRuleLinks] Query failed: %v", err)
+		return nil, fmt.Errorf("failed to query rule links: %w", err)
+	}
+
+	// Group by instance UUID
+	result := make(map[string][]model.VMRuleLink)
+	for _, link := range links {
+		result[link.VMUUID] = append(result[link.VMUUID], link)
+	}
+
+	log.Printf("[GetInstanceRuleLinks] Found %d links for %d instances", len(links), len(result))
+	return result, nil
+}
+
+// GetInstanceRuleDetails retrieves complete rule group information for specific instances
+// This is used by the API layer to return detailed rule information
+// Input: instanceUUIDs - list of instance UUIDs to query
+// Output: map with instance_id as key, containing rule groups with full details
+func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUIDs []string) (map[string]interface{}, error) {
+	// Get all rule links
+	linksMap, err := a.GetInstanceRuleLinks(ctx, instanceUUIDs)
+	if err != nil {
+		log.Printf("[GetInstanceRuleDetails] Failed to get rule links: %v", err)
+		return nil, fmt.Errorf("failed to query rule links: %w", err)
+	}
+
+	// Build response with rule group details
+	ctx, db := common.GetContextDB(ctx)
+	result := make(map[string]interface{})
+
+	for instanceID, links := range linksMap {
+		ruleGroups := make([]map[string]interface{}, 0)
+		seenGroups := make(map[string]bool)
+
+		for _, link := range links {
+			if seenGroups[link.GroupUUID] {
+				continue
+			}
+			seenGroups[link.GroupUUID] = true
+
+			var group model.RuleGroupV2
+			if err := db.Where("uuid = ?", link.GroupUUID).First(&group).Error; err != nil {
+				log.Printf("[GetInstanceRuleDetails] Rule group not found: %s, error: %v", link.GroupUUID, err)
+				continue
+			}
+
+			// Get all interfaces for this group
+			interfaces := make([]string, 0)
+			for _, l := range links {
+				if l.GroupUUID == link.GroupUUID {
+					interfaces = append(interfaces, l.Interface)
+				}
+			}
+
+			ruleGroups = append(ruleGroups, map[string]interface{}{
+				"group_uuid": group.UUID,
+				"rule_id":    group.RuleID,
+				"name":       group.Name,
+				"type":       group.Type,
+				"enabled":    group.Enabled,
+				"owner":      group.Owner,
+				"interfaces": interfaces,
+			})
+		}
+
+		result[instanceID] = map[string]interface{}{
+			"instance_id": instanceID,
+			"rule_count":  len(ruleGroups),
+			"rule_groups": ruleGroups,
+		}
+	}
+
+	// Add empty result for instances with no rules
+	for _, instanceID := range instanceUUIDs {
+		if _, exists := result[instanceID]; !exists {
+			result[instanceID] = map[string]interface{}{
+				"instance_id": instanceID,
+				"rule_count":  0,
+				"rule_groups": []interface{}{},
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) error {
 	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -1971,5 +2069,191 @@ func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, 
 	}
 
 	log.Printf("[SendNotification] Successfully sent notification to %s", notifyURL)
+	return nil
+}
+
+// UpdateMatchedVMsJSON updates the matched_vms.json file for VM cleanup
+// This is a public function that can be called from both apis and routes packages
+func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) error {
+	// Path to matched_vms.json file
+	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+
+	// Read existing matched_vms.json
+	var matchedVMs []map[string]interface{}
+	existingData, err := ReadFile(matchedVMsFile)
+	if err == nil && len(existingData) > 0 {
+		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
+			log.Printf("Failed to parse existing matched_vms.json: %v", err)
+			// Even if parsing fails, initialize an empty array to avoid losing operations
+			matchedVMs = []map[string]interface{}{}
+		}
+	} else {
+		// File doesn't exist or is empty, create new array
+		matchedVMs = []map[string]interface{}{}
+		log.Printf("Creating new matched_vms.json file")
+	}
+
+	// Process based on operation type
+	if operation == "add" {
+		log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
+		// Add or update VM entries
+		var notFoundVMs []string
+		for _, instanceid := range vmUUIDs {
+			domain, err := GetDomainByInstanceUUID(ctx, instanceid)
+			if err != nil {
+				log.Printf("Failed to get domain for instanceid=%s: %v", instanceid, err)
+				notFoundVMs = append(notFoundVMs, instanceid)
+				continue
+			}
+
+			// Create new entry with instance_id field and typed rule_id
+			ruleID := fmt.Sprintf("%s-%s-%s", ruleType, domain, groupUUID)
+
+			// Extract target_device value from variadic parameter
+			var targetDeviceValue string
+			if len(targetDevice) > 0 {
+				targetDeviceValue = targetDevice[0]
+			}
+
+			newEntry := map[string]interface{}{
+				"targets": []string{"localhost:9090"},
+				"labels": map[string]interface{}{
+					"domain":        domain,
+					"rule_id":       ruleID,
+					"instance_id":   instanceid,
+					"target_device": targetDeviceValue, // Add target_device field
+				},
+			}
+
+			// Check if the same domain+group combination already exists with the same target_device
+			entryExists := false
+			for i, vm := range matchedVMs {
+				labels, ok := vm["labels"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				domainVal, hasDomain := labels["domain"].(string)
+				existingRuleID, hasRuleID := labels["rule_id"].(string)
+				expectedRuleID := ruleID
+
+				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == expectedRuleID {
+					// Update existing entry
+					entryExists = true
+					matchedVMs[i] = newEntry
+					log.Printf("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
+					break
+				}
+			}
+
+			// If it doesn't exist, add a new entry
+			if !entryExists {
+				matchedVMs = append(matchedVMs, newEntry)
+				log.Printf("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
+			}
+		}
+
+		// If any VMs were not found, return an error
+		if len(notFoundVMs) > 0 {
+			return fmt.Errorf("instances not found: %v", notFoundVMs)
+		}
+	} else if operation == "remove" {
+		// If targetDevice is provided (optional variadic parameter), delete by triple match;
+		// Otherwise, use the original "delete all by groupUUID" logic (unchanged).
+		hasDeviceFilter := len(targetDevice) > 0
+
+		filteredVMs := []map[string]interface{}{}
+		removedCount := 0
+
+		for _, vm := range matchedVMs {
+			labels, ok := vm["labels"].(map[string]interface{})
+			if !ok {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			ruleID, ok := labels["rule_id"].(string)
+			if !ok {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// No device filter: maintain original logic, delete all by group
+			if !hasDeviceFilter {
+				if strings.HasSuffix(ruleID, "-"+groupUUID) {
+					domain, _ := labels["domain"].(string)
+					instanceID, _ := labels["instance_id"].(string)
+					log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+					removedCount++
+					continue
+				}
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// Device filter: require all three conditions to match
+			// 1) Belongs to the group
+			// 2) instance_id in vmUUIDs
+			// 3) target_device in targetDevice
+			if !strings.HasSuffix(ruleID, "-"+groupUUID) {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			instanceID, _ := labels["instance_id"].(string)
+			devStr, _ := labels["target_device"].(string)
+
+			inVM := false
+			for _, id := range vmUUIDs {
+				if id == instanceID {
+					inVM = true
+					break
+				}
+			}
+			inDev := false
+			for _, d := range targetDevice {
+				if d == devStr {
+					inDev = true
+					break
+				}
+			}
+
+			if inVM && inDev {
+				domain, _ := labels["domain"].(string)
+				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
+					domain, ruleID, instanceID, devStr)
+				removedCount++
+				continue
+			}
+
+			// Keep if triple condition not matched
+			filteredVMs = append(filteredVMs, vm)
+		}
+
+		matchedVMs = filteredVMs
+		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
+	}
+
+	// Save updated matched_vms.json
+	matchedVMsData, err := json.MarshalIndent(matchedVMs, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		return err
+	}
+
+	err = WriteFile(matchedVMsFile, matchedVMsData, 0644)
+	if err != nil {
+		log.Printf("Failed to write matched_vms.json: %v", err)
+		return err
+	}
+
+	// Force reload Prometheus configuration
+	if err := ReloadPrometheusViaHTTP(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
+		// Don't return error as the file update was successful
+	} else {
+		log.Printf("Successfully reloaded Prometheus configuration after updating matched_vms.json")
+	}
+
 	return nil
 }

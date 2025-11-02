@@ -40,4 +40,7 @@ outbound_rate=$(( $outbound * 125 )) # in kilobytes per second
 outbound_peak=$(( $outbound_rate * 2 ))
 outbound_burst=$outbound_rate
 virsh domiftune $vm_ID $nic_name --inbound $inbound_rate,$inbound_peak,$inbound_burst --outbound $outbound_rate,$outbound_peak,$outbound_burst --config --live
+
+    # Update bandwidth configuration metrics (only for bidirectional mode)
+    /opt/cloudland/scripts/kvm/update_vm_interface_bandwidth.sh add "$vm_ID" "$nic_name" "$inbound" "$outbound" 2>&1 | logger -t set_nic_speed || true
 fi

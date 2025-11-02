@@ -155,6 +155,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/instances/:id", instanceAPI.Get)
 		authGroup.DELETE("/api/v1/instances/:id", instanceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id", instanceAPI.Patch)
+		authGroup.GET("/api/v1/instances/rule-links", instanceAPI.GetInstanceRuleLinks)
 
 		authGroup.POST("/api/v1/instances/:id/set_user_password", instanceAPI.SetUserPassword)
 		authGroup.POST("/api/v1/instances/:id/console", consoleAPI.Create)
@@ -217,12 +218,14 @@ func Register() (r *gin.Engine) {
 			metricsGroup.POST("/adjust/cpu/rules", adjustAPI.CreateCPUAdjustRule)
 			metricsGroup.GET("/adjust/cpu/rules", adjustAPI.GetCPUAdjustRules)
 			metricsGroup.GET("/adjust/cpu/rule/:uuid", adjustAPI.GetCPUAdjustRules)
+			metricsGroup.PATCH("/adjust/cpu/rule/:uuid", adjustAPI.PatchCPUAdjustRule)
 			metricsGroup.DELETE("/adjust/cpu/rule/:uuid", adjustAPI.DeleteCPUAdjustRule)
 
 			// Bandwidth auto adjustment route
 			metricsGroup.POST("/adjust/bw/rules", adjustAPI.CreateBWAdjustRule)
 			metricsGroup.GET("/adjust/bw/rules", adjustAPI.GetBWAdjustRules)
 			metricsGroup.GET("/adjust/bw/rule/:uuid", adjustAPI.GetBWAdjustRules)
+			metricsGroup.PATCH("/adjust/bw/rule/:uuid", adjustAPI.PatchBWAdjustRule)
 			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
 
 			// Enable/disable resource adjustment rules
@@ -235,6 +238,9 @@ func Register() (r *gin.Engine) {
 
 			// Unified rule links query (supports both alarm and adjust rules)
 			authGroup.GET("/api/v1/rules/links", adjustAPI.GetRuleLinks)
+
+			// Batch get rules (supports both alarm and adjust rules)
+			metricsGroup.POST("/rules/batch", alarmAPI.BatchGetRules)
 
 			// Bandwidth configuration metrics regeneration
 			authGroup.POST("/api/v1/adjust/regenerate-bandwidth-metrics", adjustAPI.RegenerateBandwidthConfigMetrics)
