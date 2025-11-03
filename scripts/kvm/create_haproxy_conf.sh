@@ -8,6 +8,7 @@ source ../cloudrc
 router=$1
 lb_ID=$2
 [ "${router/router-/}" = "$router" ] && router=router-$1
+src_vrrp_ip=$(grep unicast_src_ip $router_dir/$router/keepalived.conf | awk '{print $2}')
 lb_dir=$router_dir/$router/lb-$lb_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir
 content=$(cat)
@@ -76,6 +77,7 @@ frontend ${name}_front
 
 backend ${name}_back
     balance roundrobin
+    source $src_vrrp_ip
 EOF
     backends=$(jq -r .backends <<< $listener)
     nbackend=$(jq length <<< $backends)
