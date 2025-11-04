@@ -324,6 +324,13 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 			logger.Error("Failed to query interfaces %v", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 		}
+	} else if floatingIp.LoadBalancerID > 0 {
+		floatingIp.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
+		err = db.Take(floatingIp.LoadBalancer).Error
+		if err != nil {
+			logger.Error("DB failed to query load balancer ", err)
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
+		}
 	}
 	if floatingIp.RouterID > 0 {
 		floatingIp.Router = &model.Router{Model: model.Model{ID: floatingIp.RouterID}}
@@ -368,6 +375,13 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 			msg := fmt.Sprintf("Failed to query interfaces for instance: %d", instance.ID)
 			logger.Error(msg, err)
 			return nil, NewCLError(ErrSQLSyntaxError, msg, err)
+		}
+	} else if floatingIp.LoadBalancerID > 0 {
+		floatingIp.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
+		err = db.Take(floatingIp.LoadBalancer).Error
+		if err != nil {
+			logger.Error("DB failed to query load balancer ", err)
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
 		}
 	}
 	if floatingIp.RouterID > 0 {
@@ -573,36 +587,34 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count floating IPs", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, fip := range floatingIps {
 		if fip.InstanceID > 0 {
-			if fip.Instance != nil && fip.Instance.ID > 0 {
-				instance := fip.Instance
-				err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
-				if err != nil {
-					logger.Error("Failed to query interfaces ", err)
-					err = nil
-					continue
-				}
-			} else {
-				fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
-				err = db.Take(fip.Instance).Error
-				if err != nil {
-					logger.Error("DB failed to query instance ", err)
-					err = nil
-					continue
-				}
-				instance := fip.Instance
-				err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
-				if err != nil {
-					logger.Error("Failed to query interfaces ", err)
-					err = nil
-					continue
-				}
+			fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
+			err = db.Preload("Zone").Take(fip.Instance).Error
+			if err != nil {
+				logger.Error("DB failed to query instance ", err)
+				err = nil
+				continue
+			}
+			instance := fip.Instance
+			err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
+			if err != nil {
+				logger.Error("Failed to query interfaces ", err)
+				err = nil
+				continue
+			}
+		} else if fip.LoadBalancerID > 0 {
+			fip.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: fip.LoadBalancerID}}
+			err = db.Take(fip.LoadBalancer).Error
+			if err != nil {
+				logger.Error("DB failed to query load balancer ", err)
+				err = nil
+				continue
 			}
 		}
 

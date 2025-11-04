@@ -72,6 +72,7 @@ type FloatingIpPayload struct {
 	PublicIp        string           `json:"public_ip" binding:"omitempty,ipv4"`
 	Name            string           `json:"name" binding:"required,min=2,max=32"`
 	Instance        *BaseID          `json:"instance" binding:"omitempty"`
+	LoadBalancer    *BaseID          `json:"load_balancer" binding:"omitempty"`
 	Inbound         int32            `json:"inbound" binding:"omitempty,min=1,max=20000"`
 	Outbound        int32            `json:"outbound" binding:"omitempty,min=1,max=20000"`
 	ActivationCount int32            `json:"activation_count" binding:"omitempty,min=0,max=64"`
@@ -142,6 +143,11 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 	if err != nil {
 		logger.Errorf("Failed to get floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid floating ip query", err)
+		return
+	}
+	if floatingIp.LoadBalancerID > 0 {
+		logger.Error("Invalid patching for load balancer public ip")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid patching for load balancer public ip", NewCLError(ErrInvalidParameter, "Invalid patching for load balancer floating ip", nil))
 		return
 	}
 	if ElasticType(floatingIp.Type) != PublicFloating {
@@ -356,6 +362,12 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 		floatingIpResp.VPC = &BaseReference{
 			ID:   floatingIp.Router.UUID,
 			Name: floatingIp.Router.Name,
+		}
+	}
+	if floatingIp.LoadBalancer != nil {
+		floatingIpResp.VPC = &BaseReference{
+			ID:   floatingIp.LoadBalancer.UUID,
+			Name: floatingIp.LoadBalancer.Name,
 		}
 	}
 	if floatingIp.Group != nil {

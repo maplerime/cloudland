@@ -118,6 +118,11 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/load_balancers/:id", loadBalancerAPI.Delete)
 		authGroup.PATCH("/api/v1/load_balancers/:id", loadBalancerAPI.Patch)
 
+		authGroup.GET("/api/v1/load_balancers/:id/floating_ips", lbFloatingIpAPI.List)
+		authGroup.POST("/api/v1/load_balancers/:id/floating_ips", lbFloatingIpAPI.Create)
+		authGroup.GET("/api/v1/load_balancers/:id/floating_ips/:floting_ip_id", lbFloatingIpAPI.Get)
+		authGroup.DELETE("/api/v1/load_balancers/:id/floating_ips/:floating_ip_id", lbFloatingIpAPI.Delete)
+
 		authGroup.GET("/api/v1/load_balancers/:id/listeners", listenerAPI.List)
 		authGroup.POST("/api/v1/load_balancers/:id/listeners", listenerAPI.Create)
 		authGroup.GET("/api/v1/load_balancers/:id/listeners/:listener_id", listenerAPI.Get)
