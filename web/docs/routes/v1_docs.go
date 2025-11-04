@@ -4347,11 +4347,17 @@ const docTemplatev1 = `{
                 "cpu_over_rate": {
                     "type": "number"
                 },
+                "cpu_total": {
+                    "type": "integer"
+                },
                 "disk": {
                     "type": "integer"
                 },
                 "disk_over_rate": {
                     "type": "number"
+                },
+                "disk_total": {
+                    "type": "integer"
                 },
                 "host_ip": {
                     "type": "string"
@@ -4366,6 +4372,9 @@ const docTemplatev1 = `{
                     "type": "number"
                 },
                 "memory": {
+                    "type": "integer"
+                },
+                "memory_total": {
                     "type": "integer"
                 },
                 "parentid": {
@@ -6322,6 +6331,9 @@ const docTemplatev1 = `{
             "properties": {
                 "error_code": {
                     "type": "integer"
+                },
+                "error_code_str": {
+                    "type": "string"
                 },
                 "error_message": {
                     "type": "string"
