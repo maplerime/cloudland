@@ -101,8 +101,12 @@ if [ "$cpu_vendor" = "GenuineIntel" ]; then
 else
     vm_virt_feature="svm"
 fi
+vhost_queue_num=1
+if [ "$vm_cpu" -gt 2 ]; then
+    vhost_queue_num=2
+fi
 os_code=$(jq -r '.os_code' <<< $metadata)
-sed -i "s/VM_ID/$vm_rescue/g; s/VM_MEM/$vm_mem/g; s/VM_CPU/$vm_cpu/g; s#VM_IMG#$vm_img#g; s#VM_UNIX_SOCK#$ux_sock#g; s#VM_META#$vm_meta#g; s#VM_AGENT#$vm_QA#g; s/VM_NESTED/disable/g; s/VM_VIRT_FEATURE/$vm_virt_feature/g; s/INSTANCE_UUID/$instance_uuid/g" $vm_xml
+vm_nested=disable
 vm_nvram="$image_dir/${vm_rescue}_VARS.fd"
 if [ "$boot_loader" = "uefi" ]; then
     cp $nvram_template $vm_nvram
@@ -110,6 +114,7 @@ if [ "$boot_loader" = "uefi" ]; then
     -e "s/VM_ID/$vm_rescue/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s/VHOST_QUEUE_NUM/$vhost_queue_num/g" \
     -e "s#VM_IMG#$vm_img#g" \
     -e "s#VM_UNIX_SOCK#$ux_sock#g" \
     -e "s#VM_META#$vm_meta#g" \
@@ -125,6 +130,7 @@ else
     -e "s/VM_ID/$vm_rescue/g" \
     -e "s/VM_MEM/$vm_mem/g" \
     -e "s/VM_CPU/$vm_cpu/g" \
+    -e "s/VHOST_QUEUE_NUM/$vhost_queue_num/g" \
     -e "s#VM_IMG#$vm_img#g" \
     -e "s#VM_UNIX_SOCK#$ux_sock#g" \
     -e "s#VM_META#$vm_meta#g" \
@@ -140,7 +146,9 @@ virsh define $vm_xml
 
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}.xml
 cp $disk_template $disk_xml
-sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;" $disk_xml
+
+sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $disk_xml
+
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
 vlans=$(jq .vlans <<< $metadata)

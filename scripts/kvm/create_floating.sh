@@ -39,7 +39,7 @@ ext_dev=te-$suffix
 ./create_veth.sh $router ext-$suffix te-$suffix
 
 ip netns exec $router ip addr add $ext_cidr dev $ext_dev
-ip netns exec $router ip route add default via $ext_gw table $table
+ip netns exec $router ip route replace default via $ext_gw table $table
 ip netns exec $router ip -o addr | grep "ns-.* inet " | awk '{print $2, $4}' | while read ns_link ns_gw; do
     ip_net=$(ipcalc -b $ns_gw | grep Network | awk '{print $2}')
     ip netns exec $router ip route add $ip_net dev $ns_link table $table

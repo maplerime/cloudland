@@ -15,7 +15,7 @@ ip netns exec $router ip link set lo up
 
 ./create_veth.sh $router ext-$ext_vlan link-$ext_vlan
 ip netns exec $router ip addr add $ext_ip dev link-$ext_vlan
-ip netns exec $router ip route add default via $gateway
+ip netns exec $router ip route replace default via $gateway
 route_ip=${ext_ip%/*}
 ip netns exec $router iptables -P INPUT DROP
 ip netns exec $router iptables -C FORWARD -p tcp --dport 25 -j DROP

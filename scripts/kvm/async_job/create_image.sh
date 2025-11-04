@@ -16,7 +16,7 @@ image=$image_cache/$image_name
 inet_access curl -s -k $url -o $image
 
 if [ ! -s "$image" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '' '' '$storage_ID'"
+    echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$format' '0' 'null' '$storage_ID'"
     exit -1
 fi
 format=$(qemu-img info $image | grep 'file format' | cut -d' ' -f3)
@@ -49,7 +49,7 @@ else
     fi
     task_id=$(wds_curl "PUT" "api/v2/sync/block/volumes/import" "{\"volname\": \"$image_name\", \"path\": \"${image}.raw\", \"ussid\": \"$uss_id\", \"start_blockid\": 0, \"volsize\": $image_size, \"poolid\": \"$wds_pool_id\", \"num_block\": 0, \"speed\": 8}" | jq -r .task_id)
     state=uploading
-    for i in {1..100}; do
+    for i in {1..1000}; do
         st=$(wds_curl GET "api/v2/sync/block/volumes/tasks/$task_id" | jq -r .task.state)
         [ "$st" = "TASK_COMPLETE" ] && state=uploaded && break
         [ "$st" = "TASK_FAILED" ] && state=failed && break

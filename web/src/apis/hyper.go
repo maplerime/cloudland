@@ -40,8 +40,11 @@ type HyperResponse struct {
 	ZoneName     string  `json:"zone_name"`
 	Remark       string  `json:"remark"`
 	Cpu          int64   `json:"cpu"`
+	CpuTotal     int64   `json:"cpu_total"`
 	Memory       int64   `json:"memory"`
+	MemoryTotal  int64   `json:"memory_total"`
 	Disk         int64   `json:"disk"`
+	DiskTotal    int64   `json:"disk_total"`
 }
 
 type HyperListResponse struct {
@@ -247,8 +250,11 @@ func convertHyperToResponse(hyper *model.Hyper) *HyperResponse {
 
 	if hyper.Resource != nil {
 		resp.Cpu = hyper.Resource.Cpu
-		resp.Memory = hyper.Resource.Memory / 1024             // Convert KB to MB
-		resp.Disk = hyper.Resource.Disk / (1024 * 1024 * 1024) // Convert B to GB
+		resp.CpuTotal = hyper.Resource.CpuTotal
+		resp.Memory = hyper.Resource.Memory / 1024                       // Convert KB to MB
+		resp.MemoryTotal = hyper.Resource.MemoryTotal / 1024             // Convert KB to MB
+		resp.Disk = hyper.Resource.Disk / (1024 * 1024 * 1024)           // Convert B to GB
+		resp.DiskTotal = hyper.Resource.DiskTotal / (1024 * 1024 * 1024) // Convert B to GB
 	}
 
 	return resp
