@@ -39,7 +39,7 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 			logger.Error("Failed to query volume", err)
 			return
 		}
-		err = db.Model(&volume).Update("status", model.VolumeStatusAvailable).Error
+		err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("status", model.VolumeStatusAvailable).Error
 		if err != nil {
 			logger.Error("Update volume status failed", err)
 			return
@@ -70,7 +70,7 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Failed to query volume", err)
 		return
 	}
-	err = db.Model(&volume).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return
