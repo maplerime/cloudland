@@ -29,7 +29,6 @@ type LoadBalancerAPI struct{}
 
 type LoadBalancerResponse struct {
 	*ResourceReference
-	Name      string             `json:"name"`
 	FloatingIps        []*FloatingIpInfo    `json:"floating_ips,omitempty"`
 	Listeners        []*ListenerResponse    `json:"listeners,omitempty"`
 	VPC              *ResourceReference `json:"vpc,omitempty"`

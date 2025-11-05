@@ -19,6 +19,16 @@ func init() {
 	Add("set_vrrp_ip", SetVrrpIp)
 }
 
+func UpdateLoadBalancerStatus(ctx context.Context, vrrpInstance *model.VrrpInstance) (err error) {
+	db := DB()
+	err = db.Model(&model.LoadBalancer{}).Where("vrrp_instance_id = ?", vrrpInstance.ID).Updates(map[string]interface{}{
+		"status": "available"}).Error
+	if err != nil {
+		logger.Error("Failed to update load balancer status", err)
+	}
+	return
+}
+
 func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| set_vrrp_ip.sh '1' '0' 'MASTER'
 	db := DB()
@@ -78,6 +88,11 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		hyperGroup, err = GetHyperGroup(ctx, vrrpInstance.ZoneID, int32(hyperID))
 		if err != nil {
 			logger.Error("Failed to get hyper group", err)
+			err = UpdateLoadBalancerStatus(ctx, vrrpInstance)
+			if err != nil {
+				logger.Error("Failed to update load balancer", err)
+				return
+			}
 			return
 		}
 		control := "select=" + hyperGroup
@@ -85,6 +100,12 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("set vrrp ip execution failed", err)
+			return
+		}
+	} else {
+		err = UpdateLoadBalancerStatus(ctx, vrrpInstance)
+		if err != nil {
+			logger.Error("Failed to update load balancer", err)
 			return
 		}
 	}

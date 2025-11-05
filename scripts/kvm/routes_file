@@ -1,2 +1,0 @@
-ip replace default via 104.233.207.174 table fip-28
-ip replace default via 104.233.207.174 table fip-28

@@ -30,7 +30,7 @@ type LoadBalancer struct {
 	RouterID     int64         `gorm:"unique_index:idx_router_lb"`
 	Router       *Router
 	Listeners    []*Listener `gorm:"foreignkey:LoadBalancerID"`
-	VrrpInstanceID int64
+	VrrpInstanceID int64 `gorm:"index"`
 	VrrpInstance *VrrpInstance `gorm:"foreignkey:VrrpInstanceID"`
 }
 

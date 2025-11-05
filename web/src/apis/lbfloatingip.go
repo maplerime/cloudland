@@ -35,7 +35,7 @@ func (v *LBFloatingIpAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	logger.Debugf("Get load balancer %s", lbID)
-	_, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
 		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
@@ -49,7 +49,7 @@ func (v *LBFloatingIpAPI) Get(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
-	if floatingIp.UUID != fipID {
+	if floatingIp.LoadBalancerID != loadBalancer.ID {
 		logger.Error("Invalid query for load balancer floating ip")
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer floating ip", nil))
 		return
@@ -75,7 +75,7 @@ func (v *LBFloatingIpAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	logger.Debugf("Get load balancer %s", lbID)
-	_, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
 		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
@@ -89,7 +89,7 @@ func (v *LBFloatingIpAPI) Delete(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
 		return
 	}
-	if floatingIp.UUID != fipID {
+	if floatingIp.LoadBalancerID != loadBalancer.ID {
 		logger.Error("Invalid delete for load balancer floating ip")
 		ErrorResponse(c, http.StatusBadRequest, "Invalid delete", NewCLError(ErrInvalidParameter, "Invalid delete for load balancer floating ip", nil))
 		return

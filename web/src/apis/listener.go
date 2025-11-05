@@ -67,18 +67,23 @@ func (v *ListenerAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	logger.Debugf("Get load balancer %s", lbID)
-	_, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
 		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
 		return
 	}
-	listenerID := c.Param("listener")
+	listenerID := c.Param("listener_id")
 	logger.Debugf("Get listener %s", listenerID)
 	listener, err := listenerAdmin.GetListenerByUUID(ctx, listenerID)
 	if err != nil {
 		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid listener query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
 	listenerResp, err := v.getListenerResponse(ctx, listener)
@@ -104,7 +109,7 @@ func (v *ListenerAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	logger.Debugf("Get load balancer %s", lbID)
-	_, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
 		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
@@ -116,6 +121,11 @@ func (v *ListenerAPI) Patch(c *gin.Context) {
 	if err != nil {
 		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid listener query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
 	payload := &ListenerPatchPayload{}
@@ -168,6 +178,11 @@ func (v *ListenerAPI) Delete(c *gin.Context) {
 	if err != nil {
 		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
 	err = listenerAdmin.Delete(ctx, listener, loadBalancer)
@@ -233,6 +248,7 @@ func (v *ListenerAPI) getListenerResponse(ctx context.Context, listener *model.L
 			CreatedAt: listener.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: listener.UpdatedAt.Format(TimeStringForMat),
 		},
+		Mode: listener.Mode,
 		Port:   listener.Port,
 		Status: listener.Status,
 	}

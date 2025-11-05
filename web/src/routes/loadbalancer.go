@@ -247,7 +247,7 @@ func (a *LoadBalancerAdmin) Create(ctx context.Context, name string, router *mod
 		err = NewCLError(ErrVrrpInstanceCreateFailed, "Failed to create vrrp instance", err)
 		return
 	}
-	loadBalancer = &model.LoadBalancer{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, RouterID: router.ID, VrrpInstanceID: vrrpInstance.ID, Status: "available"}
+	loadBalancer = &model.LoadBalancer{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Name: name, RouterID: router.ID, VrrpInstanceID: vrrpInstance.ID, Status: "pending"}
 	err = db.Create(loadBalancer).Error
 	if err != nil {
 		logger.Error("DB failed to create load balancer ", err)
@@ -285,7 +285,7 @@ func (a *LoadBalancerAdmin) GetLoadBalancerByUUID(ctx context.Context, uuID stri
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	loadBalancer = &model.LoadBalancer{}
-	err = db.Preload("Router").Where(where).Where("uuid = ?", uuID).Take(loadBalancer).Error
+	err = db.Preload("FloatingIps").Preload("Router").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Where(where).Where("uuid = ?", uuID).Take(loadBalancer).Error
 	if err != nil {
 		logger.Error("Failed to query load balancer, %v", err)
 		err = NewCLError(ErrRouterNotFound, "Failed to find load balancer", err)
@@ -439,6 +439,11 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
 		return
 	}
+	if err = db.Delete(loadBalancer.VrrpInstance).Error; err != nil {
+		logger.Error("DB failed to delete vrrp instance", err)
+		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete vrrp instance", err)
+		return
+	}
 	if err = db.Delete(loadBalancer).Error; err != nil {
 		logger.Error("DB failed to delete load balancer", err)
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
@@ -484,7 +489,7 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("FloatingIps").Preload("Listeners").Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
+	if err = db.Preload("FloatingIps").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
 		logger.Error("DB failed to query load balancers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
 		return

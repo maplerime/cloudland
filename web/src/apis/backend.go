@@ -62,7 +62,7 @@ func (v *BackendAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	logger.Debugf("Get load balancer %s", lbID)
-	_, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
 		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
@@ -70,10 +70,15 @@ func (v *BackendAPI) Get(c *gin.Context) {
 	}
 	listenerID := c.Param("listener_id")
 	logger.Debugf("Get listener %s", listenerID)
-	_, err = listenerAdmin.GetListenerByUUID(ctx, listenerID)
+	listener, err := listenerAdmin.GetListenerByUUID(ctx, listenerID)
 	if err != nil {
 		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid listsner query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
 	backendID := c.Param("backend_id")
@@ -82,6 +87,11 @@ func (v *BackendAPI) Get(c *gin.Context) {
 	if err != nil {
 		logger.Errorf("Failed to get backend %s, %+v", backendID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
+		return
+	}
+	if backend.ListenerID != listener.ID {
+		logger.Error("Invalid query for listener backend")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for listener backend", nil))
 		return
 	}
 	backendResp, err := v.getBackendResponse(ctx, backend)
@@ -107,7 +117,7 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 	ctx := c.Request.Context()
 	lbID := c.Param("id")
 	logger.Debugf("Get load balancer %s", lbID)
-	_, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
 	if err != nil {
 		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
@@ -115,10 +125,15 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 	}
 	listenerID := c.Param("listener_id")
 	logger.Debugf("Get listener %s", listenerID)
-	_, err = listenerAdmin.GetListenerByUUID(ctx, listenerID)
+	listener, err := listenerAdmin.GetListenerByUUID(ctx, listenerID)
 	if err != nil {
 		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid listsner query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
 	backendID := c.Param("id")
@@ -127,6 +142,11 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 	if err != nil {
 		logger.Errorf("Failed to get backend %s, %+v", backendID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid security group query", err)
+		return
+	}
+	if backend.ListenerID != listener.ID {
+		logger.Error("Invalid query for listener backend")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for listener backend", nil))
 		return
 	}
 	payload := &BackendPatchPayload{}
@@ -181,12 +201,22 @@ func (v *BackendAPI) Delete(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid listsner query", err)
 		return
 	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
+		return
+	}
 	backendID := c.Param("id")
 	logger.Debugf("Delete backend %s", backendID)
 	backend, err := backendAdmin.GetBackendByUUID(ctx, backendID)
 	if err != nil {
 		logger.Errorf("Failed to get backend %s, %+v", backendID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", err)
+		return
+	}
+	if backend.ListenerID != listener.ID {
+		logger.Error("Invalid query for listener backend")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for listener backend", nil))
 		return
 	}
 	err = backendAdmin.Delete(ctx, backend, listener, loadBalancer)
@@ -225,6 +255,11 @@ func (v *BackendAPI) Create(c *gin.Context) {
 	if err != nil {
 		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid listsner query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
 	payload := &BackendPayload{}
@@ -276,9 +311,30 @@ func (v *BackendAPI) getBackendResponse(ctx context.Context, backend *model.Back
 // @Router /load_balancers/{id}/listeners/:listener_id/backends [get]
 func (v *BackendAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
+	lbID := c.Param("id")
+	logger.Debugf("Get load balancer %s", lbID)
+	loadBalancer, err := loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
+	if err != nil {
+		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
+		return
+	}
+	listenerID := c.Param("listener_id")
+	logger.Debugf("Get listener %s", listenerID)
+	listener, err := listenerAdmin.GetListenerByUUID(ctx, listenerID)
+	if err != nil {
+		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid listsner query", err)
+		return
+	}
+	if listener.LoadBalancerID != loadBalancer.ID {
+		logger.Error("Invalid query for load balancer listener")
+		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
+		return
+	}
+
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
-
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		logger.Errorf("Invalid query offset: %s, %+v", offsetStr, err)
@@ -295,22 +351,6 @@ func (v *BackendAPI) List(c *gin.Context) {
 		errStr := "Invalid query offset or limit, cannot be negative"
 		logger.Errorf(errStr)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset or limit", errors.New(errStr))
-		return
-	}
-	lbID := c.Param("id")
-	logger.Debugf("Get load balancer %s", lbID)
-	_, err = loadBalancerAdmin.GetLoadBalancerByUUID(ctx, lbID)
-	if err != nil {
-		logger.Errorf("Failed to get load balancer %s, %+v", lbID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid load balancer query", err)
-		return
-	}
-	listenerID := c.Param("listener_id")
-	logger.Debugf("Get listener %s", listenerID)
-	listener, err := listenerAdmin.GetListenerByUUID(ctx, listenerID)
-	if err != nil {
-		logger.Errorf("Failed to get listener %s, %+v", listenerID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Invalid listsner query", err)
 		return
 	}
 	total, backends, err := backendAdmin.List(ctx, int64(offset), int64(limit), "-created_at", listener)

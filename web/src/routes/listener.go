@@ -86,7 +86,7 @@ func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (lis
 	err = db.Where(where).Where("uuid = ?", uuID).Take(listener).Error
 	if err != nil {
 		logger.Error("Failed to query listener, %v", err)
-		err = NewCLError(ErrRouterNotFound, "Failed to find listener", err)
+		err = NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, listener.Owner)
@@ -106,7 +106,7 @@ func (a *ListenerAdmin) GetListenerByName(ctx context.Context, name string) (lis
 	err = db.Where(where).Where("name = ?", name).Take(listener).Error
 	if err != nil {
 		logger.Error("Failed to query listener, %v", err)
-		err = NewCLError(ErrRouterNotFound, "Failed to find listener", err)
+		err = NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, listener.Owner)

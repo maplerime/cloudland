@@ -129,7 +129,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/load_balancers/:id/listeners/:listener_id", listenerAPI.Delete)
 
 		authGroup.GET("/api/v1/load_balancers/:id/listeners/:listener_id/backends", backendAPI.List)
-		authGroup.POST("/api/v1/load_balancers/:id/listeners:listener_id/backends", backendAPI.Create)
+		authGroup.POST("/api/v1/load_balancers/:id/listeners/:listener_id/backends", backendAPI.Create)
 		authGroup.GET("/api/v1/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Get)
 		authGroup.DELETE("/api/v1/load_balancers/:id/listeners/:listener_id/backends/:backend_id", backendAPI.Delete)
 
