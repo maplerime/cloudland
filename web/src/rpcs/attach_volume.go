@@ -25,9 +25,10 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 	db := DB()
 	argn := len(args)
 
-	// Handle case: attach_volume.sh <volID>
-	if argn == 2 {
-		volID, parseErr := strconv.Atoi(args[1])
+	logger.Debugf("AttachVolume called with args: %v, length: %d", args, argn)
+
+	if argn < 4 {
+		volID, parseErr := strconv.Atoi(args[2])
 		if parseErr != nil {
 			err = fmt.Errorf("Invalid volume ID: %w", parseErr)
 			logger.Error("Invalid volume ID", err)
@@ -44,13 +45,6 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 			logger.Error("Update volume status failed", err)
 			return
 		}
-		return
-	}
-
-	// Handle case: attach_volume.sh <instanceID> <volID> <target>
-	if argn < 4 {
-		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
 		return
 	}
 	instanceID, err := strconv.Atoi(args[1])
