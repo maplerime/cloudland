@@ -74,18 +74,20 @@ function inst_status()
     n=0
     export inst_list=""
     while read line; do
-        inst_stat=$(echo $line | sed 's/inst-//g;s/shut off/shut_off/')
+        inst_stat=$(sed 's/inst-//g;s/shut off/shut_off/' <<<$line)
         grep "$inst_stat" >/dev/null 2>&1 <<<$old_inst_list
         [ $? -eq 0 ] && continue
         inst_list="$inst_stat $inst_list"
         if [ $n -eq 10 ]; then
             n=0
+            inst_list=$(echo $inst_list)
             echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
             inst_list=""
         fi
         let n=$n+1
     done <<<$all_inst_list
     echo "$all_inst_list" >$image_dir/old_inst_list
+    inst_list=$(echo $inst_list)
     [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
 }
 
