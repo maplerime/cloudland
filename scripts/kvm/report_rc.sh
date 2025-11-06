@@ -73,11 +73,11 @@ function inst_status()
     done
     n=0
     export inst_list=""
+    all_inst_list=$(echo "$all_inst_list" | sed 's/inst-//g;s/-rescue//g;s/shut off/shut_off/g')
     while read line; do
-        inst_stat=$(sed 's/inst-//g;s/shut off/shut_off/' <<<$line)
-        grep "$inst_stat" >/dev/null 2>&1 <<<$old_inst_list
+        grep -q "$line" <<<$old_inst_list
         [ $? -eq 0 ] && continue
-        inst_list="$inst_stat $inst_list"
+        inst_list="$line $inst_list"
         if [ $n -eq 10 ]; then
             n=0
             inst_list=$(echo $inst_list)
