@@ -61,8 +61,8 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 
 func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
 	ctx, db := GetContextDB(ctx)
-	secrules := &model.SecurityRule{Model: model.Model{ID: id}}
-	err = db.Take(secrules).Error
+	secrule = &model.SecurityRule{Model: model.Model{ID: id}}
+	err = db.Take(secrule).Error
 	if err != nil {
 		logger.Error("DB failed to query security rules ", err)
 		err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)
@@ -76,29 +76,29 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 			err = fmt.Errorf("Invalid Netmask for RemoteIp, please fill a valid one")
 			return
 		}
-		secrules.RemoteIp = remoteIp
+		secrule.RemoteIp = remoteIp
 	}
 	//direction
 	if direction != "" {
-		secrules.Direction = direction
+		secrule.Direction = direction
 	}
 	if protocol != "" {
-		secrules.Protocol = protocol
+		secrule.Protocol = protocol
 	}
 	if name != "" {
-		secrules.Name = name
+		secrule.Name = name
 	}
 	if portMin <= portMax {
 		if portMin > 0 && portMin < 65536 {
-			secrules.PortMin = int32(portMin)
+			secrule.PortMin = int32(portMin)
 			if portMax > 0 && portMax < 65536 {
-				secrules.PortMax = int32(portMax)
+				secrule.PortMax = int32(portMax)
 			} else if portMax > 65535 {
 				logger.Error("it's out of range, please input less than 65536")
 				err = NewCLError(ErrInvalidParameter, "Invalid PortMax", nil)
 				return
 			} else {
-				secrules.PortMax = -1
+				secrule.PortMax = -1
 			}
 		} else if portMin < -1 || portMin == 0 {
 			logger.Error("it's out of range,please fill a valid port")
@@ -109,7 +109,7 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 			err = NewCLError(ErrInvalidParameter, "Invalid PortMin", nil)
 			return
 		} else {
-			secrules.PortMin = -1
+			secrule.PortMin = -1
 		}
 
 	} else {
@@ -117,14 +117,13 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 		err = NewCLError(ErrInvalidParameter, "PortMax should be greater than PortMin", nil)
 		return
 	}
-	err = db.Model(secrule).Updates(secrules).Error
+	err = db.Model(secrule).Updates(secrule).Error
 	if err != nil {
 		logger.Error("DB failed to save security rule ", err)
 		err = NewCLError(ErrSecurityRuleUpdateFailed, "Failed to update security rule", err)
 		return
 	}
 	return
-
 }
 
 func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
