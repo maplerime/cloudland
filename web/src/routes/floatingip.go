@@ -454,6 +454,28 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 			logger.Error("Detach floating ip failed", err)
 			return
 		}
+	} else if floatingIp.LoadBalancer != nil {
+		loadBalancer := floatingIp.LoadBalancer
+		hyperGroup := ""
+		hyperGroup, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+		if err != nil {
+			logger.Error("Failed to query vrrp hyper group and interfaces", err)
+			return
+		}
+		control := "toall=" + hyperGroup
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_lb_floating.sh '%d' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.Subnet.Vlan, floatingIp.ID)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Clear lb floating ip execution failed ", err)
+			err = NewCLError(ErrExecuteOnHyperFailed, "Clear lb floating execution failed", err)
+			return
+		}
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			logger.Error("Recreate keepalived config failed", err)
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
+			return
+		}
 	}
 	logger.Debugf("Floating ip: %v\n", floatingIp)
 	floatingIp.InstanceID = 0
@@ -466,7 +488,7 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 	return
 }
 
-func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup) (floatingIpTemp *model.FloatingIp, err error) {
+func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIpTemp *model.FloatingIp, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -484,6 +506,12 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 		err = a.Attach(ctx, floatingIp, instance)
 		if err != nil {
 			logger.Errorf("Failed to attach floating ip %+v", err)
+			return
+		}
+	} else if loadBalancer != nil {
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 			return
 		}
 	}
@@ -517,13 +545,13 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 		err = NewCLError(ErrInvalidParameter, errorStr, nil)
 		return
 	}
-	ctx, db, newTransaction := StartTransaction(ctx)
+	ctx, _, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	if floatingIp.Instance != nil {
+	if floatingIp.Instance != nil || floatingIp.LoadBalancer != nil {
 		err = a.Detach(ctx, floatingIp)
 		if err != nil {
 			logger.Error("Failed to detach floating ip", err)
@@ -534,34 +562,6 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 	if err != nil {
 		logger.Error("DB failed to deallocate floating ip", err)
 		return
-	}
-	if floatingIp.LoadBalancerID > 0 {
-		loadBalancer := &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
-		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(loadBalancer).Error
-		if err != nil {
-			logger.Error("DB failed to query load balancer ", err)
-			return
-		}
-		hyperGroup := ""
-		hyperGroup, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
-		if err != nil {
-			logger.Error("Failed to query vrrp hyper group and interfaces", err)
-			return
-		}
-		control := "toall=" + hyperGroup
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_lb_floating.sh '%d' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.Subnet.Vlan, floatingIp.ID)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Clear lb floating ip execution failed ", err)
-			err = NewCLError(ErrExecuteOnHyperFailed, "Clear lb floating execution failed", err)
-			return
-		}
-		err = CreateVrrpConf(ctx, loadBalancer)
-		if err != nil {
-			logger.Error("Recreate keepalived config failed", err)
-			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
-			return
-		}
 	}
 	return
 }
@@ -776,6 +776,12 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 		}
 	}
 	logger.Debugf("Instances count: %d", len(instances))
+	total, loadBalancers, err := loadBalancerAdmin.List(c.Req.Context(), 0, -1, "", "")
+	if err != nil {
+		logger.Error("Failed to query load balancers %v", err)
+		return
+	}
+	logger.Debugf("Load balancers count: %d", total)
 
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", "public").Find(&subnets).Error
@@ -812,6 +818,7 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 	siteSubnets = validSiteSubnets
 
 	c.Data["Instances"] = instances
+	c.Data["LoadBalancers"] = loadBalancers
 	c.Data["Subnets"] = subnets
 	c.Data["SiteSubnets"] = siteSubnets
 	c.Data["IpGroups"] = ipGroups
@@ -864,6 +871,12 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 		}
 	}
 	logger.Debugf("Instances count: %d", len(instances))
+	total, loadBalancers, err := loadBalancerAdmin.List(c.Req.Context(), 0, -1, "", "")
+	if err != nil {
+		logger.Error("Failed to query load balancers %v", err)
+		return
+	}
+	logger.Debugf("Load balancers count: %d", total)
 
 	ipGroups := []*model.IpGroup{}
 	err = db.Where("type = ?", string(ResourceIpGroupType)).Find(&ipGroups).Error
@@ -873,6 +886,7 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Instances"] = instances
+	c.Data["LoadBalancers"] = loadBalancers
 	c.Data["IpGroups"] = ipGroups
 	c.Data["FloatingIp"] = floatingIp
 	c.HTML(200, "floatingips_patch")
@@ -914,6 +928,7 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	name := c.QueryTrim("name")
 	groupID := c.QueryTrim("group")
 	instanceID := c.QueryInt64("instance")
+	loadBalancerID := c.QueryInt64("load_balancer")
 	inbound := c.QueryInt("inbound")
 	outbound := c.QueryInt("outbound")
 
@@ -957,6 +972,7 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	}
 
 	var instance *model.Instance
+	var loadBalancer *model.LoadBalancer
 	if instanceID > 0 {
 		instance, err = instanceAdmin.Get(ctx, instanceID)
 		if err != nil {
@@ -965,9 +981,17 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 			c.HTML(500, "500")
 			return
 		}
+	} else if loadBalancerID > 0 {
+		loadBalancer, err = loadBalancerAdmin.Get(ctx, loadBalancerID)
+		if err != nil {
+			logger.Error("Failed to get load balancer ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(500, "500")
+			return
+		}
 	}
 
-	_, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group)
+	_, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to update floating ip, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -984,6 +1008,7 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "../floatingips"
 	instID := c.QueryInt64("instance")
+	loadBalancerID := c.QueryInt64("load_balancer")
 	publicIp := c.QueryTrim("publicip")
 	name := c.QueryTrim("name")
 	inbound := c.QueryInt("inbound")
@@ -991,16 +1016,10 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	count := c.QueryInt("count")
 	publicSubnetStr := c.QueryTrim("publicsubnet")
 	siteSubnetStr := c.QueryTrim("sitesubnet")
-	groupID := c.QueryTrim("group")
+	groupID := c.QueryInt64("group")
+	var err error
 	var group *model.IpGroup
-	if groupID != "" {
-		groupID, err := strconv.ParseInt(groupID, 10, 64)
-		if err != nil {
-			logger.Error("Invalid group ID ", err)
-			c.Data["ErrorMsg"] = err.Error()
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
+	if groupID > 0 {
 		group, err = ipGroupAdmin.Get(ctx, groupID)
 		if err != nil {
 			logger.Error("Failed to get ip group ", err)
@@ -1012,13 +1031,15 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	var loadBalancer *model.LoadBalancer
 	lbid := c.Params("lbid")
 	if lbid != "" {
-		loadBalancerID, err := strconv.Atoi(lbid)
+		loadBalancerID, err = strconv.ParseInt(lbid, 10, 64)
 		if err != nil {
 			logger.Error("Invalid load balancer ID", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
+	}
+	if loadBalancerID > 0 {
 		loadBalancer, err = loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
 		if err != nil {
 			logger.Error("Failed to get ip load balancer ", err)
@@ -1057,7 +1078,6 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	}
 
 	var instance *model.Instance
-	var err error
 	if instID > 0 {
 		instance, err = instanceAdmin.Get(ctx, int64(instID))
 		if err != nil {

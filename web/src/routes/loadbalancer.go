@@ -126,7 +126,6 @@ func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) 
 func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err error) {
 	if loadBalancer == nil || (loadBalancer.Status != "available") {
 		logger.Error("Load balancer is not available")
-		err = NewCLError(ErrLoadBalancerNotFound, "Load balancer is not available", nil)
 		return
 	}
 	routerID := loadBalancer.RouterID

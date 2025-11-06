@@ -158,15 +158,6 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 		}
 	}
 
-	var instance *model.Instance
-	if payload.Instance != nil {
-		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
-		if err != nil {
-			logger.Errorf("Failed to get instance %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
-			return
-		}
-	}
 	var group *model.IpGroup
 	if payload.Group != nil {
 		group, err = ipGroupAdmin.GetIpGroupByUUID(ctx, payload.Group.ID)
@@ -177,7 +168,7 @@ func (v *LBFloatingIpAPI) Create(c *gin.Context) {
 		}
 	}
 
-	logger.Debugf("publicSubnets: %v, instance: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, group: %v", publicSubnets, instance, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, group)
+	logger.Debugf("publicSubnets: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, group: %v", publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, group)
 	floatingIps, err := floatingIpAdmin.Create(ctx, nil, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, nil, group, loadBalancer)
 	if err != nil {
 		logger.Errorf("Failed to create floating ip %+v", err)
