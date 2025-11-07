@@ -202,7 +202,7 @@ func Register() (r *gin.Engine) {
 			// OpenMeter API routes
 			authGroup.GET("/api/v1/openmeter/metrics", openMeterAPI.QueryOpenMeterMetrics)
 			authGroup.GET("/api/v1/openmeter/metrics/:instance_id/:subject", openMeterAPI.QueryInstanceMetricsBySubject)
-			authGroup.GET("/api/v1/openmeter/subjects", openMeterAPI.GetAvailableSubjects)
+			authGroup.GET("/api/v1/openmeter/trafficbilling/:instance_id", openMeterAPI.QueryTrafficBilling)
 
 		}
 
