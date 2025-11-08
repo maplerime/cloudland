@@ -289,6 +289,66 @@ func (o *AdjustOperator) GetBWAdjustRuleDetails(ctx context.Context, groupUUID s
 	return details, nil
 }
 
+// CPUAdjustRuleGroupResult represents a CPU adjust rule group with its details
+type CPUAdjustRuleGroupResult struct {
+	model.AdjustRuleGroup
+	Details []model.CPUAdjustRuleDetail `json:"details,omitempty" gorm:"-"`
+}
+
+// GetCPUAdjustRulesByGroupUUID retrieves complete CPU adjust rule (group + details) by group UUID
+func (o *AdjustOperator) GetCPUAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*CPUAdjustRuleGroupResult, error) {
+	groups, _, err := o.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
+		RuleType:  ruleType,
+		GroupUUID: groupUUID,
+		PageSize:  1,
+	})
+	if err != nil || len(groups) == 0 {
+		log.Printf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("adjust rules query failed: %w", err)
+	}
+
+	details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
+	if err != nil {
+		log.Printf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("CPU adjust detail rules query failed: %w", err)
+	}
+
+	return &CPUAdjustRuleGroupResult{
+		AdjustRuleGroup: groups[0],
+		Details:         details,
+	}, nil
+}
+
+// BWAdjustRuleGroupResult represents a bandwidth adjust rule group with its details
+type BWAdjustRuleGroupResult struct {
+	model.AdjustRuleGroup
+	Details []model.BWAdjustRuleDetail `json:"details,omitempty" gorm:"-"`
+}
+
+// GetBWAdjustRulesByGroupUUID retrieves complete bandwidth adjust rule (group + details) by group UUID
+func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*BWAdjustRuleGroupResult, error) {
+	groups, _, err := o.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
+		RuleType:  ruleType,
+		GroupUUID: groupUUID,
+		PageSize:  1,
+	})
+	if err != nil || len(groups) == 0 {
+		log.Printf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("adjust rules query failed: %w", err)
+	}
+
+	details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
+	if err != nil {
+		log.Printf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("bandwidth adjust detail rules query failed: %w", err)
+	}
+
+	return &BWAdjustRuleGroupResult{
+		AdjustRuleGroup: groups[0],
+		Details:         details,
+	}, nil
+}
+
 // UpdateAdjustRuleGroupStatus updates adjust rule group enabled status
 func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupUUID string, enabled bool) error {
 	result := dbs.DB().Model(&model.AdjustRuleGroup{}).

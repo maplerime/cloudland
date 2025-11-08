@@ -134,7 +134,7 @@ type BWRuleDetail struct {
 
 	// New single-direction fields for API v2
 	Direction string `gorm:"type:varchar(8);check:direction IN ('in','out')"`
-	Limit     int    `gorm:"check:limit >= 1"`
+	Limit     int    `gorm:"check:limit >= 1 AND limit <= 100"`
 	Duration  int    `gorm:"check:duration >= 1"`
 
 	// Legacy dual-direction fields - kept for backward compatibility

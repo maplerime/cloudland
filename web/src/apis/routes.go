@@ -155,7 +155,7 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/instances/:id", instanceAPI.Get)
 		authGroup.DELETE("/api/v1/instances/:id", instanceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id", instanceAPI.Patch)
-		authGroup.GET("/api/v1/instances/rule-links", instanceAPI.GetInstanceRuleLinks)
+		authGroup.GET("/api/v1/instances/rules", instanceAPI.GetInstanceRuleLinks)
 
 		authGroup.POST("/api/v1/instances/:id/set_user_password", instanceAPI.SetUserPassword)
 		authGroup.POST("/api/v1/instances/:id/console", consoleAPI.Create)
@@ -212,7 +212,7 @@ func Register() (r *gin.Engine) {
 			// OpenMeter API routes
 			authGroup.GET("/api/v1/openmeter/metrics", openMeterAPI.QueryOpenMeterMetrics)
 			authGroup.GET("/api/v1/openmeter/metrics/:instance_id/:subject", openMeterAPI.QueryInstanceMetricsBySubject)
-			authGroup.GET("/api/v1/openmeter/subjects", openMeterAPI.GetAvailableSubjects)
+			authGroup.GET("/api/v1/openmeter/trafficbilling/:instance_id", openMeterAPI.QueryTrafficBilling)
 
 			// Resource auto adjustment route
 			metricsGroup.POST("/adjust/cpu/rules", adjustAPI.CreateCPUAdjustRule)

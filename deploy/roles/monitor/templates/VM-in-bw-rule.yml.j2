@@ -4,8 +4,15 @@ groups:
   - alert: HighBWInUsage_{{ owner }}_{{ rule_group }}
     expr: |
       (
-        rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 > {{ in_threshold }}
-      ) * on(domain, target_device) group_left(rule_id, instance_id)
+        (rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024 / 1024)
+        /
+        vm_interface_bandwidth_config_mbps{direction="in"}
+        * 100
+        > {{ in_threshold }}
+      )
+      and on(domain, target_device)
+      (vm_interface_bandwidth_config_mbps{direction="in"} > 0)
+      * on(domain, target_device) group_left(rule_id, instance_id)
       max by (domain, target_device, rule_id, instance_id) (
         up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"} == 1
       )
@@ -20,5 +27,5 @@ groups:
       owner: "{{ owner }}"
       target_device: "{{ $labels.target_device }}"
     annotations:
-      summary: "High Network In Speed ({{ $value }} kB/s)"
-      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} has high network in speed for {{ in_duration }} minutes"
+      summary: "High Network In Usage ({{ $value | humanize }}%)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} inbound usage exceeded {{ in_threshold }}% for {{ in_duration }} minutes"

@@ -452,6 +452,33 @@ func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID st
 	}
 	return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 }
+func (a *AlarmOperator) GetMemoryRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleType:  ruleType,
+		GroupUUID: groupUUID,
+		PageSize:  1,
+	})
+	if err != nil || len(groups) == 0 {
+		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("rules query failed: %w", err)
+	}
+
+	details, err := a.GetMemoryRuleDetails(ctx, groupUUID)
+	if err != nil {
+		log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("detail rules query failed: %w", err)
+	}
+	type ResultGroup struct {
+		model.RuleGroupV2
+		Details []model.MemoryRuleDetail `gorm:"-"`
+	}
+	result := &ResultGroup{
+		RuleGroupV2: groups[0],
+		Details:     details,
+	}
+	return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+}
+
 func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
 		RuleType:  ruleType,
@@ -600,6 +627,115 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 	return links, nil
 }
 
+// GetRuleIDsByInstance retrieves all rule IDs associated with a single instance
+// This includes both alarm rules (rule_group_v2) and adjust rules (adjust_rule_group)
+// Input: instanceUUID - single instance UUID to query
+// Output: []string - list of rule_id values
+func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID string) ([]string, error) {
+	if instanceUUID == "" {
+		return []string{}, nil
+	}
+
+	ctx, db := common.GetContextDB(ctx)
+	ruleIDs := make([]string, 0)
+
+	// Query alarm rules from rule_group_v2
+	type RuleIDResult struct {
+		RuleID string
+	}
+	var alarmRuleIDs []RuleIDResult
+	err := db.Table("vm_rule_links").
+		Select("DISTINCT rule_group_v2.rule_id").
+		Joins("JOIN rule_group_v2 ON vm_rule_links.group_uuid = rule_group_v2.uuid").
+		Where("vm_rule_links.vm_uuid = ?", instanceUUID).
+		Scan(&alarmRuleIDs).Error
+
+	if err != nil {
+		log.Printf("[GetRuleIDsByInstance] Failed to query alarm rules for instance %s: %v", instanceUUID, err)
+		return nil, fmt.Errorf("failed to query alarm rules: %w", err)
+	}
+
+	for _, r := range alarmRuleIDs {
+		ruleIDs = append(ruleIDs, r.RuleID)
+	}
+
+	// Query adjust rules from adjust_rule_group
+	var adjustRuleIDs []RuleIDResult
+	err = db.Table("vm_rule_links").
+		Select("DISTINCT adjust_rule_group.rule_id").
+		Joins("JOIN adjust_rule_group ON vm_rule_links.group_uuid = adjust_rule_group.uuid").
+		Where("vm_rule_links.vm_uuid = ?", instanceUUID).
+		Scan(&adjustRuleIDs).Error
+
+	if err != nil {
+		log.Printf("[GetRuleIDsByInstance] Failed to query adjust rules for instance %s: %v", instanceUUID, err)
+		return nil, fmt.Errorf("failed to query adjust rules: %w", err)
+	}
+
+	for _, r := range adjustRuleIDs {
+		ruleIDs = append(ruleIDs, r.RuleID)
+	}
+
+	return ruleIDs, nil
+}
+
+// GetCompleteRuleByRuleID retrieves complete rule information by rule_id
+// This function automatically identifies if the rule is an alarm rule or adjust rule
+// Input: ruleID - rule identifier
+// Output: interface{} - either *RuleGroupV2 (alarm) or *AdjustRuleGroup (adjust)
+func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID string) (interface{}, error) {
+	if ruleID == "" {
+		return nil, fmt.Errorf("ruleID cannot be empty")
+	}
+
+	// First, try to find in alarm rules (rule_group_v2)
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+
+	if err == nil && len(groups) > 0 {
+		// Found in alarm rules, get complete info based on type
+		group := groups[0]
+		switch group.Type {
+		case "cpu":
+			return a.GetCPURulesByGroupUUID(ctx, group.UUID, group.Type)
+		case "memory":
+			return a.GetMemoryRulesByGroupUUID(ctx, group.UUID, group.Type)
+		case "bandwidth":
+			return a.GetBWRulesByGroupUUID(ctx, group.UUID, group.Type)
+		default:
+			log.Printf("[GetCompleteRuleByRuleID] Unknown alarm rule type: %s for rule_id: %s", group.Type, ruleID)
+			return nil, fmt.Errorf("unknown alarm rule type: %s", group.Type)
+		}
+	}
+
+	// Not found in alarm rules, try adjust rules
+	adjustOperator := &AdjustOperator{}
+	adjustGroups, _, err := adjustOperator.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+
+	if err == nil && len(adjustGroups) > 0 {
+		// Found in adjust rules, get complete info based on type
+		group := adjustGroups[0]
+		switch group.Type {
+		case "adjust_cpu":
+			return adjustOperator.GetCPUAdjustRulesByGroupUUID(ctx, group.UUID, group.Type)
+		case "adjust_in_bw", "adjust_out_bw":
+			return adjustOperator.GetBWAdjustRulesByGroupUUID(ctx, group.UUID, group.Type)
+		default:
+			log.Printf("[GetCompleteRuleByRuleID] Unknown adjust rule type: %s for rule_id: %s", group.Type, ruleID)
+			return nil, fmt.Errorf("unknown adjust rule type: %s", group.Type)
+		}
+	}
+
+	// Rule not found in either table
+	log.Printf("[GetCompleteRuleByRuleID] Rule not found: %s", ruleID)
+	return nil, fmt.Errorf("rule not found: %s", ruleID)
+}
+
 // GetInstanceRuleLinks retrieves all rule links for specific instances
 // Input: instanceUUIDs - list of instance UUIDs to query
 // Output: map[instanceUUID][]VMRuleLink - grouped by instance UUID
@@ -626,69 +762,102 @@ func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs 
 	return result, nil
 }
 
-// GetInstanceRuleDetails retrieves complete rule group information for specific instances
-// This is used by the API layer to return detailed rule information
-// Input: instanceUUIDs - list of instance UUIDs to query
-// Output: map with instance_id as key, containing rule groups with full details
-func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUIDs []string) (map[string]interface{}, error) {
-	// Get all rule links
-	linksMap, err := a.GetInstanceRuleLinks(ctx, instanceUUIDs)
-	if err != nil {
-		log.Printf("[GetInstanceRuleDetails] Failed to get rule links: %v", err)
-		return nil, fmt.Errorf("failed to query rule links: %w", err)
+// cleanRuleData removes internal database fields from rule data
+func cleanRuleData(data interface{}) interface{} {
+	// Fields to remove
+	fieldsToRemove := []string{"ID", "CreatedAt", "UpdatedAt", "DeletedAt", "Creater", "OwnerInfo", "GroupUUID"}
+
+	// First convert to map if it's not already
+	var dataMap map[string]interface{}
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		dataMap = v
+	default:
+		// Convert struct to map via JSON
+		jsonBytes, err := json.Marshal(data)
+		if err != nil {
+			log.Printf("[cleanRuleData] Failed to marshal data: %v", err)
+			return data
+		}
+		if err := json.Unmarshal(jsonBytes, &dataMap); err != nil {
+			log.Printf("[cleanRuleData] Failed to unmarshal data: %v", err)
+			return data
+		}
 	}
 
-	// Build response with rule group details
-	ctx, db := common.GetContextDB(ctx)
+	// Clean the map
+	for _, field := range fieldsToRemove {
+		delete(dataMap, field)
+	}
+
+	// Clean nested details array
+	if details, ok := dataMap["details"].([]interface{}); ok {
+		cleanedDetails := make([]interface{}, len(details))
+		for i, detail := range details {
+			cleanedDetails[i] = cleanRuleData(detail)
+		}
+		dataMap["details"] = cleanedDetails
+	}
+
+	return dataMap
+}
+
+// GetInstanceRuleDetails retrieves complete rule group information for specific instances
+// This is used by the API layer to return detailed rule information including rule details
+// Input: instanceUUIDs - list of instance UUIDs to query
+// Output: map with instance_id as key, containing complete rule information (both alarm and adjust rules)
+func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUIDs []string) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 
-	for instanceID, links := range linksMap {
-		ruleGroups := make([]map[string]interface{}, 0)
-		seenGroups := make(map[string]bool)
-
-		for _, link := range links {
-			if seenGroups[link.GroupUUID] {
-				continue
+	// Process each instance
+	for _, instanceUUID := range instanceUUIDs {
+		// 1. Get all rule_ids for this instance
+		ruleIDs, err := a.GetRuleIDsByInstance(ctx, instanceUUID)
+		if err != nil {
+			log.Printf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
+			// Continue with next instance instead of failing completely
+			result[instanceUUID] = map[string]interface{}{
+				"instance_id": instanceUUID,
+				"rule_count":  0,
+				"rule_groups": []interface{}{},
+				"error":       err.Error(),
 			}
-			seenGroups[link.GroupUUID] = true
-
-			var group model.RuleGroupV2
-			if err := db.Where("uuid = ?", link.GroupUUID).First(&group).Error; err != nil {
-				log.Printf("[GetInstanceRuleDetails] Rule group not found: %s, error: %v", link.GroupUUID, err)
-				continue
-			}
-
-			// Get all interfaces for this group
-			interfaces := make([]string, 0)
-			for _, l := range links {
-				if l.GroupUUID == link.GroupUUID {
-					interfaces = append(interfaces, l.Interface)
-				}
-			}
-
-			ruleGroups = append(ruleGroups, map[string]interface{}{
-				"group_uuid": group.UUID,
-				"rule_id":    group.RuleID,
-				"name":       group.Name,
-				"type":       group.Type,
-				"enabled":    group.Enabled,
-				"owner":      group.Owner,
-				"interfaces": interfaces,
-			})
+			continue
 		}
 
-		result[instanceID] = map[string]interface{}{
-			"instance_id": instanceID,
-			"rule_count":  len(ruleGroups),
-			"rule_groups": ruleGroups,
+		// 2. Get complete rule information for each rule_id - return raw database model
+		rules := make([]interface{}, 0)
+		for _, ruleID := range ruleIDs {
+			rule, err := a.GetCompleteRuleByRuleID(ctx, ruleID)
+			if err != nil {
+				log.Printf("[GetInstanceRuleDetails] Failed to get rule %s for instance %s: %v", ruleID, instanceUUID, err)
+				// Continue with next rule instead of failing
+				continue
+			}
+
+			// Clean and append the rule data
+			if rule != nil {
+				cleanedRule := cleanRuleData(rule)
+				rules = append(rules, cleanedRule)
+			} else {
+				log.Printf("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
+			}
+		}
+
+		// 3. Build result for this instance
+		result[instanceUUID] = map[string]interface{}{
+			"instance_id": instanceUUID,
+			"rule_count":  len(rules),
+			"rule_groups": rules,
 		}
 	}
 
-	// Add empty result for instances with no rules
-	for _, instanceID := range instanceUUIDs {
-		if _, exists := result[instanceID]; !exists {
-			result[instanceID] = map[string]interface{}{
-				"instance_id": instanceID,
+	// Ensure all instances have a result entry
+	for _, instanceUUID := range instanceUUIDs {
+		if _, exists := result[instanceUUID]; !exists {
+			result[instanceUUID] = map[string]interface{}{
+				"instance_id": instanceUUID,
 				"rule_count":  0,
 				"rule_groups": []interface{}{},
 			}
@@ -1121,8 +1290,8 @@ func (c *PrometheusClient) ClientCheckFileExists(path string) (bool, error) {
 
 func (c *PrometheusClient) ClientRemoveSymlink(linkPath string) error {
 	req := RuleFileRequest{
-		Operation: "unlink",
-		LinkPath:  linkPath,
+		Operation: "delete",
+		FilePath:  linkPath,
 	}
 
 	err := c.sendRequestNoResponse("/api/v1/rules/file", req)

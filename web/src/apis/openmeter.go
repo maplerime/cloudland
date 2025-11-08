@@ -449,7 +449,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 
 	if meteringHost == "" || meteringPort == "" {
 		log.Printf("OpenMeter configuration not found, using default values")
-		meteringHost = "104.192.86.49"
+		meteringHost = "199.188.106.244"
 		meteringPort = "8123"
 	}
 
@@ -1832,21 +1832,246 @@ func (o *OpenMeterAPI) QueryInstanceMetricsBySubject(c *gin.Context) {
 	o.QueryOpenMeterMetrics(c)
 }
 
-// GetAvailableSubjects returns available metric subjects
-func (o *OpenMeterAPI) GetAvailableSubjects(c *gin.Context) {
-	subjects := []string{
-		"vm_instance_map",
-		"libvirt_domain_info_vstate",
-		"domain_north_south_inbound_bytes_total",
-		"domain_north_south_outbound_bytes_total",
-		"libvirt_domain_info_virtual_cpus",
-		"libvirt_domain_info_maximum_memory_bytes",
-		"libvirt_domain_block_stats_capacity_bytes",
+// TrafficBillingResponse represents the billing query response
+type TrafficBillingResponse struct {
+	InstanceID      string `json:"instance_id"`
+	StartTime       int64  `json:"start_time"`
+	EndTime         int64  `json:"end_time"`
+	ActualStartTime int64  `json:"actual_start_time,omitempty"` // Unix timestamp (seconds)
+	ActualEndTime   int64  `json:"actual_end_time,omitempty"`   // Unix timestamp (seconds)
+	DaysIncluded    string `json:"days_included"`               // String to handle ClickHouse JSONEachRow format
+	BytesIn         string `json:"bytes_in"`                    // String to handle large values
+	BytesOut        string `json:"bytes_out"`                   // String to handle large values
+	ReadableIn      string `json:"readable_in"`
+	ReadableOut     string `json:"readable_out"`
+}
+
+// parseTimestamp validates and parses a timestamp parameter
+func parseTimestamp(value, paramName string) (int64, error) {
+	if value == "" {
+		return 0, fmt.Errorf("%s parameter is required (Unix timestamp in seconds)", paramName)
+	}
+	timestamp, err := strconv.ParseInt(value, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("%s must be a valid Unix timestamp", paramName)
+	}
+	return timestamp, nil
+}
+
+// QueryTrafficBilling queries aggregated traffic data for billing purposes (full days only)
+func (o *OpenMeterAPI) QueryTrafficBilling(c *gin.Context) {
+	instanceID := c.Param("instance_id")
+	startStr := c.Query("start")
+	endStr := c.Query("end")
+
+	log.Printf("QueryTrafficBilling - InstanceID=%s, Start=%s, End=%s", instanceID, startStr, endStr)
+
+	// Validate instance_id
+	if instanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "instance_id parameter is required"})
+		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status":   "success",
-		"subjects": subjects,
-		"count":    len(subjects),
-	})
+	// Parse and validate timestamps
+	start, err := parseTimestamp(startStr, "start")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	end, err := parseTimestamp(endStr, "end")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Validate time range
+	if start >= end {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "start time must be earlier than end time"})
+		return
+	}
+	const maxDuration = 31 * 24 * 60 * 60
+	if end-start > maxDuration {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "time range cannot exceed 31 days"})
+		return
+	}
+
+	// Calculate first full day start and last full day end
+	startTime := time.Unix(start, 0).UTC()
+	endTime := time.Unix(end, 0).UTC()
+
+	// Calculate first full day start
+	var firstFullDayStart time.Time
+	if startTime.Hour() == 0 && startTime.Minute() == 0 && startTime.Second() == 0 {
+		// Start is already at 00:00:00, use it directly
+		firstFullDayStart = startTime
+	} else {
+		// Start is not at 00:00:00, move to next day's 00:00:00
+		firstFullDayStart = time.Date(startTime.Year(), startTime.Month(), startTime.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+	}
+
+	// Calculate last full day end
+	endDayStart := time.Date(endTime.Year(), endTime.Month(), endTime.Day(), 0, 0, 0, 0, time.UTC)
+	var lastFullDayEnd time.Time
+	if endTime.Hour() == 0 && endTime.Minute() == 0 && endTime.Second() == 0 {
+		// End is at 00:00:00, don't include this day
+		lastFullDayEnd = endDayStart
+	} else {
+		// End is not at 00:00:00, include this day (add 1 day for query boundary)
+		lastFullDayEnd = endDayStart.AddDate(0, 0, 1)
+	}
+
+	// Validate that we have at least one full day
+	if firstFullDayStart.Unix() >= lastFullDayEnd.Unix() {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": "time range does not contain any full day (00:00:00 to 23:59:59)",
+			"hint":  "adjust start to 00:00:00 and end to 23:59:59 or next day's 00:00:00",
+		})
+		return
+	}
+
+	// Get ClickHouse configuration
+	meteringHost := viper.GetString("metering.host")
+	meteringPort := viper.GetString("metering.port")
+	if meteringHost == "" || meteringPort == "" {
+		log.Printf("OpenMeter configuration not found, using default values")
+		meteringHost = "199.188.106.244"
+		meteringPort = "8123"
+	}
+
+	// Build query for aggregated 1d table
+	sqlQuery := o.buildBillingQuery(instanceID, firstFullDayStart.Unix(), lastFullDayEnd.Unix())
+
+	// Execute query
+	clickHouseURL := fmt.Sprintf("http://%s:%s/", meteringHost, meteringPort)
+	params := url.Values{}
+	params.Add("user", "default")
+	params.Add("password", "default")
+	params.Add("database", "openmeter")
+	fullURL := fmt.Sprintf("%s?%s", clickHouseURL, params.Encode())
+
+	log.Printf("Billing Query SQL: %s", sqlQuery)
+
+	resp, err := http.Post(fullURL, "text/plain", strings.NewReader(sqlQuery))
+	if err != nil {
+		log.Printf("Failed to query ClickHouse: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query metrics database"})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("Failed to read response body: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read database response"})
+		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		log.Printf("ClickHouse query failed with status %d: %s", resp.StatusCode, string(body))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database query failed", "details": string(body)})
+		return
+	}
+
+	// Parse response
+	bodyStr := strings.TrimSpace(string(body))
+
+	// Handle empty result (no data for this instance/time range)
+	if bodyStr == "" {
+		log.Printf("No data found for instance %s in time range [%d, %d)", instanceID, firstFullDayStart.Unix(), lastFullDayEnd.Unix())
+		c.JSON(http.StatusOK, TrafficBillingResponse{
+			InstanceID:   instanceID,
+			StartTime:    start,
+			EndTime:      end,
+			DaysIncluded: "0",
+			BytesIn:      "0",
+			BytesOut:     "0",
+			ReadableIn:   "0.00 B",
+			ReadableOut:  "0.00 B",
+		})
+		return
+	}
+
+	var result struct {
+		BytesIn      string `json:"bytes_in"`
+		BytesOut     string `json:"bytes_out"`
+		ReadableIn   string `json:"readable_in"`
+		ReadableOut  string `json:"readable_out"`
+		DaysIncluded string `json:"days_included"` // String to handle ClickHouse JSONEachRow format
+		MinDate      int64  `json:"min_date"`      // Unix timestamp from ClickHouse
+		MaxDate      int64  `json:"max_date"`      // Unix timestamp from ClickHouse
+	}
+
+	if err := json.Unmarshal([]byte(bodyStr), &result); err != nil {
+		log.Printf("Failed to parse query result: %v, body: %s", err, bodyStr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse query result"})
+		return
+	}
+
+	// Check if query returned aggregated zero values (instance exists but no traffic)
+	if result.DaysIncluded == "0" || result.DaysIncluded == "" {
+		log.Printf("No traffic data for instance %s in specified time range", instanceID)
+		c.JSON(http.StatusOK, TrafficBillingResponse{
+			InstanceID:   instanceID,
+			StartTime:    start,
+			EndTime:      end,
+			DaysIncluded: "0",
+			BytesIn:      "0",
+			BytesOut:     "0",
+			ReadableIn:   "0.00 B",
+			ReadableOut:  "0.00 B",
+		})
+		return
+	}
+
+	// Build normal response with data - use timestamps and parsed values from ClickHouse
+	response := TrafficBillingResponse{
+		InstanceID:      instanceID,
+		StartTime:       start,
+		EndTime:         end,
+		ActualStartTime: result.MinDate,
+		ActualEndTime:   result.MaxDate,
+		DaysIncluded:    result.DaysIncluded,
+		BytesIn:         result.BytesIn,
+		BytesOut:        result.BytesOut,
+		ReadableIn:      result.ReadableIn,
+		ReadableOut:     result.ReadableOut,
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// buildBillingQuery builds the SQL query for billing data from 1d aggregated table
+func (o *OpenMeterAPI) buildBillingQuery(instanceID string, firstFullDayStart, lastFullDayEnd int64) string {
+	query := fmt.Sprintf(`
+WITH src AS (
+  SELECT
+    instance_id,
+    zone,
+    sumMerge(bytes_in)  AS bytes_in,
+    sumMerge(bytes_out) AS bytes_out,
+    countDistinct(window_start_utc_ts)         AS days_included,
+    minMerge(data_source_start_utc_ts)         AS min_date,
+    maxMerge(data_source_end_utc_ts)           AS max_date
+  FROM clusterAllReplicas('openmeter_cluster','openmeter','om_traffic_1d_local')
+  WHERE instance_id = '%s'
+    AND window_start_utc_ts >= %d
+    AND window_end_utc_ts   <= %d
+  GROUP BY instance_id, zone
+)
+SELECT
+  instance_id,
+  zone,
+  bytes_in,
+  bytes_out,
+  formatReadableSize(bytes_in)  AS readable_in,
+  formatReadableSize(bytes_out) AS readable_out,
+  days_included,
+  min_date,
+  max_date
+FROM src
+FORMAT JSONEachRow
+`, instanceID, firstFullDayStart, lastFullDayEnd)
+
+	return strings.TrimSpace(query)
 }

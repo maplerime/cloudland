@@ -11,7 +11,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM requires CPU limitation"
@@ -27,7 +26,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM ready for CPU restoration (limit duration exceeded)"
@@ -43,7 +41,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM requires inbound bandwidth limitation"
@@ -62,7 +59,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM ready for inbound bandwidth restoration (limit duration exceeded)"
@@ -78,7 +74,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM requires outbound bandwidth limitation"
@@ -97,7 +92,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM ready for outbound bandwidth restoration (limit duration exceeded)"
@@ -116,7 +110,6 @@ groups:
       rule_group: "{{ rule_group_original }}"
       global_rule_id: "{{ global_rule_id }}"
       owner: "{{ owner }}"
-      matched: "{{ if $labels.rule_id }}true{{ else }}false{{ end }}"
       notify_url: "{{ notify_url }}"
     annotations:
       summary: "VM bandwidth configuration metrics missing"
