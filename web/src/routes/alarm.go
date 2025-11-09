@@ -807,12 +807,41 @@ func cleanRuleData(data interface{}) interface{} {
 // This is used by the API layer to return detailed rule information including rule details
 // Input: instanceUUIDs - list of instance UUIDs to query
 // Output: map with instance_id as key, containing complete rule information (both alarm and adjust rules)
+// Each rule group includes an "interfaces" array field containing the network interfaces linked to that rule group
 func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUIDs []string) (map[string]interface{}, error) {
 	result := make(map[string]interface{})
 
 	// Process each instance
 	for _, instanceUUID := range instanceUUIDs {
-		// 1. Get all rule_ids for this instance
+		// 1. Get all rule links for this instance to build group_uuid -> interfaces mapping
+		ctx, db := common.GetContextDB(ctx)
+		var links []model.VMRuleLink
+		if err := db.Where("vm_uuid = ? AND deleted_at IS NULL", instanceUUID).Find(&links).Error; err != nil {
+			log.Printf("[GetInstanceRuleDetails] Failed to get rule links for instance %s: %v", instanceUUID, err)
+		}
+
+		// 2. Build map: group_uuid -> []interfaces (using map for deduplication)
+		groupInterfacesMap := make(map[string]map[string]bool) // group_uuid -> map[interface]bool
+		for _, link := range links {
+			if link.Interface != "" && link.GroupUUID != "" {
+				if groupInterfacesMap[link.GroupUUID] == nil {
+					groupInterfacesMap[link.GroupUUID] = make(map[string]bool)
+				}
+				groupInterfacesMap[link.GroupUUID][link.Interface] = true
+			}
+		}
+
+		// Convert to final format: group_uuid -> []interfaces
+		groupInterfaces := make(map[string][]string)
+		for groupUUID, ifaceMap := range groupInterfacesMap {
+			interfaces := make([]string, 0, len(ifaceMap))
+			for iface := range ifaceMap {
+				interfaces = append(interfaces, iface)
+			}
+			groupInterfaces[groupUUID] = interfaces
+		}
+
+		// 3. Get all rule_ids for this instance
 		ruleIDs, err := a.GetRuleIDsByInstance(ctx, instanceUUID)
 		if err != nil {
 			log.Printf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
@@ -826,7 +855,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 			continue
 		}
 
-		// 2. Get complete rule information for each rule_id - return raw database model
+		// 4. Get complete rule information for each rule_id - return raw database model
 		rules := make([]interface{}, 0)
 		for _, ruleID := range ruleIDs {
 			rule, err := a.GetCompleteRuleByRuleID(ctx, ruleID)
@@ -839,13 +868,60 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 			// Clean and append the rule data
 			if rule != nil {
 				cleanedRule := cleanRuleData(rule)
+
+				// 5. Add interfaces array to the rule group
+				// Extract UUID from the cleaned rule to match with groupInterfaces
+				// Convert to map if not already
+				var ruleMap map[string]interface{}
+				if m, ok := cleanedRule.(map[string]interface{}); ok {
+					ruleMap = m
+				} else {
+					// Convert struct to map via JSON
+					jsonBytes, err := json.Marshal(cleanedRule)
+					if err == nil {
+						if err := json.Unmarshal(jsonBytes, &ruleMap); err != nil {
+							log.Printf("[GetInstanceRuleDetails] Failed to unmarshal rule to map: %v", err)
+							ruleMap = make(map[string]interface{})
+						}
+					} else {
+						log.Printf("[GetInstanceRuleDetails] Failed to marshal rule: %v", err)
+						ruleMap = make(map[string]interface{})
+					}
+				}
+
+				// Try to get UUID from different possible field names (UUID, uuid, Uuid)
+				var groupUUID string
+				if uuid, exists := ruleMap["UUID"].(string); exists && uuid != "" {
+					groupUUID = uuid
+				} else if uuid, exists := ruleMap["uuid"].(string); exists && uuid != "" {
+					groupUUID = uuid
+				} else if uuid, exists := ruleMap["Uuid"].(string); exists && uuid != "" {
+					groupUUID = uuid
+				}
+
+				// Get interfaces for this group_uuid
+				var interfaces []string
+				if groupUUID != "" {
+					interfaces = groupInterfaces[groupUUID]
+					if interfaces == nil {
+						interfaces = []string{} // Return empty array if no interfaces
+					}
+				} else {
+					// If UUID not found, set empty array
+					interfaces = []string{}
+					log.Printf("[GetInstanceRuleDetails] Warning: Could not find UUID in rule for rule_id %s", ruleID)
+				}
+
+				ruleMap["interfaces"] = interfaces
+				cleanedRule = ruleMap
+
 				rules = append(rules, cleanedRule)
 			} else {
 				log.Printf("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
 			}
 		}
 
-		// 3. Build result for this instance
+		// 6. Build result for this instance
 		result[instanceUUID] = map[string]interface{}{
 			"instance_id": instanceUUID,
 			"rule_count":  len(rules),

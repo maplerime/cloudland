@@ -1064,48 +1064,138 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 	return added, removed, toAddByDevice, toRemoveByDevice, nil
 }
 
-// UpdateCPUAdjustRuleDetails updates CPU adjustment rule details (delete-and-recreate strategy)
-func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, groupUUID string, newDetails []model.CPUAdjustRuleDetail) error {
+// UpdateCPUAdjustRuleDetails updates CPU adjustment rule details (supports rule_id and group_uuid)
+// Uses UPDATE strategy to preserve UUID and ID, only updates business fields
+func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, identifier string, newDetails []model.CPUAdjustRuleDetail) error {
+	// 1. Get group UUID from identifier (supports rule_id and group_uuid)
+	group, err := o.GetAdjustRulesByIdentifier(ctx, identifier)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("rule not found: identifier=%s", identifier)
+		}
+		return fmt.Errorf("failed to get rule group: %w", err)
+	}
+	groupUUID := group.UUID
+
+	// 2. Validate: must have exactly one detail
+	if len(newDetails) != 1 {
+		return fmt.Errorf("invalid detail count: expected 1, got %d (rule_id=%s, group_uuid=%s)", len(newDetails), group.RuleID, groupUUID)
+	}
+
+	// 3. Get existing detail and validate count
+	oldDetails, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing details: %w", err)
+	}
+	if len(oldDetails) != 1 {
+		return fmt.Errorf("data inconsistency: expected 1 detail, found %d (rule_id=%s, group_uuid=%s)", len(oldDetails), group.RuleID, groupUUID)
+	}
+
+	// 4. Update only business fields, preserve UUID and ID
+	oldDetail := oldDetails[0]
+	updateDetail := newDetails[0]
+
+	// Preserve metadata
+	updateDetail.ID = oldDetail.ID
+	updateDetail.UUID = oldDetail.UUID
+	updateDetail.GroupUUID = oldDetail.GroupUUID
+	updateDetail.CreatedAt = oldDetail.CreatedAt
+	updateDetail.UpdatedAt = time.Now() // Update timestamp
+	updateDetail.DeletedAt = oldDetail.DeletedAt
+
 	return dbs.DB().Transaction(func(tx *gorm.DB) error {
-		// 1. Delete old details
-		if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.CPUAdjustRuleDetail{}).Error; err != nil {
-			log.Printf("[UPDATE-ERROR] Failed to delete old CPU details: groupUUID=%s, error=%v", groupUUID, err)
-			return fmt.Errorf("failed to delete old CPU details: %w", err)
+		if err := tx.Model(&model.CPUAdjustRuleDetail{}).
+			Where("uuid = ?", oldDetail.UUID).
+			Updates(map[string]interface{}{
+				"name":             updateDetail.Name,
+				"high_threshold":   updateDetail.HighThreshold,
+				"smooth_window":    updateDetail.SmoothWindow,
+				"trigger_duration": updateDetail.TriggerDuration,
+				"limit_duration":   updateDetail.LimitDuration,
+				"limit_percent":    updateDetail.LimitPercent,
+				"updated_at":       updateDetail.UpdatedAt,
+			}).Error; err != nil {
+			log.Printf("[UPDATE-ERROR] Failed to update CPU detail: rule_id=%s, group_uuid=%s, error=%v", group.RuleID, groupUUID, err)
+			return fmt.Errorf("failed to update CPU detail: %w", err)
 		}
 
-		// 2. Create new details
-		for i := range newDetails {
-			newDetails[i].GroupUUID = groupUUID
-			if err := tx.Create(&newDetails[i]).Error; err != nil {
-				log.Printf("[UPDATE-ERROR] Failed to create new CPU detail: groupUUID=%s, error=%v", groupUUID, err)
-				return fmt.Errorf("failed to create new CPU detail: %w", err)
-			}
-		}
-
-		log.Printf("[UPDATE-INFO] CPU adjustment rule details updated: groupUUID=%s, count=%d", groupUUID, len(newDetails))
+		log.Printf("[UPDATE-INFO] CPU adjustment rule details updated: rule_id=%s, group_uuid=%s", group.RuleID, groupUUID)
 		return nil
 	})
 }
 
-// UpdateBWAdjustRuleDetails updates BW adjustment rule details (delete-and-recreate strategy)
+// UpdateBWAdjustRuleDetails updates BW adjustment rule details (preserves metadata)
 func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUID string, newDetails []model.BWAdjustRuleDetail) error {
+	// 1. Validate: must have exactly one detail
+	if len(newDetails) != 1 {
+		return fmt.Errorf("invalid detail count: expected 1, got %d (group_uuid=%s)", len(newDetails), groupUUID)
+	}
+
+	// 2. Get existing detail and validate count
+	oldDetails, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get existing details: %w", err)
+	}
+	if len(oldDetails) != 1 {
+		return fmt.Errorf("data inconsistency: expected 1 detail, found %d (group_uuid=%s)", len(oldDetails), groupUUID)
+	}
+
+	// 3. Update only business fields, preserve UUID and ID
+	oldDetail := oldDetails[0]
+	updateDetail := newDetails[0]
+
+	// Preserve metadata
+	updateDetail.ID = oldDetail.ID
+	updateDetail.UUID = oldDetail.UUID
+	updateDetail.GroupUUID = oldDetail.GroupUUID
+	updateDetail.CreatedAt = oldDetail.CreatedAt
+	updateDetail.UpdatedAt = time.Now() // Update timestamp
+	updateDetail.DeletedAt = oldDetail.DeletedAt
+
 	return dbs.DB().Transaction(func(tx *gorm.DB) error {
-		// 1. Delete old details
-		if err := tx.Where("group_uuid = ?", groupUUID).Delete(&model.BWAdjustRuleDetail{}).Error; err != nil {
-			log.Printf("[UPDATE-ERROR] Failed to delete old BW details: groupUUID=%s, error=%v", groupUUID, err)
-			return fmt.Errorf("failed to delete old BW details: %w", err)
+		if err := tx.Model(&model.BWAdjustRuleDetail{}).
+			Where("uuid = ?", oldDetail.UUID).
+			Updates(map[string]interface{}{
+				"name":               updateDetail.Name,
+				"direction":          updateDetail.Direction,
+				"high_threshold_pct": updateDetail.HighThresholdPct,
+				"smooth_window":      updateDetail.SmoothWindow,
+				"trigger_duration":   updateDetail.TriggerDuration,
+				"limit_duration":     updateDetail.LimitDuration,
+				"limit_value_pct":    updateDetail.LimitValuePct,
+				"updated_at":         updateDetail.UpdatedAt,
+			}).Error; err != nil {
+			log.Printf("[UPDATE-ERROR] Failed to update BW detail: group_uuid=%s, error=%v", groupUUID, err)
+			return fmt.Errorf("failed to update BW detail: %w", err)
 		}
 
-		// 2. Create new details
-		for i := range newDetails {
-			newDetails[i].GroupUUID = groupUUID
-			if err := tx.Create(&newDetails[i]).Error; err != nil {
-				log.Printf("[UPDATE-ERROR] Failed to create new BW detail: groupUUID=%s, error=%v", groupUUID, err)
-				return fmt.Errorf("failed to create new BW detail: %w", err)
-			}
-		}
-
-		log.Printf("[UPDATE-INFO] BW adjustment rule details updated: groupUUID=%s, count=%d", groupUUID, len(newDetails))
+		log.Printf("[UPDATE-INFO] BW adjustment rule details updated: groupUUID=%s", groupUUID)
 		return nil
 	})
+}
+
+// UpdateAdjustRuleGroupBasicInfo updates basic information of an adjustment rule group
+func (o *AdjustOperator) UpdateAdjustRuleGroupBasicInfo(ctx context.Context, groupUUID string, updates map[string]interface{}) error {
+	_, db := common.GetContextDB(ctx)
+
+	if len(updates) == 0 {
+		return nil
+	}
+
+	result := db.Model(&model.AdjustRuleGroup{}).
+		Where("uuid = ?", groupUUID).
+		Updates(updates)
+
+	if result.Error != nil {
+		log.Printf("[UPDATE-ERROR] Failed to update rule group basic info: groupUUID=%s, error=%v", groupUUID, result.Error)
+		return fmt.Errorf("failed to update rule group: %w", result.Error)
+	}
+
+	if result.RowsAffected == 0 {
+		log.Printf("[UPDATE-WARNING] No rule group found with uuid: %s", groupUUID)
+		return fmt.Errorf("no rule group found with uuid: %s", groupUUID)
+	}
+
+	log.Printf("[UPDATE-INFO] Rule group basic info updated: groupUUID=%s, fields=%v", groupUUID, updates)
+	return nil
 }

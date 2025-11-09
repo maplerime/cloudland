@@ -1972,77 +1972,92 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 
 	// 3. Update RuleGroup basic information
 	updates := make(map[string]interface{})
+	var updatedNotifyURL *string
 	if req.Name != nil {
 		updates["name"] = *req.Name
+		// Note: name is not used in ruleData, so we don't need to track it
 	}
 	if req.NotifyURL != nil {
 		updates["notify_url"] = *req.NotifyURL
+		updatedNotifyURL = req.NotifyURL
 	}
 
 	if len(updates) > 0 {
-		if err := dbs.DB().Model(&model.AdjustRuleGroup{}).Where("uuid = ?", group.UUID).Updates(updates).Error; err != nil {
+		if err := a.operator.UpdateAdjustRuleGroupBasicInfo(c.Request.Context(), group.UUID, updates); err != nil {
 			log.Printf("[PATCH-ERROR] Failed to update rule group: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
 			return
 		}
 	}
 
-	// 4. Query old rule details
+	// 4. Query old rule details and validate count
 	oldDetails, err := a.operator.GetCPUAdjustRuleDetails(c.Request.Context(), group.UUID)
 	if err != nil {
 		log.Printf("[PATCH-ERROR] Failed to query old rule details: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query old rule details"})
 		return
 	}
+	if len(oldDetails) == 0 {
+		log.Printf("[PATCH-ERROR] Data inconsistency: rule has no details (rule_id=%s, group_uuid=%s)", group.RuleID, group.UUID)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "Data inconsistency: rule has no details",
+			"rule_id":    group.RuleID,
+			"group_uuid": group.UUID,
+		})
+		return
+	}
+	if len(oldDetails) > 1 {
+		log.Printf("[PATCH-ERROR] Data inconsistency: rule has multiple details (rule_id=%s, group_uuid=%s, count=%d)", group.RuleID, group.UUID, len(oldDetails))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "Data inconsistency: rule has multiple details",
+			"rule_id":    group.RuleID,
+			"group_uuid": group.UUID,
+			"count":      len(oldDetails),
+		})
+		return
+	}
 
 	// 5. Update rule details (if provided)
-	var newDetails []model.CPUAdjustRuleDetail
+	var detail model.CPUAdjustRuleDetail
 	if len(req.Rules) > 0 {
 		if len(req.Rules) > 1 {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Currently only one rule is supported"})
 			return
 		}
 
-		// Merge old details with new updates
-		for i, ruleUpdate := range req.Rules {
-			var detail model.CPUAdjustRuleDetail
-			if i < len(oldDetails) {
-				// Update existing detail
-				detail = oldDetails[i]
-			}
+		// Start with existing detail
+		detail = oldDetails[0]
 
-			// Apply updates
-			if ruleUpdate.Name != nil {
-				detail.Name = *ruleUpdate.Name
-			}
-			if ruleUpdate.HighThreshold != nil {
-				detail.HighThreshold = *ruleUpdate.HighThreshold
-			}
-			if ruleUpdate.SmoothWindow != nil {
-				detail.SmoothWindow = *ruleUpdate.SmoothWindow
-			}
-			if ruleUpdate.TriggerDuration != nil {
-				detail.TriggerDuration = *ruleUpdate.TriggerDuration
-			}
-			if ruleUpdate.LimitDuration != nil {
-				detail.LimitDuration = *ruleUpdate.LimitDuration
-			}
-			if ruleUpdate.LimitPercent != nil {
-				detail.LimitPercent = *ruleUpdate.LimitPercent
-			}
-
-			newDetails = append(newDetails, detail)
+		// Apply updates from request
+		ruleUpdate := req.Rules[0]
+		if ruleUpdate.Name != nil {
+			detail.Name = *ruleUpdate.Name
+		}
+		if ruleUpdate.HighThreshold != nil {
+			detail.HighThreshold = *ruleUpdate.HighThreshold
+		}
+		if ruleUpdate.SmoothWindow != nil {
+			detail.SmoothWindow = *ruleUpdate.SmoothWindow
+		}
+		if ruleUpdate.TriggerDuration != nil {
+			detail.TriggerDuration = *ruleUpdate.TriggerDuration
+		}
+		if ruleUpdate.LimitDuration != nil {
+			detail.LimitDuration = *ruleUpdate.LimitDuration
+		}
+		if ruleUpdate.LimitPercent != nil {
+			detail.LimitPercent = *ruleUpdate.LimitPercent
 		}
 
-		// Update database
-		if err := a.operator.UpdateCPUAdjustRuleDetails(c.Request.Context(), group.UUID, newDetails); err != nil {
+		// Update database using identifier (supports rule_id)
+		if err := a.operator.UpdateCPUAdjustRuleDetails(c.Request.Context(), identifier, []model.CPUAdjustRuleDetail{detail}); err != nil {
 			log.Printf("[PATCH-ERROR] Failed to update rule details: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule details"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule details: " + err.Error()})
 			return
 		}
 	} else {
-		// No rule updates, use existing details
-		newDetails = oldDetails
+		// No rule updates, use existing detail
+		detail = oldDetails[0]
 	}
 
 	// 6. Synchronize VM links (if provided)
@@ -2059,7 +2074,14 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 	}
 
 	// 7. Regenerate rule files
-	detail := newDetails[0] // Currently only supports one rule
+	// Use updated values from request if provided, otherwise use values from group
+	// Note: name is not used in ruleData, so we don't need to handle it here
+	// Note: owner is not updatable in PATCH, so always use group.Owner
+	notifyURL := group.NotifyURL
+	if updatedNotifyURL != nil {
+		notifyURL = *updatedNotifyURL
+	}
+
 	ruleData := map[string]interface{}{
 		"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 		"rule_group_original": group.UUID,
@@ -2069,8 +2091,8 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 		"trigger_duration":    detail.TriggerDuration,
 		"limit_duration":      detail.LimitDuration,
 		"limit_percent":       detail.LimitPercent,
-		"owner":               group.Owner,
-		"notify_url":          group.NotifyURL,
+		"owner":               group.Owner, // owner is not updatable in PATCH, so always use group.Owner
+		"notify_url":          notifyURL,
 	}
 
 	// Render recording rules
@@ -2088,12 +2110,11 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 	}
 
 	// 8. Update matched_vms.json (incremental update)
-	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	if len(toRemove) > 0 {
-		_ = alarmAPI.UpdateMatchedVMsJSON(c.Request.Context(), toRemove, group.UUID, "remove", "adjust-cpu")
+		_ = routes.UpdateMatchedVMsJSON(c.Request.Context(), toRemove, group.UUID, "remove", "adjust-cpu")
 	}
 	if len(toAdd) > 0 {
-		_ = alarmAPI.UpdateMatchedVMsJSON(c.Request.Context(), toAdd, group.UUID, "add", "adjust-cpu")
+		_ = routes.UpdateMatchedVMsJSON(c.Request.Context(), toAdd, group.UUID, "add", "adjust-cpu")
 	}
 
 	// 9. Reload Prometheus
@@ -2114,9 +2135,8 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": group.UUID,
-			"rule_id":    group.RuleID,
-			"linkedvms":  linkedVMs,
+			"rule_id":   group.RuleID,
+			"linkedvms": linkedVMs,
 			"changes": gin.H{
 				"vms_added":   added,
 				"vms_removed": removed,
@@ -2186,29 +2206,44 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	}
 
 	if len(updates) > 0 {
-		if err := dbs.DB().Model(&model.AdjustRuleGroup{}).Where("uuid = ?", group.UUID).Updates(updates).Error; err != nil {
+		if err := a.operator.UpdateAdjustRuleGroupBasicInfo(c.Request.Context(), group.UUID, updates); err != nil {
 			log.Printf("[PATCH-ERROR] Failed to update rule group: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
 			return
 		}
 	}
 
-	// 4. Query old rule details
+	// 4. Query old rule details and validate count
 	oldDetails, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 	if err != nil {
 		log.Printf("[PATCH-ERROR] Failed to query old rule details: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query old rule details"})
 		return
 	}
-
-	// Store old direction for file cleanup
-	var oldDirection string
-	if len(oldDetails) > 0 {
-		oldDirection = oldDetails[0].Direction
+	if len(oldDetails) == 0 {
+		log.Printf("[PATCH-ERROR] Data inconsistency: rule has no details (rule_id=%s, group_uuid=%s)", group.RuleID, group.UUID)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "Data inconsistency: rule has no details",
+			"rule_id":    group.RuleID,
+			"group_uuid": group.UUID,
+		})
+		return
+	}
+	if len(oldDetails) > 1 {
+		log.Printf("[PATCH-ERROR] Data inconsistency: rule has multiple details (rule_id=%s, group_uuid=%s, count=%d)", group.RuleID, group.UUID, len(oldDetails))
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":      "Data inconsistency: rule has multiple details",
+			"rule_id":    group.RuleID,
+			"group_uuid": group.UUID,
+			"count":      len(oldDetails),
+		})
+		return
 	}
 
+	// Store old direction for file cleanup
+	oldDirection := oldDetails[0].Direction
+
 	// 5. Update rule details (if provided)
-	var newDetails []model.BWAdjustRuleDetail
 	var newDirection string
 
 	if len(req.Rules) > 0 {
@@ -2217,54 +2252,44 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 			return
 		}
 
-		// Merge old details with new updates
-		for i, ruleUpdate := range req.Rules {
-			var detail model.BWAdjustRuleDetail
-			if i < len(oldDetails) {
-				// Update existing detail
-				detail = oldDetails[i]
-			}
+		// Start with existing detail
+		detail := oldDetails[0]
 
-			// Apply updates
-			if ruleUpdate.Direction != nil {
-				detail.Direction = *ruleUpdate.Direction
-			}
-			if ruleUpdate.Name != nil {
-				detail.Name = *ruleUpdate.Name
-			}
-			if ruleUpdate.HighThresholdPct != nil {
-				detail.HighThresholdPct = *ruleUpdate.HighThresholdPct
-			}
-			if ruleUpdate.SmoothWindow != nil {
-				detail.SmoothWindow = *ruleUpdate.SmoothWindow
-			}
-			if ruleUpdate.TriggerDuration != nil {
-				detail.TriggerDuration = *ruleUpdate.TriggerDuration
-			}
-			if ruleUpdate.LimitDuration != nil {
-				detail.LimitDuration = *ruleUpdate.LimitDuration
-			}
-			if ruleUpdate.LimitValuePct != nil {
-				detail.LimitValuePct = *ruleUpdate.LimitValuePct
-			}
-
-			newDetails = append(newDetails, detail)
+		// Apply updates from request
+		ruleUpdate := req.Rules[0]
+		if ruleUpdate.Direction != nil {
+			detail.Direction = *ruleUpdate.Direction
+		}
+		if ruleUpdate.Name != nil {
+			detail.Name = *ruleUpdate.Name
+		}
+		if ruleUpdate.HighThresholdPct != nil {
+			detail.HighThresholdPct = *ruleUpdate.HighThresholdPct
+		}
+		if ruleUpdate.SmoothWindow != nil {
+			detail.SmoothWindow = *ruleUpdate.SmoothWindow
+		}
+		if ruleUpdate.TriggerDuration != nil {
+			detail.TriggerDuration = *ruleUpdate.TriggerDuration
+		}
+		if ruleUpdate.LimitDuration != nil {
+			detail.LimitDuration = *ruleUpdate.LimitDuration
+		}
+		if ruleUpdate.LimitValuePct != nil {
+			detail.LimitValuePct = *ruleUpdate.LimitValuePct
 		}
 
-		newDirection = newDetails[0].Direction
+		newDirection = detail.Direction
 
 		// Update database
-		if err := a.operator.UpdateBWAdjustRuleDetails(c.Request.Context(), group.UUID, newDetails); err != nil {
+		if err := a.operator.UpdateBWAdjustRuleDetails(c.Request.Context(), group.UUID, []model.BWAdjustRuleDetail{detail}); err != nil {
 			log.Printf("[PATCH-ERROR] Failed to update rule details: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule details"})
 			return
 		}
 	} else {
 		// No rule updates, use existing details
-		newDetails = oldDetails
-		if len(oldDetails) > 0 {
-			newDirection = oldDetails[0].Direction
-		}
+		newDirection = oldDetails[0].Direction
 	}
 
 	// 6. Clean up old files if direction changed
@@ -2313,7 +2338,20 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	}
 
 	// 8. Regenerate rule files
-	detail := newDetails[0] // Currently only supports one rule
+	var detail model.BWAdjustRuleDetail
+	if len(req.Rules) > 0 {
+		// Get updated detail from database
+		updatedDetails, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
+		if err != nil || len(updatedDetails) == 0 {
+			log.Printf("[PATCH-ERROR] Failed to get updated detail: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get updated detail"})
+			return
+		}
+		detail = updatedDetails[0]
+	} else {
+		// No rule updates, use existing detail
+		detail = oldDetails[0]
+	}
 	ruleData := map[string]interface{}{
 		"rule_group":          strings.ReplaceAll(group.UUID, "-", "_"),
 		"rule_group_original": group.UUID,
@@ -2331,13 +2369,13 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	var templateFile, outputFile string
 	if detail.Direction == "in" {
 		ruleData["rule_id"] = fmt.Sprintf("adjust-bw-in-%s-%s", group.Owner, group.UUID)
-		ruleData["in_threshold_pct"] = detail.HighThresholdPct
+		ruleData["in_high_threshold_pct"] = detail.HighThresholdPct
 		ruleData["in_limit_value_pct"] = detail.LimitValuePct
 		templateFile = InBWAdjustRuleTemplate
 		outputFile = fmt.Sprintf("bw-in-adjust-%s-%s.yml", group.Owner, group.UUID)
 	} else if detail.Direction == "out" {
 		ruleData["rule_id"] = fmt.Sprintf("adjust-bw-out-%s-%s", group.Owner, group.UUID)
-		ruleData["out_threshold_pct"] = detail.HighThresholdPct
+		ruleData["out_high_threshold_pct"] = detail.HighThresholdPct
 		ruleData["out_limit_value_pct"] = detail.LimitValuePct
 		templateFile = OutBWAdjustRuleTemplate
 		outputFile = fmt.Sprintf("bw-out-adjust-%s-%s.yml", group.Owner, group.UUID)
@@ -2361,12 +2399,11 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	}
 
 	// 9. Update matched_vms.json (incremental update by device)
-	alarmAPI := &AlarmAPI{operator: &routes.AlarmOperator{}}
 	for device, vmUUIDs := range toRemoveByDevice {
-		_ = alarmAPI.UpdateMatchedVMsJSON(c.Request.Context(), vmUUIDs, group.UUID, "remove", "adjust-bw", device)
+		_ = routes.UpdateMatchedVMsJSON(c.Request.Context(), vmUUIDs, group.UUID, "remove", "adjust-bw", device)
 	}
 	for device, vmUUIDs := range toAddByDevice {
-		_ = alarmAPI.UpdateMatchedVMsJSON(c.Request.Context(), vmUUIDs, group.UUID, "add", "adjust-bw", device)
+		_ = routes.UpdateMatchedVMsJSON(c.Request.Context(), vmUUIDs, group.UUID, "add", "adjust-bw", device)
 	}
 
 	// 10. Reload Prometheus
@@ -2390,9 +2427,8 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": group.UUID,
-			"rule_id":    group.RuleID,
-			"linkedvms":  linkedVMs,
+			"rule_id":   group.RuleID,
+			"linkedvms": linkedVMs,
 			"changes": gin.H{
 				"vms_added":   added,
 				"vms_removed": removed,
