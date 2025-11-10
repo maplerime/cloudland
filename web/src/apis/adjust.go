@@ -521,6 +521,7 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 							"target_device":     alert.Labels["target_device"],
 							"instance_id":       alert.Labels["instance_id"],
 							"adjustment_status": map[bool]string{true: "success", false: "failed"}[result],
+							"region_id":         alert.Labels["region_id"],
 						},
 						Annotations: map[string]string{
 							"summary": fmt.Sprintf("%s %s: %s", summaryPrefix,

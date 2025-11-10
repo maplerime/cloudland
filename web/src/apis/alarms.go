@@ -265,7 +265,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 // UnlinkRuleFromVMWithType returns a closure that handles VM unlinking based on rule category
 func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-	var req struct {
+		var req struct {
 			GroupUUID string `json:"group_uuid,omitempty"`
 			RuleID    string `json:"rule_id,omitempty"`
 			VMLinks   []struct {
@@ -274,10 +274,10 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			} `json:"vm_links" binding:"required,min=1"`
 		}
 
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
-		return
-	}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
 
 		// Validate that either group_uuid or rule_id must be provided
 		if req.GroupUUID == "" && req.RuleID == "" {
@@ -295,14 +295,14 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
 		}
 
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-		return
-	} else if err != nil {
-		log.Printf("Error retrieving rule group: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
-		return
-	}
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+			return
+		} else if err != nil {
+			log.Printf("Error retrieving rule group: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+			return
+		}
 
 		groupUUID := group.UUID
 
@@ -336,9 +336,9 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 							"vm_uuid": link.VMUUID,
 							"message": err.Error(),
 						},
-		})
-		return
-	}
+					})
+					return
+				}
 
 				if deletedCount == 0 {
 					// VM was not linked - report this as an error
@@ -356,7 +356,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 				totalDeleted += deletedCount
 				log.Printf("Successfully unlinked VM (batch): vm_uuid=%s, deleted_count=%d", link.VMUUID, deletedCount)
 			}
-	} else {
+		} else {
 			// Specific delete: delete specific (vm_uuid, interface) pairs
 			for _, link := range req.VMLinks {
 				deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, link.VMUUID, link.Interface)
@@ -436,9 +436,9 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		// Query remaining linked VMs for response
-	vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+		vmLinks, _ := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 		var remainingVMsList []map[string]string
-	for _, link := range vmLinks {
+		for _, link := range vmLinks {
 			remainingVMsList = append(remainingVMsList, map[string]string{
 				"vm_uuid":   link.VMUUID,
 				"interface": link.Interface,
@@ -479,12 +479,12 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 				"not_linked_vms": notLinkedVMs,
 				"message":        "Some VMs were not linked to this rule and were skipped",
 			}
-	}
+		}
 
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
 			"data":   responseData,
-	})
+		})
 	}
 }
 
@@ -850,7 +850,7 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 	responseData := make([]gin.H, 0, len(groups))
 	for _, group := range groups {
 		details, err := a.operator.GetMemoryRuleDetails(c.Request.Context(), group.UUID)
-	if err != nil {
+		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "function get memory rule detailed failed: " + err.Error()})
 			return
 		}
@@ -932,7 +932,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 				"code":       "INTERNAL_ERROR",
 				"identifier": identifier,
 			})
-		return
+			return
 		}
 	}
 
@@ -1041,15 +1041,15 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 				"code":       "NOT_FOUND",
 				"identifier": identifier,
 			})
-		return
+			return
 		} else if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"error":      "Failed to retrieve rule information",
 				"code":       "INTERNAL_ERROR",
 				"identifier": identifier,
 			})
-		return
-	}
+			return
+		}
 	}
 
 	// Use actual GroupUUID for subsequent operations
@@ -1069,8 +1069,8 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	linkedVMs := make([]string, 0)
 	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err == nil {
-	for _, link := range vmLinks {
-		linkedVMs = append(linkedVMs, link.VMUUID)
+		for _, link := range vmLinks {
+			linkedVMs = append(linkedVMs, link.VMUUID)
 		}
 	}
 
@@ -1397,11 +1397,11 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 			// Use AlarmOperator's SendNotification directly
 			if err := a.operator.SendNotification(c.Request.Context(), notifyURL, notifyParams); err != nil {
 				log.Printf("[ALARM-WARNING] Failed to send notification for alert %s: %v", alertName, err)
-				} else {
+			} else {
 				log.Printf("[ALARM-INFO] Successfully sent notification for alert: %s, rule_id: %s",
 					alertName, global_rule_id)
-				}
-			} else {
+			}
+		} else {
 			log.Printf("[ALARM-WARNING] No notify_url found in alert labels for alert: %s", alertName)
 		}
 	}
@@ -1553,7 +1553,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	}
 	// Render templates for each rule direction
 	for _, rule := range req.Rules {
-			data := map[string]interface{}{
+		data := map[string]interface{}{
 			"owner":          req.Owner,
 			"rule_group":     group.UUID,
 			"global_rule_id": req.RuleID,
@@ -1577,12 +1577,12 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			outputFile = fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
 		}
 
-			if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
+		if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
 			log.Printf("Failed to render %s-bw rule template: %v", rule.Direction, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s-bw rule template", rule.Direction)})
-				return
-			}
+			return
 		}
+	}
 	routes.ReloadPrometheusViaHTTP()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
@@ -1712,7 +1712,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 				"code":       "INTERNAL_ERROR",
 				"identifier": identifier,
 			})
-		return
+			return
 		}
 	}
 
@@ -1988,16 +1988,16 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 		if cfg.isAdjust {
 			g, _, err := adjustOperator.ListAdjustRuleGroups(ctx, routes.ListAdjustRuleGroupsParams{
 				RuleType: cfg.ruleType.(string),
-		Page:     1,
-		PageSize: 1000,
+				Page:     1,
+				PageSize: 1000,
 			})
-	if err != nil {
+			if err != nil {
 				log.Printf("Failed to get %s rule groups: %v", cfg.name, err)
 				continue
 			}
 			groups = g
 			count = len(g)
-	} else {
+		} else {
 			g, _, err := a.operator.ListRuleGroups(ctx, routes.ListRuleGroupsParams{
 				RuleType: cfg.ruleType.(string),
 				Page:     1,
@@ -2093,7 +2093,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			groupType = adjustGroup.Type
 			groupOwner = adjustGroup.Owner
 			groupEnabled = adjustGroup.Enabled
-	} else {
+		} else {
 			// Query rule_group_v2 table using AlarmOperator (original logic)
 			// Try as rule_id first, fallback to group_uuid if not found
 			group, err := a.operator.GetRulesByRuleID(c.Request.Context(), uuid)
@@ -2182,7 +2182,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		// Step 6: Check if source files exist
 		for _, fp := range filePaths {
 			exists, err := routes.CheckFileExists(fp.source)
-		if err != nil {
+			if err != nil {
 				log.Printf("[%s-%s-ERROR] Failed to check file existence: %s, error: %v",
 					strings.ToUpper(ruleType), strings.ToUpper(action), fp.source, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
@@ -2233,12 +2233,12 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			for _, fp := range filePaths {
 				// Check if link exists
 				linkExists, err := routes.CheckFileExists(fp.link)
-			if err != nil {
+				if err != nil {
 					log.Printf("[%s-%s-ERROR] Failed to check symlink existence: %s, error: %v",
 						strings.ToUpper(ruleType), strings.ToUpper(action), fp.link, err)
 					failedLinks = append(failedLinks, fp.link)
-				continue
-			}
+					continue
+				}
 
 				if !linkExists {
 					log.Printf("[%s-%s-WARNING] Symlink does not exist (already removed?): %s",
@@ -2260,12 +2260,12 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 
 			// If there are failed removals, return error
 			if len(failedLinks) > 0 {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "error",
+				c.JSON(http.StatusInternalServerError, gin.H{
+					"status": "error",
 					"error":  fmt.Sprintf("Failed to remove some symlinks: %d failed", len(failedLinks)),
-		})
-		return
-	}
+				})
+				return
+			}
 
 			// If no symlinks were removed, give a warning (but still succeed)
 			if len(removedLinks) == 0 {
@@ -2278,12 +2278,12 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		log.Printf("[%s-%s-INFO] Reloading Prometheus configuration", strings.ToUpper(ruleType), strings.ToUpper(action))
 		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 			log.Printf("[%s-%s-ERROR] Failed to reload Prometheus: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"status": "error",
+			c.JSON(http.StatusInternalServerError, gin.H{
+				"status": "error",
 				"error":  "Failed to reload Prometheus configuration",
-		})
-		return
-	}
+			})
+			return
+		}
 
 		// Step 9: Update database status based on ruleType
 		if ruleType == "adjust" {
@@ -2294,8 +2294,8 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"status": "error",
 					"error":  "Failed to update adjust rule status in database",
-		})
-		return
+				})
+				return
 			}
 		} else {
 			// Update rule_group_v2 table
@@ -2316,7 +2316,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			targetFiles = append(targetFiles, fp.link)
 		}
 
-	c.JSON(http.StatusOK, gin.H{
+		c.JSON(http.StatusOK, gin.H{
 			"status": "success",
 			"data": gin.H{
 				"group_uuid":   groupUUID,
