@@ -10,7 +10,7 @@ vm_ID=inst-$1
 vm_cpu=$2
 vm_mem=$3
 
-./action_vm.sh $ID hard_stop
+./action_vm.sh $ID stop
 let vm_mem=${vm_mem%[m|M]}*1024
 virsh setmaxmem $vm_ID $vm_mem --config
 virsh setmem $vm_ID $vm_mem --config
