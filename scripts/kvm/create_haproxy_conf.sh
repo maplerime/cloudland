@@ -70,14 +70,6 @@ while [ $i -lt $nlistener ]; do
 	echo >>$lb_dir/$name.pem
         ssl_config="ssl crt $lb_dir/$name.pem"
     fi
-    j=0
-    while [ $j -lt $nfloating_ip ]; do
-    	floating_ip=$(jq -r .[$j] <<< $floating_ips)
-	ext_ip=${floating_ip%/*}
-        ip netns exec $router iptables -C INPUT -p tcp -m tcp -d $ext_ip --dport $port -m conntrack --ctstate NEW -j ACCEPT
-        [ $? -ne 0 ] && ip netns exec $router iptables -A INPUT -p tcp -m tcp -d $ext_ip --dport $port -m conntrack --ctstate NEW -j ACCEPT
-        let j=$j+1
-    done
     cat >>$lb_dir/haproxy.conf <<EOF
 
 frontend ${name}_front

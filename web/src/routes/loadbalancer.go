@@ -59,6 +59,11 @@ type LoadBalancerFloatingIp struct {
 	Outbound int32  `json:"outbound"`
 }
 
+type LoadBalancerFloatingIpConfig struct {
+	FloatingIps []*LoadBalancerFloatingIp `json:"floating_ips"`
+	Ports    []int32 `json:"ports"`
+}
+
 func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	vrrpID := vrrpInstance.ID
@@ -105,9 +110,9 @@ func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) 
 		err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
 		return
 	}
-	lbFloatingIps := []*LoadBalancerFloatingIp{}
+	lbFloatingIpCfg := &LoadBalancerFloatingIpConfig{}
 	for _, fip := range floatingIps {
-		lbFloatingIps = append(lbFloatingIps, &LoadBalancerFloatingIp{
+		lbFloatingIpCfg.FloatingIps = append(lbFloatingIpCfg.FloatingIps, &LoadBalancerFloatingIp{
 			Address:  fip.FipAddress,
 			Vlan:     fip.Subnet.Vlan,
 			Gateway:  fip.Subnet.Gateway,
@@ -116,7 +121,10 @@ func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) 
 			Outbound: fip.Outbound,
 		})
 	}
-	jsonData, err = json.Marshal(lbFloatingIps)
+	for _, listener := range loadBalancer.Listeners {
+		lbFloatingIpCfg.Ports = append(lbFloatingIpCfg.Ports, listener.Port)
+	}
+	jsonData, err = json.Marshal(lbFloatingIpCfg)
 	if err != nil {
 		logger.Errorf("Failed to marshal load balancer floating ip json data, %v", err)
 		return

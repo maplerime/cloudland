@@ -16,13 +16,29 @@ peer_mac=$7
 role=$8
 
 vrrp_dir=$router_dir/$router
-vips=$(cat)
+content=$(cat)
+vips=$(jq -r .floating_ips <<< $content)
 nvip=$(jq length <<< $vips)
 if [ $nvip -eq 0 ]; then
     keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
     [ $keepalived_pid -gt 0 ] && ip netns exec $router kill $keepalived_pid
     exit 0
 fi
+ports=$(jq -r .ports <<< $content)
+nport=$(jq length <<< $ports)
+i=0
+while [ $i -lt $nvip ]; do
+    vip=$(jq -r .[$i] <<< $vips)
+    ext_ip=${vip%/*}
+    j=0
+    while [ $j -lt $nport ]; do
+        port=$(jq -r .[$j] <<< $ports)
+        ip netns exec $router iptables -C INPUT -p tcp -m tcp -d $ext_ip --dport $port -m conntrack --ctstate NEW -j ACCEPT
+        [ $? -ne 0 ] && ip netns exec $router iptables -A INPUT -p tcp -m tcp -d $ext_ip --dport $port -m conntrack --ctstate NEW -j ACCEPT
+        let j=$j+1
+    done
+    let i=$i+1
+done
 
 ip netns exec $router ip link show ns-$vrrp_vlan | grep $local_mac 
 [ $? -ne 0 ] && ./set_vrrp_ip.sh $@
