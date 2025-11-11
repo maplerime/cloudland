@@ -198,12 +198,12 @@ func Register() (r *gin.Engine) {
 			// Add new endpoint for synchronizing VM rule mappings
 			metricsGroup.POST("/alarm/sync-mappings", alarmAPI.SyncAllVMRuleMappings)
 
-			authGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
-			authGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
-			authGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.ToggleRuleStatus("alarm", "enable"))
-			authGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.ToggleRuleStatus("alarm", "disable"))
-			authGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVMWithType("alarm"))
-			authGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVMWithType("alarm"))
+			metricsGroup.GET("/api/v1/current-alarms", alarmAPI.GetCurrentAlarms)
+			metricsGroup.GET("/api/v1/history-alarms", alarmAPI.GetHistoryAlarm)
+			metricsGroup.POST("/api/v1/alarm/:id/enable", alarmAPI.ToggleRuleStatus("alarm", "enable"))
+			metricsGroup.POST("/api/v1/alarm/:id/disable", alarmAPI.ToggleRuleStatus("alarm", "disable"))
+			metricsGroup.POST("/api/v1/alarm/link", alarmAPI.LinkRuleToVMWithType("alarm"))
+			metricsGroup.POST("/api/v1/alarm/unlink", alarmAPI.UnlinkRuleFromVMWithType("alarm"))
 
 			authGroup.POST("/api/v1/node-alarm-rules", alarmAPI.CreateNodeAlarmRule)
 			authGroup.GET("/api/v1/node-alarm-rules", alarmAPI.GetNodeAlarmRules)
@@ -229,21 +229,21 @@ func Register() (r *gin.Engine) {
 			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
 
 			// Enable/disable resource adjustment rules
-			authGroup.POST("/api/v1/adjust/:uuid/enable", alarmAPI.ToggleRuleStatus("adjust", "enable"))
-			authGroup.POST("/api/v1/adjust/:uuid/disable", alarmAPI.ToggleRuleStatus("adjust", "disable"))
+			metricsGroup.POST("/api/v1/adjust/:uuid/enable", alarmAPI.ToggleRuleStatus("adjust", "enable"))
+			metricsGroup.POST("/api/v1/adjust/:uuid/disable", alarmAPI.ToggleRuleStatus("adjust", "disable"))
 
 			// VM adjust rule link management
 			metricsGroup.POST("/adjust/link", alarmAPI.LinkRuleToVMWithType("adjust"))
 			metricsGroup.DELETE("/adjust/unlink", alarmAPI.UnlinkRuleFromVMWithType("adjust"))
 
 			// Unified rule links query (supports both alarm and adjust rules)
-			authGroup.GET("/api/v1/rules/links", adjustAPI.GetRuleLinks)
+			metricsGroup.GET("/api/v1/rules/links", adjustAPI.GetRuleLinks)
 
 			// Batch get rules (supports both alarm and adjust rules)
 			metricsGroup.POST("/rules/batch", alarmAPI.BatchGetRules)
 
 			// Bandwidth configuration metrics regeneration
-			authGroup.POST("/api/v1/adjust/regenerate-bandwidth-metrics", adjustAPI.RegenerateBandwidthConfigMetrics)
+			metricsGroup.POST("/api/v1/adjust/regenerate-bandwidth-metrics", adjustAPI.RegenerateBandwidthConfigMetrics)
 		}
 
 	}
