@@ -69,27 +69,61 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 			return
 		}
 
-		var group *model.RuleGroupV2
-		var err error
+		// Resolve group info by category (alarm / adjust)
+		var (
+			groupUUID string
+			ruleID    string
+			groupType string
+			enabled   bool
+			err       error
+		)
 
-		// Prioritize rule_id, fallback to group_uuid if not provided
-		if req.RuleID != "" {
-			group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+		if ruleCategory == "adjust" {
+			adj := &routes.AdjustOperator{}
+			identifier := req.RuleID
+			if identifier == "" {
+				identifier = req.GroupUUID
+			}
+			adjGroup, adjErr := adj.GetAdjustRulesByIdentifier(c.Request.Context(), identifier)
+			if errors.Is(adjErr, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+				return
+			} else if adjErr != nil {
+				log.Printf("Error retrieving adjust rule group: %v", adjErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+				return
+			}
+			groupUUID = adjGroup.UUID
+			ruleID = adjGroup.RuleID
+			groupType = adjGroup.Type
+			enabled = adjGroup.Enabled
 		} else {
-			group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+			var alarmGroup *model.RuleGroupV2
+			if req.RuleID != "" {
+				alarmGroup, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					// optional fallback: try as group uuid
+					alarmGroup, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.RuleID)
+				}
+			} else {
+				alarmGroup, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+			}
+
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+				return
+			} else if err != nil {
+				log.Printf("Error retrieving rule group: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+				return
+			}
+			groupUUID = alarmGroup.UUID
+			ruleID = alarmGroup.RuleID
+			groupType = alarmGroup.Type
+			enabled = alarmGroup.Enabled
 		}
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-			return
-		} else if err != nil {
-			log.Printf("Error retrieving rule group: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
-			return
-		}
-
-		groupUUID := group.UUID
-		if !group.Enabled {
+		if !enabled {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":      "Rule group is not enabled",
 				"code":       "RULE_GROUP_DISABLED",
@@ -107,8 +141,8 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		var notFoundInstances []string          // VMs that don't exist in instance table
 		var successfullyAdded []VMInterfacePair // VMs that were successfully added
 
-		log.Printf("Attempting to link VMs to %s rule, ruleID: %s", ruleCategory, req.RuleID)
-		log.Printf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, group.Type, group.RuleID)
+		log.Printf("Attempting to link VMs to %s rule, ruleID: %s", ruleCategory, ruleID)
+		log.Printf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, groupType, ruleID)
 		log.Printf("Processing VM links for %s rule: groupUUID=%s, vmCount=%d", ruleCategory, groupUUID, len(req.VMLinks))
 
 		for _, link := range req.VMLinks {
@@ -186,7 +220,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		}
 
 		// Construct alarm type based on rule category
-		alarmType := ruleCategory + "-" + group.Type
+		alarmType := ruleCategory + "-" + groupType
 
 		// Update matched_vms.json only for successfully added VMs
 		if len(successfullyAdded) > 0 {
@@ -242,7 +276,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		responseData := gin.H{
 			"rule_category":    ruleCategory,
 			"group_uuid":       groupUUID,
-			"rule_id":          group.RuleID,
+			"rule_id":          ruleID,
 			"added_count":      len(successfullyAdded),
 			"total_linked_vms": linkedVMsList,
 		}
@@ -285,29 +319,59 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			return
 		}
 
-		var group *model.RuleGroupV2
-		var err error
+		// Resolve group info by category (alarm / adjust)
+		var (
+			groupUUID string
+			ruleID    string
+			groupType string
+			err       error
+		)
 
-		// Prioritize rule_id, fallback to group_uuid if not provided
-		if req.RuleID != "" {
-			group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+		if ruleCategory == "adjust" {
+			adj := &routes.AdjustOperator{}
+			identifier := req.RuleID
+			if identifier == "" {
+				identifier = req.GroupUUID
+			}
+			adjGroup, adjErr := adj.GetAdjustRulesByIdentifier(c.Request.Context(), identifier)
+			if errors.Is(adjErr, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+				return
+			} else if adjErr != nil {
+				log.Printf("Error retrieving adjust rule group: %v", adjErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+				return
+			}
+			groupUUID = adjGroup.UUID
+			ruleID = adjGroup.RuleID
+			groupType = adjGroup.Type
 		} else {
-			group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+			var group *model.RuleGroupV2
+			if req.RuleID != "" {
+				group, err = a.operator.GetRulesByRuleID(c.Request.Context(), req.RuleID)
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					// optional fallback: try as group uuid
+					group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.RuleID)
+				}
+			} else {
+				group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), req.GroupUUID)
+			}
+
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
+				return
+			} else if err != nil {
+				log.Printf("Error retrieving rule group: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
+				return
+			}
+			groupUUID = group.UUID
+			ruleID = group.RuleID
+			groupType = group.Type
 		}
 
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
-			return
-		} else if err != nil {
-			log.Printf("Error retrieving rule group: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
-			return
-		}
-
-		groupUUID := group.UUID
-
-		log.Printf("Attempting to unlink VMs from %s rule, ruleID: %s", ruleCategory, req.RuleID)
-		log.Printf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, group.Type, group.RuleID)
+		log.Printf("Attempting to unlink VMs from %s rule, ruleID: %s", ruleCategory, ruleID)
+		log.Printf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, groupType, ruleID)
 
 		// Check if this is batch delete (all interfaces are empty) or specific delete
 		isBatchDelete := len(req.VMLinks) > 0 && req.VMLinks[0].Interface == ""
@@ -407,7 +471,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		}
 
 		// Construct alarm type based on rule category
-		alarmType := ruleCategory + "-" + group.Type
+		alarmType := ruleCategory + "-" + groupType
 
 		// Remove successfully unlinked VMs from matched_vms.json
 		if len(successfulDeletes) > 0 {
@@ -465,7 +529,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		responseData := gin.H{
 			"rule_category":   ruleCategory,
 			"group_uuid":      groupUUID,
-			"rule_id":         group.RuleID,
+			"rule_id":         ruleID,
 			"unlinked_vms":    unlinkedList,
 			"unlinked_count":  len(successfulDeletes),
 			"remaining_vms":   remainingVMsList,
@@ -2435,12 +2499,57 @@ func (a *AlarmAPI) BatchGetRules(c *gin.Context) {
 	}
 
 	// 构建响应
+	// 将长结果精简为仅返回 rule_id、rule_source（可选）和按 VM 去重后的 linked_vms 数量
+	compactRules := make([]gin.H, 0, len(rules))
+	for _, r := range rules {
+		ruleID := ""
+		if v, ok := r["rule_id"]; ok && v != nil {
+			ruleID = fmt.Sprint(v)
+		}
+		ruleSource := ""
+		if v, ok := r["rule_source"]; ok && v != nil {
+			ruleSource = fmt.Sprint(v)
+		}
+
+		// 统计按 VM 去重的数量：同一 VM 多个网口仅计 1
+		linkedVMsCount := 0
+		if includeLinkedVMs {
+			if arr, ok := r["linked_vms"]; ok && arr != nil {
+				if vmList, ok := arr.([]gin.H); ok {
+					seen := make(map[string]struct{}, len(vmList))
+					for _, vm := range vmList {
+						instanceID := ""
+						if v, ok := vm["instance_id"]; ok && v != nil {
+							instanceID = fmt.Sprint(v)
+						}
+						if instanceID == "" {
+							continue
+						}
+						if _, exists := seen[instanceID]; !exists {
+							seen[instanceID] = struct{}{}
+						}
+					}
+					linkedVMsCount = len(seen)
+				}
+			}
+		}
+
+		item := gin.H{
+			"rule_id":    ruleID,
+			"linked_vms": linkedVMsCount,
+		}
+		if ruleSource != "" {
+			item["rule_source"] = ruleSource
+		}
+		compactRules = append(compactRules, item)
+	}
+
 	response := BatchGetRulesResponse{
 		Success:     true,
 		Total:       len(req.Identifiers),
-		Found:       len(rules),
+		Found:       len(compactRules),
 		NotFound:    len(notFoundIDs),
-		Rules:       rules,
+		Rules:       compactRules,
 		NotFoundIDs: notFoundIDs,
 	}
 
