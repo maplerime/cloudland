@@ -22,6 +22,9 @@ if [ -z "$def_route" ]; then
 fi
 
 ./create_veth.sh $router int-$suffix ti-$suffix
+ip netns exec $router iptables -P INPUT DROP
+ip netns exec $router iptables -C INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -I INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT
 [ -z "$system_packet_rate_limit" ] && system_packet_rate_limit=120
 system_packet_burst=$(( $system_packet_rate_limit / 2 ))
 ip netns exec $router iptables -C FORWARD -i ti-$suffix -j DROP
