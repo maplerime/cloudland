@@ -34,6 +34,7 @@
 			                        <th>{{.i18n.Tr "Inbound Bandwidth"}}</th>
 			                        <th>{{.i18n.Tr "Outbound Bandwidth"}}</th>
 			                        <th>{{.i18n.Tr "Instance"}}</th>
+			                        <th>{{.i18n.Tr "LoadBalancer"}}</th>
 									<th>{{.i18n.Tr "Edit"}}</th>
                                     <th>{{.i18n.Tr "Delete"}}</th>
 		                        </tr>
@@ -56,6 +57,11 @@
 			                        <td>
 						{{ if .Instance }}
 						{{.Instance.Hostname}}
+						{{ end }}
+						</td>						
+			                        <td>
+						{{ if .LoadBalancer }}
+						{{.LoadBalancer.Name}}
 						{{ end }}
 						</td>						
                                     <td><a href="{{$Link}}/{{.ID}}"><i class="dark purple pencil alternate icon"></i></a></td>

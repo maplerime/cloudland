@@ -53,7 +53,10 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 			Backends: backendCfgs,
 		})
 	}
-	haproxyCfg := &LoadBalancerConfig{listenerCfgs}
+	haproxyCfg := &LoadBalancerConfig{Listeners: listenerCfgs}
+	for _, fip := range loadBalancer.FloatingIps {
+		haproxyCfg.FloatingIps = append(haproxyCfg.FloatingIps, fip.FipAddress)
+	}
 	jsonData, err := json.Marshal(haproxyCfg)
 	if err != nil {
 		logger.Errorf("Failed to marshal load balancer json data, %v", err)
@@ -225,7 +228,7 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, liste
 		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete backend", err)
 		return
 	}
-	total, _, err := backendAdmin.List(ctx, 0, -1, "", listener)
+	total, backends, err := backendAdmin.List(ctx, 0, -1, "", listener)
 	if err != nil {
 		logger.Error("DB failed to count backends, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count backends", err)
@@ -248,6 +251,7 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, liste
 			return
 		}
 	} else {
+		listener.Backends = backends
 		err = a.CreateHaproxyConf(ctx, listener, loadBalancer)
 		if err != nil {
 			logger.Error("Failed to delete haproxy conf ", err)

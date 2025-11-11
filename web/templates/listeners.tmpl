@@ -30,6 +30,7 @@
 									<th>{{.i18n.Tr "UUID"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
 			                        <th>{{.i18n.Tr "Mode"}}</th>
+			                        <th>{{.i18n.Tr "Port"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
 			                        <th>{{.i18n.Tr "Backends"}}</th>
 		   			        {{ if $.IsAdmin }}
@@ -47,6 +48,7 @@
 									<td>{{.UUID}}</td>
 			                        <td>{{.Name}}</td>
 			                        <td>{{ $.i18n.Tr .Mode }}</td>
+			                        <td>{{ .Port }}</td>
 			                        <td>{{ $.i18n.Tr .Status }}</td>
 			                        <td>
 							{{ range .Backends}}

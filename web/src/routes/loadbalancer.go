@@ -47,6 +47,7 @@ type ListenerConfig struct {
 
 type LoadBalancerConfig struct {
 	Listeners []*ListenerConfig `json:"listeners"`
+	FloatingIps []string `json:"floating_ips"`
 }
 
 type LoadBalancerFloatingIp struct {
@@ -488,7 +489,7 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 		return
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("FloatingIps").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
+	if err = db.Preload("FloatingIps").Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Preload("Listeners").Preload("Listeners.Backends").Preload("Router").Where(where).Where(query).Find(&loadBalancers).Error; err != nil {
 		logger.Error("DB failed to query load balancers, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query load balancers", err)
 		return

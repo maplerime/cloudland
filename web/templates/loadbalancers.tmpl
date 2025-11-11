@@ -30,6 +30,7 @@
 			                        <th>{{.i18n.Tr "Public IPs"}}</th>
 			                        <th>{{.i18n.Tr "Listeners"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
+			                        <th>{{.i18n.Tr "Hypers"}}</th>
 			                        <th>{{.i18n.Tr "VPC"}}</th>
 		   			        {{ if $.IsAdmin }}
 			                        <th>{{.i18n.Tr "Owner"}}</th>
@@ -57,6 +58,7 @@
 							{{ end }}
                                     		</td>
 			                        <td>{{ $.i18n.Tr .Status }}</td>
+			                        <td>{{ .VrrpInstance.Hyper }}, {{ .VrrpInstance.Peer }}</td>
 			                        <td>
 						{{ if .Router }}
 						{{ .Router.Name }}

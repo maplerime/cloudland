@@ -53,10 +53,11 @@
 								<div class="inline field">
 									<label for="load_balancer">{{.i18n.Tr "Load Balancer"}}</label>
 									<div class="ui selection dropdown">
-									  <input id="load_balancer" name="load_balancer" type="hidden">
+									  <input id="load_balancer" name="load_balancer" type="hidden" value="{{.FloatingIp.LoadBalancerID}}">
 									  <i class="dropdown icon"></i>
 									  <div class="default text">{{.i18n.Tr "Load Balancer"}}</div>
 									  <div class="menu">
+										<div class="item" data-value="">{{.i18n.Tr "None"}}</div>
 										{{ range .LoadBalancers }}
 										<div class="item" data-value={{.ID}} data-text={{.ID}}-{{.Name}}>
 										  {{.ID}}-{{.Name}}

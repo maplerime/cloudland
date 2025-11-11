@@ -16,6 +16,9 @@ mark_id=$(($4 % 2147483647))
 
 table=fip-$ext_vlan
 ext_dev=te-$ID-$ext_vlan
+for num in $(ip netns exec $router iptables -n -L --line-numbers | grep "\<$ext_ip\>" | awk '{print $1}' | sort -nr); do
+    ip netns exec $router iptables -D INPUT $num
+done
 ip netns exec $router ip rule del from $ext_ip lookup $table
 ip netns exec $router ip rule del to $ext_ip lookup $table
 ip netns exec $router ip addr del $ext_addr dev $ext_dev

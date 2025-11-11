@@ -64,7 +64,7 @@ func (a *ListenerAdmin) Get(ctx context.Context, id int64, loadBalancer *model.L
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	listener = &model.Listener{Model: model.Model{ID: id}}
-	if err = db.Where(where).Take(listener).Error; err != nil {
+	if err = db.Preload("Backends").Where(where).Take(listener).Error; err != nil {
 		logger.Error("Failed to query listener", err)
 		err = NewCLError(ErrListenerNotFound, "Failed to find listener", err)
 		return
@@ -83,7 +83,7 @@ func (a *ListenerAdmin) GetListenerByUUID(ctx context.Context, uuID string) (lis
 	memberShip := GetMemberShip(ctx)
 	where := memberShip.GetWhere()
 	listener = &model.Listener{}
-	err = db.Where(where).Where("uuid = ?", uuID).Take(listener).Error
+	err = db.Preload("Backends").Where(where).Where("uuid = ?", uuID).Take(listener).Error
 	if err != nil {
 		logger.Error("Failed to query listener, %v", err)
 		err = NewCLError(ErrListenerNotFound, "Failed to find listener", err)

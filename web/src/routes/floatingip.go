@@ -326,7 +326,7 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 		}
 	} else if floatingIp.LoadBalancerID > 0 {
 		floatingIp.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
-		err = db.Take(floatingIp.LoadBalancer).Error
+		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(floatingIp.LoadBalancer).Error
 		if err != nil {
 			logger.Error("DB failed to query load balancer ", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
@@ -378,7 +378,7 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 		}
 	} else if floatingIp.LoadBalancerID > 0 {
 		floatingIp.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
-		err = db.Take(floatingIp.LoadBalancer).Error
+		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(floatingIp.LoadBalancer).Error
 		if err != nil {
 			logger.Error("DB failed to query load balancer ", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
@@ -480,7 +480,13 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 	logger.Debugf("Floating ip: %v\n", floatingIp)
 	floatingIp.InstanceID = 0
 	floatingIp.Instance = nil
-	err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update(map[string]interface{}{"instance_id": 0}).Error
+	err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update(map[string]interface{}{
+		"instance_id": 0,
+		"load_balancer_id": 0,
+		"router_id": 0,
+		"int_address": "",
+		"type": PublicFloating,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to update instance ID for floating ip", err)
 		return NewCLError(ErrUpdateInstIDOfFIPFailed, "Failed to update instance ID for floating ip", err)
@@ -509,6 +515,11 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 			return
 		}
 	} else if loadBalancer != nil {
+		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update(map[string]interface{}{
+			"load_balancer_id": loadBalancer.ID,
+			"router_id": loadBalancer.RouterID,
+			"type": PublicLoadBalancer,
+		}).Error
 		err = CreateVrrpConf(ctx, loadBalancer)
 		if err != nil {
 			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
@@ -522,7 +533,7 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 			groupID = group.ID
 		}
 
-		err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("group_id", groupID).Error
+		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update("group_id", groupID).Error
 		if err != nil {
 			logger.Error("Failed to update floating ip group_id", err)
 			return nil, NewCLError(ErrUpdateGroupIDFailed, "Failed to update floating ip group_id", err)
@@ -610,7 +621,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 			}
 		} else if fip.LoadBalancerID > 0 {
 			fip.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: fip.LoadBalancerID}}
-			err = db.Take(fip.LoadBalancer).Error
+			err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(fip.LoadBalancer).Error
 			if err != nil {
 				logger.Error("DB failed to query load balancer ", err)
 				err = nil
@@ -926,7 +937,7 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	}
 
 	name := c.QueryTrim("name")
-	groupID := c.QueryTrim("group")
+	groupID := c.QueryInt64("group")
 	instanceID := c.QueryInt64("instance")
 	loadBalancerID := c.QueryInt64("load_balancer")
 	inbound := c.QueryInt("inbound")
@@ -954,15 +965,8 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	floatingIp.Outbound = int32(outbound)
 
 	var group *model.IpGroup
-	if groupID != "" {
-		groupIDInt, err := strconv.ParseInt(groupID, 10, 64)
-		if err != nil {
-			logger.Error("Invalid group ID ", err)
-			c.Data["ErrorMsg"] = err.Error()
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
-		group, err = ipGroupAdmin.Get(ctx, groupIDInt)
+	if groupID > 0 {
+		group, err = ipGroupAdmin.Get(ctx, groupID)
 		if err != nil {
 			logger.Error("Failed to get ip group ", err)
 			c.Data["ErrorMsg"] = err.Error()
