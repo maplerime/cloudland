@@ -2149,23 +2149,76 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 
 		// Step 5: Build file paths based on rule source
 		if ruleSource == "alarm" {
-			// Alarm rules: only 1 file
-			// Format: {rule_type}-{owner}-{group_uuid}.yml
-			rulePath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesGeneral, groupType, groupOwner, groupUUID)
-			ruleLinkPath := fmt.Sprintf("%s/%s-%s-%s.yml", routes.RulesEnabled, groupType, groupOwner, groupUUID)
-			filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+			// Alarm rules: handle different rule types
+			switch groupType {
+			case routes.RuleTypeCPU: // "cpu"
+				// Format: cpu-{owner}-{group_uuid}.yml (matches CreateCPURule)
+				rulePath := fmt.Sprintf("%s/cpu-%s-%s.yml", routes.RulesGeneral, groupOwner, groupUUID)
+				ruleLinkPath := fmt.Sprintf("%s/cpu-%s-%s.yml", routes.RulesEnabled, groupOwner, groupUUID)
+				filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+			case routes.RuleTypeMemory: // "memory"
+				// Format: memory-{owner}-{group_uuid}.yml (matches CreateMemoryRule)
+				rulePath := fmt.Sprintf("%s/memory-%s-%s.yml", routes.RulesGeneral, groupOwner, groupUUID)
+				ruleLinkPath := fmt.Sprintf("%s/memory-%s-%s.yml", routes.RulesEnabled, groupOwner, groupUUID)
+				filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+			case routes.RuleTypeBW: // "bw"
+				// Format: bw-in-{owner}-{group_uuid}.yml and bw-out-{owner}-{group_uuid}.yml (matches CreateBWRule)
+				// Need to query BWRuleDetail to get all directions
+				details, err := a.operator.GetBWRuleDetails(c.Request.Context(), groupUUID)
+				if err != nil {
+					log.Printf("[BW-ERROR] Failed to get BW rule details: %v", err)
+					c.JSON(http.StatusInternalServerError, gin.H{
+						"status": "error",
+						"error":  "Failed to get BW rule details: " + err.Error(),
+					})
+					return
+				}
+				if len(details) == 0 {
+					c.JSON(http.StatusBadRequest, gin.H{
+						"status": "error",
+						"error":  "No BW rule details found",
+					})
+					return
+				}
+				// Generate file paths for each direction
+				for _, detail := range details {
+					var filename string
+					switch detail.Direction {
+					case "in":
+						filename = fmt.Sprintf("bw-in-%s-%s.yml", groupOwner, groupUUID)
+					case "out":
+						filename = fmt.Sprintf("bw-out-%s-%s.yml", groupOwner, groupUUID)
+					default:
+						log.Printf("[BW-WARNING] Unknown direction: %s, skipping", detail.Direction)
+						continue
+					}
+					rulePath := fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
+					ruleLinkPath := fmt.Sprintf("%s/%s", routes.RulesEnabled, filename)
+					filePaths = append(filePaths, FilePair{source: rulePath, link: ruleLinkPath})
+				}
+			default:
+				c.JSON(http.StatusBadRequest, gin.H{
+					"status": "error",
+					"error":  fmt.Sprintf("Unsupported alarm rule type: %s", groupType),
+				})
+				return
+			}
 		} else {
 			// Adjust rules: 2 files
 			var ruleTypePrefix string
 			switch groupType {
-			case "cpu_adjust":
+			case model.RuleTypeAdjustCPU: // "adjust_cpu"
 				ruleTypePrefix = "cpu-adjust"
-			case "bw_adjust_in":
+			case model.RuleTypeAdjustInBW: // "adjust_in_bw"
 				ruleTypePrefix = "bw-in-adjust"
-			case "bw_adjust_out":
+			case model.RuleTypeAdjustOutBW: // "adjust_out_bw"
 				ruleTypePrefix = "bw-out-adjust"
 			default:
-				ruleTypePrefix = strings.Replace(groupType, "_", "-", -1)
+				c.JSON(http.StatusBadRequest, gin.H{
+					"status": "error",
+					"error":  fmt.Sprintf("Unsupported adjust rule type: %s", groupType),
+				})
+				return
 			}
 
 			// File 1: Adjust rule file

@@ -106,6 +106,43 @@
     group: prometheus
     mode: 0755
 
+- name: Clean up old Grafana configurations
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  shell: |
+    rm -f /etc/apt/sources.list.d/grafana*.list
+    rm -f /etc/apt/sources.list.d/packages_grafana*.list
+    rm -f /etc/apt/keyrings/grafana*
+    rm -f /usr/share/keyrings/grafana*
+  ignore_errors: true
+  tags: [monitor]
+
+- name: Ensure keyrings directory exists
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  tags: [monitor]
+
+- name: Install Grafana GPG key
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  shell: |
+    curl -fsSL https://packages.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+    chmod 644 /etc/apt/keyrings/grafana.gpg
+  tags: [monitor]
+
+- name: Add Grafana repository
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main"
+    state: present
+    filename: grafana
+  tags: [monitor]
+
 - name: Setup Docker for Alertmanager
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -727,43 +764,6 @@
     daemon_reload: yes
     state: restarted
   when: not ansible_check_mode
-  tags: [monitor]
-
-- name: Clean up old Grafana configurations
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  shell: |
-    rm -f /etc/apt/sources.list.d/grafana*.list
-    rm -f /etc/apt/sources.list.d/packages_grafana*.list
-    rm -f /etc/apt/keyrings/grafana*
-    rm -f /usr/share/keyrings/grafana*
-  ignore_errors: true
-  tags: [monitor]
-
-- name: Ensure keyrings directory exists
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  file:
-    path: /etc/apt/keyrings
-    state: directory
-    mode: '0755'
-  tags: [monitor]
-
-- name: Install Grafana GPG key
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  shell: |
-    curl -fsSL https://packages.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
-    chmod 644 /etc/apt/keyrings/grafana.gpg
-  tags: [monitor]
-
-- name: Add Grafana repository
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main"
-    state: present
-    filename: grafana
   tags: [monitor]
 
 - name: Update apt cache and install Grafana
