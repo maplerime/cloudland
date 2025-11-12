@@ -1308,6 +1308,7 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	// reset zone
 	for i, instance := range instances {
 		hyper, hyperErr := hyperAdmin.GetHyperByHostid(c.Req.Context(), instance.Hyper)
+		instances[i].Zone = nil
 		if hyperErr == nil && hyper.Zone != nil {
 			instances[i].Zone = hyper.Zone
 		}
