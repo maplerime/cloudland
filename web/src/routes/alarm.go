@@ -2433,9 +2433,19 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 				continue
 			}
 
-			// No device filter: delete by group + specified vmUUIDs (clear all target devices for those VMs)
+			// No device filter:
+			// - If vmUUIDs is empty: delete all entries by groupUUID (used by rule group deletion)
+			// - Else: delete by group + specified vmUUIDs (clear all target devices for those VMs)
 			if !hasDeviceFilter {
 				if strings.HasSuffix(ruleID, "-"+groupUUID) {
+					if len(vmUUIDs) == 0 {
+						domain, _ := labels["domain"].(string)
+						instanceID, _ := labels["instance_id"].(string)
+						log.Printf("Removing mapping by group(all): domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						removedCount++
+						continue
+					}
+
 					instanceID, _ := labels["instance_id"].(string)
 					inVM := false
 					for _, id := range vmUUIDs {
