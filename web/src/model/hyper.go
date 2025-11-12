@@ -34,10 +34,10 @@ type Hyper struct {
 	HostIP       string
 	RouteIP      string
 	VirtType     string
-	CpuOverRate  float32 `gorm:"default:1.0"`
-	MemOverRate  float32 `gorm:"default:1.0"`
-	DiskOverRate float32 `gorm:"default:1.0"`
-	ZoneID       int64
+	CpuOverRate  float32   `gorm:"default:1.0"`
+	MemOverRate  float32   `gorm:"default:1.0"`
+	DiskOverRate float32   `gorm:"default:1.0"`
+	ZoneID       int64     `gorm:"index"`
 	Zone         *Zone     `gorm:"foreignkey:ZoneID"`
 	Resource     *Resource `gorm:"foreignkey:Hostid;AssociationForeignKey:Hostid"`
 	Remark       string    `gorm:"type:varchar(512);default:''"`
