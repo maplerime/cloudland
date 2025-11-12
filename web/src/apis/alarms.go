@@ -221,6 +221,22 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 
 		// Construct alarm type based on rule category
 		alarmType := ruleCategory + "-" + groupType
+		// Normalize adjust rule types to match creation-time rule_id format used by Prometheus rules
+		if ruleCategory == "adjust" {
+			if groupType == model.RuleTypeAdjustInBW || groupType == model.RuleTypeAdjustOutBW {
+				alarmType = "adjust-bw"
+			} else if groupType == model.RuleTypeAdjustCPU {
+				alarmType = "adjust-cpu"
+			}
+		}
+		// Normalize adjust rule types to match creation-time rule_id format used by Prometheus rules
+		if ruleCategory == "adjust" {
+			if groupType == model.RuleTypeAdjustInBW || groupType == model.RuleTypeAdjustOutBW {
+				alarmType = "adjust-bw"
+			} else if groupType == model.RuleTypeAdjustCPU {
+				alarmType = "adjust-cpu"
+			}
+		}
 
 		// Update matched_vms.json only for successfully added VMs
 		if len(successfullyAdded) > 0 {
@@ -472,6 +488,14 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 
 		// Construct alarm type based on rule category
 		alarmType := ruleCategory + "-" + groupType
+		// Normalize adjust rule types to match creation-time rule_id format used by Prometheus rules
+		if ruleCategory == "adjust" {
+			if groupType == model.RuleTypeAdjustInBW || groupType == model.RuleTypeAdjustOutBW {
+				alarmType = "adjust-bw"
+			} else if groupType == model.RuleTypeAdjustCPU {
+				alarmType = "adjust-cpu"
+			}
+		}
 
 		// Remove successfully unlinked VMs from matched_vms.json
 		if len(successfulDeletes) > 0 {
