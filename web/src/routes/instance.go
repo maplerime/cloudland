@@ -1304,6 +1304,15 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+
+	// reset zone
+	for i, instance := range instances {
+		hyper, hyperErr := hyperAdmin.GetHyperByHostid(c.Req.Context(), instance.Hyper)
+		if hyperErr == nil && hyper.Zone != nil {
+			instances[i].Zone = hyper.Zone
+		}
+	}
+
 	pages := GetPages(total, limit)
 	c.Data["Instances"] = instances
 	c.Data["Total"] = total
