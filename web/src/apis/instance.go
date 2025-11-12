@@ -638,9 +638,6 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	if instance.Flavor != nil {
 		instanceResp.Flavor = instance.Flavor.Name
 	}
-	if instance.Zone != nil {
-		instanceResp.Zone = instance.Zone.Name
-	}
 	keys := make([]*ResourceReference, len(instance.Keys))
 	for i, key := range instance.Keys {
 		keys[i] = &ResourceReference{
