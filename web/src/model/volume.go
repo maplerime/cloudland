@@ -31,7 +31,7 @@ func (s VolumeStatus) String() string {
 
 const (
 	BackupStatusPending   BackupStatus = "pending"
-	BackupStatusReady     BackupStatus = "ready"
+	BackupStatusReady     BackupStatus = "available"
 	BackupStatusError     BackupStatus = "error"
 	BackupStatusRestoring BackupStatus = "restoring"
 )
