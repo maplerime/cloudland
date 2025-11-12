@@ -10,6 +10,10 @@ import (
 	"web/src/dbs"
 )
 
+const (
+	DICT_CATEGORY_OS_FAMILY = "os_family"
+)
+
 type Dictionary struct {
 	Model
 	Owner     int64  `gorm:"default:1"` /* The organization ID of the resource */

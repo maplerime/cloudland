@@ -36,6 +36,7 @@ type ImageResponse struct {
 	User         string `json:"user"`
 	Status       string `json:"status"`
 	BootLoader   string `json:"boot_loader"`
+	OsFamily     string `json:"os_family"`
 	// QAEnabled    bool   `json:"qa_enabled"`
 }
 
@@ -57,6 +58,7 @@ type ImagePayload struct {
 	BootLoader   string         `json:"boot_loader" binding:"required,oneof=bios uefi"`
 	IsRescue     bool           `json:"is_resque"`
 	RescueImage  *BaseReference `json:"rescue_image" binding:"omitempty"`
+	OsFamily     string         `json:"os_family" binding:"required"`
 }
 
 type ImagePatchPayload struct {
@@ -65,6 +67,7 @@ type ImagePatchPayload struct {
 	OSVersion string   `json:"os_version" binding:"required,min=2,max=32"`
 	User      string   `json:"user" binding:"required,min=2,max=32"`
 	Pools     []string `json:"pools" binding:"omitempty"`
+	OsFamily  string   `json:"os_family" binding:"required"`
 }
 
 type ImageStorageResponse struct {
@@ -137,7 +140,7 @@ func (v *ImageAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools)
+	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily)
 	if err != nil {
 		logger.Errorf("Patch image failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch image failed", err)
@@ -227,7 +230,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		}
 	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID, rescueImage)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID, rescueImage, payload.OsFamily)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
@@ -259,6 +262,7 @@ func (v *ImageAPI) getImageResponse(ctx context.Context, image *model.Image) (im
 		User:         image.UserName,
 		Status:       image.Status,
 		BootLoader:   image.BootLoader,
+		OsFamily:     image.OsFamily,
 		// QAEnabled:    image.QAEnabled,
 	}
 	return
