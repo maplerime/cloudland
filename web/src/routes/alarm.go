@@ -2405,7 +2405,17 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 	} else if operation == "remove" {
 		// If targetDevice is provided (optional variadic parameter), delete by triple match;
 		// Otherwise, use the original "delete all by groupUUID" logic (unchanged).
-		hasDeviceFilter := len(targetDevice) > 0
+		// Build a non-empty device list to distinguish three cases:
+		// 1) targetDevice not provided -> no device filter
+		// 2) provided but empty string -> also no device filter
+		// 3) provided non-empty -> enable device filter (triple match)
+		nonEmptyDevices := []string{}
+		for _, d := range targetDevice {
+			if d != "" {
+				nonEmptyDevices = append(nonEmptyDevices, d)
+			}
+		}
+		hasDeviceFilter := len(nonEmptyDevices) > 0
 
 		filteredVMs := []map[string]interface{}{}
 		removedCount := 0
@@ -2423,14 +2433,23 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 				continue
 			}
 
-			// No device filter: maintain original logic, delete all by group
+			// No device filter: delete by group + specified vmUUIDs (clear all target devices for those VMs)
 			if !hasDeviceFilter {
 				if strings.HasSuffix(ruleID, "-"+groupUUID) {
-					domain, _ := labels["domain"].(string)
 					instanceID, _ := labels["instance_id"].(string)
-					log.Printf("Removing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
-					removedCount++
-					continue
+					inVM := false
+					for _, id := range vmUUIDs {
+						if id == instanceID {
+							inVM = true
+							break
+						}
+					}
+					if inVM {
+						domain, _ := labels["domain"].(string)
+						log.Printf("Removing mapping by group: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						removedCount++
+						continue
+					}
 				}
 				filteredVMs = append(filteredVMs, vm)
 				continue
@@ -2446,8 +2465,6 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 			}
 
 			instanceID, _ := labels["instance_id"].(string)
-			devStr, _ := labels["target_device"].(string)
-
 			inVM := false
 			for _, id := range vmUUIDs {
 				if id == instanceID {
@@ -2456,8 +2473,8 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 				}
 			}
 			inDev := false
-			for _, d := range targetDevice {
-				if d == devStr {
+			for _, d := range nonEmptyDevices {
+				if d == labels["target_device"] {
 					inDev = true
 					break
 				}
@@ -2466,7 +2483,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 			if inVM && inDev {
 				domain, _ := labels["domain"].(string)
 				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
-					domain, ruleID, instanceID, devStr)
+					domain, ruleID, instanceID, labels["target_device"])
 				removedCount++
 				continue
 			}

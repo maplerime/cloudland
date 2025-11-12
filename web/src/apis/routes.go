@@ -229,8 +229,8 @@ func Register() (r *gin.Engine) {
 			metricsGroup.DELETE("/adjust/bw/rule/:uuid", adjustAPI.DeleteBWAdjustRule)
 
 			// Enable/disable resource adjustment rules
-			metricsGroup.POST("/api/v1/adjust/:uuid/enable", alarmAPI.ToggleRuleStatus("adjust", "enable"))
-			metricsGroup.POST("/api/v1/adjust/:uuid/disable", alarmAPI.ToggleRuleStatus("adjust", "disable"))
+			metricsGroup.POST("/adjust/:uuid/enable", alarmAPI.ToggleRuleStatus("adjust", "enable"))
+			metricsGroup.POST("adjust/:uuid/disable", alarmAPI.ToggleRuleStatus("adjust", "disable"))
 
 			// VM adjust rule link management
 			metricsGroup.POST("/adjust/link", alarmAPI.LinkRuleToVMWithType("adjust"))
