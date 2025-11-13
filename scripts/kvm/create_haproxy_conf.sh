@@ -96,5 +96,5 @@ EOF
 done
 
 haproxy_pid=$(cat $lb_dir/haproxy.pid)
-[ $haproxy_pid -gt 0 ] && kill --USR2 $haproxy_pid
+[ $haproxy_pid -gt 0 ] && ip netns exec $router haproxy -D -f $lb_dir/haproxy.conf -sf $haproxy_pid -p $lb_dir/haproxy.pid
 [ $? -ne 0 ] && ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf
