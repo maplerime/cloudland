@@ -68,6 +68,7 @@ type ImagePatchPayload struct {
 	User      string   `json:"user" binding:"required,min=2,max=32"`
 	Pools     []string `json:"pools" binding:"omitempty"`
 	OsFamily  string   `json:"os_family" binding:"required"`
+	UUID      string   `json:"uuid,omitempty" binding:"omitempty"`
 }
 
 type ImageStorageResponse struct {
@@ -140,7 +141,7 @@ func (v *ImageAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily)
+	err = imageAdmin.Update(ctx, image, payload.OSCode, payload.Name, payload.OSVersion, payload.User, payload.Pools, payload.OsFamily, payload.UUID)
 	if err != nil {
 		logger.Errorf("Patch image failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch image failed", err)

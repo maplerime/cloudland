@@ -302,7 +302,7 @@ func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query
 	return
 }
 
-func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily string) (err error) {
+func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -327,6 +327,15 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	}
 	if userName != "" {
 		image.UserName = userName
+	}
+
+	if uuid != "" {
+		if !utils.IsUUID(uuid) {
+			logger.Error("Invalid UUID format")
+			err = NewCLError(ErrInvalidParameter, "Invalid UUID format", nil)
+			return
+		}
+		image.UUID = uuid
 	}
 
 	if osFamily != "" {
@@ -469,7 +478,7 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.Error(http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Query OS Family options from Dictionary
 	db := DB()
 	var osFamilies []*model.Dictionary
@@ -480,7 +489,7 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusInternalServerError, "error")
 		return
 	}
-	
+
 	c.Data["Instances"] = instances
 	c.Data["OsFamilies"] = osFamilies
 	c.HTML(200, "images_new")
@@ -597,7 +606,7 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 	if defaultPoolID != "" {
 		selectedPools[defaultPoolID] = true
 	}
-	
+
 	// Query OS Family options from Dictionary
 	var osFamilies []*model.Dictionary
 	err = db.Where("category = ?", model.DICT_CATEGORY_OS_FAMILY).Order("id ASC").Find(&osFamilies).Error
@@ -607,7 +616,7 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusInternalServerError, "error")
 		return
 	}
-	
+
 	c.Data["Image"] = image
 	c.Data["Pools"] = pools
 	c.Data["Storages"] = selectedPools
@@ -625,6 +634,7 @@ func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
 	name := c.QueryTrim("name")
 	osVersion := c.QueryTrim("osVersion")
 	userName := c.QueryTrim("userName")
+	uuid := c.QueryTrim("uuid")
 	imageID, err := strconv.Atoi(id)
 	pools := c.QueryStrings("pools")
 	if err != nil {
@@ -654,7 +664,7 @@ func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	err = imageAdmin.Update(c.Req.Context(), image, osCode, name, osVersion, userName, pools, osFamily)
+	err = imageAdmin.Update(c.Req.Context(), image, osCode, name, osVersion, userName, pools, osFamily, uuid)
 	if err != nil {
 		logger.Error("Failed to update volume", err)
 		c.Data["ErrorMsg"] = err.Error()
