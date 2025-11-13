@@ -52,6 +52,13 @@ func (a *ListenerAdmin) Create(ctx context.Context, name, mode, key, cert string
 		err = NewCLError(ErrListenerCreateFailed, "Failed to create listener", err)
 		return
 	}
+	loadBalancer.Listeners = append(loadBalancer.Listeners, listener)
+	err = CreateVrrpConf(ctx, loadBalancer)
+	if err != nil {
+		logger.Error("Recreate keepalived config failed", err)
+		err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
+		return
+	}
 	return
 }
 
@@ -186,6 +193,19 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener, lo
 	if err = db.Delete(listener).Error; err != nil {
 		logger.Error("DB failed to delete listener", err)
 		err = NewCLError(ErrListenerDeleteFailed, "Failed to delete listener", err)
+		return
+	}
+	_, listeners, err := listenerAdmin.List(ctx, 0, -1, "", loadBalancer)
+	if err != nil {
+		logger.Error("DB failed to count listeners, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count listeners", err)
+		return
+	}
+	loadBalancer.Listeners = listeners
+	err = CreateVrrpConf(ctx, loadBalancer)
+	if err != nil {
+		logger.Error("Recreate keepalived config failed", err)
+		err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 		return
 	}
 	return
@@ -468,6 +488,9 @@ func (v *ListenerView) Create(c *macaron.Context, store session.Store) {
 	}
 	name := c.QueryTrim("name")
 	mode := c.QueryTrim("mode")
+	if mode == "" {
+		mode = "http"
+	}
 	key := c.QueryTrim("key")
 	cert := c.QueryTrim("cert")
 	port := c.QueryInt("port")

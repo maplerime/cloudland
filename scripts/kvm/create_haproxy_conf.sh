@@ -61,7 +61,7 @@ nfloating_ip=$(jq length <<< $floating_ips)
 i=0
 while [ $i -lt $nlistener ]; do
     listener=$(jq -r .[$i] <<< $listeners)
-    echo $listener
+    ssl_config=""
     read -d'\n' -r name mode port key cert< <(jq -r ".name, .mode, .port, .key, .cert" <<<$listener)
     if [ -n "$key" -a -n "$cert" ]; then
         base64 -d <<<"$key" >$lb_dir/$name.pem
@@ -96,5 +96,5 @@ EOF
 done
 
 haproxy_pid=$(cat $lb_dir/haproxy.pid)
-[ $haproxy_pid -gt 0 ] && kill -HUP $haproxy_pid
+[ $haproxy_pid -gt 0 ] && kill --USR2 $haproxy_pid
 [ $? -ne 0 ] && ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf

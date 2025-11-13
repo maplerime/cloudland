@@ -37,21 +37,23 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 		if listener.ID == updatedlistener.ID {
 			listener = updatedlistener
 		}
-		backendCfgs := []*BackendConfig{}
-		for _, backend := range listener.Backends {
-			backendCfgs = append(backendCfgs, &BackendConfig{
-				BackendURL: backend.BackendAddr,
-				Status:     backend.Status,
+		if len(listener.Backends) > 0 {
+			backendCfgs := []*BackendConfig{}
+			for _, backend := range listener.Backends {
+				backendCfgs = append(backendCfgs, &BackendConfig{
+					BackendURL: backend.BackendAddr,
+					Status:     backend.Status,
+				})
+			}
+			listenerCfgs = append(listenerCfgs, &ListenerConfig{
+				Name: fmt.Sprintf("lb-%d-lsn-%d-%s", loadBalancer.ID, listener.ID, listener.Name),
+				Mode: listener.Mode,
+				Key: listener.Key,
+				Cert: listener.Certificate,
+				Port: listener.Port,
+				Backends: backendCfgs,
 			})
 		}
-		listenerCfgs = append(listenerCfgs, &ListenerConfig{
-			Name: fmt.Sprintf("lb-%d-lsn-%d-%s", loadBalancer.ID, listener.ID, listener.Name),
-			Mode: listener.Mode,
-			Key: listener.Key,
-			Cert: listener.Certificate,
-			Port: listener.Port,
-			Backends: backendCfgs,
-		})
 	}
 	haproxyCfg := &LoadBalancerConfig{Listeners: listenerCfgs}
 	for _, fip := range loadBalancer.FloatingIps {
@@ -228,36 +230,18 @@ func (a *BackendAdmin) Delete(ctx context.Context, backend *model.Backend, liste
 		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete backend", err)
 		return
 	}
-	total, backends, err := backendAdmin.List(ctx, 0, -1, "", listener)
+	_, backends, err := backendAdmin.List(ctx, 0, -1, "", listener)
 	if err != nil {
 		logger.Error("DB failed to count backends, %v", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to count backends", err)
 		return
 	}
-	if total == 0 {
-		hyperGroup := ""
-		hyperGroup, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
-		if err != nil {
-			logger.Errorf("Failed to get hyper group, %v", err)
-			err = NewCLError(ErrExecuteOnHyperFailed, "Failed to get hyper group", err)
-			return
-		}
-		control := "toall=" + hyperGroup
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_haproxy_conf.sh '%d' '%d'", loadBalancer.RouterID, loadBalancer.ID)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Clear haproxy conf execution failed", err)
-			err = NewCLError(ErrExecuteOnHyperFailed, "Clear haproxy conf execution failed", err)
-			return
-		}
-	} else {
-		listener.Backends = backends
-		err = a.CreateHaproxyConf(ctx, listener, loadBalancer)
-		if err != nil {
-			logger.Error("Failed to delete haproxy conf ", err)
-			err = NewCLError(ErrBackendDeleteFailed, "Failed to delete haproxy conf", err)
-			return
-		}
+	listener.Backends = backends
+	err = a.CreateHaproxyConf(ctx, listener, loadBalancer)
+	if err != nil {
+		logger.Error("Failed to delete haproxy conf ", err)
+		err = NewCLError(ErrBackendDeleteFailed, "Failed to delete haproxy conf", err)
+		return
 	}
 	return
 }

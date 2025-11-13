@@ -28,8 +28,11 @@ ports=$(jq -r .ports <<< $content)
 nport=$(jq length <<< $ports)
 i=0
 while [ $i -lt $nvip ]; do
-    vip=$(jq -r .[$i] <<< $vips)
+    vip=$(jq -r .[$i].address <<< $vips)
     ext_ip=${vip%/*}
+    for num in $(ip netns exec $router iptables -n -L --line-numbers | grep "\<$ext_ip\>" | awk '{print $1}' | sort -nr); do
+        ip netns exec $router iptables -D INPUT $num
+    done
     j=0
     while [ $j -lt $nport ]; do
         port=$(jq -r .[$j] <<< $ports)
