@@ -647,7 +647,7 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 	err := db.Table("vm_rule_links").
 		Select("DISTINCT rule_group_v2.rule_id").
 		Joins("JOIN rule_group_v2 ON vm_rule_links.group_uuid = rule_group_v2.uuid").
-		Where("vm_rule_links.vm_uuid = ?", instanceUUID).
+		Where("vm_rule_links.vm_uuid = ? AND vm_rule_links.deleted_at IS NULL", instanceUUID).
 		Scan(&alarmRuleIDs).Error
 
 	if err != nil {
@@ -664,7 +664,7 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 	err = db.Table("vm_rule_links").
 		Select("DISTINCT adjust_rule_group.rule_id").
 		Joins("JOIN adjust_rule_group ON vm_rule_links.group_uuid = adjust_rule_group.uuid").
-		Where("vm_rule_links.vm_uuid = ?", instanceUUID).
+		Where("vm_rule_links.vm_uuid = ? AND vm_rule_links.deleted_at IS NULL", instanceUUID).
 		Scan(&adjustRuleIDs).Error
 
 	if err != nil {
