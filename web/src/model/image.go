@@ -57,6 +57,7 @@ type Image struct {
 	IsRescue              bool      `gorm:"default:false"`
 	RescueImage           int64     `gorm:"default:0"`
 	StorageType           string    `gorm:"type:varchar(36);"`
+	OsFamily              string    `gorm:"type:varchar(128);"`
 }
 
 type ImageStorage struct {
@@ -98,5 +99,6 @@ func (i *Image) Clone() *Image {
 		CaptureFromInstanceID: i.CaptureFromInstanceID,
 		CaptureFromInstance:   i.CaptureFromInstance,
 		StorageType:           i.StorageType,
+		OsFamily:              i.OsFamily,
 	}
 }
