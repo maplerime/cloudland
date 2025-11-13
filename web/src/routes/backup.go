@@ -349,7 +349,7 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (err error) {
 		return
 	}
 	// check if the instance is running, if so, ask the user to stop it first
-	if volume.InstanceID > 0 && volume.Instance.Status != "stopped" {
+	if volume.InstanceID > 0 && volume.Instance.Status != "shut_off" {
 		msg := fmt.Sprintf("Volume %s is attached to a running instance, please stop the instance %s first", volume.Name, volume.Instance.Hostname)
 		logger.Errorf(msg)
 		err = NewCLError(ErrCannotRestoreWhileInstanceIsRunning, msg, nil)
