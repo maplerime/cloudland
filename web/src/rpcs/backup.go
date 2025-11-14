@@ -28,8 +28,11 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	}
 	size, err := strconv.ParseInt(args[4], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid backup size: %v", args[4])
-		return
+		logger.Errorf("Invalid backup/snapshot size: %v", args[4])
+		size = 0
+	}
+	if size > 0 {
+		size = size / 1024 / 1024 / 1024 // convert to GB
 	}
 	status = args[2]
 	path := args[3]
