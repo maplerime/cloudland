@@ -19,6 +19,216 @@ const docTemplatev1 = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/backups": {
+            "get": {
+                "description": "list volume backups/snapshots by volume UUID and backup type",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "list volumes backups/snapshots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Volume UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Backup type: snapshot or backup",
+                        "name": "backup_type",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolBackupListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a volume backup/snapshot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "create a volume backup/snapshot",
+                "parameters": [
+                    {
+                        "description": "Volume backup/snapshot create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolBackupPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolBackupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/{id}": {
+            "get": {
+                "description": "get a volume backup/snapshot by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "get a volume backup/snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Volume backup/snapshot UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolBackupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a volume backup/snapshot by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "delete a volume backup/snapshot",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/backups/{id}/restore": {
+            "post": {
+                "description": "restore volume from a backup/snapshot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "restore volume from a backup/snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Volume backup/snapshot UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/dictionaries": {
             "get": {
                 "description": "list dictionaries",
@@ -4347,11 +4557,17 @@ const docTemplatev1 = `{
                 "cpu_over_rate": {
                     "type": "number"
                 },
+                "cpu_total": {
+                    "type": "integer"
+                },
                 "disk": {
                     "type": "integer"
                 },
                 "disk_over_rate": {
                     "type": "number"
+                },
+                "disk_total": {
+                    "type": "integer"
                 },
                 "host_ip": {
                     "type": "string"
@@ -4366,6 +4582,9 @@ const docTemplatev1 = `{
                     "type": "number"
                 },
                 "memory": {
+                    "type": "integer"
+                },
+                "memory_total": {
                     "type": "integer"
                 },
                 "parentid": {
@@ -6060,6 +6279,78 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.VolBackupListResponse": {
+            "type": "object",
+            "properties": {
+                "backups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.VolBackupResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.VolBackupPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "type",
+                "volume_id"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string",
+                    "enum": [
+                        "snapshot",
+                        "backup"
+                    ]
+                },
+                "volume_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.VolBackupResponse": {
+            "type": "object",
+            "properties": {
+                "backup_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "status": {
+                    "$ref": "#/definitions/model.BackupStatus"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "volume": {
+                    "$ref": "#/definitions/common.BaseReference"
+                }
+            }
+        },
         "apis.VolumeInfoResponse": {
             "type": "object",
             "properties": {
@@ -6323,6 +6614,9 @@ const docTemplatev1 = `{
                 "error_code": {
                     "type": "integer"
                 },
+                "error_code_str": {
+                    "type": "string"
+                },
                 "error_message": {
                     "type": "string"
                 }
@@ -6404,6 +6698,21 @@ const docTemplatev1 = `{
                 "Public",
                 "Internal",
                 "Site"
+            ]
+        },
+        "model.BackupStatus": {
+            "type": "string",
+            "enum": [
+                "pending",
+                "available",
+                "error",
+                "restoring"
+            ],
+            "x-enum-varnames": [
+                "BackupStatusPending",
+                "BackupStatusReady",
+                "BackupStatusError",
+                "BackupStatusRestoring"
             ]
         }
     }

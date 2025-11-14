@@ -21,7 +21,7 @@ import (
 
 	"web/src/model"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v4"
 	"github.com/spf13/viper"
 )
 
@@ -31,7 +31,7 @@ var (
 )
 
 type CustomClaims struct {
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 	UID  string     `json:"uid,omitempty"`
 	OID  string     `json:"oid,omitempty"`
 	Role model.Role `json:"r,omitempty"`
@@ -47,20 +47,19 @@ func NewClaims(u, o, uid, oid string, role model.Role) (claims jwt.Claims, issue
 	issuedAt = now.Unix()
 	ExpiresAt = now.Add(time.Hour * 2).Unix()
 	claims = &CustomClaims{
-		StandardClaims: jwt.StandardClaims{
-			Audience:  u,
-			ExpiresAt: ExpiresAt,
-			Id:        claimsID(now),
-			IssuedAt:  issuedAt,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Audience:  jwt.ClaimStrings{u},
+			ExpiresAt: jwt.NewNumericDate(time.Unix(ExpiresAt, 0)),
+			ID:        claimsID(now),
+			IssuedAt:  jwt.NewNumericDate(time.Unix(issuedAt, 0)),
 			Issuer:    "Cloudland",
-			NotBefore: issuedAt,
+			NotBefore: jwt.NewNumericDate(time.Unix(issuedAt, 0)),
 			Subject:   o,
 		},
 		UID:  uid,
 		OID:  oid,
 		Role: role,
 	}
-
 	return
 }
 

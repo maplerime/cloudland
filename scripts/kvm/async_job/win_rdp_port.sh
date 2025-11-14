@@ -8,7 +8,7 @@ vm_ID=$1
 rdp_port=$2
 
 
-TIMEOUT=60
+TIMEOUT=300
 WAIT_TIME=5
 ELAPSED_TIME=0
 

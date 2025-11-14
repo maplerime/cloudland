@@ -9,7 +9,7 @@ package common
 import (
 	"web/src/model"
 
-	"github.com/dgrijalva/jwt-go"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 type TokenClaim struct {
@@ -17,5 +17,5 @@ type TokenClaim struct {
 	Role       model.Role
 	InstanceID int    `json:"instanceID"`
 	Secret     string `json:"secret"`
-	jwt.StandardClaims
+	jwt.RegisteredClaims
 }
