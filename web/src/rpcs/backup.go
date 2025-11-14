@@ -14,9 +14,9 @@ func init() {
 }
 
 func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_snapshot_wds_vhost.sh 5 /volume-12.disk available reason
+	//|:-COMMAND-:| create_snapshot_wds_vhost.sh '$backup_ID' '$state' 'wds_vhost://$wdsPoolID/$snapshot_id' '$snapshot_size' 'success'
 	logger.Debug("BackupVolumeWDSVhost", args)
-	if len(args) < 5 {
+	if len(args) < 6 {
 		logger.Errorf("Invalid args for create_snapshot_wds_vhost: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -24,6 +24,11 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	backupID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Errorf("Invalid backup ID: %v", args[1])
+		return
+	}
+	size, err := strconv.ParseInt(args[4], 10, 64)
+	if err != nil {
+		logger.Errorf("Invalid backup size: %v", args[4])
 		return
 	}
 	status = args[2]
@@ -41,7 +46,7 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 		logger.Error("Invalid backup ID", err)
 		return
 	}
-	err = db.Model(backup).Updates(map[string]interface{}{"path": path, "status": status}).Error
+	err = db.Model(backup).Updates(map[string]interface{}{"path": path, "status": status, "size": size}).Error
 	if err != nil {
 		logger.Errorf("Failed to update backup %d: %v", backupID, err)
 		return "", err
