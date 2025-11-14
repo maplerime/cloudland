@@ -181,7 +181,7 @@ func parse(path string) []string {
 
 func parseDriver(path string) string {
 	parts := parse(path)
-	if parts != nil {
+	if len(parts) > 0 {
 		return parts[0]
 	}
 	return ""
@@ -189,7 +189,7 @@ func parseDriver(path string) string {
 
 func parsePath(path string) string {
 	parts := parse(path)
-	if (parts != nil) && (parts[0] == "local") {
+	if (len(parts) > 1) && (parts[0] == "local") {
 		return parts[1]
 	}
 	return path
@@ -197,7 +197,7 @@ func parsePath(path string) string {
 
 func parsePoolID(path string) string {
 	parts := parse(path)
-	if (parts != nil) && (len(parts) == 3) {
+	if len(parts) == 3 {
 		return parts[1]
 	}
 	return ""
@@ -205,7 +205,7 @@ func parsePoolID(path string) string {
 
 func parseOriginID(path string, id string) string {
 	parts := parse(path)
-	if (parts != nil) && (len(parts) == 3) {
+	if len(parts) == 3 {
 		return parts[2]
 	}
 	return id
