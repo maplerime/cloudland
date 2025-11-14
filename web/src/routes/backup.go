@@ -84,13 +84,25 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 			EndTransaction(ctx, err)
 		}
 	}()
-	err = db.Model(&volume).Updates(map[string]interface{}{"status": model.VolumeStatusRestoring}).Error
+	err = db.Model(&volume).Updates(map[string]interface{}{"status": model.VolumeStatusBackuping}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		err = NewCLError(ErrDatabaseError, "Failed to update volume status", err)
 		return
 	}
 	control := fmt.Sprintf("inter=")
+	if volume.InstanceID > 0 {
+		instance := volume.Instance
+		if instance == nil {
+			instance = &model.Instance{Model: model.Model{ID: volume.InstanceID}}
+			if err = db.Model(instance).Take(instance).Error; err != nil {
+				logger.Error("DB: query instance failed", err)
+				err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+				return
+			}
+		}
+		control = fmt.Sprintf("inter=%d", instance.Hyper)
+	}
 	vol_driver := GetVolumeDriver()
 	if vol_driver != "local" {
 		wdsUUID := volume.GetOriginVolumeID()
