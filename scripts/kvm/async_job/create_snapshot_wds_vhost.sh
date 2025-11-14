@@ -34,7 +34,7 @@ if [ "$ret_code" != "0" ]; then
     echo "|:-COMMAND-:| $(basename $0) '$backup_ID' 'error' ' ' '0' 'failed to create snapshot: $message'"
     exit -1
 fi
-snapshot_size=$(wds_curl GET "api/v2/sync/block/snaps/$snapshot_id" | jq -r .snap.size)
+snapshot_size=$(wds_curl GET "api/v2/sync/block/snaps/$snapshot_id" | jq -r .snap_size)
 log_debug $backup_ID "snapshot $snapshot_id created for volume $volume_ID in pool $wdsOriginPoolID; size: $snapshot_size"
 
 if [ -z "$wdsPoolID" ] || [ "$wdsPoolID" == "$wdsOriginPoolID" ]; then
@@ -63,8 +63,9 @@ else
     read -d'\n' -r ret_code message < <(jq -r ".ret_code, .message" <<<$delete_ret)
     log_debug $backup_ID "delete snapshot $snapshot_id: $message"
     # 4. get the volume id and size from the image name
-    wds_vol=$(wds_curl GET "api/v2/sync/block/volumes?name=$wds_backup_name")
-    read -d'\n' -r snapshot_id snapshot_size < <(jq -r ".volumes[0].id, .volumes[0].size" <<<$wds_vol)
+    snapshot_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$wds_backup_name" | jq -r '.volumes[0].id')
+    snapshot_size=$(wds_curl GET "api/v2/sync/block/volumes/$snapshot_id" | jq -r .volume_detail.volume_size)
+    log_debug $backup_ID "snapshot $snapshot_id cloned to pool $wdsPoolID with size $snapshot_size"
 fi
 
 [ -n "$snapshot_id" ] && state='available'
