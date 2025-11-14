@@ -37,6 +37,16 @@ type VolBackupListResponse struct {
 	Backups []*VolBackupResponse `json:"backups"`
 }
 
+// @Summary create a volume backup/snapshot
+// @Description create a volume backup/snapshot
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   message	body   VolBackupPayload  true   "Volume backup/snapshot create payload"
+// @Success 200 {object} VolBackupResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /backups [post]
 func (v *VolBackupAPI) Create(c *gin.Context) {
 	ctx := c.Request.Context()
 	payload := &VolBackupPayload{}
@@ -68,6 +78,17 @@ func (v *VolBackupAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, backupResp)
 }
 
+// @Summary list volumes backups/snapshots
+// @Description list volume backups/snapshots by volume UUID and backup type
+// @Param   id          path    string     true  "Volume UUID"
+// @Param   backup_type path    string     true  "Backup type: snapshot or backup"
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 200 {object} VolBackupListResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /backups [get]
 func (v *VolBackupAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	volumeUUID := c.Param("id")
@@ -119,6 +140,16 @@ func (v *VolBackupAPI) List(c *gin.Context) {
 	c.JSON(http.StatusOK, backupListResp)
 }
 
+// @Summary get a volume backup/snapshot
+// @Description get a volume backup/snapshot by UUID
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id     path    string     true  "Volume backup/snapshot UUID"
+// @Success 200 {object} VolBackupResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /backups/{id} [get]
 func (v *VolBackupAPI) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
@@ -135,6 +166,15 @@ func (v *VolBackupAPI) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, backupResp)
 }
 
+// @Summary delete a volume backup/snapshot
+// @Description delete a volume backup/snapshot by UUID
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 204
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /backups/{id} [delete]
 func (v *VolBackupAPI) Delete(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
@@ -151,6 +191,16 @@ func (v *VolBackupAPI) Delete(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
+// @Summary restore volume from a backup/snapshot
+// @Description restore volume from a backup/snapshot
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id     path    string     true  "Volume backup/snapshot UUID"
+// @Success 200 {object} nil
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /backups/{id}/restore [post]
 func (v *VolBackupAPI) Restore(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")

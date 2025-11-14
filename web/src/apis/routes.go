@@ -149,7 +149,7 @@ func Register() (r *gin.Engine) {
 		authGroup.PATCH("/api/v1/volumes/:id", volumeAPI.Patch)
 		authGroup.POST("/api/v1/volumes/:id/resize", volumeAPI.Resize)
 
-		authGroup.GET("/api/v1/volumes/:id/:backup_type", volBackupAPI.List)
+		authGroup.GET("/api/v1/backups/:id/:backup_type", volBackupAPI.List)
 		authGroup.POST("/api/v1/backups", volBackupAPI.Create)
 		authGroup.GET("/api/v1/backups/:id", volBackupAPI.Get)
 		authGroup.DELETE("/api/v1/backups/:id", volBackupAPI.Delete)

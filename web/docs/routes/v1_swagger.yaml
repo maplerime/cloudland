@@ -1549,6 +1549,54 @@ definitions:
       version:
         type: string
     type: object
+  apis.VolBackupListResponse:
+    properties:
+      backups:
+        items:
+          $ref: '#/definitions/apis.VolBackupResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.VolBackupPayload:
+    properties:
+      name:
+        type: string
+      type:
+        enum:
+        - snapshot
+        - backup
+        type: string
+      volume_id:
+        type: string
+    required:
+    - name
+    - type
+    - volume_id
+    type: object
+  apis.VolBackupResponse:
+    properties:
+      backup_id:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      status:
+        $ref: '#/definitions/model.BackupStatus'
+      updated_at:
+        type: string
+      volume:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
   apis.VolumeInfoResponse:
     properties:
       booting:
@@ -1787,6 +1835,18 @@ definitions:
     - Public
     - Internal
     - Site
+  model.BackupStatus:
+    enum:
+    - pending
+    - available
+    - error
+    - restoring
+    type: string
+    x-enum-varnames:
+    - BackupStatusPending
+    - BackupStatusReady
+    - BackupStatusError
+    - BackupStatusRestoring
 info:
   contact: {}
   description: APIs for CloudLand Functions
@@ -1796,6 +1856,145 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /backups:
+    get:
+      consumes:
+      - application/json
+      description: list volume backups/snapshots by volume UUID and backup type
+      parameters:
+      - description: Volume UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: 'Backup type: snapshot or backup'
+        in: path
+        name: backup_type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list volumes backups/snapshots
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a volume backup/snapshot
+      parameters:
+      - description: Volume backup/snapshot create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolBackupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a volume backup/snapshot
+      tags:
+      - Compute
+  /backups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a volume backup/snapshot by UUID
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a volume backup/snapshot
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a volume backup/snapshot by UUID
+      parameters:
+      - description: Volume backup/snapshot UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a volume backup/snapshot
+      tags:
+      - Compute
+  /backups/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      description: restore volume from a backup/snapshot
+      parameters:
+      - description: Volume backup/snapshot UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: restore volume from a backup/snapshot
+      tags:
+      - Compute
   /dictionaries:
     get:
       consumes:
