@@ -90,5 +90,5 @@ EOF
 export ROUTES_FILE=$vrrp_dir/routes
 keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
 [ $keepalived_pid -gt 0 ] && kill -HUP $keepalived_pid
-[ $? -ne 0 ] && ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -f $vrrp_dir/keepalived.conf
+[ $? -ne 0 ] && ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -r $vrrp_dir/vrrp.pid -f $vrrp_dir/keepalived.conf
 exit 0

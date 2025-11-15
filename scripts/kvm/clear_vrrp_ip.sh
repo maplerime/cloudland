@@ -21,6 +21,8 @@ ip neighbor del ${local_ip%%/*} dev v-$vrrp_vlan
 ip neighbor del ${peer_ip%%/*} dev v-$vrrp_vlan
 ip netns exec $router ip addr del $local_ip dev ns-$vrrp_vlan
 ip netns exec $router ip addr del $peer_ip dev ns-$vrrp_vlan
+ip netns exec $router iptables -D INPUT -d ${local_ip%/*} -m conntrack --ctstate NEW -j ACCEPT
+ip netns exec $router iptables -D INPUT -d ${peer_ip%/*} -m conntrack --ctstate NEW -j ACCEPT
 ip netns exec $router ip addr show ns-$vrrp_vlan | grep 'inet '
 if [ $? -ne 0 ]; then
     ./clear_link.sh $vrrp_vlan

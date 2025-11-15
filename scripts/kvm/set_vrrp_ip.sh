@@ -27,5 +27,8 @@ ip netns exec $router ip link set ns-$vrrp_vlan address $local_mac
 ip netns exec $router ip addr add $local_ip dev ns-$vrrp_vlan
 read -d'\n' -r network < <(ipcalc -nb $local_ip | awk '/Network/ {print $2}')
 ip netns exec $router ipset add nonat $network
+ns_ip=${local_ip%/*}
+ip netns exec $router iptables -C INPUT -d $ns_ip -m conntrack --ctstate NEW -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -A INPUT -d $ns_ip -m conntrack --ctstate NEW -j ACCEPT
 
 echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role'"
