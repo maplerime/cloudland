@@ -1,10 +1,12 @@
 - name: Set prometheus_server_ip from monitor group
   set_fact:
     prometheus_server_ip: "{{ hostvars[groups['monitor'][0]]['ansible_host'] }}"
+  tags: [monitor, metering_prometheus]
 
 - name: Ensure remote_write for billing metrics is present
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
+  tags: [monitor, metering_prometheus]
   blockinfile:
     path: /etc/prometheus/prometheus.yml
     marker: "# {mark} ANSIBLE MANAGED BLOCK - remote_write for billing"
@@ -26,6 +28,7 @@
 
 - name: Restart prometheus after config change
   delegate_to: "{{ prometheus_server_ip }}"
+  tags: [monitor, metering_prometheus]
   systemd:
     name: prometheus
     state: restarted

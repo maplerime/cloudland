@@ -79,7 +79,15 @@
                                       </div>
                                     </div>
                                 </div>
-								<div class="required inline field">
+							<div class="required inline field">
+								<label for="osFamily">{{.i18n.Tr "OS Family"}}</label>
+								<select name="osFamily" id="osFamily" class="ui selection dropdown">
+									{{ range .OsFamilies }}
+										<option value="{{ .Value }}">{{ .Name }}</option>
+									{{ end }}
+								</select>
+							</div>
+							<div class="required inline field">
                                     <label for="osVersion">{{.i18n.Tr "OS Version"}}</label>
                                     <input id="osVersion" name="osVersion" autocomplete="off">
                                 </div>

@@ -167,7 +167,7 @@ const (
 
 	// load balancer related errors (1315xx)
 	ErrLoadBalancerNotFound     = 131501
-	ErrLoadBalancerListFailed = 131502
+	ErrLoadBalancerListFailed   = 131502
 	ErrLoadBalancerCreateFailed = 131503
 	ErrLoadBalancerUpdateFailed = 131504
 	ErrLoadBalancerDeleteFailed = 131505
@@ -176,12 +176,12 @@ const (
 	ErrVrrpInstanceUpdateFailed = 131508
 	ErrVrrpInstanceDeleteFailed = 131509
 	ErrListenerNotFound         = 131510
-	ErrListenerListFailed     = 131511
+	ErrListenerListFailed       = 131511
 	ErrListenerCreateFailed     = 131512
 	ErrListenerUpdateFailed     = 131513
 	ErrListenerDeleteFailed     = 131514
 	ErrBackendNotFound          = 131515
-	ErrBackendListFailed      = 131516
+	ErrBackendListFailed        = 131516
 	ErrBackendCreateFailed      = 131517
 	ErrBackendUpdateFailed      = 131518
 	ErrBackendDeleteFailed      = 131519

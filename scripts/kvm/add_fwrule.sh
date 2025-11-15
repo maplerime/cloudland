@@ -13,9 +13,9 @@ while [ $i -lt $len ]; do
     cat /proc/net/dev | grep -q "\<br$vni\>:"
     if [ $? -ne 0 ]; then
         ./create_link.sh $vni
-	if [ "$gateway" != "nogateway" ]; then
+        if [ "" != "nogateway" ]; then
             ./set_subnet_gw.sh $router $vni $gateway
-	fi
+        fi
     fi
     if [ "$outer_ip" != "$vtep_ip" ]; then
 	bridge fdb | grep "\<$inner_mac\>"

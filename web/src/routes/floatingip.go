@@ -481,11 +481,11 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 	floatingIp.InstanceID = 0
 	floatingIp.Instance = nil
 	err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update(map[string]interface{}{
-		"instance_id": 0,
+		"instance_id":      0,
 		"load_balancer_id": 0,
-		"router_id": 0,
-		"int_address": "",
-		"type": PublicFloating,
+		"router_id":        0,
+		"int_address":      "",
+		"type":             PublicFloating,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to update instance ID for floating ip", err)
@@ -517,8 +517,8 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 	} else if loadBalancer != nil {
 		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update(map[string]interface{}{
 			"load_balancer_id": loadBalancer.ID,
-			"router_id": loadBalancer.RouterID,
-			"type": PublicLoadBalancer,
+			"router_id":        loadBalancer.RouterID,
+			"type":             PublicLoadBalancer,
 		}).Error
 		err = CreateVrrpConf(ctx, loadBalancer)
 		if err != nil {

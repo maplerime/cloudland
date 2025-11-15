@@ -79,7 +79,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	}
 	allIfaces := []*model.Interface{}
 	hyperSet := make(map[int32]struct{})
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and type <> 'gateway'", routerID).Find(&allIfaces).Error
+	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and type <> 'gateway' and hyper <> ?", routerID, hyperNode).Find(&allIfaces).Error
 	if err != nil {
 		logger.Error("Failed to query all interfaces", err)
 		return

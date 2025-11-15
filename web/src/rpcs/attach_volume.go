@@ -24,9 +24,27 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 	//|:-COMMAND-:| attach_volume.sh 5 7 vdb
 	db := DB()
 	argn := len(args)
+
+	logger.Debugf("AttachVolume called with args: %v, length: %d", args, argn)
+
 	if argn < 4 {
-		err = fmt.Errorf("Wrong params")
-		logger.Error("Invalid args", err)
+		volID, parseErr := strconv.Atoi(args[2])
+		if parseErr != nil {
+			err = fmt.Errorf("Invalid volume ID: %w", parseErr)
+			logger.Error("Invalid volume ID", err)
+			return
+		}
+		volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
+		err = db.Where(volume).Take(volume).Error
+		if err != nil {
+			logger.Error("Failed to query volume", err)
+			return
+		}
+		err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Update("status", model.VolumeStatusAvailable).Error
+		if err != nil {
+			logger.Error("Update volume status failed", err)
+			return
+		}
 		return
 	}
 	instanceID, err := strconv.Atoi(args[1])
@@ -46,7 +64,7 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Failed to query volume", err)
 		return
 	}
-	err = db.Model(&volume).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{"instance_id": instanceID, "target": target, "status": model.VolumeStatusAttached}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return

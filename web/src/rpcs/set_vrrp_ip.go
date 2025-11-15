@@ -80,9 +80,9 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 	if role == "MASTER" {
 		err = db.Model(&model.VrrpInstance{Model: model.Model{ID: int64(vrrpID)}}).Updates(map[string]interface{}{
 			"hyper": hyperID}).Error
-			if err != nil {
-				logger.Error("Failed to update vrrp ", err)
-			}
+		if err != nil {
+			logger.Error("Failed to update vrrp ", err)
+		}
 		vrrpIface2 := &model.Interface{}
 		err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = 'BACKUP' and device = ?", vrrpID).Take(vrrpIface2).Error
 		if err != nil {
@@ -110,9 +110,9 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 	} else {
 		err = db.Model(&model.VrrpInstance{Model: model.Model{ID: int64(vrrpID)}}).Updates(map[string]interface{}{
 			"peer": hyperID}).Error
-			if err != nil {
-				logger.Error("Failed to update vrrp ", err)
-			}
+		if err != nil {
+			logger.Error("Failed to update vrrp ", err)
+		}
 		err = UpdateLoadBalancerStatus(ctx, vrrpInstance)
 		if err != nil {
 			logger.Error("Failed to update load balancer", err)

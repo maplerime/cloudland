@@ -525,7 +525,7 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		err = db.Model(&model.Router{Model: model.Model{ID: subnet.RouterID}}).Updates(map[string]interface{}{"vrrp_subnet_id": 0}).Error
 		if err != nil {
 			logger.Error("DB failed to update router vrrp subnet", err)
-		err = NewCLError(ErrDatabaseError, "Database failed to update router vrrp subnet", err)
+			err = NewCLError(ErrDatabaseError, "Database failed to update router vrrp subnet", err)
 			return
 		}
 	}

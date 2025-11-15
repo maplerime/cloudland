@@ -46,8 +46,8 @@ type ListenerConfig struct {
 }
 
 type LoadBalancerConfig struct {
-	Listeners []*ListenerConfig `json:"listeners"`
-	FloatingIps []string `json:"floating_ips"`
+	Listeners   []*ListenerConfig `json:"listeners"`
+	FloatingIps []string          `json:"floating_ips"`
 }
 
 type LoadBalancerFloatingIp struct {
@@ -61,7 +61,7 @@ type LoadBalancerFloatingIp struct {
 
 type LoadBalancerFloatingIpConfig struct {
 	FloatingIps []*LoadBalancerFloatingIp `json:"floating_ips"`
-	Ports    []int32 `json:"ports"`
+	Ports       []int32                   `json:"ports"`
 }
 
 func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {

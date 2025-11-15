@@ -39,8 +39,8 @@ func FileExist(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, isRescue bool, instID int64, uuid string, rescueImage *model.Image) (image *model.Image, err error) {
-	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid)
+func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, isRescue bool, instID int64, uuid string, rescueImage *model.Image, osFamily string) (image *model.Image, err error) {
+	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid, osFamily)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -68,6 +68,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		image.Status = "creating"
 		image.CaptureFromInstanceID = instance.ID
 		image.CaptureFromInstance = instance
+		image.OsFamily = osFamily
 	} else {
 		image = &model.Image{
 			Model:        model.Model{Creater: memberShip.UserID},
@@ -80,6 +81,7 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 			Status:       "creating",
 			Architecture: architecture,
 			BootLoader:   bootLoader,
+			OsFamily:     osFamily,
 		}
 		if uuid != "" {
 			logger.Debugf("Creating image with UUID %s", uuid)
@@ -300,7 +302,7 @@ func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query
 	return
 }
 
-func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string) (err error) {
+func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -325,6 +327,19 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	}
 	if userName != "" {
 		image.UserName = userName
+	}
+
+	if uuid != "" {
+		if !utils.IsUUID(uuid) {
+			logger.Error("Invalid UUID format")
+			err = NewCLError(ErrInvalidParameter, "Invalid UUID format", nil)
+			return
+		}
+		image.UUID = uuid
+	}
+
+	if osFamily != "" {
+		image.OsFamily = osFamily
 	}
 
 	if image.Status != "available" {
@@ -463,7 +478,20 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.Error(http.StatusInternalServerError)
 		return
 	}
+
+	// Query OS Family options from Dictionary
+	db := DB()
+	var osFamilies []*model.Dictionary
+	err = db.Where("category = ?", model.DICT_CATEGORY_OS_FAMILY).Order("id ASC").Find(&osFamilies).Error
+	if err != nil {
+		logger.Error("Failed to query os_family from dictionary", err)
+		c.Data["ErrorMsg"] = "Failed to load OS Family options"
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
 	c.Data["Instances"] = instances
+	c.Data["OsFamilies"] = osFamilies
 	c.HTML(200, "images_new")
 }
 
@@ -479,6 +507,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	}
 	redirectTo := "../images"
 	osCode := c.QueryTrim("osCode")
+	osFamily := c.QueryTrim("osFamily")
 	uuid := c.QueryTrim("uuid")
 	if uuid != "" && !utils.IsUUID(uuid) {
 		c.Data["ErrorMsg"] = "Invalid UUID"
@@ -509,7 +538,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage)
+	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage, osFamily)
 	if err != nil {
 		logger.Error("Create image failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -577,9 +606,21 @@ func (v *ImageView) Edit(c *macaron.Context, store session.Store) {
 	if defaultPoolID != "" {
 		selectedPools[defaultPoolID] = true
 	}
+
+	// Query OS Family options from Dictionary
+	var osFamilies []*model.Dictionary
+	err = db.Where("category = ?", model.DICT_CATEGORY_OS_FAMILY).Order("id ASC").Find(&osFamilies).Error
+	if err != nil {
+		logger.Error("Failed to query os_family from dictionary", err)
+		c.Data["ErrorMsg"] = "Failed to load OS Family options"
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
 	c.Data["Image"] = image
 	c.Data["Pools"] = pools
 	c.Data["Storages"] = selectedPools
+	c.Data["OsFamilies"] = osFamilies
 	c.HTML(200, "images_patch")
 }
 
@@ -589,9 +630,11 @@ func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
 	redirectTo := "../images"
 	id := c.Params(":id")
 	osCode := c.QueryTrim("osCode")
+	osFamily := c.QueryTrim("osFamily")
 	name := c.QueryTrim("name")
 	osVersion := c.QueryTrim("osVersion")
 	userName := c.QueryTrim("userName")
+	uuid := c.QueryTrim("uuid")
 	imageID, err := strconv.Atoi(id)
 	pools := c.QueryStrings("pools")
 	if err != nil {
@@ -621,7 +664,7 @@ func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	err = imageAdmin.Update(c.Req.Context(), image, osCode, name, osVersion, userName, pools)
+	err = imageAdmin.Update(c.Req.Context(), image, osCode, name, osVersion, userName, pools, osFamily, uuid)
 	if err != nil {
 		logger.Error("Failed to update volume", err)
 		c.Data["ErrorMsg"] = err.Error()

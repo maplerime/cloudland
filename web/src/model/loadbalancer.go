@@ -12,35 +12,35 @@ import (
 
 type VrrpInstance struct {
 	Model
-	Owner        int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Hyper        int32  `gorm:"default:-1"`
-	Peer         int32  `gorm:"default:-1"`
+	Owner        int64 `gorm:"default:1"` /* The organization ID of the resource */
+	Hyper        int32 `gorm:"default:-1"`
+	Peer         int32 `gorm:"default:-1"`
 	VrrpSubnetID int64
-	VrrpSubnet   *Subnet       `gorm:"foreignkey:VrrpSubnetID"`
+	VrrpSubnet   *Subnet `gorm:"foreignkey:VrrpSubnetID"`
 	ZoneID       int64
 	RouterID     int64
 }
 
 type LoadBalancer struct {
 	Model
-	Owner        int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Name         string `gorm:"unique_index:idx_router_lb;type:varchar(64)"`
-	Status       string `gorm:"type:varchar(32)"`
-	FloatingIps  []*FloatingIp `gorm:"foreignkey:LoadBalancerID"`
-	RouterID     int64         `gorm:"unique_index:idx_router_lb"`
-	Router       *Router
-	Listeners    []*Listener `gorm:"foreignkey:LoadBalancerID"`
-	VrrpInstanceID int64 `gorm:"index"`
-	VrrpInstance *VrrpInstance `gorm:"foreignkey:VrrpInstanceID"`
+	Owner          int64         `gorm:"default:1"` /* The organization ID of the resource */
+	Name           string        `gorm:"unique_index:idx_router_lb;type:varchar(64)"`
+	Status         string        `gorm:"type:varchar(32)"`
+	FloatingIps    []*FloatingIp `gorm:"foreignkey:LoadBalancerID"`
+	RouterID       int64         `gorm:"unique_index:idx_router_lb"`
+	Router         *Router
+	Listeners      []*Listener   `gorm:"foreignkey:LoadBalancerID"`
+	VrrpInstanceID int64         `gorm:"index"`
+	VrrpInstance   *VrrpInstance `gorm:"foreignkey:VrrpInstanceID"`
 }
 
 type Listener struct {
 	Model
-	Owner          int64  `gorm:"default:1"` /* The organization ID of the resource */
-	Name           string `gorm:"unique_index:idx_lb_listener;type:varchar(64)"`
-	Status         string `gorm:"type:varchar(32)"`
-	Mode           string `gorm:"type:varchar(32)"`
-	Port           int32  `gorm:"default:-1"`
+	Owner          int64      `gorm:"default:1"` /* The organization ID of the resource */
+	Name           string     `gorm:"unique_index:idx_lb_listener;type:varchar(64)"`
+	Status         string     `gorm:"type:varchar(32)"`
+	Mode           string     `gorm:"type:varchar(32)"`
+	Port           int32      `gorm:"default:-1"`
 	LoadBalancerID int64      `gorm:"unique_index:idx_lb_listener"`
 	Certificate    string     `gorm:"type:text"`
 	Key            string     `gorm:"type:text"`
