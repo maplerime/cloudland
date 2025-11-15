@@ -1,0 +1,27 @@
+groups:
+- name: memory_{{ owner }}_{{ rule_group }}
+  rules:
+  - alert: MemoryUsage_{{ owner }}_{{ rule_group }}
+    expr: |
+      (
+        (
+          (libvirt_domain_info_maximum_memory_bytes / 1024 - libvirt_domain_memory_stats_unused_bytes / 1024)
+          / (libvirt_domain_info_maximum_memory_bytes / 1024) * 100
+        ) {{ rule_operator }} {{ limit_value }}
+      )
+      * on (domain) group_left(instance_id, rule_id)
+      max by (domain, instance_id, rule_id) (
+        up{job="vm-group-metadata", rule_id=~"alarm-memory-.*-{{ rule_group }}"} == 1
+      )
+    for: {{ duration_minutes }}m
+    labels:
+      severity: "{{ level }}"
+      region_id: "{{ region_id }}"
+      rule_id: "{{ rule_id }}"
+      global_rule_id: "{{ global_rule_id }}"
+      rule_group: "{{ rule_group }}"
+      alert_type: memory
+      owner: "{{ owner }}"
+    annotations:
+      summary: "Memory Usage Alert ({{ $value }}%)"
+      description: "VM {{ $labels.domain }} memory usage {{ rule_operator }} {{ limit_value }}% for {{ duration_minutes }} minutes. Instance: {{ $labels.instance_id }}, Region: {{ region_id }}, Rule: {{ rule_id }}"

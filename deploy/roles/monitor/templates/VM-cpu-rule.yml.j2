@@ -1,0 +1,27 @@
+groups:
+- name: cpu_{{ owner }}_{{ rule_group }}
+  rules:
+  - alert: CPUUsage_{{ owner }}_{{ rule_group }}
+    expr: |
+      (
+        (
+          sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
+          / on (domain) libvirt_domain_info_virtual_cpus
+        ) * 100 {{ rule_operator }} {{ limit_value }}
+      )
+      * on (domain) group_left(instance_id, rule_id)
+      max by (domain, instance_id, rule_id) (
+        up{job="vm-group-metadata", rule_id=~"alarm-cpu-.*-{{ rule_group }}"} == 1
+      )
+    for: {{ duration_minutes }}m
+    labels:
+      severity: "{{ level }}"
+      region_id: "{{ region_id }}"
+      rule_id: "{{ rule_id }}"
+      global_rule_id: "{{ global_rule_id }}"
+      rule_group: "{{ rule_group }}"
+      alert_type: cpu
+      owner: "{{ owner }}"
+    annotations:
+      summary: "CPU Usage Alert ({{ $value }}%)"
+      description: "VM {{ $labels.domain }} CPU usage {{ rule_operator }} {{ limit_value }}% for {{ duration_minutes }} minutes. Instance: {{ $labels.instance_id }}, Region: {{ region_id }}, Rule: {{ rule_id }}"

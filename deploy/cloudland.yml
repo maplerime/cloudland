@@ -100,11 +100,11 @@
   hosts: monitor
   become: yes
   roles:
-    - { role: metering_prometheus, tags: [metering_prometheus] }
+    - { role: metering_prometheus, tags: [monitor, metering_prometheus] }
 
 # deploy metering for hyper nodes
 - name: install metering for hyper
   hosts: hyper
   become: yes
   roles:
-    - {role: metering_hyper, become: yes, tags: [metering_hyper]}
+    - {role: metering_hyper, become: yes, tags: [monitor, metering_hyper]}

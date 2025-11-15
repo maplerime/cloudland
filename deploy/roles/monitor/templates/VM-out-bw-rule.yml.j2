@@ -1,0 +1,31 @@
+groups:
+- name: bw_out_{{ owner }}_{{ rule_group }}
+  rules:
+  - alert: HighBWOutUsage_{{ owner }}_{{ rule_group }}
+    expr: |
+      (
+        (rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) / 1024 / 1024)
+        /
+        vm_interface_bandwidth_config_mbps{direction="out"}
+        * 100
+        > {{ out_threshold }}
+      )
+      and on(domain, target_device)
+      (vm_interface_bandwidth_config_mbps{direction="out"} > 0)
+      * on(domain, target_device) group_left(rule_id, instance_id)
+      max by (domain, target_device, rule_id, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"alarm-bw-.*-{{ rule_group }}"} == 1
+      )
+    for: {{ out_duration }}m
+    labels:
+      severity: "{{ level }}"
+      region_id: "{{ region_id }}"
+      rule_id: "{{ rule_id }}"
+      global_rule_id: "{{ global_rule_id }}"
+      rule_group: "{{ rule_group }}"
+      alert_type: bw
+      owner: "{{ owner }}"
+      target_device: "{{ $labels.target_device }}"
+    annotations:
+      summary: "High Network Out Usage ({{ $value | humanize }}%)"
+      description: "VM {{ $labels.domain }} interface {{ $labels.target_device }} outbound usage exceeded {{ out_threshold }}% for {{ out_duration }} minutes"

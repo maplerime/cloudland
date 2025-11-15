@@ -1,6 +1,6 @@
 - name: Set scrape interval variable
   set_fact:
-    scrape_interval: 15  # 15 seconds
+    scrape_interval: 30
     alarm_rules_manager_port: 8256
 
 - name: Set prometheus_server_ip from monitor group
@@ -106,6 +106,43 @@
     group: prometheus
     mode: 0755
 
+- name: Clean up old Grafana configurations
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  shell: |
+    rm -f /etc/apt/sources.list.d/grafana*.list
+    rm -f /etc/apt/sources.list.d/packages_grafana*.list
+    rm -f /etc/apt/keyrings/grafana*
+    rm -f /usr/share/keyrings/grafana*
+  ignore_errors: true
+  tags: [monitor]
+
+- name: Ensure keyrings directory exists
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+  tags: [monitor]
+
+- name: Install Grafana GPG key
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  shell: |
+    curl -fsSL https://packages.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
+    chmod 644 /etc/apt/keyrings/grafana.gpg
+  tags: [monitor]
+
+- name: Add Grafana repository
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main"
+    state: present
+    filename: grafana
+  tags: [monitor]
+
 - name: Setup Docker for Alertmanager
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -121,15 +158,32 @@
           - python3-pip
         state: present
 
-    - name: Add Docker GPG key
-      apt_key:
+    - name: Clean up old Docker configurations
+      shell: |
+        rm -f /etc/apt/sources.list.d/docker*.list
+        rm -f /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        rm -f /etc/apt/keyrings/docker*
+        rm -f /usr/share/keyrings/docker*
+      ignore_errors: true
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Install Docker GPG key
+      get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
-        id: "0EBFCD88"
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        force: true
 
     - name: Add Docker repository
       apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
+        filename: docker
 
     - name: Install Docker CE
       apt:
@@ -348,47 +402,47 @@
             smtp_hello: '{{ smtp_hello }}'
 
           route:
-            group_by: ['node_type', 'alertname', 'instance', 'domain', 'alert_type']
+            group_by: ['node_type', 'alert_type', 'domain', 'instance_id', 'rule_group', 'action_type', 'target_device']
             group_wait: 30s
             group_interval: 5m
             repeat_interval: 3h
             receiver: '{{ receiver_name }}'
 
             routes:
-            - match:
-                alert_type: cpu
-                severity: warning
-              receiver: 'cpu-webhook'
-              continue: false
 
-            - match:
-                alert_type: bw
-                severity: warning
-              receiver: 'bw-webhook'
-              continue: false
+              # Route node alarms to node-webhook (maintain compatibility with existing config)
+              - match_re:
+                  alert_type: node-(unavailable|cpu|disk|network)
+                  severity: warning|info
+                receiver: 'node-webhook'
+                continue: true
 
-            - match_re:
-                alert_type: node-(unavailable|cpu|disk|network)
-                severity: warning|info
-              receiver: 'node-webhook'
-              continue: true
+              # Also send node alarms to slack-notifications
+              - match_re:
+                  alert_type: node-(unavailable|cpu|disk|network)
+                  severity: warning|info
+                receiver: 'slack-notifications'
+                continue: true
 
-            - match_re:
-                alert_type: .*
-                severity: .*
-              receiver: 'slack-notifications'
-              continue: true
+              # Route VM alerts (CPU, Memory, BW) to unified VM webhook
+              - match_re:
+                  alert_type: (cpu|memory|bw)
+                receiver: 'vm-alerts-webhook'
+                continue: true
 
-            - match_re:
-                alert_type: .*
-                severity: .*
-              receiver: '{{ receiver_name }}'
+              # Also send VM alerts to slack for monitoring
+              - match_re:
+                  alert_type: (cpu|memory|bw)
+                receiver: 'slack-notifications'
+                continue: true
 
           receivers:
           - name: '{{ receiver_name }}'
             email_configs:
             - to: '{{ alert_recipient }}'
               send_resolved: true
+              headers:
+                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
               html: |-
                 {% raw %}
                 <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
@@ -400,18 +454,9 @@
                 <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
                 <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
                 {% endraw %}
-              headers:
-                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
 
-          - name: 'cpu-webhook'
-            webhook_configs:
-            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
-              send_resolved: true
-              http_config:
-                tls_config:
-                  insecure_skip_verify: true
 
-          - name: 'bw-webhook'
+          - name: 'vm-alerts-webhook'
             webhook_configs:
             - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
               send_resolved: true
@@ -533,7 +578,6 @@
   with_items:
     - /etc/prometheus/rules_enabled
     - /etc/prometheus/general_rules
-    - /etc/prometheus/special_rules
     - /var/log/prometheus
   tags: [monitor]
 
@@ -615,7 +659,8 @@
         --storage.tsdb.retention.time=720h \
         --storage.tsdb.path=/var/lib/prometheus/data \
         --log.level=info \
-        --log.format=json
+        --log.format=json \
+        --web.enable-lifecycle
     mode: 0644
   tags: [monitor]
 
@@ -683,6 +728,7 @@
         group: prometheus
         remote_src: no
       when: not ansible_check_mode
+      ignore_errors: true
 
     - name: Create alarm_rules_manager service file
       delegate_to: "{{ prometheus_server_ip }}"
@@ -718,22 +764,6 @@
     daemon_reload: yes
     state: restarted
   when: not ansible_check_mode
-  tags: [monitor]
-
-- name: Add Grafana GPG key
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  apt_key:
-    url: https://packages.grafana.com/gpg.key
-    state: present
-  tags: [monitor]
-
-- name: Add Grafana repository
-  delegate_to: "{{ prometheus_server_ip }}"
-  become: true
-  apt_repository:
-    repo: deb https://packages.grafana.com/oss/deb stable main
-    state: present
   tags: [monitor]
 
 - name: Update apt cache and install Grafana
@@ -821,7 +851,7 @@
     url: http://localhost:3000/api/health
     method: GET
     status_code: 200
-    timeout: 10
+    timeout: 15
   register: grafana_health
   until: grafana_health.status == 200
   retries: 10
@@ -896,6 +926,81 @@
     - roles/monitor/templates/management-resources.yml.j2
     - roles/monitor/templates/node-availability.yml.j2
     - roles/monitor/templates/compute-network-resources.yml.j2
+    - roles/monitor/templates/VM-cpu-rule.yml.j2
+    - roles/monitor/templates/VM-in-bw-rule.yml.j2
+    - roles/monitor/templates/VM-out-bw-rule.yml.j2
+    - roles/monitor/templates/VM-memory-rule.yml.j2
+  tags: [monitor]
+
+- name: Create directories for mapping files
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  with_items:
+    - /etc/prometheus/lists
+  tags: [monitor]
+
+- name: Define vm-group-metadata block (no indent, keep original text)
+  set_fact:
+    vm_group_block: |
+      - job_name: 'vm-group-metadata'
+        file_sd_configs:
+          - files:
+              - '/etc/prometheus/lists/matched_vms.json'
+            refresh_interval: 30s
+        relabel_configs:
+          # 1. Keep domain label
+          - source_labels: [domain]
+            target_label: domain
+            action: replace
+
+          # 2. Keep rule_id label
+          - source_labels: [rule_id]
+            target_label: rule_id
+            action: replace
+
+          # 3. Keep instance_id label (new)
+          - source_labels: [instance_id]
+            target_label: instance_id
+            action: replace
+
+          # 4. Keep target_device label (new)
+          - source_labels: [target_device]
+            target_label: target_device
+            action: replace
+
+          # 5. Set instance to domain value
+          - source_labels: [domain]
+            target_label: instance
+            action: replace
+
+# Use indent(2, true) to properly handle indentation of the first line
+- name: Add vm-group-metadata job to Prometheus
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    block: "{{ vm_group_block | indent(2, true) }}"
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - VM Group Metadata"
+    insertafter: '^scrape_configs:\s*$'
+    create: yes
+  tags: [monitor]
+
+- name: Create empty matched_vms.json file
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    content: "[]"
+    dest: /etc/prometheus/lists/matched_vms.json
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+    force: no
   tags: [monitor]
 
 - name: Reload Prometheus configuration
@@ -923,3 +1028,7 @@
   delegate_to: "{{ item }}"
   with_items: "{{ groups['cland'] }}"
   tags: [monitor]
+
+- name: Import resource adjustment tasks
+  import_tasks: resource-adjustment.yml
+  tags: [monitor, resource_adjustment]
