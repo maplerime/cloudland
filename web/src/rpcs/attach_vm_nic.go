@@ -57,7 +57,7 @@ func AttachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Failed to update interface", err)
 		return
 	}
-	err = sendFdbRules(ctx, instance, iface)
+	err = sendFdbRules(ctx, instance, nil, iface)
 	if err != nil {
 		logger.Error("Failed to send fdb rules for interface", err)
 		return

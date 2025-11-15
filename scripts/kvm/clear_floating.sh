@@ -11,7 +11,7 @@ ext_addr=$2
 ext_ip=${2%/*}
 int_ip=${3%/*}
 int_vlan=$4
-mark_id=$(($5 % 4294967295))
+mark_id=$(($3 % 2147483647))
 
 [ -z "$router" -o -z "$ext_ip" -o -z "$int_ip" ] && exit 1
 
@@ -20,6 +20,7 @@ table=fip-${ext_dev##*-}
 ip netns exec $router ip rule del from $int_ip lookup $table
 ip netns exec $router ip rule del to $int_ip lookup $table
 ip netns exec $router ip addr del $ext_addr dev $ext_dev
+ip netns exec $router iptables -D INPUT -d $ext_ip -m conntrack --ctstate NEW -j ACCEPT
 #ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
 ip netns exec $router iptables -t nat -D PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
@@ -33,6 +34,7 @@ ip netns exec $router iptables -S | grep "mark $(printf "0x%x" $mark_id)" | whil
 done
 ip netns exec $router tc filter del dev ns-$int_vlan protocol ip parent 1:0 prio $mark_id handle $mark_id fw flowid 1:$mark_id
 ip netns exec $router tc class del dev ns-$int_vlan parent 1: classid 1:$mark_id
+let mark_id=$mark_id+2147483647
 ip netns exec $router tc filter del dev $ext_dev protocol ip parent 1:0 prio $mark_id u32 match ip src $ext_ip/32 flowid 1:$mark_id
 ip netns exec $router tc class del dev $ext_dev parent 1: classid 1:$mark_id
 exit 0

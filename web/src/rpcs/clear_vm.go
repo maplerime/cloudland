@@ -20,25 +20,47 @@ func init() {
 	Add("clear_vm", ClearVM)
 }
 
-func deleteInterfaces(ctx context.Context, instance *model.Instance, instIface *model.Interface) (err error) {
+func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstance *model.VrrpInstance, instIface *model.Interface) (err error) {
 	ctx, db := GetContextDB(ctx)
 	hyperSet := make(map[int32]struct{})
 	instances := []*model.Instance{}
-	hyperNode := instance.Hyper
+	hyperNode := int32(-1)
+	routerID := int64(0)
+	var interfaces []*model.Interface
+	if instance != nil {
+		hyperNode = instance.Hyper
+		routerID = instance.RouterID
+		interfaces = instance.Interfaces
+	} else if vrrpInstance != nil {
+		routerID = vrrpInstance.RouterID
+	}
+	if instIface != nil {
+		hyperNode = instIface.Hyper
+		interfaces = []*model.Interface{instIface}
+	}
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
 	if err != nil {
 		logger.Error("Failed to query hypervisor")
 		return
 	}
-	if instance.RouterID > 0 {
-		err = db.Where("router_id = ?", instance.RouterID).Find(&instances).Error
+	if routerID > 0 {
+		err = db.Where("router_id = ?", routerID).Find(&instances).Error
 		if err != nil {
 			logger.Error("Failed to query all instances", err)
 			return
 		}
 		for _, inst := range instances {
 			hyperSet[inst.Hyper] = struct{}{}
+		}
+		vrrpIfaces := []*model.Interface{}
+		err = db.Where("router_id = ?", routerID).Find(&vrrpIfaces).Error
+		if err != nil {
+			logger.Error("Failed to query all instances", err)
+			return
+		}
+		for _, iface := range vrrpIfaces {
+			hyperSet[iface.Hyper] = struct{}{}
 		}
 	}
 	hyperList := fmt.Sprintf("group-fdb-%d", hyperNode)
@@ -50,10 +72,6 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, instIface *
 			hyperList = fmt.Sprintf("%s,%d", hyperList, key)
 		}
 		i++
-	}
-	interfaces := instance.Interfaces
-	if instIface != nil {
-		interfaces = []*model.Interface{instIface}
 	}
 	for _, iface := range interfaces {
 		if iface.FloatingIp == 0 {
@@ -92,7 +110,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, instIface *
 			logger.Error("Failed to update subnet", err)
 			return
 		}
-		if instance.RouterID > 0 && hyperNode >= 0 {
+		if routerID > 0 && hyperNode >= 0 {
 			spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
 			fdbJson, _ := json.Marshal(spreadRules)
 			control := "toall=" + hyperList
@@ -140,7 +158,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		reason = err.Error()
 		return
 	}
-	err = deleteInterfaces(ctx, instance, nil)
+	err = deleteInterfaces(ctx, instance, nil, nil)
 	if err != nil {
 		logger.Error("Failed to delete interfaces", err)
 		return
