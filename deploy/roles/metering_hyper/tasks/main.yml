@@ -5,6 +5,29 @@
     mode: '0755'
   tags: [metering_hyper]
 
+- name: Stop north-south-metrics.timer before script update
+  systemd:
+    name: north-south-metrics.timer
+    state: stopped
+  ignore_errors: true
+  tags: [metering_hyper]
+
+- name: Kill old script instances to prevent concurrent execution
+  shell: |
+    # Find and kill all running instances of the script
+    pids=$(ps aux | grep '[g]enerate_north_south_metrics.sh' | awk '{print $2}')
+    if [ -n "$pids" ]; then
+      echo "Killing old script instances: $pids"
+      kill $pids 2>/dev/null || true
+      # Wait for processes to terminate gracefully
+      sleep 2
+      # Force kill if any still exist
+      kill -9 $pids 2>/dev/null || true
+    else
+      echo "No old script instances found"
+    fi
+  tags: [metering_hyper]
+
 - name: Deploy systemd service for north-south metrics
   template:
     src: north-south-metrics.service.j2
