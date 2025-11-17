@@ -12,6 +12,7 @@ import (
 )
 
 type VolumeStatus string
+type BackupStatus string
 
 const (
 	VolumeStatusResizing  VolumeStatus = "resizing"
@@ -19,11 +20,24 @@ const (
 	VolumeStatusAttached  VolumeStatus = "attached"
 	VolumeStatusAttaching VolumeStatus = "attaching"
 	VolumeStatusDetaching VolumeStatus = "detaching"
+	VolumeStatusRestoring VolumeStatus = "restoring"
+	VolumeStatusBackuping VolumeStatus = "backuping"
 	VolumeStatusError     VolumeStatus = "error"
 	VolumeStatusPending   VolumeStatus = "pending"
 )
 
 func (s VolumeStatus) String() string {
+	return string(s)
+}
+
+const (
+	BackupStatusPending   BackupStatus = "pending"
+	BackupStatusReady     BackupStatus = "available"
+	BackupStatusError     BackupStatus = "error"
+	BackupStatusRestoring BackupStatus = "restoring"
+)
+
+func (s BackupStatus) String() string {
 	return string(s)
 }
 
@@ -56,6 +70,30 @@ type Volume struct {
 	PoolID     string `gorm:"type:varchar(128)"`
 }
 
+func (v *Volume) IsBusy() bool {
+	if v.Status == VolumeStatusPending ||
+		v.Status == VolumeStatusResizing ||
+		v.Status == VolumeStatusAttaching ||
+		v.Status == VolumeStatusDetaching ||
+		v.Status == VolumeStatusRestoring ||
+		v.Status == VolumeStatusBackuping {
+		return true
+	}
+	return false
+}
+
+func (v *Volume) IsError() bool {
+	return v.Status == VolumeStatusError
+}
+
+func (v *Volume) IsAvailable() bool {
+	return v.Status == VolumeStatusAvailable
+}
+
+func (v *Volume) IsAttached() bool {
+	return v.Status == VolumeStatusAttached
+}
+
 func (v *Volume) ParsePath() []string {
 	if v.Path != "" {
 		parts := strings.SplitN(v.Path, "://", 2)
@@ -74,37 +112,115 @@ func (v *Volume) ParsePath() []string {
 }
 
 func (v *Volume) GetVolumeDriver() string {
-	parts := v.ParsePath()
-	if parts != nil {
+	return parseDriver(v.Path)
+}
+
+func (v *Volume) GetVolumePath() string {
+	return parsePath(v.Path)
+}
+
+func (v *Volume) GetVolumePoolID() string {
+	return parsePoolID(v.Path)
+}
+
+func (v *Volume) GetOriginVolumeID() string {
+	return parseOriginID(v.Path, v.UUID)
+}
+
+type VolumeBackup struct {
+	Model
+	Owner      int64  `gorm:"default:1;index"` /* The organization ID of the resource */
+	Name       string `gorm:"type:varchar(128)"`
+	VolumeID   int64
+	Volume     *Volume      `gorm:"foreignkey:VolumeID"`
+	BackupType string       `gorm:"type:varchar(32)"` // snapshot or backup
+	Status     BackupStatus `gorm:"type:varchar(32)"`
+	Size       int32
+	Path       string `gorm:"type:varchar(256)"`
+}
+
+func (v *VolumeBackup) CanDelete() bool {
+	return v.Status != BackupStatusRestoring && v.Status != BackupStatusPending
+}
+func (v *VolumeBackup) CanRestore() bool {
+	return v.Status == BackupStatusReady
+}
+
+func (v *VolumeBackup) GetBackupDriver() string {
+	return parseDriver(v.Path)
+}
+
+func (v *VolumeBackup) GetBackupPath() string {
+	return parsePath(v.Path)
+}
+
+func (v *VolumeBackup) GetBackupPoolID() string {
+	return parsePoolID(v.Path)
+}
+
+func (v *VolumeBackup) GetOriginBackupID() string {
+	return parseOriginID(v.Path, "")
+}
+
+func parse(path string) []string {
+	if path != "" {
+		parts := strings.SplitN(path, "://", 2)
+		if len(parts) == 2 {
+			driver := parts[0]
+			if driver == "local" {
+				return []string{driver, parts[1]}
+			} else {
+				res := []string{driver}
+				res = append(res, strings.Split(parts[1], "/")...)
+				return res
+			}
+		}
+	}
+	return nil
+}
+
+func parseDriver(path string) string {
+	parts := parse(path)
+	if len(parts) > 0 {
 		return parts[0]
 	}
 	return ""
 }
 
-func (v *Volume) GetVolumePath() string {
-	parts := v.ParsePath()
-	if (parts != nil) && (parts[0] == "local") {
+func parsePath(path string) string {
+	parts := parse(path)
+	if (len(parts) > 1) && (parts[0] == "local") {
 		return parts[1]
 	}
-	return v.Path
+	return path
 }
 
-func (v *Volume) GetVolumePoolID() string {
-	parts := v.ParsePath()
-	if (parts != nil) && (len(parts) == 3) {
+func parsePoolID(path string) string {
+	parts := parse(path)
+	if len(parts) == 3 {
 		return parts[1]
 	}
 	return ""
 }
 
-func (v *Volume) GetOriginVolumeID() string {
-	parts := v.ParsePath()
-	if (parts != nil) && (len(parts) == 3) {
+func parseOriginID(path string, id string) string {
+	parts := parse(path)
+	if len(parts) == 3 {
 		return parts[2]
 	}
-	return v.UUID
+	return id
+}
+
+type ScheduledVolumeBackup struct {
+	Model
+	Owner      int64 `gorm:"default:1;index"` /* The organization ID of the resource */
+	VolumeID   int64
+	Volume     *Volume `gorm:"foreignkey:VolumeID; index"`
+	BackupType string  `gorm:"type:varchar(32)"` // snapshot or backup
+	Status     string  `gorm:"type:varchar(32)"` // disabled, active
+	WDSTaskID  string  `gorm:"type:varchar(64)"`
 }
 
 func init() {
-	dbs.AutoMigrate(&Volume{})
+	dbs.AutoMigrate(&Volume{}, &VolumeBackup{})
 }

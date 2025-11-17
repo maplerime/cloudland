@@ -1,8 +1,6 @@
 /*
 Copyright <holder> All Rights Reserved.
 
-SPDX-License-Identifier: Apache-2.0
-
 */
 
 package routes
@@ -18,8 +16,8 @@ import (
 	. "web/src/common"
 	"web/src/model"
 
-	jwt "github.com/dgrijalva/jwt-go"
 	"github.com/go-macaron/session"
+	jwt "github.com/golang-jwt/jwt/v4"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/macaron.v1"
@@ -60,10 +58,8 @@ func MakeToken(ctx context.Context, instance *model.Instance) (token string, err
 		Role:       memberShip.Role,
 		InstanceID: int(instance.ID),
 		Secret:     secret,
-		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(TokenExpireDuration).Unix(),
-		},
 	}
+	tkClaim.RegisteredClaims.ExpiresAt = jwt.NewNumericDate(time.Now().Add(TokenExpireDuration))
 	tokenHash := make([]byte, 32)
 	data := sha3.NewShake256()
 	data.Write([]byte(secret))
