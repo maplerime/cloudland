@@ -58,6 +58,19 @@
           - targets: ['{{ ip }}:9177']
           {% endfor %}
 
+- name: Generate CloudLand exporters config block
+  set_fact:
+    cloudland_exporters_block: |
+      - job_name: 'cloudland_exporter'
+        scrape_interval: 60s
+        static_configs:
+          {% for ip in cland_ips -%}
+          - targets: ['{{ ip }}:9102']
+            labels:
+              node_type: 'control'
+              exporter_type: 'cloudland'
+          {% endfor %}
+
 - name: Validate Alertmanager variables
   fail:
     msg: "Must define {{ item }} for task"
@@ -412,15 +425,15 @@
 
               # Route node alarms to node-webhook (maintain compatibility with existing config)
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network)
-                  severity: warning|info
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu)
+                  severity: critical|warning|info|error
                 receiver: 'node-webhook'
                 continue: true
 
               # Also send node alarms to slack-notifications
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network)
-                  severity: warning|info
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu)
+                  severity: critical|warning|info|error
                 receiver: 'slack-notifications'
                 continue: true
 
@@ -548,7 +561,8 @@
     content: |
       global:
         scrape_interval: {{ scrape_interval }}s
-        evaluation_interval: 15s
+        evaluation_interval: 30s
+        scrape_timeout: 20s
 
       rule_files:
         - /etc/prometheus/rules_enabled/*.yml
@@ -631,6 +645,18 @@
     block: |
       {{ libvirt_exporters_block | indent(2, True) }}
     marker: "# {mark} ANSIBLE MANAGED BLOCK - Libvirt Exporters"
+    insertafter: '^scrape_configs:'
+    create: yes
+  tags: [monitor]
+
+- name: Update Prometheus with CloudLand exporters block
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    block: |
+      {{ cloudland_exporters_block | indent(2, True) }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - CloudLand Exporter"
     insertafter: '^scrape_configs:'
     create: yes
   tags: [monitor]
@@ -926,6 +952,7 @@
     - roles/monitor/templates/management-resources.yml.j2
     - roles/monitor/templates/node-availability.yml.j2
     - roles/monitor/templates/compute-network-resources.yml.j2
+    - roles/monitor/templates/compute-vcpu-resources.yml.j2
     - roles/monitor/templates/VM-cpu-rule.yml.j2
     - roles/monitor/templates/VM-in-bw-rule.yml.j2
     - roles/monitor/templates/VM-out-bw-rule.yml.j2
