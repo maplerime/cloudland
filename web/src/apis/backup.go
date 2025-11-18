@@ -25,9 +25,11 @@ type VolBackupPayload struct {
 
 type VolBackupResponse struct {
 	*ResourceReference
-	Volume   *BaseReference     `json:"volume"`
-	Status   model.BackupStatus `json:"status"`
-	BackupID string             `json:"backup_id"`
+	Name   string             `json:"name"`
+	Size   int32              `json:"size"`
+	Volume *BaseReference     `json:"volume"`
+	Status model.BackupStatus `json:"status"`
+	Path   string             `json:"path,omitempty"`
 }
 
 type VolBackupListResponse struct {
@@ -80,8 +82,8 @@ func (v *VolBackupAPI) Create(c *gin.Context) {
 
 // @Summary list volumes backups/snapshots
 // @Description list volume backups/snapshots by volume UUID and backup type
-// @Param   id          path    string     true  "Volume UUID"
-// @Param   backup_type path    string     true  "Backup type: snapshot or backup"
+// @Param   id          query    string     true  "Volume UUID"
+// @Param   backup_type query    string     true  "Backup type: empty or snapshot or backup"
 // @tags Compute
 // @Accept  json
 // @Produce json
@@ -91,21 +93,24 @@ func (v *VolBackupAPI) Create(c *gin.Context) {
 // @Router /backups [get]
 func (v *VolBackupAPI) List(c *gin.Context) {
 	ctx := c.Request.Context()
-	volumeUUID := c.Param("id")
-	backupType := c.Param("backup_type")
-	if backupType != "snapshot" && backupType != "backup" {
+	volumeUUID := c.DefaultQuery("volume_id", "")
+	backupType := c.DefaultQuery("backup_type", "")
+	if backupType != "" && backupType != "snapshot" && backupType != "backup" {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid backup type", nil)
 		return
 	}
-
-	volume, err := volumeAdmin.GetVolumeByUUID(ctx, volumeUUID)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid volume id", err)
-		return
-	}
-	if volume == nil {
-		ErrorResponse(c, http.StatusNotFound, "Volume not found", nil)
-		return
+	var vol_id int64 = 0
+	if volumeUUID != "" {
+		volume, err := volumeAdmin.GetVolumeByUUID(ctx, volumeUUID)
+		if err != nil {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid volume id", err)
+			return
+		}
+		if volume == nil {
+			ErrorResponse(c, http.StatusNotFound, "Volume not found", nil)
+			return
+		}
+		vol_id = volume.ID
 	}
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
@@ -119,7 +124,8 @@ func (v *VolBackupAPI) List(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query limit: "+limitStr, err)
 		return
 	}
-	total, backups, err := volBackupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "", volume.ID, backupType)
+	logger.Debugf("Backup list url parameters: volume_id=%s, backup_type=%s, offset=%d, limit=%d", volumeUUID, backupType, offset, limit)
+	total, backups, err := volBackupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", "", vol_id, backupType)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to list backups", err)
 		return
@@ -197,7 +203,7 @@ func (v *VolBackupAPI) Delete(c *gin.Context) {
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Volume backup/snapshot UUID"
-// @Success 200 {object} nil
+// @Success 204
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /backups/{id}/restore [post]
@@ -214,7 +220,7 @@ func (v *VolBackupAPI) Restore(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to restore backup", err)
 		return
 	}
-	c.JSON(http.StatusOK, nil)
+	c.JSON(http.StatusNoContent, nil)
 }
 
 func (v *VolBackupAPI) getVolBackupResponse(ctx context.Context, backup *model.VolumeBackup) (backupResp *VolBackupResponse, err error) {
@@ -227,8 +233,11 @@ func (v *VolBackupAPI) getVolBackupResponse(ctx context.Context, backup *model.V
 			CreatedAt: backup.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: backup.UpdatedAt.Format(TimeStringForMat),
 		},
-		Status:   backup.Status,
-		BackupID: backup.UUID,
+		Status: backup.Status,
+		Name:   backup.Name,
+		Size:   backup.Size,
+		Volume: nil,
+		Path:   backup.Path,
 	}
 	if backup.Volume != nil {
 		backupResp.Volume = &BaseReference{

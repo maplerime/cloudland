@@ -47,12 +47,16 @@
 			                        <td>{{.ID}}</td>
 									{{ end }}
 									<td>{{.UUID}}</td>
+						{{ if $.IsAdmin }}
 									<td>{{.Path}}</td>
+						{{ end }}
                                     <th>{{.BackupType}}</th>
 			                        <td>{{.Name}}</td>
 			                        <td>{{.Size}}</td>
 			                        <td>{{.Status}}</td>
-                                    <td><a href="/volumes/{{.Volume.ID}}">{{.Volume.UUID}}</a></td>
+						{{ if .Volume }}
+                                    <td><a href="/volumes/{{.Volume.ID}}">{{.Volume.Name}}</a></td>
+						{{ end }}
 						{{ if $.IsAdmin }}
 			                        <td>{{.OwnerInfo.Name}}</td>
 						{{ end }}
