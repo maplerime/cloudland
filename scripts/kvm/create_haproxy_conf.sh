@@ -12,6 +12,14 @@ src_vrrp_ip=$(grep unicast_src_ip $router_dir/$router/keepalived.conf | awk '{pr
 lb_dir=$router_dir/$router/lb-$lb_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir
 content=$(cat)
+listeners=$(jq -r .listeners <<< $content)
+nlistener=$(jq length <<< $listeners)
+if [ $nlistener -eq 0 ]; then
+    haproxy_pid=$(cat $lb_dir/haproxy.pid)
+    ip netns exec $router kill $haproxy_pid
+    rm -rf $lb_dir
+    exit 0
+fi
 cat >$lb_dir/haproxy.conf <<EOF
 global
     log /dev/log local0 info
@@ -54,10 +62,6 @@ listen stats
     stats refresh 30s
 EOF
 
-listeners=$(jq -r .listeners <<< $content)
-nlistener=$(jq length <<< $listeners)
-floating_ips=$(jq -r .floating_ips <<< $content)
-nfloating_ip=$(jq length <<< $floating_ips)
 i=0
 while [ $i -lt $nlistener ]; do
     listener=$(jq -r .[$i] <<< $listeners)
