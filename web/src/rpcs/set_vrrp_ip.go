@@ -61,8 +61,11 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to query vrrp instance", err)
 		return
 	}
+	macAddr := args[4]
 	err = db.Model(&model.Interface{}).Where("type = 'vrrp' and name = ? and device = ?", role, vrrpID).Updates(map[string]interface{}{
-		"hyper": hyperID}).Error
+		"hyper": hyperID,
+		"mac_addr": macAddr,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to update interface", err)
 	}
