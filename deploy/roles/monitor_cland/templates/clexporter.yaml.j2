@@ -1,0 +1,70 @@
+################################################################################
+#
+#   ServerGeneral Configuration
+#
+#   - This controls the general type and configuration of the exporter service.
+#
+################################################################################
+RPCSvc:
+    SVCID: exporter 
+    HTTPSvcCfg:
+        # Listen address: The IP on which to bind to listen.
+        ListenAddress: 0.0.0.0
+        # Listen port: The port on which to bind to listen.
+        ListenPort: {{ cloudland_exporter_port }}
+        AllowedOrigins:
+            - http://127.0.0.1
+            - http://127.0.0.1:8001
+            - http://localhost
+            - http://localhost:8001
+            - http://0.0.0.0:8088
+
+        # TLS: TLS settings for the GRPC server.
+        TLS:
+            Enabled: false
+            PrivateKey: tls/server.key
+            Certificate: tls/server.crt
+            RootCAs:
+            - tls/ca.crt
+            ClientAuthEnabled: false
+            ClientRootCAs:
+
+        # Log Level: The level at which to log. This accepts logging specifications
+        # Valid Levels: "CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG"
+        Log:
+            LogFile: ./clexporter.log
+            # Log Level: The level at which to log. This accepts logging specifications
+            # Valid Levels: "CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG"
+            LogLevel: debug
+            # MaxSize is the maximum size in megabytes
+            MaxSize: 10
+            # MaxBackups is the maximum number of old log files to retain
+            MaxBackups: 10
+            # MaxAge is the maximum number of days to retain old log files
+            MaxAge: 30
+
+        # Enable an HTTP service for Go "pprof" profiling as documented at:
+        # https://golang.org/pkg/net/http/pprof
+        Profile:
+            Enabled: false
+            Address: 0.0.0.0:6060
+DebugMode: true
+
+# CloudLand Exporter Configuration
+CloudLand:
+    # Region identifier for this exporter instance
+    Region: "{{ cloudland_exporter_region }}"
+    # CloudLand API configuration
+    API:
+        # CloudLand API endpoint (includes base URL and version)
+        APIEndpoint: "https://{{ cloudland_rest_host }}:{{ cloudland_rest_port }}/api/v1"
+        # Username for CloudLand API authentication
+        Username: "{{ cloudland_admin_user }}"
+        # Password for CloudLand API authentication
+        Password: "{{ cloudland_admin_password }}"
+        # Authentication token for API access (will be obtained via login)
+        Token: ""
+        # Request timeout in seconds
+        Timeout: 30
+        # Scrape interval for metrics collection in seconds
+        ScrapeInterval: 60
