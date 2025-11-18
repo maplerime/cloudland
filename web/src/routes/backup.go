@@ -154,7 +154,7 @@ func (a *BackupAdmin) CreateSnapshotByUUID(ctx context.Context, uuid, name strin
 	return a.createSnapshot(ctx, name, volume)
 }
 
-func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *model.Volume) (backup *model.VolumeBackup, err error) {
+func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *model.Volume) (snapshot *model.VolumeBackup, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
 	if !permit {
@@ -173,7 +173,7 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 		err = NewCLError(ErrVolumeIsBusy, msg, nil)
 		return
 	}
-	snapshot, err := a.createBackupModel(ctx, name, "snapshot", volume, "")
+	snapshot, err = a.createBackupModel(ctx, name, "snapshot", volume, "")
 	if err != nil {
 		logger.Error("Failed to create snapshot", err)
 		err = NewCLError(ErrDatabaseError, "Failed to create snapshot record", err)
@@ -222,6 +222,7 @@ func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType st
 		logger.Error("DB failed to create backup", err)
 		return
 	}
+	backup.Volume = volume
 	return
 }
 
