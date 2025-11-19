@@ -284,9 +284,9 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 
-	if !a.CanDeleteVolume(volume) {
-		logger.Errorf("Volume is in use, cannot be deleted %+v", volume)
-		err = NewCLError(ErrVolumeIsInUse, fmt.Sprintf("Please detach volume[%s] before delete it", volume.Name), nil)
+	if volume.IsBusy() || volume.IsAttached() {
+		logger.Errorf("Volume is busy, cannot be deleted %+v", volume)
+		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume[%s](%s) is busy, cannot be deleted", volume.Name, volume.UUID), nil)
 		return
 	}
 	if err = db.Model(volume).Delete(volume).Error; err != nil {
