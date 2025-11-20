@@ -359,7 +359,7 @@ int Launcher::startAll()
         for (it = childMap.begin(); it != childMap.end(); ++it) {
             hndl = it->first;
             rc = startClient(hndl, it->second);
-            if (rc != SCI_SUCCESS) {
+            if ((rc != SCI_SUCCESS) && (mode == INTERNAL)) {
                 gCtrlBlock->setRecover(hndl);
             }
         }
