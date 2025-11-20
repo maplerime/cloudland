@@ -22,8 +22,17 @@ if [ "$volume_pool_id" == "$snapshot_pool_id" ]; then
     # Restore volume from snapshot in the same pool, just call WDS API volume recovery directly
     # first, check if the volume is attached to an instance, if so, we need to unbind the vhost first
     if [ $instance_id -gt 0 ]; then
-        log_debug $backup_id "Volume $volume_wds_uuid is attached to instance $instance_id, unbinding vhost first"
-        old_vhost_name=$(basename $(ls /var/run/wds/instance-$instance_id-volume-$origin_vol_ID-*))
+        log_debug $backup_id "Volume $volume_wds_uuid is attached to instance $instance_id, unbinding vhost first."
+        old_vhost_name=$(basename $(ls /var/run/wds/instance-${instance_id}-volume-${origin_vol_ID}-*))
+        if [ -z "$old_vhost_name" ]; then
+            old_vhost_name="instance-${instance_id}-vol-${origin_vol_ID}"
+        fi
+        if [ -z "$old_vhost_name" ] || [ "$old_vhost_name" == "null" ]; then
+            log_debug $backup_id "Could not find vhost name for instance $instance_id volume $origin_vol_ID"
+            echo "|:-COMMAND-:| restore_snapshot_wds_vhost '$origin_vol_ID' 'failed_to_restore' '$vol_path' 'could not find vhost name for attached volume'"
+            exit -1
+        fi
+        log_debug $backup_id "Volume $volume_wds_uuid vhost name is $old_vhost_name"
         vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$old_vhost_name" | jq -r '.vhosts[0].id')
         delete_vhost $origin_vol_ID $vhost_id $uss_id
     fi
