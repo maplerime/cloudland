@@ -95,6 +95,11 @@ func RestoreVolumeWDSVhost(ctx context.Context, args []string) (status string, e
 		logger.Error("Invalid volume ID", err)
 		return
 	}
+	if status == string(model.VolumeStatusAvailable) {
+		if volume.InstanceID > 0 {
+			status = string(model.VolumeStatusAttached)
+		}
+	}
 	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
 	if err != nil {
 		logger.Errorf("Failed to update volume %d: %v", volumeID, err)
