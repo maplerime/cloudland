@@ -446,7 +446,7 @@ int CtrlBlock::getRecoverChildren(int *children)
 
     lock();
     for (it = recoverChildren.begin(); it != recoverChildren.end(); it++) {
-        children[i] = it->first;
+        children[i++] = it->first;
     }
     unlock();
 
