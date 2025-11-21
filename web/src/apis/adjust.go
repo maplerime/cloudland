@@ -497,6 +497,25 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 		// Send realtime notification using notify_url from alert labels
 		notifyURL := alert.Labels["notify_url"]
 		if notifyURL != "" {
+			// Skip notification if already limited (deduplication for firing alerts)
+			if alert.Status == "firing" {
+				actionType := alert.Labels["action_type"]
+				adjustType := map[string]string{
+					"limit_cpu": "cpu", "restore_cpu": "cpu",
+					"limit_in_bw": "in_bw", "restore_in_bw": "in_bw",
+					"limit_out_bw": "out_bw", "restore_out_bw": "out_bw",
+				}[actionType]
+
+				if adjustType != "" {
+					status := a.queryAdjustmentStatus(c.Request.Context(),
+						alert.Labels["domain"], alert.Labels["rule_id"], adjustType, alert.Labels["target_device"])
+					if status == 1 {
+						log.Printf("[ADJUST-INFO] Skip notification: domain=%s already limited", alert.Labels["domain"])
+						continue
+					}
+				}
+			}
+
 			// Construct notification parameters
 			endsAt := alert.EndsAt
 			summaryPrefix := "Resource adjustment"
@@ -563,6 +582,81 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 		"message":       "Resource adjustment processing completed",
 		"processed_at":  time.Now().Format(time.RFC3339),
 	})
+}
+
+// queryAdjustmentStatus queries Prometheus for VM adjustment status
+// Parameters:
+//   - domain: VM domain name
+//   - ruleID: rule ID (e.g., "adjust-cpu-inst-76-c8ded901-...")
+//   - adjustType: "cpu", "in_bw", or "out_bw"
+//   - targetDevice: network interface name (only for bandwidth adjustments)
+//
+// Returns:
+//   - status: -1 (query failed), 0 (normal/not limited), 1 (limited)
+func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, adjustType, targetDevice string) int {
+	var query string
+
+	switch adjustType {
+	case "cpu":
+		query = fmt.Sprintf(`vm_cpu_adjustment_status{domain="%s",rule_id="%s"}`, domain, ruleID)
+	case "in_bw", "out_bw":
+		bwType := map[string]string{"in_bw": "in", "out_bw": "out"}[adjustType]
+		query = fmt.Sprintf(`vm_bandwidth_adjustment_status{domain="%s",rule_id="%s",type="%s",target_device="%s"}`,
+			domain, ruleID, bwType, targetDevice)
+	default:
+		log.Printf("[ADJUST-STATUS-QUERY] Invalid adjust type: %s", adjustType)
+		return -1
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	req, err := http.NewRequest("GET", PrometheusURL, nil)
+	if err != nil {
+		log.Printf("[ADJUST-STATUS-QUERY] Failed to create request: %v", err)
+		return -1
+	}
+
+	q := req.URL.Query()
+	q.Add("query", query)
+	req.URL.RawQuery = q.Encode()
+
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[ADJUST-STATUS-QUERY] Failed to query Prometheus: %v", err)
+		return -1
+	}
+	defer resp.Body.Close()
+
+	var result struct {
+		Status string `json:"status"`
+		Data   struct {
+			Result []struct {
+				Value []interface{} `json:"value"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		log.Printf("[ADJUST-STATUS-QUERY] Failed to decode response: %v", err)
+		return -1
+	}
+
+	// Check result
+	if result.Status != "success" || len(result.Data.Result) == 0 {
+		return 0 // Metric doesn't exist, assume normal/not limited
+	}
+
+	// Parse status value
+	if len(result.Data.Result[0].Value) < 2 {
+		return -1
+	}
+
+	valueStr, ok := result.Data.Result[0].Value[1].(string)
+	if !ok || valueStr != "1" {
+		return 0
+	}
+
+	log.Printf("[ADJUST-STATUS-QUERY] Domain %s already limited (rule_id=%s, type=%s)", domain, ruleID, adjustType)
+	return 1
 }
 
 // queryBandwidthConfig queries Prometheus for VM interface bandwidth configuration
