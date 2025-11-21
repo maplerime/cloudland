@@ -57,7 +57,7 @@
         group_by: ['target_device', 'alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
         group_wait: 0s
         group_interval: 30s  # Group alerts every 30s
-        repeat_interval: 30s  # Repeat alerts every 30s
+        repeat_interval: 30m  # Repeat alerts every 30m
         receiver: 'resource-adjustment-webhook'
         continue: true
 
