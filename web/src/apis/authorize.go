@@ -31,6 +31,7 @@ func Authorize() gin.HandlerFunc {
 			return
 		}
 		tokenStr = tokenStr[len(TokenType)+1:]
+		// Use expected audience as AppName (or set as needed)
 		_, claims, err := routes.ParseToken(tokenStr)
 		if err != nil {
 			ErrorResponse(c, http.StatusUnauthorized, "Invalid Token", err)
@@ -43,7 +44,10 @@ func Authorize() gin.HandlerFunc {
 			return
 		}
 
-		reqUser := claims.Audience
+		reqUser := ""
+		if len(claims.Audience) > 0 {
+			reqUser = claims.Audience[0]
+		}
 		reqOrg := claims.Subject
 		realUser := c.Request.Header.Get("X-Resource-User")
 		realOrg := c.Request.Header.Get("X-Resource-Org")

@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Optimized version: fetch metrics once and cache to temporary file
+# This avoids repeated HTTP requests and significantly improves performance
+
 # Load async_job_dir from cloudrc
 CLOUDRC="/opt/cloudland/scripts/cloudrc"
 if [ -f "$CLOUDRC" ]; then
@@ -12,8 +15,18 @@ OUTPUT="/var/lib/node_exporter/north_south_metrics.prom"
 METRICS_URL="http://localhost:9177/metrics"
 > "$OUTPUT"
 
-# Get all libvirt_domain_interface_meta lines
-curl -s "$METRICS_URL" | grep '^libvirt_domain_interface_meta{' | while read -r line; do
+# Key optimization: fetch metrics once and save to temporary file
+METRICS_CACHE="/tmp/metrics_cache_$$.txt"
+curl -s "$METRICS_URL" > "$METRICS_CACHE"
+
+# Cleanup function: ensure temporary file is deleted
+cleanup() {
+    rm -f "$METRICS_CACHE"
+}
+trap cleanup EXIT
+
+# Read interface information from cache file instead of repeated curl
+grep '^libvirt_domain_interface_meta{' "$METRICS_CACHE" | while read -r line; do
     # Parse domain, source_bridge, target_device
     domain=$(echo "$line" | grep -o 'domain="[^"]*"' | cut -d'"' -f2)
     source_bridge=$(echo "$line" | grep -o 'source_bridge="[^"]*"' | cut -d'"' -f2)
@@ -55,12 +68,12 @@ curl -s "$METRICS_URL" | grep '^libvirt_domain_interface_meta{' | while read -r 
         # router=0 case: use libvirt to query north-south metrics
         echo "# Processing router=0 case for domain=$domain, target_device=$target_device" >> "$OUTPUT"
 
-        # Query rx/tx bytes for this device from libvirt metrics
+        # Key optimization: grep from cache file instead of repeated curl
         # Query received bytes (inbound)
-        inbound=$(curl -s "$METRICS_URL" | grep "^libvirt_domain_interface_stats_receive_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" | awk '{printf "%.0f", $2}')
+        inbound=$(grep "^libvirt_domain_interface_stats_receive_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" "$METRICS_CACHE" | awk '{printf "%.0f", $2}')
 
         # Query transmitted bytes (outbound)
-        outbound=$(curl -s "$METRICS_URL" | grep "^libvirt_domain_interface_stats_transmit_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" | awk '{printf "%.0f", $2}')
+        outbound=$(grep "^libvirt_domain_interface_stats_transmit_bytes_total{.*domain=\"$domain\".*target_device=\"$target_device\"" "$METRICS_CACHE" | awk '{printf "%.0f", $2}')
 
         # Set to 0 if query result is empty
         [ -z "$inbound" ] && inbound=0
