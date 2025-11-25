@@ -37,14 +37,14 @@ const docTemplatev1 = `{
                         "type": "string",
                         "description": "Volume UUID",
                         "name": "id",
-                        "in": "path",
+                        "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "Backup type: snapshot or backup",
+                        "description": "Backup type: empty or snapshot or backup",
                         "name": "backup_type",
-                        "in": "path",
+                        "in": "query",
                         "required": true
                     }
                 ],
@@ -212,7 +212,10 @@ const docTemplatev1 = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolBackupResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad request",
@@ -3189,6 +3192,108 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/tasks": {
+            "get": {
+                "description": "list tasks",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "list tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source: empty or manual or scheduler or migration or not_migration or all",
+                        "name": "source",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.CLTaskListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}": {
+            "get": {
+                "description": "get a task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "get a task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.CLTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "list users",
@@ -4075,6 +4180,64 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.CLTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.CLTaskResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.CLTaskResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "resources": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.ConsoleResponse": {
             "type": "object",
             "properties": {
@@ -4638,6 +4801,7 @@ const docTemplatev1 = `{
             "required": [
                 "name",
                 "os_code",
+                "os_family",
                 "os_version",
                 "user"
             ],
@@ -4655,6 +4819,9 @@ const docTemplatev1 = `{
                         "other"
                     ]
                 },
+                "os_family": {
+                    "type": "string"
+                },
                 "os_version": {
                     "type": "string",
                     "maxLength": 32,
@@ -4670,6 +4837,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "uuid": {
+                    "type": "string"
                 }
             }
         },
@@ -4680,6 +4850,7 @@ const docTemplatev1 = `{
                 "download_url",
                 "name",
                 "os_code",
+                "os_family",
                 "os_version",
                 "user"
             ],
@@ -4712,6 +4883,9 @@ const docTemplatev1 = `{
                         "windows",
                         "other"
                     ]
+                },
+                "os_family": {
+                    "type": "string"
                 },
                 "os_version": {
                     "type": "string",
@@ -4753,6 +4927,9 @@ const docTemplatev1 = `{
                     "type": "string"
                 },
                 "os_code": {
+                    "type": "string"
+                },
+                "os_family": {
                     "type": "string"
                 },
                 "os_version": {
@@ -6118,6 +6295,9 @@ const docTemplatev1 = `{
                 "name": {
                     "type": "string"
                 },
+                "source": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -6325,9 +6505,6 @@ const docTemplatev1 = `{
         "apis.VolBackupResponse": {
             "type": "object",
             "properties": {
-                "backup_id": {
-                    "type": "string"
-                },
                 "created_at": {
                     "type": "string"
                 },
@@ -6340,8 +6517,17 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
+                "path": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
                 "status": {
                     "$ref": "#/definitions/model.BackupStatus"
+                },
+                "task": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "updated_at": {
                     "type": "string"
