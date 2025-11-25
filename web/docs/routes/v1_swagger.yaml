@@ -45,6 +45,44 @@ definitions:
       lock:
         type: boolean
     type: object
+  apis.CLTaskListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      tasks:
+        items:
+          $ref: '#/definitions/apis.CLTaskResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.CLTaskResponse:
+    properties:
+      action:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      resources:
+        type: string
+      source:
+        type: string
+      status:
+        type: string
+      summary:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.ConsoleResponse:
     properties:
       console_host:
@@ -438,6 +476,8 @@ definitions:
         - windows
         - other
         type: string
+      os_family:
+        type: string
       os_version:
         maxLength: 32
         minLength: 2
@@ -450,9 +490,12 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      uuid:
+        type: string
     required:
     - name
     - os_code
+    - os_family
     - os_version
     - user
     type: object
@@ -479,6 +522,8 @@ definitions:
         - windows
         - other
         type: string
+      os_family:
+        type: string
       os_version:
         maxLength: 32
         minLength: 2
@@ -496,6 +541,7 @@ definitions:
     - download_url
     - name
     - os_code
+    - os_family
     - os_version
     - user
     type: object
@@ -514,6 +560,8 @@ definitions:
       name:
         type: string
       os_code:
+        type: string
+      os_family:
         type: string
       os_version:
         type: string
@@ -1442,6 +1490,8 @@ definitions:
     properties:
       name:
         type: string
+      source:
+        type: string
       status:
         type: string
       summary:
@@ -1580,8 +1630,6 @@ definitions:
     type: object
   apis.VolBackupResponse:
     properties:
-      backup_id:
-        type: string
       created_at:
         type: string
       id:
@@ -1590,8 +1638,14 @@ definitions:
         type: string
       owner:
         type: string
+      path:
+        type: string
+      size:
+        type: integer
       status:
         $ref: '#/definitions/model.BackupStatus'
+      task:
+        $ref: '#/definitions/common.BaseReference'
       updated_at:
         type: string
       volume:
@@ -1863,12 +1917,12 @@ paths:
       description: list volume backups/snapshots by volume UUID and backup type
       parameters:
       - description: Volume UUID
-        in: path
+        in: query
         name: id
         required: true
         type: string
-      - description: 'Backup type: snapshot or backup'
-        in: path
+      - description: 'Backup type: empty or snapshot or backup'
+        in: query
         name: backup_type
         required: true
         type: string
@@ -1984,6 +2038,8 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
         "400":
           description: Bad request
           schema:
@@ -3945,6 +4001,75 @@ paths:
       summary: update address lock
       tags:
       - Network
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      description: list tasks
+      parameters:
+      - description: 'Source: empty or manual or scheduler or migration or not_migration
+          or all'
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: Offset
+        in: query
+        name: offset
+        required: true
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.CLTaskListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list tasks
+      tags:
+      - Compute
+  /tasks/{id}:
+    get:
+      consumes:
+      - application/json
+      description: get a task
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.CLTaskResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a task
+      tags:
+      - Compute
   /users:
     get:
       consumes:
