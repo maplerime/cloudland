@@ -53,15 +53,14 @@ type CLTaskListResponse struct {
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /tasks/{id} [get]
 func (a *TaskAPI) Get(c *gin.Context) {
-	ctx := c.Request.Context()
 	taskUUID := c.Param("id")
-	task, err := taskAdmin.GetTaskByUUID(ctx, taskUUID)
+	task, err := taskAdmin.GetTaskByUUID(context.Background(), taskUUID)
 	if err != nil {
 		logger.Errorf("Failed to get task by uuid: %s, %+v", taskUUID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid task query", err)
 		return
 	}
-	taskResp, err := a.getTaskResponse(ctx, task)
+	taskResp, err := a.getTaskResponse(context.Background(), task)
 	if err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
 		return

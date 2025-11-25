@@ -34,7 +34,7 @@ snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps/" "{\"description\": \"$ba
 read -d'\n' -r snapshot_id ret_code message < <(jq -r ".id, .ret_code, .message" <<<$snapshot_ret)
 if [ "$ret_code" != "0" ]; then 
     log_debug $task_ID "BACKUP($backup_ID) failed to create snapshot for volume $volume_ID: $message"
-    echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' 'error' ' ' '0' ' ' 'failed to create snapshot: $message'"
+    echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' 'error' ' ' '0' ' ' ' ' 'failed to create snapshot: $message'"
     exit -1
 fi
 snapshot_size=$(wds_curl GET "api/v2/sync/block/snaps/$snapshot_id" | jq -r .snap_size)
@@ -50,7 +50,7 @@ else
     read -d'\n' -r task_id ret_code message < <(jq -r ".task_id, .ret_code, .message" <<<$clone_ret)
     if [ "$ret_code" != "0" ]; then
         log_debug $task_ID "BACKUP($backup_ID) failed to clone snapshot $snapshot_id: $message"
-        echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' 'error' ' ' '0' ' ' 'failed to clone the snapshot: $message'"
+        echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' 'error' ' ' '0' ' ' ' ' 'failed to clone the snapshot: $message'"
         exit -1
     fi
     log_debug $task_ID "BACKUP($backup_ID) clone task $task_id created for snapshot $snapshot_id"
@@ -74,4 +74,4 @@ fi
 
 [ -n "$snapshot_id" ] && state='available'
 log_debug $task_ID "BACKUP($backup_ID) backup/snapshot $snapshot_id is ready for volume $volume_ID in pool $wdsPoolID with state $state"
-echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' '$state' 'wds_vhost://$wdsPoolID/$snapshot_id' '$snapshot_size' '$middle_snapshot_id' 'success'"
+echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' '$state' 'wds_vhost://$wdsPoolID/$snapshot_id' '$snapshot_size' '$middle_snapshot_id' '$wdsOriginPoolID' 'success'"

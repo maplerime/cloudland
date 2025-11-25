@@ -232,7 +232,7 @@ func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType st
 	backup.Volume = volume
 	task = &model.Task{
 		Owner:     memberShip.OrgID,
-		Name:      fmt.Sprintf("create_%s_%s", backupType, volume.UUID),
+		Name:      fmt.Sprintf("Taking %s(%s) for volume %s", backupType, name, volume.UUID),
 		Summary:   fmt.Sprintf("Taking %s(%s [%d]) for volume %s to pool %s", backupType, name, backup.ID, volume.UUID, poolID),
 		Status:    model.TaskStatusRunning,
 		Source:    model.TaskSourceManual,
@@ -437,13 +437,12 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (backup *mode
 	vol_driver := volume.GetVolumeDriver()
 	if vol_driver != "local" {
 		volume_wds_uuid := volume.GetOriginVolumeID()
-		volume_pool_id := volume.GetVolumePoolID()
 		snapshot_wds_uuid := backup.GetOriginBackupID()
 		if backup.SnapshotID != "" {
 			snapshot_wds_uuid = backup.SnapshotID
 		}
-		// <task_id> <backup_id> <volume_id> <instance_id> <volume_wds_uuid> <snapshot_wds_uuid> <volume_pool_id>
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_snapshot_%s.sh '%d' '%d' '%d' '%d' '%s' '%s' '%s'", vol_driver, task.ID, backupID, volume.ID, volume.InstanceID, volume_wds_uuid, snapshot_wds_uuid, volume_pool_id)
+		// <task_id> <backup_id> <volume_id> <instance_id> <volume_wds_uuid> <snapshot_wds_uuid>
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_snapshot_%s.sh '%d' '%d' '%d' '%d' '%s' '%s'", vol_driver, task.ID, backupID, volume.ID, volume.InstanceID, volume_wds_uuid, snapshot_wds_uuid)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Restore volume execution failed", err)

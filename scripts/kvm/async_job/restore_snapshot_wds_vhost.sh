@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../../cloudrc
 
-[ $# -ne 7 ] && echo "$0 <task_id> <backup_id> <volume_id> <instance_id> <volume_wds_uuid> <snapshot_wds_uuid> <volume_pool_id>" && exit -1
+[ $# -ne 7 ] && echo "$0 <task_id> <backup_id> <volume_id> <instance_id> <volume_wds_uuid> <snapshot_wds_uuid>" && exit -1
 
 task_ID=$1
 backup_id=$2

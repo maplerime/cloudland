@@ -14,7 +14,7 @@ func init() {
 }
 
 func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_snapshot_wds_vhost.sh '$task_ID' '$backup_ID' '$state' 'wds_vhost://$wdsPoolID/$snapshot_id' '$snapshot_size' '$middle_snapshot_id' 'success'
+	//|:-COMMAND-:| create_snapshot_wds_vhost.sh '$task_ID' '$backup_ID' '$state' 'wds_vhost://$wdsPoolID/$snapshot_id' '$snapshot_size' '$middle_snapshot_id' '$wdsOriginPoolID' 'success'
 	logger.Debug("BackupVolumeWDSVhost", args)
 	if len(args) < 8 {
 		logger.Errorf("Invalid args for create_snapshot_wds_vhost: %v", args)
@@ -42,7 +42,8 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	status = args[3]
 	path := args[4]
 	middleSnapshotID := args[6]
-	message := args[7]
+	wdsOriginPoolID := args[7]
+	message := args[8]
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -78,7 +79,7 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 		logger.Error("Invalid backup ID", err)
 		return
 	}
-	err = db.Model(backup).Updates(map[string]interface{}{"path": path, "status": status, "size": size, "snapshot_id": middleSnapshotID, "task_id": 0}).Error
+	err = db.Model(backup).Updates(map[string]interface{}{"path": path, "status": status, "size": size, "snapshot_id": middleSnapshotID, "snapshot_pool_id": wdsOriginPoolID, "task_id": 0}).Error
 	if err != nil {
 		logger.Errorf("Failed to update backup %d: %v", backupID, err)
 		return "", err
