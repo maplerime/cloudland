@@ -225,6 +225,9 @@ const (
 	ErrZoneDeleteFailed       ErrCode = 171010
 	ErrHypersInZone           ErrCode = 171011
 
+	// task related errors (181xxx)
+	ErrTaskNotFound ErrCode = 181001
+
 	// dictionary related errors (1998xx)
 	ErrDictionaryRecordsNotFound ErrCode = 199801
 	ErrDictionaryCreateFailed    ErrCode = 199802

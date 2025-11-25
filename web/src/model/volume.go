@@ -131,11 +131,14 @@ type VolumeBackup struct {
 	Owner      int64  `gorm:"default:1;index"` /* The organization ID of the resource */
 	Name       string `gorm:"type:varchar(128)"`
 	VolumeID   int64
-	Volume     *Volume      `gorm:"foreignkey:VolumeID"`
-	BackupType string       `gorm:"type:varchar(32)"` // snapshot or backup
+	Volume     *Volume      `gorm:"foreignkey:VolumeID;index"`
+	BackupType string       `gorm:"type:varchar(32);index"` // snapshot or backup
 	Status     BackupStatus `gorm:"type:varchar(32)"`
 	Size       int32
 	Path       string `gorm:"type:varchar(256)"`
+	SnapshotID string `gorm:"type:varchar(128)"` // for cross pool backup, the snapshot ID in the source pool
+	TaskID     int64  `gorm:"index"`             // the task ID for the backup or restore
+	Task       *Task  `gorm:"foreignkey:TaskID"`
 }
 
 func (v *VolumeBackup) CanDelete() bool {
@@ -208,16 +211,6 @@ func parseOriginID(path string, id string) string {
 		return parts[2]
 	}
 	return id
-}
-
-type ScheduledVolumeBackup struct {
-	Model
-	Owner      int64 `gorm:"default:1;index"` /* The organization ID of the resource */
-	VolumeID   int64
-	Volume     *Volume `gorm:"foreignkey:VolumeID; index"`
-	BackupType string  `gorm:"type:varchar(32)"` // snapshot or backup
-	Status     string  `gorm:"type:varchar(32)"` // disabled, active
-	WDSTaskID  string  `gorm:"type:varchar(64)"`
 }
 
 func init() {

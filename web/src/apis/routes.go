@@ -176,6 +176,9 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Patch)
 
+		authGroup.GET("/api/v1/tasks", taskAPI.List)
+		authGroup.GET("/api/v1/tasks/:id", taskAPI.Get)
+
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{
 			metricsGroup.POST("/instances/cpu/his_data", monitorAPI.GetCPU)
