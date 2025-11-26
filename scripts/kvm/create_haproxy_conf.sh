@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 cd `dirname $0`
 source ../cloudrc
@@ -12,9 +12,11 @@ src_vrrp_ip=$(grep unicast_src_ip $router_dir/$router/keepalived.conf | awk '{pr
 lb_dir=$router_dir/$router/lb-$lb_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir
 content=$(cat)
+floating_ips=$(jq -r .floating_ips <<< $content)
+nfloating_ip=$(jq length <<< $floating_ips)
 listeners=$(jq -r .listeners <<< $content)
 nlistener=$(jq length <<< $listeners)
-if [ $nlistener -eq 0 ]; then
+if [ $nlistener -eq 0 -o $nfloating_ip -eq 0 ]; then
     haproxy_pid=$(cat $lb_dir/haproxy.pid)
     ip netns exec $router kill $haproxy_pid
     rm -rf $lb_dir
@@ -77,7 +79,16 @@ while [ $i -lt $nlistener ]; do
     cat >>$lb_dir/haproxy.conf <<EOF
 
 frontend ${name}_front
-    bind *:$port $ssl_config
+EOF
+    j=0
+    while [ $j -lt $nfloating_ip ]; do
+        fip=$(jq -r .[$j] <<< $floating_ips)
+        cat >>$lb_dir/haproxy.conf <<EOF
+    bind ${fip%/*}:$port $ssl_config
+EOF
+        let j=$j+1
+    done
+    cat >>$lb_dir/haproxy.conf <<EOF
     mode $mode
     default_backend ${name}_back
 

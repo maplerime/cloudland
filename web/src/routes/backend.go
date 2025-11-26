@@ -34,7 +34,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 	listeners := loadBalancer.Listeners
 	listenerCfgs := []*ListenerConfig{}
 	for _, listener := range listeners {
-		if listener.ID == updatedlistener.ID {
+		if updatedlistener != nil && listener.ID == updatedlistener.ID {
 			listener = updatedlistener
 		}
 		if len(listener.Backends) > 0 {
