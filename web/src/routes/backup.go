@@ -498,7 +498,7 @@ func (a *BackupAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		}
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Volume").Where(memberShipSQL).Where(whereSQL).Find(&backups).Error; err != nil {
+	if err = db.Preload("Volume").Preload("Task").Where(memberShipSQL).Where(whereSQL).Find(&backups).Error; err != nil {
 		logger.Error("DB: query backup failed", err)
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query backup", err)
 		return
