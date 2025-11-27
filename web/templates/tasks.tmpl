@@ -1,0 +1,101 @@
+{{template "_head" .}}
+    <div class="admin user">
+	    <div class="ui container">
+		    <div class="ui grid">
+                {{template "_left" .}}
+          	    <div class="twelve wide column content">
+		            <h4 class="ui top attached header">
+			            {{.i18n.Tr "Tasks_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
+		            </h4>
+		            <div class="ui attached segment">
+			            <form class="ui form">
+	                        <div class="ui fluid tiny action input">
+	                            <input name="q" value="{{ .Query }}" placeholder="Search..." autofocus>
+	                            <button class="ui blue tiny button">{{.i18n.Tr "Search"}}</button>
+	                        </div>
+                            <div class="inline field">
+                                <label for="source">{{.i18n.Tr "Source"}}</label>
+                                <div class="ui selection dropdown">
+                                    <input id="source" name="source" type="hidden">
+                                    <i class="dropdown icon"></i>
+                                    <div class="default text">{{.i18n.Tr "All"}}</div>
+                                    <div class="menu">
+                                        <div class="item" data-value="all" data-text="{{.i18n.Tr "All"}}">
+                                        {{.i18n.Tr "All"}}
+                                        </div>
+                                        <div class="item" data-value="manual" data-text="{{.i18n.Tr "Manual"}}">
+                                        {{.i18n.Tr "Manual"}}
+                                        </div>
+                                        <div class="item" data-value="scheduler" data-text="{{.i18n.Tr "Scheduler"}}">
+                                        {{.i18n.Tr "Scheduler"}}
+                                        </div>
+                                        <div class="item" data-value="migration" data-text="{{.i18n.Tr "Migration"}}">
+                                        {{.i18n.Tr "Migration"}}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </form>
+		            </div>
+		            <div class="ui unstackable attached table segment">
+                        <table class="ui unstackable very basic striped table">
+	                        <thead>
+		                        <tr>
+									{{ if $.IsAdmin }}
+			                        <th>{{.i18n.Tr "ID"}}</th>
+									{{ end }}
+									<th>{{.i18n.Tr "UUID"}}</th>
+									<th>{{.i18n.Tr "Source"}}</th>
+			                        <th>{{.i18n.Tr "Name"}}</th>
+                                    <th>{{.i18n.Tr "Summary"}}</th>
+			                        <th>{{.i18n.Tr "Status"}}</th>
+									<th>{{.i18n.Tr "Message"}}</th>
+                                    <th>{{.i18n.Tr "Action"}}</th>
+                                    <th>{{.i18n.Tr "Resources"}}</th>
+                                    <th>{{.i18n.Tr "Cron"}}</th>
+						{{ if $.IsAdmin }}
+			                        <th>{{.i18n.Tr "Owner"}}</th>
+						{{ end }}
+		                        </tr>
+	                        </thead>
+	                        <tbody>
+                                {{ $Link := .Link }}
+                                {{ range .Tasks }}
+		                        <tr>
+									{{ if $.IsAdmin }}
+			                        <td><a href="/tasks/{{.ID}}">{{.ID}}</a></td>
+									{{ end }}
+									<td><a href="/tasks/{{.ID}}">{{.UUID}}</a></td>
+									<th>{{.Source}}</th>
+			                        <td><a href="/tasks/{{.ID}}">{{.Name}}</a></td>
+			                        <td>{{.Summary}}</td>
+			                        <td>{{.Status}}</td>
+			                        <td>{{.Message}}</td>
+			                        <td>{{.Action}}</td>
+			                        <td>{{.Resources}}</td>
+			                        <td>{{.Cron}}</td>
+						{{ if $.IsAdmin }}
+			                        <td>{{.OwnerInfo.Name}}</td>
+						{{ end }}
+		                        </tr>
+                                {{ end }}
+	                        </tbody>
+                        </table>
+		            </div>
+		            <div class="ui attached segment">
+                                 {{ if .Pages}}
+                                 <div class="ui pagination menu">
+                                     {{ range  $index, $element := .Pages }}
+                                         <a class="active item">
+                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
+                                         </a>
+                                     {{ end }}
+                                 </div>
+                                 {{ end }}
+	                    </div>
+	            </div>
+            </div>
+        </div>
+    </div>
+{{template "_footer" .}}
+
