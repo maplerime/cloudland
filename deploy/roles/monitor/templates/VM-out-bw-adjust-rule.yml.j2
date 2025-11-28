@@ -1,0 +1,70 @@
+groups:
+- name: vm_out_bw_adjustment_{{ rule_group }}
+  interval: 15s
+  rules:
+  # Get total outbound bandwidth configuration from custom metrics (Mbps)
+  - record: vm_out_bw_total_mbps_{{ rule_group }}
+    expr: |
+      vm_interface_bandwidth_config_mbps{direction="out"}
+      * on(domain, target_device) group_right()
+      max by (domain, target_device, rule_id, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
+      )
+
+  # Raw outbound bandwidth speed (per interface, unit: kB/s)
+  - record: vm_out_bw_speed_raw_{{ rule_group }}
+    expr: |
+      rate(libvirt_domain_interface_stats_transmit_bytes_total[1m]) / 1024
+
+  # Smoothed outbound bandwidth speed (5-minute moving average, unit: kB/s)
+  - record: vm_out_bw_speed_{{ rule_group }}
+    expr: |
+      avg_over_time(vm_out_bw_speed_raw_{{ rule_group }}[{{ smooth_window }}m:1m])
+
+  # Outbound bandwidth speed for VM interfaces associated with the rule group
+  - record: vm_out_bw_speed_by_rule_{{ rule_group }}
+    expr: |
+      vm_out_bw_speed_{{ rule_group }} * on(domain, target_device) group_right()
+      max by (domain, target_device, rule_id, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
+      )
+
+  # Calculate outbound bandwidth usage percentage
+  - record: vm_out_bw_usage_percent_{{ rule_group }}
+    expr: |
+      (
+        (vm_out_bw_speed_by_rule_{{ rule_group }} / 1024 * 8)
+        /
+        vm_out_bw_total_mbps_{{ rule_group }}
+        * 100
+      )
+      and on(domain, target_device)
+      (vm_out_bw_total_mbps_{{ rule_group }} > 0)
+
+  # VM interfaces that require outbound bandwidth limit (only when status is normal)
+  # The value is the total outbound bandwidth in Mbps for use in webhook
+  - record: vm_requires_out_bw_limit_{{ rule_group }}
+    expr: |
+      (
+        (vm_out_bw_usage_percent_{{ rule_group }} > {{ out_high_threshold_pct }})
+        and on(domain, rule_id, target_device)
+        (
+          (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"} == 0) or
+          (max by (domain, target_device, rule_id, instance_id) (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1) unless vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"})
+        )
+      )
+      * on(domain, target_device) group_left()
+      vm_out_bw_total_mbps_{{ rule_group }}
+
+  # Calculate elapsed time since outbound bandwidth limit started (in seconds)
+  - record: vm_bandwidth_out_limit_elapsed_seconds_{{ rule_group }}
+    expr: |
+      (
+        (time() - vm_bandwidth_limit_start_timestamp{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"} / 1000)
+        * on(domain, rule_id, target_device)
+        (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"} == 1)
+      )
+      * on(domain, rule_id, target_device) group_left(instance_id)
+      max by (domain, rule_id, target_device, instance_id) (
+        up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
+      )

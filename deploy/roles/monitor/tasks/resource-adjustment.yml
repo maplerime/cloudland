@@ -1,0 +1,103 @@
+---
+# Ansible tasks for automatic resource adjustment
+
+- name: Install jq on compute nodes for VM metrics migration
+  become: true
+  package:
+    name: jq
+    state: present
+  tags: [monitor, resource_adjustment, jq]
+
+- name: Create resource adjustment directories
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  with_items:
+    - /etc/prometheus/recording_rules
+    - /etc/prometheus/adjustment_rules
+  tags: [monitor, resource_adjustment]
+
+- name: Copy resource adjustment template files
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    src: "{{ item }}"
+    dest: /etc/prometheus/node_templates
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+  with_items:
+    - roles/monitor/templates/VM-cpu-adjust-rule.yml.j2
+    - roles/monitor/templates/VM-in-bw-adjust-rule.yml.j2
+    - roles/monitor/templates/VM-out-bw-adjust-rule.yml.j2
+    - roles/monitor/templates/resource-adjustment-alerts.yml.j2
+  tags: [monitor, resource_adjustment]
+
+- name: Update Prometheus config to load recording rules
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  lineinfile:
+    path: /etc/prometheus/prometheus.yml
+    insertafter: '^rule_files:'
+    line: '  - /etc/prometheus/recording_rules/*.yml'
+    backup: yes
+  tags: [monitor, resource_adjustment]
+
+- name: Define resource-adjustment route block (no indent)
+  set_fact:
+    resource_adjustment_route_block: |
+      # For resource adjustment alerts
+      - match:
+          alert_type: resource_adjustment
+        group_by: ['target_device', 'alertname', 'instance', 'domain', 'alert_type', 'owner', 'rule_group', 'action_type', 'email', 'adjust_enabled', 'instance_id', 'matched']
+        group_wait: 0s
+        group_interval: 30s  # Group alerts every 30s
+        repeat_interval: 30m  # Repeat alerts every 30m
+        receiver: 'resource-adjustment-webhook'
+        continue: true
+
+# Insert after "  routes:" and indent the entire block by 4 spaces (including the first line)
+- name: Add resource adjustment route to existing routes in Alertmanager
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    insertafter: '^\s{2}routes:\s*$'
+    marker: "    # {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Route"
+    block: "{{ resource_adjustment_route_block | indent(4, true) }}"
+    create: yes
+  tags: [monitor, resource_adjustment]
+
+- name: Add resource adjustment webhook receiver to Alertmanager receivers list
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    insertafter: "^receivers:"
+    block: |
+      - name: 'resource-adjustment-webhook'
+        webhook_configs:
+        - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/resource-adjustment'
+          send_resolved: true
+          http_config:
+            tls_config:
+              insecure_skip_verify: true
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Receiver"
+  tags: [monitor, resource_adjustment]
+
+- name: Reload Alertmanager configuration
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: docker restart alertmanager
+  tags: [monitor, resource_adjustment]
+
+- name: Reload Prometheus configuration
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: systemctl reload prometheus.service
+  tags: [monitor, resource_adjustment]
