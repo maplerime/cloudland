@@ -45,6 +45,68 @@ definitions:
       lock:
         type: boolean
     type: object
+  apis.BackendListResponse:
+    properties:
+      backends:
+        items:
+          $ref: '#/definitions/apis.BackendResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.BackendPatchPayload:
+    properties:
+      action:
+        enum:
+        - enable
+        - disable
+        type: string
+      endpoint:
+        maxLength: 128
+        minLength: 8
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.BackendPayload:
+    properties:
+      endpoint:
+        maxLength: 128
+        minLength: 8
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - endpoint
+    - name
+    type: object
+  apis.BackendResponse:
+    properties:
+      created_at:
+        type: string
+      endpoint:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.ConsoleResponse:
     properties:
       console_host:
@@ -236,6 +298,8 @@ definitions:
         type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
+      load_balancer:
+        $ref: '#/definitions/common.BaseID'
       outbound:
         maximum: 20000
         minimum: 1
@@ -254,6 +318,8 @@ definitions:
         minimum: 1
         type: integer
       instance:
+        $ref: '#/definitions/common.BaseID'
+      load_balancer:
         $ref: '#/definitions/common.BaseID'
       name:
         maxLength: 32
@@ -376,10 +442,14 @@ definitions:
         type: integer
       cpu_over_rate:
         type: number
+      cpu_total:
+        type: integer
       disk:
         type: integer
       disk_over_rate:
         type: number
+      disk_total:
+        type: integer
       host_ip:
         type: string
       hostid:
@@ -389,6 +459,8 @@ definitions:
       mem_over_rate:
         type: number
       memory:
+        type: integer
+      memory_total:
         type: integer
       parentid:
         type: integer
@@ -432,6 +504,8 @@ definitions:
         - windows
         - other
         type: string
+      os_family:
+        type: string
       os_version:
         maxLength: 32
         minLength: 2
@@ -444,9 +518,12 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      uuid:
+        type: string
     required:
     - name
     - os_code
+    - os_family
     - os_version
     - user
     type: object
@@ -473,6 +550,8 @@ definitions:
         - windows
         - other
         type: string
+      os_family:
+        type: string
       os_version:
         maxLength: 32
         minLength: 2
@@ -490,6 +569,7 @@ definitions:
     - download_url
     - name
     - os_code
+    - os_family
     - os_version
     - user
     type: object
@@ -508,6 +588,8 @@ definitions:
       name:
         type: string
       os_code:
+        type: string
+      os_family:
         type: string
       os_version:
         type: string
@@ -1002,6 +1084,148 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  apis.ListenerListResponse:
+    properties:
+      limit:
+        type: integer
+      listeners:
+        items:
+          $ref: '#/definitions/apis.ListenerResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.ListenerPatchPayload:
+    properties:
+      action:
+        enum:
+        - enable
+        - disable
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.ListenerPayload:
+    properties:
+      cert:
+        type: string
+      key:
+        type: string
+      mode:
+        enum:
+        - http
+        - tcp
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+    required:
+    - mode
+    - name
+    - port
+    type: object
+  apis.ListenerResponse:
+    properties:
+      backends:
+        items:
+          $ref: '#/definitions/apis.BackendResponse'
+        type: array
+      created_at:
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      port:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.LoadBalancerListResponse:
+    properties:
+      limit:
+        type: integer
+      load_balancers:
+        items:
+          $ref: '#/definitions/apis.LoadBalancerResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.LoadBalancerPatchPayload:
+    properties:
+      action:
+        enum:
+        - enable
+        - disable
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.LoadBalancerPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+      zone:
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - name
+    - vpc
+    type: object
+  apis.LoadBalancerResponse:
+    properties:
+      created_at:
+        type: string
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpInfo'
+        type: array
+      id:
+        type: string
+      listeners:
+        items:
+          $ref: '#/definitions/apis.ListenerResponse'
+        type: array
+      name:
+        type: string
+      owner:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
     type: object
   apis.MemberInfo:
     properties:
@@ -1719,6 +1943,8 @@ definitions:
     properties:
       error_code:
         type: integer
+      error_code_str:
+        type: string
       error_message:
         type: string
     type: object
@@ -1774,11 +2000,13 @@ definitions:
     - public
     - internal
     - site
+    - vrrp
     type: string
     x-enum-varnames:
     - Public
     - Internal
     - Site
+    - Vrrp
 info:
   contact: {}
   description: APIs for CloudLand Functions
@@ -3128,6 +3356,459 @@ paths:
       summary: patch a key
       tags:
       - Authorization
+  /load_balancers:
+    get:
+      consumes:
+      - application/json
+      description: list loadBalancers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list loadBalancers
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a loadBalancer
+      parameters:
+      - description: LoadBalancer create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.LoadBalancerPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a loadBalancer
+      tags:
+      - Network
+  /load_balancers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a loadBalancer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a loadBalancer
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a loadBalancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a loadBalancer
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a loadBalancer
+      parameters:
+      - description: LoadBalancer patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.LoadBalancerPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a loadBalancer
+      tags:
+      - Network
+  /load_balancers/{id}/floating_ips:
+    get:
+      consumes:
+      - application/json
+      description: list floating ips for load balancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list floating ips for load balancer
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a floating ip for load balancer
+      parameters:
+      - description: Floating ip create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.FloatingIpPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a floating ip for load balancer
+      tags:
+      - Network
+  /load_balancers/{id}/floating_ips/{floating_ip_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a floating ip for load balancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a floating ip for load balancer
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a floating ip for load balancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a floating ip for load balancer
+      tags:
+      - Network
+  /load_balancers/{id}/listeners:
+    get:
+      consumes:
+      - application/json
+      description: list listeners
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list listeners
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a listener
+      parameters:
+      - description: Listener create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ListenerPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a listener
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/:listener_id/backends:
+    get:
+      consumes:
+      - application/json
+      description: list backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list backends
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/:listener_id/backends/{backend_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a backend
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a backend
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/{listener_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a listener
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a listener
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a listener
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a listener
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a listener
+      parameters:
+      - description: Listener patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ListenerPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a listener
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/{listener_id}/backends:
+    post:
+      consumes:
+      - application/json
+      description: create a backend
+      parameters:
+      - description: Backend create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.BackendPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a backend
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id}:
+    get:
+      consumes:
+      - application/json
+      description: get a backend
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a backend
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a backend
+      parameters:
+      - description: Backend patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.BackendPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a backend
+      tags:
+      - Network
   /login:
     post:
       consumes:

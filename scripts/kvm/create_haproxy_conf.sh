@@ -93,6 +93,7 @@ EOF
     default_backend ${name}_back
 
 backend ${name}_back
+    mode $mode
     balance roundrobin
     source $src_vrrp_ip
 EOF
