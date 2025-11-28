@@ -50,6 +50,21 @@
 									</div>
 								</div>
 								<div class="inline field">
+									<label for="load_balancer">{{.i18n.Tr "Load Balancer"}}</label>
+									<div class="ui selection dropdown">
+									  <input id="load_balancer" name="load_balancer" type="hidden">
+									  <i class="dropdown icon"></i>
+									  <div class="default text">{{.i18n.Tr "Load Balancer"}}</div>
+									  <div class="menu">
+										{{ range .LoadBalancers }}
+										<div class="item" data-value={{.ID}} data-text={{.ID}}-{{.Name}}>
+										  {{.ID}}-{{.Name}}
+										</div>
+										{{ end }}
+									  </div>
+									</div>
+								</div>
+								<div class="inline field">
 									<label for="count">{{.i18n.Tr "Count"}}</label>
 									<input id="count" name="count" type="number" min="0" max="64" value="1" placeholder="1">
 								</div>
