@@ -2008,6 +2008,7 @@ func (v *InstanceView) getSecurityGroups(ctx context.Context, routerID int64, sg
 				}
 				if secgroup.RouterID != routerID {
 					logger.Error("Security group is not the same router with subnet")
+					err = fmt.Errorf("Security group is not the same router with subnet")
 					return
 				}
 				securityGroups = append(securityGroups, secgroup)
