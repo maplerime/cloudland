@@ -34,6 +34,7 @@ import (
 
 const (
 	RuleTypeCPU            = "cpu"
+	RuleTypeMemory         = "memory"
 	RuleTypeBW             = "bw"
 	RuleTypeCompute        = "compute_node"
 	RuleTypeControl        = "control_node"
