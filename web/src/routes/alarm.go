@@ -749,7 +749,7 @@ func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs 
 	ctx, db := common.GetContextDB(ctx)
 	var links []model.VMRuleLink
 
-	if err := db.Where("vm_uuid IN ?", instanceUUIDs).Find(&links).Error; err != nil {
+	if err := db.Where("vm_uuid IN (?)", instanceUUIDs).Find(&links).Error; err != nil {
 		log.Printf("[GetInstanceRuleLinks] Query failed: %v", err)
 		return nil, fmt.Errorf("failed to query rule links: %w", err)
 	}
