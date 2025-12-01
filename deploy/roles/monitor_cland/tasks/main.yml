@@ -26,6 +26,15 @@
       changed_when: false
       when: pkg_install is succeeded
 
+    - name: Create node_exporter data directory
+      file:
+        path: /var/lib/node_exporter
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+      tags: [monitor]
+
     - name: Ensure systemd override directory exists
       file:
         path: /etc/systemd/system/prometheus-node-exporter.service.d
