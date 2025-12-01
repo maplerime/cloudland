@@ -422,7 +422,6 @@
             receiver: '{{ receiver_name }}'
 
             routes:
-
               # Route node alarms to node-webhook (maintain compatibility with existing config)
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network|vcpu)
