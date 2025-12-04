@@ -13,13 +13,13 @@ setup:
 error_codes_string:
 	go generate src/common/error_codes.go
 	
-routes_docs:
+clapi_docs:
 	swag i -g routes.go -dir src/apis,src/common,src/model --instanceName v1 -o docs/routes
 
 alarm_rules_manager_docs:
-	cd cmds/alarm_rules_manager && swag i -g alarm_rules_manager.go -dir .,../../src/common,../../src/apis --instanceName alarm_v1 -o ../../docs/alarm_rules_manager
+	cd cmds/alarm_rules_manager && swag i -g alarm_rules_manager.go -dir .,../../src/common,../../src/apis,../../src/model --instanceName alarm_v1 -o ../../docs/alarm_rules_manager
 
-docs: routes_docs alarm_rules_manager_docs
+docs: clapi_docs alarm_rules_manager_docs
 
 
 base: version
