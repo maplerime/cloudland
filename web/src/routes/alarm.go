@@ -33,16 +33,18 @@ import (
 )
 
 const (
-	RuleTypeCPU       = "cpu"
-	RuleTypeBW        = "bw"
-	RuleTypeCompute   = "compute_node"
-	RuleTypeControl   = "control_node"
-	RuleTypeAvailable = "node_available"
-	RulesEnabled      = "/etc/prometheus/rules_enabled"
-	RulesGeneral      = "/etc/prometheus/general_rules"
-	RulesSpecial      = "/etc/prometheus/special_rules"
-	RulesNode         = "/etc/prometheus/node_rules"
-	RuleTemplate      = "/etc/prometheus/node_templates"
+	RuleTypeCPU            = "cpu"
+	RuleTypeMemory         = "memory"
+	RuleTypeBW             = "bw"
+	RuleTypeCompute        = "compute_node"
+	RuleTypeControl        = "control_node"
+	RuleTypeAvailable      = "node_available"
+	RuleTypeHypervisorVCPU = "hypervisor_vcpu"
+	RulesEnabled           = "/etc/prometheus/rules_enabled"
+	RulesGeneral           = "/etc/prometheus/general_rules"
+	RulesSpecial           = "/etc/prometheus/special_rules"
+	RulesNode              = "/etc/prometheus/node_rules"
+	RuleTemplate           = "/etc/prometheus/node_templates"
 )
 
 var (
@@ -82,6 +84,15 @@ type ListRuleGroupsParams struct {
 	Page      int
 	PageSize  int
 	GroupUUID string
+	RuleID    string // Added: Support query by rule_id
+}
+
+// AdaptiveQueryParams Adaptive query parameters
+type AdaptiveQueryParams struct {
+	ID       string // Can be GroupUUID or RuleID
+	RuleType string
+	Page     int
+	PageSize int
 }
 
 type (
@@ -95,7 +106,7 @@ type (
 	RuleGroupV2 struct {
 		ID         string    `gorm:"primaryKey;type:varchar(36)"`
 		Name       string    `gorm:"index;size:255"`
-		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw
+		Type       string    `gorm:"type:varchar(10);index"` // cpu/bw/memory/disk/network-in/network-out
 		Enabled    bool      `gorm:"default:true"`
 		Owner      string    `gorm:"type:varchar(255);index"`
 		CreatedAt  time.Time `gorm:"autoCreateTime"`
@@ -106,8 +117,23 @@ type (
 	CPURule struct {
 		ID           int       `gorm:"primaryKey;autoIncrement"`
 		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `gorm:"size:255"`
-		Duration     int       `gorm:"check:duration >= 1"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
+		Over         int       `json:"over" gorm:"check:over >= 1"`
+		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
+		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
+		CreatedAt    time.Time `gorm:"autoCreateTime"`
+	}
+
+	MemoryRule struct {
+		ID           int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name         string    `json:"name" gorm:"size:255"`
+		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
+		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
+		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
 		Over         int       `json:"over" gorm:"check:over >= 1"`
 		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
 		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
@@ -140,6 +166,7 @@ type (
 		Name          string `gorm:"size:255"`
 		Status        string `gorm:"type:varchar(20)"`
 		RuleGroupUUID string `json:"rule_group"`
+		GlobalRuleID  string `gorm:"type:varchar(255)" json:"global_rule_id"` // Added: Global rule ID
 		Severity      string `gorm:"type:varchar(20)"`
 		Summary       string `gorm:"type:text"`
 		Description   string `gorm:"type:text"`
@@ -148,59 +175,61 @@ type (
 		CreatedAt     time.Time `gorm:"autoCreateTime"`
 		AlertType     string    `gorm:"type:varchar(20)" json:"alert_type"`
 		TargetDevice  string    `gorm:"type:varchar(255)" json:"target_device"`
+		RegionID      string    `gorm:"type:varchar(255)" json:"region_id"`   // Added: Region ID
+		InstanceID    string    `gorm:"type:varchar(255)" json:"instance_id"` // Added: Instance ID
 	}
 )
 
-// 完善的配置结构
+// NodeAvailabilityConfig Complete configuration structure
 type NodeAvailabilityConfig struct {
 	NodeDownDuration     string `json:"node_down_duration"`
 	AlertDurationMinutes int    `json:"alert_duration_minutes"`
 }
 
 type ManagementConfig struct {
-	// CPU监控
+	// CPU monitoring
 	CPUUsageThreshold int    `json:"cpu_usage_threshold"`
 	CPUAlertDuration  string `json:"cpu_alert_duration"`
 	CPUAlertMinutes   int    `json:"cpu_alert_minutes"`
 
-	// 内存监控
+	// Memory monitoring
 	MemoryUsageThreshold int    `json:"memory_usage_threshold"`
 	MemoryAlertDuration  string `json:"memory_alert_duration"`
 	MemoryAlertMinutes   int    `json:"memory_alert_minutes"`
 
-	// 磁盘监控
+	// Disk monitoring
 	DiskSpaceThreshold int    `json:"disk_space_threshold"`
 	DiskAlertDuration  string `json:"disk_alert_duration"`
 	DiskAlertMinutes   int    `json:"disk_alert_minutes"`
 
-	// 网络监控 - 新增
+	// Network monitoring - Added
 	NetworkTrafficThresholdGB float64 `json:"network_traffic_threshold_gb"`
 	NetworkAlertDuration      string  `json:"network_alert_duration"`
 	NetworkAlertMinutes       int     `json:"network_alert_minutes"`
 }
 
 type ComputeConfig struct {
-	// CPU监控
+	// CPU monitoring
 	CPUUsageThreshold int    `json:"cpu_usage_threshold"`
 	CPUAlertDuration  string `json:"cpu_alert_duration"`
 	CPUAlertMinutes   int    `json:"cpu_alert_minutes"`
 
-	// 内存监控 - 新增
+	// Memory monitoring - Added
 	MemoryUsageThreshold int    `json:"memory_usage_threshold"`
 	MemoryAlertDuration  string `json:"memory_alert_duration"`
 	MemoryAlertMinutes   int    `json:"memory_alert_minutes"`
 
-	// 磁盘监控
+	// Disk monitoring
 	DiskSpaceThreshold int    `json:"disk_space_threshold"`
 	DiskAlertDuration  string `json:"disk_alert_duration"`
 	DiskAlertMinutes   int    `json:"disk_alert_minutes"`
 
-	// 核心网络监控
+	// Core network monitoring
 	NetworkTrafficThresholdGB float64 `json:"network_traffic_threshold_gb"`
 	NetworkAlertDuration      string  `json:"network_alert_duration"`
 	NetworkAlertMinutes       int     `json:"network_alert_minutes"`
 
-	// 多业务类型网络监控
+	// Multiple business type network monitoring
 	NetworkTypes map[string]NetworkTypeConfig `json:"network_types"`
 }
 
@@ -280,9 +309,14 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		GroupUUID: groupUUID,
 		PageSize:  1,
 	})
-	if err != nil || len(groups) == 0 {
+	if err != nil {
 		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
-		return nil, fmt.Errorf("rules query failed: %w", err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("rule not found: groupID=%s", groupUUID)
+		return nil, gorm.ErrRecordNotFound
 	}
 
 	ruleType := groups[0].Type
@@ -323,6 +357,76 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	}
 }
 
+// GetRulesByRuleID 通过 rule_id 获取规则组（支持告警规则）
+func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*model.RuleGroupV2, error) {
+	ctx, _ = common.GetContextDB(ctx)
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+	if err != nil {
+		log.Printf("rules query failed: ruleID=%s, error=%v", ruleID, err)
+		return nil, fmt.Errorf("rules query failed: %v", err)
+	}
+
+	if len(groups) == 0 {
+		log.Printf("rule not found: ruleID=%s", ruleID)
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	ruleType := groups[0].Type
+
+	if ruleType == "cpu" {
+		details, err := a.GetCPURuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.CPURuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "bw" {
+		details, err := a.GetBWRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.BWRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else if ruleType == "memory" {
+		details, err := a.GetMemoryRuleDetails(ctx, groups[0].UUID)
+		if err != nil {
+			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			return nil, fmt.Errorf("detail rules query failed: %w", err)
+		}
+		type ResultGroup struct {
+			model.RuleGroupV2
+			Details []model.MemoryRuleDetail `gorm:"-"`
+		}
+		result := &ResultGroup{
+			RuleGroupV2: groups[0],
+			Details:     details,
+		}
+		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+	} else {
+		log.Printf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
+		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
+	}
+}
+
 func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
 
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
@@ -350,6 +454,33 @@ func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID st
 	}
 	return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 }
+func (a *AlarmOperator) GetMemoryRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleType:  ruleType,
+		GroupUUID: groupUUID,
+		PageSize:  1,
+	})
+	if err != nil || len(groups) == 0 {
+		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("rules query failed: %w", err)
+	}
+
+	details, err := a.GetMemoryRuleDetails(ctx, groupUUID)
+	if err != nil {
+		log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		return nil, fmt.Errorf("detail rules query failed: %w", err)
+	}
+	type ResultGroup struct {
+		model.RuleGroupV2
+		Details []model.MemoryRuleDetail `gorm:"-"`
+	}
+	result := &ResultGroup{
+		RuleGroupV2: groups[0],
+		Details:     details,
+	}
+	return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
+}
+
 func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID string, ruleType string) (*model.RuleGroupV2, error) {
 	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
 		RuleType:  ruleType,
@@ -392,6 +523,37 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 		}
 		return nil
 	})
+}
+
+// CheckVMLinkExists checks if a VM link already exists
+func (a *AlarmOperator) CheckVMLinkExists(ctx context.Context, groupUUID, vmUUID, iface string) bool {
+	ctx, db := common.GetContextDB(ctx)
+	var count int64
+	query := db.Model(&model.VMRuleLink{}).
+		Where("group_uuid = ? AND vm_uuid = ?", groupUUID, vmUUID)
+
+	if iface != "" {
+		query = query.Where("interface = ?", iface)
+	}
+
+	query.Count(&count)
+	return count > 0
+}
+
+// CreateVMLink creates a single VM link
+func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, iface string) error {
+	ctx, db := common.GetContextDB(ctx)
+	link := &model.VMRuleLink{
+		GroupUUID: groupUUID,
+		VMUUID:    vmUUID,
+		Interface: iface,
+	}
+	if err := db.Create(link).Error; err != nil {
+		log.Printf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+			groupUUID, vmUUID, iface, err)
+		return fmt.Errorf("create link failed: %w", err)
+	}
+	return nil
 }
 
 func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUUIDs []string, iface string) error {
@@ -467,6 +629,322 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 	return links, nil
 }
 
+// GetRuleIDsByInstance retrieves all rule IDs associated with a single instance
+// This includes both alarm rules (rule_group_v2) and adjust rules (adjust_rule_group)
+// Input: instanceUUID - single instance UUID to query
+// Output: []string - list of rule_id values
+func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID string) ([]string, error) {
+	if instanceUUID == "" {
+		return []string{}, nil
+	}
+
+	ctx, db := common.GetContextDB(ctx)
+	ruleIDs := make([]string, 0)
+
+	// Query alarm rules from rule_group_v2
+	type RuleIDResult struct {
+		RuleID string
+	}
+	var alarmRuleIDs []RuleIDResult
+	err := db.Table("vm_rule_links").
+		Select("DISTINCT rule_group_v2.rule_id").
+		Joins("JOIN rule_group_v2 ON vm_rule_links.group_uuid = rule_group_v2.uuid").
+		Where("vm_rule_links.vm_uuid = ? AND vm_rule_links.deleted_at IS NULL", instanceUUID).
+		Scan(&alarmRuleIDs).Error
+
+	if err != nil {
+		log.Printf("[GetRuleIDsByInstance] Failed to query alarm rules for instance %s: %v", instanceUUID, err)
+		return nil, fmt.Errorf("failed to query alarm rules: %w", err)
+	}
+
+	for _, r := range alarmRuleIDs {
+		ruleIDs = append(ruleIDs, r.RuleID)
+	}
+
+	// Query adjust rules from adjust_rule_group
+	var adjustRuleIDs []RuleIDResult
+	err = db.Table("vm_rule_links").
+		Select("DISTINCT adjust_rule_group.rule_id").
+		Joins("JOIN adjust_rule_group ON vm_rule_links.group_uuid = adjust_rule_group.uuid").
+		Where("vm_rule_links.vm_uuid = ? AND vm_rule_links.deleted_at IS NULL", instanceUUID).
+		Scan(&adjustRuleIDs).Error
+
+	if err != nil {
+		log.Printf("[GetRuleIDsByInstance] Failed to query adjust rules for instance %s: %v", instanceUUID, err)
+		return nil, fmt.Errorf("failed to query adjust rules: %w", err)
+	}
+
+	for _, r := range adjustRuleIDs {
+		ruleIDs = append(ruleIDs, r.RuleID)
+	}
+
+	return ruleIDs, nil
+}
+
+// GetCompleteRuleByRuleID retrieves complete rule information by rule_id
+// This function automatically identifies if the rule is an alarm rule or adjust rule
+// Input: ruleID - rule identifier
+// Output: interface{} - either *RuleGroupV2 (alarm) or *AdjustRuleGroup (adjust)
+func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID string) (interface{}, error) {
+	if ruleID == "" {
+		return nil, fmt.Errorf("ruleID cannot be empty")
+	}
+
+	// First, try to find in alarm rules (rule_group_v2)
+	groups, _, err := a.ListRuleGroups(ctx, ListRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+
+	if err == nil && len(groups) > 0 {
+		// Found in alarm rules, get complete info based on type
+		group := groups[0]
+		switch group.Type {
+		case "cpu":
+			return a.GetCPURulesByGroupUUID(ctx, group.UUID, group.Type)
+		case "memory":
+			return a.GetMemoryRulesByGroupUUID(ctx, group.UUID, group.Type)
+		case "bandwidth":
+			return a.GetBWRulesByGroupUUID(ctx, group.UUID, group.Type)
+		default:
+			log.Printf("[GetCompleteRuleByRuleID] Unknown alarm rule type: %s for rule_id: %s", group.Type, ruleID)
+			return nil, fmt.Errorf("unknown alarm rule type: %s", group.Type)
+		}
+	}
+
+	// Not found in alarm rules, try adjust rules
+	adjustOperator := &AdjustOperator{}
+	adjustGroups, _, err := adjustOperator.ListAdjustRuleGroups(ctx, ListAdjustRuleGroupsParams{
+		RuleID:   ruleID,
+		PageSize: 1,
+	})
+
+	if err == nil && len(adjustGroups) > 0 {
+		// Found in adjust rules, get complete info based on type
+		group := adjustGroups[0]
+		switch group.Type {
+		case "adjust_cpu":
+			return adjustOperator.GetCPUAdjustRulesByGroupUUID(ctx, group.UUID, group.Type)
+		case "adjust_in_bw", "adjust_out_bw":
+			return adjustOperator.GetBWAdjustRulesByGroupUUID(ctx, group.UUID, group.Type)
+		default:
+			log.Printf("[GetCompleteRuleByRuleID] Unknown adjust rule type: %s for rule_id: %s", group.Type, ruleID)
+			return nil, fmt.Errorf("unknown adjust rule type: %s", group.Type)
+		}
+	}
+
+	// Rule not found in either table
+	log.Printf("[GetCompleteRuleByRuleID] Rule not found: %s", ruleID)
+	return nil, fmt.Errorf("rule not found: %s", ruleID)
+}
+
+// GetInstanceRuleLinks retrieves all rule links for specific instances
+// Input: instanceUUIDs - list of instance UUIDs to query
+// Output: map[instanceUUID][]VMRuleLink - grouped by instance UUID
+func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs []string) (map[string][]model.VMRuleLink, error) {
+	if len(instanceUUIDs) == 0 {
+		return map[string][]model.VMRuleLink{}, nil
+	}
+
+	ctx, db := common.GetContextDB(ctx)
+	var links []model.VMRuleLink
+
+	if err := db.Where("vm_uuid IN (?)", instanceUUIDs).Find(&links).Error; err != nil {
+		log.Printf("[GetInstanceRuleLinks] Query failed: %v", err)
+		return nil, fmt.Errorf("failed to query rule links: %w", err)
+	}
+
+	// Group by instance UUID
+	result := make(map[string][]model.VMRuleLink)
+	for _, link := range links {
+		result[link.VMUUID] = append(result[link.VMUUID], link)
+	}
+
+	log.Printf("[GetInstanceRuleLinks] Found %d links for %d instances", len(links), len(result))
+	return result, nil
+}
+
+// cleanRuleData removes internal database fields from rule data
+func cleanRuleData(data interface{}) interface{} {
+	// Fields to remove
+	fieldsToRemove := []string{"ID", "CreatedAt", "UpdatedAt", "DeletedAt", "Creater", "OwnerInfo", "GroupUUID"}
+
+	// First convert to map if it's not already
+	var dataMap map[string]interface{}
+
+	switch v := data.(type) {
+	case map[string]interface{}:
+		dataMap = v
+	default:
+		// Convert struct to map via JSON
+		jsonBytes, err := json.Marshal(data)
+		if err != nil {
+			log.Printf("[cleanRuleData] Failed to marshal data: %v", err)
+			return data
+		}
+		if err := json.Unmarshal(jsonBytes, &dataMap); err != nil {
+			log.Printf("[cleanRuleData] Failed to unmarshal data: %v", err)
+			return data
+		}
+	}
+
+	// Clean the map
+	for _, field := range fieldsToRemove {
+		delete(dataMap, field)
+	}
+
+	// Clean nested details array
+	if details, ok := dataMap["details"].([]interface{}); ok {
+		cleanedDetails := make([]interface{}, len(details))
+		for i, detail := range details {
+			cleanedDetails[i] = cleanRuleData(detail)
+		}
+		dataMap["details"] = cleanedDetails
+	}
+
+	return dataMap
+}
+
+// GetInstanceRuleDetails retrieves complete rule group information for specific instances
+// This is used by the API layer to return detailed rule information including rule details
+// Input: instanceUUIDs - list of instance UUIDs to query
+// Output: map with instance_id as key, containing complete rule information (both alarm and adjust rules)
+// Each rule group includes an "interfaces" array field containing the network interfaces linked to that rule group
+func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUIDs []string) (map[string]interface{}, error) {
+	result := make(map[string]interface{})
+
+	// Process each instance
+	for _, instanceUUID := range instanceUUIDs {
+		// 1. Get all rule links for this instance to build group_uuid -> interfaces mapping
+		ctx, db := common.GetContextDB(ctx)
+		var links []model.VMRuleLink
+		if err := db.Where("vm_uuid = ? AND deleted_at IS NULL", instanceUUID).Find(&links).Error; err != nil {
+			log.Printf("[GetInstanceRuleDetails] Failed to get rule links for instance %s: %v", instanceUUID, err)
+		}
+
+		// 2. Build map: group_uuid -> []interfaces (using map for deduplication)
+		groupInterfacesMap := make(map[string]map[string]bool) // group_uuid -> map[interface]bool
+		for _, link := range links {
+			if link.Interface != "" && link.GroupUUID != "" {
+				if groupInterfacesMap[link.GroupUUID] == nil {
+					groupInterfacesMap[link.GroupUUID] = make(map[string]bool)
+				}
+				groupInterfacesMap[link.GroupUUID][link.Interface] = true
+			}
+		}
+
+		// Convert to final format: group_uuid -> []interfaces
+		groupInterfaces := make(map[string][]string)
+		for groupUUID, ifaceMap := range groupInterfacesMap {
+			interfaces := make([]string, 0, len(ifaceMap))
+			for iface := range ifaceMap {
+				interfaces = append(interfaces, iface)
+			}
+			groupInterfaces[groupUUID] = interfaces
+		}
+
+		// 3. Get all rule_ids for this instance
+		ruleIDs, err := a.GetRuleIDsByInstance(ctx, instanceUUID)
+		if err != nil {
+			log.Printf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
+			// Continue with next instance instead of failing completely
+			result[instanceUUID] = map[string]interface{}{
+				"instance_id": instanceUUID,
+				"rule_count":  0,
+				"rule_groups": []interface{}{},
+				"error":       err.Error(),
+			}
+			continue
+		}
+
+		// 4. Get complete rule information for each rule_id - return raw database model
+		rules := make([]interface{}, 0)
+		for _, ruleID := range ruleIDs {
+			rule, err := a.GetCompleteRuleByRuleID(ctx, ruleID)
+			if err != nil {
+				log.Printf("[GetInstanceRuleDetails] Failed to get rule %s for instance %s: %v", ruleID, instanceUUID, err)
+				// Continue with next rule instead of failing
+				continue
+			}
+
+			// Clean and append the rule data
+			if rule != nil {
+				cleanedRule := cleanRuleData(rule)
+
+				// 5. Add interfaces array to the rule group
+				// Extract UUID from the cleaned rule to match with groupInterfaces
+				// Convert to map if not already
+				var ruleMap map[string]interface{}
+				if m, ok := cleanedRule.(map[string]interface{}); ok {
+					ruleMap = m
+				} else {
+					// Convert struct to map via JSON
+					jsonBytes, err := json.Marshal(cleanedRule)
+					if err == nil {
+						if err := json.Unmarshal(jsonBytes, &ruleMap); err != nil {
+							log.Printf("[GetInstanceRuleDetails] Failed to unmarshal rule to map: %v", err)
+							ruleMap = make(map[string]interface{})
+						}
+					} else {
+						log.Printf("[GetInstanceRuleDetails] Failed to marshal rule: %v", err)
+						ruleMap = make(map[string]interface{})
+					}
+				}
+
+				// Try to get UUID from different possible field names (UUID, uuid, Uuid)
+				var groupUUID string
+				if uuid, exists := ruleMap["UUID"].(string); exists && uuid != "" {
+					groupUUID = uuid
+				} else if uuid, exists := ruleMap["uuid"].(string); exists && uuid != "" {
+					groupUUID = uuid
+				} else if uuid, exists := ruleMap["Uuid"].(string); exists && uuid != "" {
+					groupUUID = uuid
+				}
+
+				// Get interfaces for this group_uuid
+				var interfaces []string
+				if groupUUID != "" {
+					interfaces = groupInterfaces[groupUUID]
+					if interfaces == nil {
+						interfaces = []string{} // Return empty array if no interfaces
+					}
+				} else {
+					// If UUID not found, set empty array
+					interfaces = []string{}
+					log.Printf("[GetInstanceRuleDetails] Warning: Could not find UUID in rule for rule_id %s", ruleID)
+				}
+
+				ruleMap["interfaces"] = interfaces
+				cleanedRule = ruleMap
+
+				rules = append(rules, cleanedRule)
+			} else {
+				log.Printf("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
+			}
+		}
+
+		// 6. Build result for this instance
+		result[instanceUUID] = map[string]interface{}{
+			"instance_id": instanceUUID,
+			"rule_count":  len(rules),
+			"rule_groups": rules,
+		}
+	}
+
+	// Ensure all instances have a result entry
+	for _, instanceUUID := range instanceUUIDs {
+		if _, exists := result[instanceUUID]; !exists {
+			result[instanceUUID] = map[string]interface{}{
+				"instance_id": instanceUUID,
+				"rule_count":  0,
+				"rule_groups": []interface{}{},
+			}
+		}
+	}
+
+	return result, nil
+}
+
 func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, groupUUID, ruleType string) error {
 	ctx, db := common.GetContextDB(ctx)
 	return db.Transaction(func(tx *gorm.DB) error {
@@ -477,6 +955,12 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 				Delete(&model.CPURuleDetail{}).Error; err != nil {
 				log.Printf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("CPU rules delete failed: %w", err)
+			}
+		case "memory":
+			if err := tx.Where("group_uuid = ?", groupUUID).
+				Delete(&model.MemoryRuleDetail{}).Error; err != nil {
+				log.Printf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("Memory rules delete failed: %w", err)
 			}
 		case "bw":
 			if err := tx.Where("group_uuid = ?", groupUUID).
@@ -533,6 +1017,10 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	if params.GroupUUID != "" {
 		query = query.Where("uuid = ?", params.GroupUUID)
 	}
+	// Added: Support query by rule_id
+	if params.RuleID != "" {
+		query = query.Where("rule_id = ?", params.RuleID)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		log.Printf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
@@ -553,6 +1041,15 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 	var details []model.CPURuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
 		log.Printf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+	}
+	return details, nil
+}
+
+func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID string) ([]model.MemoryRuleDetail, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var details []model.MemoryRuleDetail
+	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+		log.Printf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
@@ -624,6 +1121,16 @@ func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.C
 	return nil
 }
 
+func (a *AlarmOperator) CreateMemoryRuleDetail(ctx context.Context, detail *model.MemoryRuleDetail) error {
+	ctx, db := common.GetContextDB(ctx)
+	detail.UUID = uuid.NewString()
+	if err := db.Create(detail).Error; err != nil {
+		log.Printf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		return fmt.Errorf("create memory rule detail failed: %w", err)
+	}
+	return nil
+}
+
 func isLocalIP(ip string) bool {
 	if ip == "localhost" || ip == "127.0.0.1" {
 		return true
@@ -682,7 +1189,7 @@ func AlertRUleClient(baseURL, certFile, keyFile string) (*PrometheusClient, erro
 		if _, err := os.Stat(caCertPath); err == nil {
 			caCert, err := os.ReadFile(caCertPath)
 			if err != nil {
-				return nil, fmt.Errorf("读取CA证书失败: %v", err)
+				return nil, fmt.Errorf("failed to read CA certificate: %v", err)
 			}
 			caCertPool := x509.NewCertPool()
 			caCertPool.AppendCertsFromPEM(caCert)
@@ -759,7 +1266,7 @@ func (c *PrometheusClient) ClientReadRuleFile(path string) ([]byte, error) {
 		return nil, err
 	}
 
-	// 解析响应
+	// Parse response
 	var response RuleFileResponse
 	if err := json.Unmarshal(respBody, &response); err != nil {
 		log.Printf("parse response failed: %v", err)
@@ -861,8 +1368,8 @@ func (c *PrometheusClient) ClientCheckFileExists(path string) (bool, error) {
 
 func (c *PrometheusClient) ClientRemoveSymlink(linkPath string) error {
 	req := RuleFileRequest{
-		Operation: "unlink",
-		LinkPath:  linkPath,
+		Operation: "delete",
+		FilePath:  linkPath,
 	}
 
 	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
@@ -891,11 +1398,11 @@ func (c *PrometheusClient) ClientGetUser(username string) (int, int, error) {
 	}
 
 	if err := json.Unmarshal(resp, &response); err != nil {
-		return 0, 0, fmt.Errorf("解析响应失败: %v", err)
+		return 0, 0, fmt.Errorf("failed to parse response: %v", err)
 	}
 
 	if !response.Success {
-		return 0, 0, fmt.Errorf("获取用户信息失败: %s", response.Message)
+		return 0, 0, fmt.Errorf("failed to get user information: %s", response.Message)
 	}
 
 	return response.UID, response.GID, nil
@@ -931,13 +1438,16 @@ func GetUser(username string) (uid, gid int, err error) {
 }
 
 func ReadFile(path string) ([]byte, error) {
+	fmt.Printf("wngzhe ReadFile isRemotePrometheus: %t,  prometheusClient: %p", isRemotePrometheus, prometheusClient)
 	if isRemotePrometheus {
+		fmt.Printf("wngzhe ReadFile remote")
 		if prometheusClient == nil {
 			log.Printf("The Prometheus client has not been initialized.")
 			return nil, fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 		return prometheusClient.ClientReadRuleFile(path)
 	} else {
+		fmt.Printf("wngzhe ReadFile local")
 		return os.ReadFile(path)
 	}
 }
@@ -1046,13 +1556,58 @@ func ReloadPrometheus() error {
 	}
 }
 
-func RulePaths(ruleType, groupID string) (generalPath string, specialPath string) {
-	const (
-		RulesGeneral = "/etc/prometheus/general_rules"
-		RulesSpecial = "/etc/prometheus/special_rules"
-	)
-	return fmt.Sprintf("%s/%s-general-%s.yml", RulesGeneral, ruleType, groupID),
-		fmt.Sprintf("%s/%s-special-%s.yml", RulesSpecial, ruleType, groupID)
+// ReloadPrometheusViaHTTP reloads Prometheus configuration via HTTP API (requires --web.enable-lifecycle)
+func ReloadPrometheusViaHTTP() error {
+	var reloadURL string
+
+	// Step 1: Construct reload URL
+	if isRemotePrometheus {
+		// Remote scenario: use Prometheus IP and port
+		prometheusIP := GetPrometheusIP()
+		prometheusPort := GetPrometheusPort()
+		reloadURL = fmt.Sprintf("http://%s:%d/-/reload", prometheusIP, prometheusPort)
+		log.Printf("Reloading remote Prometheus via HTTP: %s", reloadURL)
+	} else {
+		// Local scenario: use localhost
+		reloadURL = "http://localhost:9090/-/reload"
+		log.Printf("Reloading local Prometheus via HTTP: %s", reloadURL)
+	}
+
+	// Step 2: Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	// Step 3: Send POST request
+	resp, err := client.Post(reloadURL, "", nil)
+	if err != nil {
+		log.Printf("Failed to send reload request to Prometheus: %v", err)
+		return fmt.Errorf("failed to reload Prometheus via HTTP: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Step 4: Check response status code
+	if resp.StatusCode != 200 {
+		// Read response body for detailed error information
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("Prometheus reload failed with status %d: %s", resp.StatusCode, string(body))
+
+		// Handle 403 error specifically (lifecycle API not enabled)
+		if resp.StatusCode == 403 {
+			return fmt.Errorf("Prometheus lifecycle API is not enabled (HTTP 403). Please add --web.enable-lifecycle flag")
+		}
+
+		return fmt.Errorf("reload failed with status %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Step 5: Success log
+	if isRemotePrometheus {
+		log.Printf("Successfully reloaded remote Prometheus configuration via HTTP API")
+	} else {
+		log.Printf("Successfully reloaded local Prometheus configuration via HTTP API")
+	}
+
+	return nil
 }
 
 func RemoveFile(path string) error {
@@ -1198,7 +1753,9 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 
 func ProcessTemplate(templateFile, outputFile string, data map[string]interface{}) error {
 	templatePath := filepath.Join(RuleTemplate, templateFile)
-	outputPath := filepath.Join(RulesNode, outputFile)
+
+	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
+	outputPath := filepath.Join(RulesGeneral, outputFile)
 
 	// Read template content
 	templateContent, err := ReadFile(templatePath)
@@ -1206,6 +1763,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 		log.Printf("Failed to read template file: path=%s, error=%v", templatePath, err)
 		return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
 	}
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
 
 	var renderedContent string
 	if strings.Contains(string(templateContent), "name: compute-network-resources") {
@@ -1213,11 +1771,12 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	} else {
 		renderedContent, err = renderTemplateContent(string(templateContent), data, templateFile)
 	}
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
 	if err != nil {
 		log.Printf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
-
+	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
 		log.Printf("Failed to write output file: path=%s, error=%v", outputPath, err)
@@ -1225,7 +1784,7 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	}
 
 	// Create symlink to RulesEnabled directory
-	enabledPath := filepath.Join(RulesEnabled, outputFile)
+	enabledPath := filepath.Join(RulesEnabled, filepath.Base(outputPath))
 	if err := CreateSymlink(outputPath, enabledPath); err != nil {
 		log.Printf("Failed to create symlink: source=%s, target=%s, error=%v",
 			outputPath, enabledPath, err)
@@ -1313,29 +1872,26 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 
 	result := templateContent
 
-	// Replace all variables with data values first
+	// 1. Replace all variables in data (excluding $labels.)
 	for key, value := range data {
-		// Skip Prometheus labels (e.g., {{ $labels.xxx }})
 		if strings.HasPrefix(key, "$labels.") {
 			continue
 		}
-
-		// Replace simple variables: {{ variable }}
 		placeholder := fmt.Sprintf("{{ %s }}", key)
 		strValue := fmt.Sprintf("%v", value)
 		result = strings.ReplaceAll(result, placeholder, strValue)
 
-		// Handle variables with default values: {{ variable | default("value") }} with data value
+		// 1.1 Replace {{ key | default("xxx") }} format
 		defaultPattern := regexp.MustCompile(fmt.Sprintf(`{{ %s \| default\("([^"]*)"\) }}`, key))
 		result = defaultPattern.ReplaceAllString(result, strValue)
 
-		// Handle variables with unquoted default values: {{ variable | default(value) }} or {{ (variable | default(value)) }}
+		// 1.2 Replace {{ key | default(xxx) }} format without quotes
 		noQuotesPattern := regexp.MustCompile(fmt.Sprintf(`{{ *(?:\(?%s\)? *\| *default\(([^"\)]+)\)) *}}`, key))
 		result = noQuotesPattern.ReplaceAllString(result, strValue)
 	}
 
-	// Handle remaining default value variables (use template defaults for missing keys)
-	// For quoted defaults: {{ variable | default("value") }}
+	// 2. Replace remaining default syntax variables (if no value provided in data)
+	// 2.1 Default with quotes
 	defaultPattern := regexp.MustCompile(`{{ ([a-zA-Z0-9_]+) \| default\("([^"]*)"\) }}`)
 	result = defaultPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := defaultPattern.FindStringSubmatch(match)
@@ -1343,18 +1899,16 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 			return match
 		}
 		key := matches[1]
-		// Skip Prometheus labels
 		if strings.HasPrefix(key, "$labels.") {
 			return match
 		}
-		// Use data value if available, otherwise use default from template
-		if _, ok := data[key]; ok {
-			return fmt.Sprintf("%v", data[key])
+		if val, ok := data[key]; ok {
+			return fmt.Sprintf("%v", val)
 		}
-		return matches[2] // Use the default value from template
+		return matches[2]
 	})
 
-	// For unquoted defaults: {{ variable | default(value) }} or {{ (variable | default(value)) }}
+	// 2.2 Default without quotes
 	noQuotesPattern := regexp.MustCompile(`{{ *(?:\(?([a-zA-Z0-9_]+)\)? *\| *default\(([^"\)]+)\)) *}}`)
 	result = noQuotesPattern.ReplaceAllStringFunc(result, func(match string) string {
 		matches := noQuotesPattern.FindStringSubmatch(match)
@@ -1362,29 +1916,19 @@ func renderTemplateContent(templateContent string, data map[string]interface{}, 
 			return match
 		}
 		key := matches[1]
-		// Skip Prometheus labels
 		if strings.HasPrefix(key, "$labels.") {
 			return match
 		}
-		// Use data value if available, otherwise use default from template
-		if _, ok := data[key]; ok {
-			return fmt.Sprintf("%v", data[key])
+		if val, ok := data[key]; ok {
+			return fmt.Sprintf("%v", val)
 		}
-		return matches[2] // Use the default value from template
+		return matches[2]
 	})
 
-	// Validate the result: ensure no unresolved templates remain (except Prometheus labels)
-	remainingPattern := regexp.MustCompile(`{{ ([^}]+) }}`)
-	remainingMatches := remainingPattern.FindAllStringSubmatch(result, -1)
-	for _, match := range remainingMatches {
-		if len(match) > 1 {
-			key := match[1]
-			// Allow Prometheus labels to remain
-			if !strings.HasPrefix(key, "$labels.") {
-				return "", fmt.Errorf("unresolved template variable: %s", key)
-			}
-		}
-	}
+	// 3. Unpack Prometheus template expressions, for example:
+	// {{ "{{ if $labels.xxx }}a{{ else }}b{{ end }}" }} -> {{ if $labels.xxx }}a{{ else }}b{{ end }}
+	promExprPattern := regexp.MustCompile(`{{ "{{ ([^{}]+) }}" }}`)
+	result = promExprPattern.ReplaceAllString(result, "{{ $1 }}")
 
 	return result, nil
 }
@@ -1403,7 +1947,7 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 		return fmt.Errorf("config is required")
 	}
 
-	// 验证 config 是否为有效的 JSON
+	// Validate if config is valid JSON
 	var temp interface{}
 	if err := json.Unmarshal(rule.Config.RawMessage, &temp); err != nil {
 		return fmt.Errorf("config must be valid JSON")
@@ -1446,6 +1990,8 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"management-resources.yml.j2"}
 	case RuleTypeCompute:
 		templateFiles = []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
+	case RuleTypeHypervisorVCPU:
+		templateFiles = []string{"compute-vcpu-resources.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
@@ -1478,7 +2024,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		}
 	}
 
-	if err := ReloadPrometheus(); err != nil {
+	if err := ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus: %v", err)
 	}
 
@@ -1614,21 +2160,21 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 		rulesForTemplate = append(rulesForTemplate, ruleMap)
 	}
 
-	// 添加模板所需的数据
+	// Add data required for template
 	c.Data["Rules"] = rulesForTemplate
 	c.Data["Total"] = len(rules)
 	c.Data["Query"] = c.Query("q")
 	c.Data["Link"] = "/alarms/node"
 
-	// 确保 i18n 对象被正确设置
+	// Ensure i18n object is properly set
 	if c.Locale != nil {
 		c.Data["i18n"] = c.Locale
 	} else {
 		log.Printf("Warning: i18n object is nil")
-		c.Data["i18n"] = &i18n.Locale{} // 提供一个空的 i18n 对象作为后备
+		c.Data["i18n"] = &i18n.Locale{} // Provide an empty i18n object as fallback
 	}
 
-	// 复制其他必要的上下文数据
+	// Copy other necessary context data
 	if isAdmin, ok := c.Data["IsAdmin"].(bool); ok {
 		c.Data["IsAdmin"] = isAdmin
 	}
@@ -1674,6 +2220,8 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 			"compute-core-resources.yml",
 			"compute-network-resources.yml",
 		}
+	case RuleTypeHypervisorVCPU:
+		templateFiles = []string{"compute-vcpu-resources.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
 	}
@@ -1696,7 +2244,7 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		}
 	}
 
-	if err := ReloadPrometheus(); err != nil {
+	if err := ReloadPrometheusViaHTTP(); err != nil {
 		log.Printf("Failed to reload Prometheus configuration: error=%v", err)
 	}
 
@@ -1726,4 +2274,264 @@ func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
 
 func (v *AlarmView) NewNodeAlarmRule(c *macaron.Context) {
 	c.HTML(200, "alarms_new")
+}
+
+// NotifyParams notification parameters
+type NotifyParams struct {
+	Alerts []struct {
+		State       string            `json:"state"`
+		Labels      map[string]string `json:"labels"`
+		Annotations map[string]string `json:"annotations"`
+		StartsAt    time.Time         `json:"startsAt"`
+		EndsAt      time.Time         `json:"endsAt"`
+	} `json:"alerts"`
+}
+
+// SendNotification sends notification directly to the specified URL without authentication
+// This is a generic notification function that can be used by both alarm and adjust rules
+func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, params NotifyParams) error {
+	// Send notification directly to notify_url (no authentication)
+	jsonData, err := json.Marshal(params)
+	if err != nil {
+		log.Printf("[SendNotification] Failed to marshal params: %v", err)
+		return fmt.Errorf("failed to marshal params: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", notifyURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("[SendNotification] Failed to create request: %v", err)
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Printf("[SendNotification] HTTP request failed: %v", err)
+		return fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		log.Printf("[SendNotification] Request failed with status %d, response: %s", resp.StatusCode, string(body))
+		return fmt.Errorf("notification service returned status %d", resp.StatusCode)
+	}
+
+	log.Printf("[SendNotification] Successfully sent notification to %s", notifyURL)
+	return nil
+}
+
+// UpdateMatchedVMsJSON updates the matched_vms.json file for VM cleanup
+// This is a public function that can be called from both apis and routes packages
+func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, operation, ruleType string, targetDevice ...string) error {
+	// Path to matched_vms.json file
+	matchedVMsFile := "/etc/prometheus/lists/matched_vms.json"
+
+	// Read existing matched_vms.json
+	var matchedVMs []map[string]interface{}
+	existingData, err := ReadFile(matchedVMsFile)
+	if err == nil && len(existingData) > 0 {
+		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
+			log.Printf("Failed to parse existing matched_vms.json: %v", err)
+			// Even if parsing fails, initialize an empty array to avoid losing operations
+			matchedVMs = []map[string]interface{}{}
+		}
+	} else {
+		// File doesn't exist or is empty, create new array
+		matchedVMs = []map[string]interface{}{}
+		log.Printf("Creating new matched_vms.json file")
+	}
+
+	// Process based on operation type
+	if operation == "add" {
+		log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
+		// Add or update VM entries
+		var notFoundVMs []string
+		for _, instanceid := range vmUUIDs {
+			domain, err := GetDomainByInstanceUUID(ctx, instanceid)
+			if err != nil {
+				log.Printf("Failed to get domain for instanceid=%s: %v", instanceid, err)
+				notFoundVMs = append(notFoundVMs, instanceid)
+				continue
+			}
+
+			// Create new entry with instance_id field and typed rule_id
+			ruleID := fmt.Sprintf("%s-%s-%s", ruleType, domain, groupUUID)
+
+			// Extract target_device value from variadic parameter
+			var targetDeviceValue string
+			if len(targetDevice) > 0 {
+				targetDeviceValue = targetDevice[0]
+			}
+
+			newEntry := map[string]interface{}{
+				"targets": []string{"localhost:9090"},
+				"labels": map[string]interface{}{
+					"domain":        domain,
+					"rule_id":       ruleID,
+					"instance_id":   instanceid,
+					"target_device": targetDeviceValue, // Add target_device field
+				},
+			}
+
+			// Check if the same domain+group combination already exists with the same target_device
+			entryExists := false
+			for i, vm := range matchedVMs {
+				labels, ok := vm["labels"].(map[string]interface{})
+				if !ok {
+					continue
+				}
+
+				domainVal, hasDomain := labels["domain"].(string)
+				existingRuleID, hasRuleID := labels["rule_id"].(string)
+				expectedRuleID := ruleID
+
+				if hasDomain && hasRuleID && domainVal == domain && existingRuleID == expectedRuleID {
+					// Update existing entry
+					entryExists = true
+					matchedVMs[i] = newEntry
+					log.Printf("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
+					break
+				}
+			}
+
+			// If it doesn't exist, add a new entry
+			if !entryExists {
+				matchedVMs = append(matchedVMs, newEntry)
+				log.Printf("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
+			}
+		}
+
+		// If any VMs were not found, return an error
+		if len(notFoundVMs) > 0 {
+			return fmt.Errorf("instances not found: %v", notFoundVMs)
+		}
+	} else if operation == "remove" {
+		// If targetDevice is provided (optional variadic parameter), delete by triple match;
+		// Otherwise, use the original "delete all by groupUUID" logic (unchanged).
+		// Build a non-empty device list to distinguish three cases:
+		// 1) targetDevice not provided -> no device filter
+		// 2) provided but empty string -> also no device filter
+		// 3) provided non-empty -> enable device filter (triple match)
+		nonEmptyDevices := []string{}
+		for _, d := range targetDevice {
+			if d != "" {
+				nonEmptyDevices = append(nonEmptyDevices, d)
+			}
+		}
+		hasDeviceFilter := len(nonEmptyDevices) > 0
+
+		filteredVMs := []map[string]interface{}{}
+		removedCount := 0
+
+		for _, vm := range matchedVMs {
+			labels, ok := vm["labels"].(map[string]interface{})
+			if !ok {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			ruleID, ok := labels["rule_id"].(string)
+			if !ok {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// No device filter:
+			// - If vmUUIDs is empty: delete all entries by groupUUID (used by rule group deletion)
+			// - Else: delete by group + specified vmUUIDs (clear all target devices for those VMs)
+			if !hasDeviceFilter {
+				if strings.HasSuffix(ruleID, "-"+groupUUID) {
+					if len(vmUUIDs) == 0 {
+						domain, _ := labels["domain"].(string)
+						instanceID, _ := labels["instance_id"].(string)
+						log.Printf("Removing mapping by group(all): domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						removedCount++
+						continue
+					}
+
+					instanceID, _ := labels["instance_id"].(string)
+					inVM := false
+					for _, id := range vmUUIDs {
+						if id == instanceID {
+							inVM = true
+							break
+						}
+					}
+					if inVM {
+						domain, _ := labels["domain"].(string)
+						log.Printf("Removing mapping by group: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						removedCount++
+						continue
+					}
+				}
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			// Device filter: require all three conditions to match
+			// 1) Belongs to the group
+			// 2) instance_id in vmUUIDs
+			// 3) target_device in targetDevice
+			if !strings.HasSuffix(ruleID, "-"+groupUUID) {
+				filteredVMs = append(filteredVMs, vm)
+				continue
+			}
+
+			instanceID, _ := labels["instance_id"].(string)
+			inVM := false
+			for _, id := range vmUUIDs {
+				if id == instanceID {
+					inVM = true
+					break
+				}
+			}
+			inDev := false
+			for _, d := range nonEmptyDevices {
+				if d == labels["target_device"] {
+					inDev = true
+					break
+				}
+			}
+
+			if inVM && inDev {
+				domain, _ := labels["domain"].(string)
+				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
+					domain, ruleID, instanceID, labels["target_device"])
+				removedCount++
+				continue
+			}
+
+			// Keep if triple condition not matched
+			filteredVMs = append(filteredVMs, vm)
+		}
+
+		matchedVMs = filteredVMs
+		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
+	}
+
+	// Save updated matched_vms.json
+	matchedVMsData, err := json.MarshalIndent(matchedVMs, "", "  ")
+	if err != nil {
+		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		return err
+	}
+
+	err = WriteFile(matchedVMsFile, matchedVMsData, 0644)
+	if err != nil {
+		log.Printf("Failed to write matched_vms.json: %v", err)
+		return err
+	}
+
+	// Force reload Prometheus configuration
+	if err := ReloadPrometheusViaHTTP(); err != nil {
+		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
+		// Don't return error as the file update was successful
+	} else {
+		log.Printf("Successfully reloaded Prometheus configuration after updating matched_vms.json")
+	}
+
+	return nil
 }

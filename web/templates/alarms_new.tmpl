@@ -25,6 +25,7 @@
                                         <option value="node_available">{{.i18n.Tr "Node_Available"}}</option>
                                         <option value="control_node">{{.i18n.Tr "Control_Node"}}</option>
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
+                                        <option value="hypervisor_vcpu">{{.i18n.Tr "Hypervisor_vCPU"}}</option>
 									</select>
 								</div>
 								<div class="inline field">
@@ -92,6 +93,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 "storage":   { "threshold": 5, "pattern": "=\"eth2\"", "duration": "5m" },
                 "internet":  { "threshold": 5, "pattern": "=\"eth1\"", "duration": "5m" }
             }
+        },
+        'hypervisor_vcpu': {
+            "vcpu_usage_threshold": 80,
+            "for_duration": "5m"
         }
     };
 

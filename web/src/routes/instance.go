@@ -264,6 +264,11 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
 		return
 	}
+	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
+	if err != nil {
+		logger.Error("Instance has volume restoring", err)
+		return
+	}
 	image := instance.Image
 	if rescueImage == nil {
 		if image.RescueImage <= 0 {
@@ -326,6 +331,19 @@ func (a *InstanceAdmin) EndRescue(ctx context.Context, instance *model.Instance)
 	if err != nil {
 		logger.Error("Delete vm command execution failed", err)
 		return
+	}
+	return
+}
+
+func (a *InstanceAdmin) CheckVolumeIsRestoring(ctx context.Context, instanceID int64) (err error) {
+	vols, err := volumeAdmin.GetVolumesByInstanceID(ctx, instanceID)
+	if err != nil {
+		return
+	}
+	for _, vol := range vols {
+		if vol.Status == model.VolumeStatusRestoring {
+			return NewCLError(ErrVolumeIsRestoring, fmt.Sprintf("Volume %d is restoring", vol.ID), nil)
+		}
 	}
 	return
 }
@@ -438,6 +456,11 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		err = NewCLError(ErrInstanceInvalidState, "Instance is already resizing", nil)
 		return
 	}
+	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
+	if err != nil {
+		logger.Error("Instance has volume restoring", err)
+		return
+	}
 	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory
@@ -488,6 +511,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	if !permit {
 		logger.Error("Not authorized to reinstall the instance")
 		err = NewCLError(ErrPermissionDenied, "Not authorized to reinstall the instance", nil)
+		return
+	}
+	err = a.CheckVolumeIsRestoring(ctx, instance.ID)
+	if err != nil {
+		logger.Error("Instance has volume restoring, cannot proceed", err)
 		return
 	}
 	var bootVolume *model.Volume
@@ -969,6 +997,67 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 	return string(jsonData), nil
 }
 
+// CleanupInstanceRuleLinks cleans up all rule links for an instance
+// This ensures data consistency when deleting an instance
+func (a *InstanceAdmin) CleanupInstanceRuleLinks(ctx context.Context, instanceUUID string) error {
+	alarmOp := &AlarmOperator{}
+	linksMap, err := alarmOp.GetInstanceRuleLinks(ctx, []string{instanceUUID})
+	if err != nil {
+		return fmt.Errorf("failed to get rule links: %w", err)
+	}
+
+	links := linksMap[instanceUUID]
+	if len(links) == 0 {
+		logger.Debugf("No rule links for instance %s", instanceUUID)
+		return nil
+	}
+
+	logger.Infof("Cleaning up %d rule links for instance %s", len(links), instanceUUID)
+
+	// Group by (group_uuid, rule_type) for batch cleanup
+	type groupKey struct {
+		GroupUUID string
+		RuleType  string
+	}
+	groupedLinks := make(map[groupKey][]string) // map[key][]interfaces
+
+	ctx, db := GetContextDB(ctx)
+	for _, link := range links {
+		// Determine rule type
+		var group model.RuleGroupV2
+		ruleType := "alarm-cpu" // default
+		if err := db.Where("uuid = ?", link.GroupUUID).First(&group).Error; err == nil {
+			category := "alarm"
+			if group.Type == model.RuleTypeAdjustCPU || group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
+				category = "adjust"
+			}
+			subType := "cpu"
+			if strings.Contains(group.Type, "bw") {
+				subType = "bw"
+			}
+			ruleType = fmt.Sprintf("%s-%s", category, subType)
+		}
+
+		key := groupKey{link.GroupUUID, ruleType}
+		groupedLinks[key] = append(groupedLinks[key], link.Interface)
+
+		// Delete from DB
+		if _, err := alarmOp.DeleteVMLink(ctx, link.GroupUUID, instanceUUID, link.Interface); err != nil {
+			logger.Error("Failed to delete link", err)
+		}
+	}
+
+	// Update matched_vms.json for each group
+	for key, interfaces := range groupedLinks {
+		if err := UpdateMatchedVMsJSON(ctx, []string{instanceUUID}, key.GroupUUID, "remove", key.RuleType, interfaces...); err != nil {
+			logger.Error("Failed to update matched_vms.json", err)
+		}
+	}
+
+	logger.Infof("Successfully cleaned up rule links for instance %s", instanceUUID)
+	return nil
+}
+
 func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (err error) {
 	if instance.Status == model.InstanceStatusMigrating {
 		err = NewCLError(ErrInstanceInvalidState, "Instance is not in a valid state", nil)
@@ -1046,6 +1135,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		}
 		instance.Volumes = nil
 	}
+
+	// Cleanup rule links and matched_vms.json
+	if cleanupErr := instanceAdmin.CleanupInstanceRuleLinks(ctx, instance.UUID); cleanupErr != nil {
+		logger.Error("Failed to cleanup rule links", cleanupErr)
+	}
+
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	if instance.Hyper == -1 {
 		control = "toall="
@@ -1180,6 +1275,23 @@ func GetInstanceUUIDByDomain(ctx context.Context, domain string) (string, error)
 	}
 
 	return instance.UUID, nil
+}
+
+func GetDomainByInstanceUUID(ctx context.Context, uuid string) (string, error) {
+	var instance model.Instance
+	db := DB()
+	if err := db.Where("uuid = ?", uuid).First(&instance).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Error("Instance not found uuid=%s", uuid)
+			return "", fmt.Errorf("instance not found")
+		}
+		logger.Error("Database query failed uuid=%s error=%v", uuid, err)
+		return "", fmt.Errorf("database error")
+	}
+
+	// Convert instance ID to domain format: inst-{ID}
+	domain := fmt.Sprintf("inst-%d", instance.ID)
+	return domain, nil
 }
 
 func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, instances []*model.Instance, err error) {

@@ -73,6 +73,14 @@
     - { src: "/opt/cloudland/scripts", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
   tags: [sync, scripts, scripts_only]
 
+- name: set executable permissions for all kvm scripts
+  file:
+    path: /opt/cloudland/scripts/kvm
+    mode: '0755'
+    recurse: yes
+    state: directory
+  tags: [scripts, scripts_only]
+
 - name: link backend to kvm
   file:
     src: /opt/cloudland/scripts/kvm

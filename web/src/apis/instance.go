@@ -755,5 +755,41 @@ func (v *InstanceAPI) List(c *gin.Context) {
 	instanceListResp.Instances = instanceList
 	logger.Debugf("List instances success, %+v", instanceListResp)
 	c.JSON(http.StatusOK, instanceListResp)
-	return
+}
+
+// GetInstanceRuleLinks returns all rule links for given instance UUIDs
+// @Summary Get instance rule links
+// @Description Get all rule groups linked to specific instances
+// @tags Compute
+// @Accept json
+// @Produce json
+// @Param instance_ids query string true "Comma-separated instance UUIDs"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} common.APIError "Bad request"
+// @Router /instances/rule-links [get]
+func (v *InstanceAPI) GetInstanceRuleLinks(c *gin.Context) {
+	instanceIDsStr := c.Query("instance_ids")
+	if instanceIDsStr == "" {
+		ErrorResponse(c, http.StatusBadRequest, "instance_ids parameter is required", nil)
+		return
+	}
+
+	instanceIDs := strings.Split(instanceIDsStr, ",")
+	for i := range instanceIDs {
+		instanceIDs[i] = strings.TrimSpace(instanceIDs[i])
+	}
+
+	// Call routes layer function (no DB operations in API layer)
+	alarmOp := &routes.AlarmOperator{}
+	result, err := alarmOp.GetInstanceRuleDetails(c.Request.Context(), instanceIDs)
+	if err != nil {
+		logger.Errorf("Failed to get rule details: %v", err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to query rule details", err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": "success",
+		"data":   result,
+	})
 }
