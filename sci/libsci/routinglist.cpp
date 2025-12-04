@@ -461,8 +461,10 @@ int RoutingList::startRouting(int hndl, Stream *stream)
     }
 
     if (stream == NULL) {
-        mapRouters(hndl, NULL, NULL);
-        return -1;
+	if (routers.find(hndl) == routers.end()) {
+	    mapRouters(hndl, NULL, NULL);
+	}
+	return -1;
     }
     WriterProcessor *writer = NULL;
     if ((routers.find(hndl) != routers.end()) && (routers[hndl].stream != NULL)) {
