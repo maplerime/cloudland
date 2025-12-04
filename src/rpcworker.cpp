@@ -305,11 +305,6 @@ void RpcWorker::runServer()
     if (hFile == NULL) {
         hFile = CLOUD_HOST_FILE;
     }
-    try {
-        sciNet.initFE(bePath, hFile, this);
-    } catch (CommonException &e) {
-        log_error(e.getErrMsg());
-    }
 
     string serverAddress = "localhost";
     int serverPort = 50051;
@@ -330,8 +325,14 @@ void RpcWorker::runServer()
         service->Execute(req, res);
     });
     auto httpThread = std::thread([&]() { http.listen(serverAddress, serverPort); });
-    httpThread.join();
 
+    try {
+        sciNet.initFE(bePath, hFile, this);
+    } catch (CommonException &e) {
+        log_error(e.getErrMsg());
+    }
+
+    httpThread.join();
     sciNet.terminate();
     log_info("RPC worker terminated normally");
 }
