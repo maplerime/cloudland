@@ -20,6 +20,22 @@ if [ $? -ne 0 ]; then
 fi
 cmd="virsh destroy $vm_ID"
 result=$(eval "$cmd")
+
+# Clean up VM adjust custom metrics
+./cleanup_vm_custom_metrics.sh $ID
+
+# Clean up old format rule_id metrics after VM deletion
+echo "=== Starting rule_id metrics cleanup for deleted VM ==="
+if [ -f "./cleanup_old_rule_id_metrics.sh" ]; then
+    echo "Cleaning up old format rule_id metrics for deleted VM: $vm_ID"
+    ./cleanup_old_rule_id_metrics.sh --force || {
+        echo "Warning: Rule_id metrics cleanup failed, but VM deletion completed successfully"
+    }
+else
+    echo "Warning: Rule_id metrics cleanup script not found, skipping metrics cleanup"
+fi
+echo "=== Rule_id metrics cleanup completed ==="
+
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)

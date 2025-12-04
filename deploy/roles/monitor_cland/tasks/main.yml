@@ -3,6 +3,11 @@
      is_current_in_hyper: "{{ inventory_hostname in groups['hyper'] }}"
   tags: [monitor]
 
+- name: Check if current host is in cland group
+  set_fact:
+     is_current_in_cland: "{{ inventory_hostname in groups['cland'] }}"
+  tags: [monitor]
+
 - name: Setup prometheus-node-exporter for cland nodes
   block:
     - name: Set node exporter port variable
@@ -25,6 +30,15 @@
       ignore_errors: true
       changed_when: false
       when: pkg_install is succeeded
+
+    - name: Create node_exporter data directory
+      file:
+        path: /var/lib/node_exporter
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+      tags: [monitor]
 
     - name: Ensure systemd override directory exists
       file:
@@ -91,3 +105,129 @@
 
   when: not is_current_in_hyper
   tags: [monitor]
+
+# ============================================================================
+# ============================================================================
+# PetaCloud Exporter Deployment
+# ============================================================================
+# This deploys the PetaCloud Exporter using Docker Registry approach:
+# 1. Create directory structure on control nodes
+# 2. Pull pre-built image from Docker Registry
+# 3. Generate configuration from template
+# 4. Deploy container with pulled image
+# ============================================================================
+
+- name: Deploy PetaCloud Exporter on control nodes
+  block:
+    # ------------------------------------------------------------------------
+    # Step 1: Set variables
+    # ------------------------------------------------------------------------
+    - name: Set CloudLand API endpoint variables
+      set_fact:
+        cloudland_rest_host: "127.0.0.1"
+        cloudland_rest_port: "8255"
+        cloudland_admin_user: "admin"
+        cloudland_admin_password: "{{ admin_passwd }}"
+        exporter_image: "reg-staging.raksmart.com:8443/petacloud/petacloud-exporter"
+        exporter_image_tag: "latest"
+        cloudland_exporter_port: 9102
+        cloudland_exporter_region: "{{ domain_name }}"
+
+    # ------------------------------------------------------------------------
+    # Step 2: Create directory structure on control nodes
+    # ------------------------------------------------------------------------
+    - name: Create PetaCloud exporter directory structure
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - /etc/petacloud/exporter
+        - /etc/petacloud/exporter/build
+        - /etc/petacloud/exporter/build/bin
+        - /etc/petacloud/exporter/etc
+        - /etc/petacloud/exporter/logs
+
+    # ------------------------------------------------------------------------
+    # Step 3: Pull Docker image from registry
+    # ------------------------------------------------------------------------
+    - name: Pull petacloud-exporter image from registry
+      docker_image:
+        name: "{{ exporter_image }}"
+        tag: "{{ exporter_image_tag }}"
+        source: pull
+        force_source: yes
+
+    # ------------------------------------------------------------------------
+    # Step 4: Generate configuration from template
+    # ------------------------------------------------------------------------
+    - name: Generate clexporter configuration from template
+      template:
+        src: clexporter.yaml.j2
+        dest: /etc/petacloud/exporter/etc/clexporter.yaml
+        mode: '0644'
+        force: yes
+
+    # ------------------------------------------------------------------------
+    # Step 5: Check port availability and remove old container
+    # ------------------------------------------------------------------------
+    - name: Check if port 9102 is already in use
+      shell: "netstat -tlnp | grep ':9102 ' || true"
+      register: port_check
+      changed_when: false
+
+    - name: Display port check result
+      debug:
+        msg: "Port 9102 status: {{ 'IN USE - will stop existing service' if port_check.stdout != '' else 'Available' }}"
+
+    - name: Warn if port is in use
+      debug:
+        msg: "WARNING: Port 9102 is already in use by: {{ port_check.stdout }}"
+      when: port_check.stdout != ''
+
+    - name: Remove existing petacloud-exporter container if exists
+      docker_container:
+        name: petacloud-exporter
+        state: absent
+
+    # ------------------------------------------------------------------------
+    # Step 6: Deploy new container with pulled image
+    # ------------------------------------------------------------------------
+    - name: Deploy petacloud-exporter container
+      docker_container:
+        name: petacloud-exporter
+        image: "{{ exporter_image }}:{{ exporter_image_tag }}"
+        state: started
+        restart_policy: unless-stopped
+        network_mode: host
+        volumes:
+          - /etc/petacloud/exporter/etc/clexporter.yaml:/opt/petacloud-exporter/etc/clexporter.yaml
+          - /etc/petacloud/exporter/logs:/opt/petacloud-exporter/logs
+
+    # ------------------------------------------------------------------------
+    # Step 7: Health check
+    # ------------------------------------------------------------------------
+    - name: Wait for exporter to be ready
+      uri:
+        url: "http://localhost:{{ cloudland_exporter_port }}/metrics"
+        method: GET
+        status_code: 200
+        timeout: 5
+      register: exporter_health
+      until: exporter_health.status == 200
+      retries: 6
+      delay: 5
+      ignore_errors: true
+
+    - name: Verify exporter is exposing CloudLand metrics
+      shell: "curl -s http://localhost:{{ cloudland_exporter_port }}/metrics | grep -q cloudland_hypervisor_scrape_success"
+      register: metrics_check
+      changed_when: false
+      failed_when: false
+
+    - name: Display exporter status
+      debug:
+        msg: "PetaCloud Exporter is {{ 'running and exposing metrics' if metrics_check.rc == 0 else 'running but metrics may not be available yet' }}"
+
+  when: is_current_in_cland
+  tags: [monitor, cloudland_exporter]

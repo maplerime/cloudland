@@ -65,7 +65,7 @@ var (
 		"disk_write":       `rate(libvirt_domain_block_stats_write_bytes_total{domain=~"%s",target_device=~"%s"}[2m]) / 1024`,
 		"network_receive":  `rate(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) * 8 / 1024`,
 		"network_transmit": `rate(libvirt_domain_interface_stats_transmit_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) * 8 / 1024`,
-		"traffic":          `(rate(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1m]) * 86400) / 1024`, // ingress only
+		"traffic":          `increase(libvirt_domain_interface_stats_receive_bytes_total{domain=~"%s",target_device=~"%s"}[1h]) / 1024`, // ingress only, KB per hour
 		"volume_read":      `expontech_tianshu_vol_op_bytes_persecond{mode='read',volName='%s'}`,
 		"volume_write":     `expontech_tianshu_vol_op_bytes_persecond{mode='write',volName='%s'}`,
 	}
@@ -235,7 +235,7 @@ type TrafficResponse struct {
 	Status string `json:"status"`
 	Data   struct {
 		ResultType string `json:"resultType"`
-		Unit       string `json:"unit"` // "KB/day"
+		Unit       string `json:"unit"` // "KB/hour"
 		Result     []struct {
 			Metric struct {
 				Domain       string `json:"domain"`
@@ -1780,7 +1780,7 @@ func formatResponse(resp *PrometheusResponse, metricType string) interface{} {
 		var trafficResp TrafficResponse
 		trafficResp.Status = resp.Status
 		trafficResp.Data.ResultType = resp.Data.ResultType
-		trafficResp.Data.Unit = "KB/day"
+		trafficResp.Data.Unit = "KB/hour"
 
 		for _, r := range resp.Data.Result {
 			var result struct {
