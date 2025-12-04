@@ -111,6 +111,7 @@ EOF
     let i=$i+1
 done
 
+sysctl -w net.ipv4.ip_nonlocal_bind=1
 haproxy_pid=$(cat $lb_dir/haproxy.pid)
 [ $haproxy_pid -gt 0 ] && ip netns exec $router haproxy -D -f $lb_dir/haproxy.conf -sf $haproxy_pid -p $lb_dir/haproxy.pid
 [ $? -ne 0 ] && ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf

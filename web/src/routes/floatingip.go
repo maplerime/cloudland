@@ -332,11 +332,10 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 		}
 	} else if floatingIp.LoadBalancerID > 0 {
-		floatingIp.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
-		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(floatingIp.LoadBalancer).Error
+		floatingIp.LoadBalancer, err = loadBalancerAdmin.Get(ctx, floatingIp.LoadBalancerID)
 		if err != nil {
-			logger.Error("DB failed to query load balancer ", err)
-			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
+			logger.Error("Failed to get ip load balancer ", err)
+			return
 		}
 	}
 	if floatingIp.RouterID > 0 {
@@ -384,8 +383,7 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 			return nil, NewCLError(ErrSQLSyntaxError, msg, err)
 		}
 	} else if floatingIp.LoadBalancerID > 0 {
-		floatingIp.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: floatingIp.LoadBalancerID}}
-		err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(floatingIp.LoadBalancer).Error
+		floatingIp.LoadBalancer, err = loadBalancerAdmin.Get(ctx, floatingIp.LoadBalancerID)
 		if err != nil {
 			logger.Error("DB failed to query load balancer ", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
@@ -647,8 +645,7 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 				continue
 			}
 		} else if fip.LoadBalancerID > 0 {
-			fip.LoadBalancer = &model.LoadBalancer{Model: model.Model{ID: fip.LoadBalancerID}}
-			err = db.Preload("VrrpInstance").Preload("VrrpInstance.VrrpSubnet").Take(fip.LoadBalancer).Error
+			fip.LoadBalancer, err = loadBalancerAdmin.Get(ctx, fip.LoadBalancerID)
 			if err != nil {
 				logger.Error("DB failed to query load balancer ", err)
 				err = nil
