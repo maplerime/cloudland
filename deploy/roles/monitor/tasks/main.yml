@@ -424,14 +424,14 @@
             routes:
               # Route node alarms to node-webhook (maintain compatibility with existing config)
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu)
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
                   severity: critical|warning|info|error
                 receiver: 'node-webhook'
                 continue: true
 
               # Also send node alarms to slack-notifications
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu)
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
                   severity: critical|warning|info|error
                 receiver: 'slack-notifications'
                 continue: true
@@ -937,25 +937,28 @@
     - node_templates
   tags: [monitor]
 
-- name: Copy rule files to node_rules directory
+- name: Find all rule template files
+  delegate_to: localhost
+  run_once: true
+  find:
+    paths: "{{ playbook_dir }}/roles/monitor/templates"
+    patterns: "*.yml.j2"
+  register: rule_template_files
+  tags: [monitor]
+
+- name: Copy rule template files to node_templates directory
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   copy:
-    src: "{{ item }}"
-    dest: /etc/prometheus/node_templates
+    src: "{{ item.path }}"
+    dest: /etc/prometheus/node_templates/{{ item.path | basename }}
     owner: prometheus
     group: prometheus
     mode: 0644
-  with_items:
-    - roles/monitor/templates/compute-core-resources.yml.j2
-    - roles/monitor/templates/management-resources.yml.j2
-    - roles/monitor/templates/node-availability.yml.j2
-    - roles/monitor/templates/compute-network-resources.yml.j2
-    - roles/monitor/templates/compute-vcpu-resources.yml.j2
-    - roles/monitor/templates/VM-cpu-rule.yml.j2
-    - roles/monitor/templates/VM-in-bw-rule.yml.j2
-    - roles/monitor/templates/VM-out-bw-rule.yml.j2
-    - roles/monitor/templates/VM-memory-rule.yml.j2
+    remote_src: no
+  with_items: "{{ rule_template_files.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
   tags: [monitor]
 
 - name: Create directories for mapping files
