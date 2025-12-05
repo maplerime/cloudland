@@ -1,0 +1,14 @@
+[Unit]
+Description=Collect Conntrack Unreplied SYN Flows
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/cloudland/scripts/monitor/conntrack_unreplied_syn.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+
