@@ -79,7 +79,7 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 		logger.Error("Invalid backup ID", err)
 		return
 	}
-	err = db.Model(backup).Updates(map[string]interface{}{"path": path, "status": status, "size": size, "snapshot_id": middleSnapshotID, "snapshot_pool_id": wdsOriginPoolID, "task_id": 0}).Error
+	err = db.Model(backup).Updates(map[string]interface{}{"path": path, "status": status, "size": size, "snapshot_id": middleSnapshotID, "task_id": 0}).Error
 	if err != nil {
 		logger.Errorf("Failed to update backup %d: %v", backupID, err)
 		return "", err
