@@ -225,7 +225,7 @@ func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType st
 	backup.Volume = volume
 	task = &model.Task{
 		Owner:     memberShip.OrgID,
-		Name:      fmt.Sprintf("Taking %s(%s) for volume %s", backupType, name, volume.UUID),
+		Name:      fmt.Sprintf("create_%s_%s", backupType, volume.UUID),
 		Summary:   fmt.Sprintf("Taking %s(%s [%d]) for volume %s to pool %s", backupType, name, backup.ID, volume.UUID, poolID),
 		Status:    model.TaskStatusRunning,
 		Source:    model.TaskSourceManual,
