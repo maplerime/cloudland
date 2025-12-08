@@ -136,7 +136,7 @@ func (v *BackendAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
-	backendID := c.Param("id")
+	backendID := c.Param("backend_id")
 	logger.Debugf("Patch backend %s", backendID)
 	backend, err := backendAdmin.GetBackendByUUID(ctx, backendID)
 	if err != nil {
@@ -206,7 +206,7 @@ func (v *BackendAPI) Delete(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query", NewCLError(ErrInvalidParameter, "Invalid query for load balancer listener", nil))
 		return
 	}
-	backendID := c.Param("id")
+	backendID := c.Param("backend_id")
 	logger.Debugf("Delete backend %s", backendID)
 	backend, err := backendAdmin.GetBackendByUUID(ctx, backendID)
 	if err != nil {

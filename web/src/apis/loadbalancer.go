@@ -245,6 +245,7 @@ func (v *LoadBalancerAPI) getLoadBalancerResponse(ctx context.Context, loadBalan
 			FipAddress: floatingip.FipAddress,
 		}
 	}
+	loadBalancerResp.FloatingIps = floatingIps
 	return
 }
 

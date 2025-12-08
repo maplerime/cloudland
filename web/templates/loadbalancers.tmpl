@@ -43,10 +43,10 @@
                                 {{ range .LoadBalancers}}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="{{$Link}}?router_id={{.ID}}">{{.ID}}</td>
+			                        <td>{{.ID}}</td>
 									{{ end }}
 									<td>{{.UUID}}</td>
-			                        <td><a href="{{$Link}}?router_id={{.ID}}">{{.Name}}</td>
+			                        <td>{{.Name}}</td>
 			                        <td>
 							{{ range .FloatingIps}}
 								{{.FipAddress }}<br>

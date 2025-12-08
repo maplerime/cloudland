@@ -121,7 +121,7 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/load_balancers/:id/floating_ips", lbFloatingIpAPI.List)
 		authGroup.POST("/api/v1/load_balancers/:id/floating_ips", lbFloatingIpAPI.Create)
-		authGroup.GET("/api/v1/load_balancers/:id/floating_ips/:floting_ip_id", lbFloatingIpAPI.Get)
+		authGroup.GET("/api/v1/load_balancers/:id/floating_ips/:floating_ip_id", lbFloatingIpAPI.Get)
 		authGroup.DELETE("/api/v1/load_balancers/:id/floating_ips/:floating_ip_id", lbFloatingIpAPI.Delete)
 
 		authGroup.GET("/api/v1/load_balancers/:id/listeners", listenerAPI.List)
