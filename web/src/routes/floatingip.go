@@ -216,12 +216,12 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	}
 
 	if loadBalancer != nil {
+		loadBalancer.FloatingIps = append(loadBalancer.FloatingIps, floatingIps...)
 		err = CreateVrrpConf(ctx, loadBalancer)
 		if err != nil {
 			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 			return
 		}
-		loadBalancer.FloatingIps = append(loadBalancer.FloatingIps, floatingIps...)
 		err = backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)
 		if err != nil {
 			logger.Error("Failed to create haproxy conf ", err)
@@ -475,12 +475,6 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 			err = NewCLError(ErrExecuteOnHyperFailed, "Clear lb floating execution failed", err)
 			return
 		}
-		err = CreateVrrpConf(ctx, loadBalancer)
-		if err != nil {
-			logger.Error("Recreate keepalived config failed", err)
-			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
-			return
-		}
 	}
 	logger.Debugf("Floating ip: %v\n", floatingIp)
 	floatingIp.InstanceID = 0
@@ -501,6 +495,12 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		_, loadBalancer.FloatingIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
 		if err != nil {
 			logger.Error("Failed to list floating ip(s), %v", err)
+			return
+		}
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			logger.Error("Recreate keepalived config failed", err)
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
 			return
 		}
 		err = backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)

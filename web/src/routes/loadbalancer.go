@@ -387,6 +387,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 			return
 		}
 	}
+	loadBalancer.FloatingIps = nil
 	_, listeners, err := listenerAdmin.List(ctx, 0, -1, "", loadBalancer)
 	if err != nil {
 		logger.Error("Failed to list listeners", err)
@@ -401,6 +402,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 			return
 		}
 	}
+	loadBalancer.Listeners = nil
 	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
 	err = db.Model(&model.LoadBalancer{Model: model.Model{ID: loadBalancer.ID}}).Update("name", loadBalancer.Name).Error
 	if err != nil {

@@ -15,13 +15,15 @@ peer_ip=$6
 peer_mac=$7
 role=$8
 
-vrrp_dir=$router_dir/$router
+vrrp_dir=$router_dir/$router/vrrp-$vrrp_ID
+mkdir -p $vrrp_dir
 content=$(cat)
 vips=$(jq -r .floating_ips <<< $content)
 nvip=$(jq length <<< $vips)
 if [ $nvip -eq 0 ]; then
     keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
     [ $keepalived_pid -gt 0 ] && ip netns exec $router kill $keepalived_pid
+    rm -rf $vrrp_dir
     exit 0
 fi
 ports=$(jq -r .ports <<< $content)
@@ -68,8 +70,9 @@ vrrp_instance load_balancer_${vrrp_ID} {
 
     virtual_ipaddress {
 EOF
+export ROUTES_FILE=$vrrp_dir/routes
+rm -f $ROUTES_FILE
 i=0
-rm -f $vrrp_dir/routes
 while [ $i -lt $nvip ]; do
     read -d'\n' -r virtual_ip ext_vlan ext_gw mark_id inbound outbound< <(jq -r ".[$i].address, .[$i].vlan, .[$i].gateway, .[$i].mark_id, .[$i].inbound, .[$i].outbound" <<<$vips)
     suffix=${ID}-${ext_vlan}
@@ -87,7 +90,6 @@ cat >>$vrrp_dir/keepalived.conf <<EOF
 }
 EOF
 
-export ROUTES_FILE=$vrrp_dir/routes
 keepalived_pid=$(cat $vrrp_dir/keepalived.pid)
 [ $keepalived_pid -gt 0 ] && kill -HUP $keepalived_pid
 [ $? -ne 0 ] && ip netns exec $router keepalived -p $vrrp_dir/keepalived.pid -r $vrrp_dir/vrrp.pid -f $vrrp_dir/keepalived.conf
