@@ -3,12 +3,13 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 2 ] && die "$0 <router> <lb_ID>"
+[ $# -lt 3 ] && die "$0 <router> <lb_ID> <vrrp_ID>"
 
 router=$1
 lb_ID=$2
+vrrp_ID=$3
 [ "${router/router-/}" = "$router" ] && router=router-$1
-src_vrrp_ip=$(grep unicast_src_ip $router_dir/$router/keepalived.conf | awk '{print $2}')
+src_vrrp_ip=$(grep unicast_src_ip $router_dir/$router/vrrp-$vrrp_ID/keepalived.conf | awk '{print $2}')
 lb_dir=$router_dir/$router/lb-$lb_ID
 [ ! -d "$lb_dir" ] && mkdir -p $lb_dir
 content=$(cat)
