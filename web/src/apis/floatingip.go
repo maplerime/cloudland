@@ -72,6 +72,7 @@ type FloatingIpPayload struct {
 	PublicIp        string           `json:"public_ip" binding:"omitempty,ipv4"`
 	Name            string           `json:"name" binding:"required,min=2,max=32"`
 	Instance        *BaseID          `json:"instance" binding:"omitempty"`
+	LoadBalancer    *BaseID          `json:"load_balancer" binding:"omitempty"`
 	Inbound         int32            `json:"inbound" binding:"omitempty,min=1,max=20000"`
 	Outbound        int32            `json:"outbound" binding:"omitempty,min=1,max=20000"`
 	ActivationCount int32            `json:"activation_count" binding:"omitempty,min=0,max=64"`
@@ -80,6 +81,7 @@ type FloatingIpPayload struct {
 
 type FloatingIpPatchPayload struct {
 	Instance *BaseID `json:"instance" binding:"omitempty"`
+	LoadBalancer    *BaseID          `json:"load_balancer" binding:"omitempty"`
 	Inbound  *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
 	Outbound *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
 	Group    *BaseID `json:"group" binding:"omitempty"`
@@ -164,11 +166,19 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 		floatingIp.Outbound = *payload.Outbound
 	}
 	var instance *model.Instance
+	var loadBalancer *model.LoadBalancer
 	if payload.Instance != nil {
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
 		if err != nil {
 			logger.Errorf("Failed to get instance %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+			return
+		}
+	} else if payload.LoadBalancer != nil {
+		loadBalancer, err = loadBalancerAdmin.GetLoadBalancerByUUID(ctx, payload.LoadBalancer.ID)
+		if err != nil {
+			logger.Errorf("Failed to get load balancer %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get load balancer", err)
 			return
 		}
 	}
@@ -183,7 +193,7 @@ func (v *FloatingIpAPI) Patch(c *gin.Context) {
 		}
 	}
 	logger.Debugf("Updating floating ip %s with instance %s, group %s", uuID, instance, group)
-	floatingIp, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group)
+	floatingIp, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group, loadBalancer)
 	if err != nil {
 		logger.Errorf("Failed to update floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update floating ip", err)
@@ -294,11 +304,19 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 	}
 
 	var instance *model.Instance
+	var loadBalancer *model.LoadBalancer
 	if payload.Instance != nil {
 		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
 		if err != nil {
 			logger.Errorf("Failed to get instance %+v", err)
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+			return
+		}
+	} else if payload.LoadBalancer != nil {
+		loadBalancer, err = loadBalancerAdmin.GetLoadBalancerByUUID(ctx, payload.LoadBalancer.ID)
+		if err != nil {
+			logger.Errorf("Failed to get load balancer %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get load balancer", err)
 			return
 		}
 	}
@@ -313,7 +331,7 @@ func (v *FloatingIpAPI) Create(c *gin.Context) {
 	}
 
 	logger.Debugf("publicSubnets: %v, instance: %v, publicIp: %s, name: %s, inbound: %d, outbound: %d, activationCount: %d, siteSubnets: %v, group: %v", publicSubnets, instance, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets, group)
-	floatingIps, err := floatingIpAdmin.Create(ctx, instance, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets, group)
+	floatingIps, err := floatingIpAdmin.Create(ctx, instance, publicSubnets, payload.PublicIp, payload.Name, payload.Inbound, payload.Outbound, activationCount, siteSubnets, group, loadBalancer)
 	if err != nil {
 		logger.Errorf("Failed to create floating ip %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create floating ip", err)
@@ -356,6 +374,12 @@ func (v *FloatingIpAPI) getFloatingIpResponse(ctx context.Context, floatingIp *m
 		floatingIpResp.VPC = &BaseReference{
 			ID:   floatingIp.Router.UUID,
 			Name: floatingIp.Router.Name,
+		}
+	}
+	if floatingIp.LoadBalancer != nil {
+		floatingIpResp.VPC = &BaseReference{
+			ID:   floatingIp.LoadBalancer.UUID,
+			Name: floatingIp.LoadBalancer.Name,
 		}
 	}
 	if floatingIp.Group != nil {
