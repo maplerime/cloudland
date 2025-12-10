@@ -30,6 +30,7 @@ type VolBackupResponse struct {
 	Volume *BaseReference     `json:"volume"`
 	Status model.BackupStatus `json:"status"`
 	Path   string             `json:"path,omitempty"`
+	Task   *BaseReference     `json:"task,omitempty"`
 }
 
 type VolBackupListResponse struct {
@@ -203,7 +204,7 @@ func (v *VolBackupAPI) Delete(c *gin.Context) {
 // @Accept  json
 // @Produce json
 // @Param   id     path    string     true  "Volume backup/snapshot UUID"
-// @Success 204
+// @Success 200 {object} VolBackupResponse
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
 // @Router /backups/{id}/restore [post]
@@ -215,12 +216,17 @@ func (v *VolBackupAPI) Restore(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid backup query", err)
 		return
 	}
-	err = volBackupAdmin.Restore(ctx, backup.ID)
+	backup, err = volBackupAdmin.Restore(ctx, backup.ID)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to restore backup", err)
 		return
 	}
-	c.JSON(http.StatusNoContent, nil)
+	backupResp, err := v.getVolBackupResponse(ctx, backup)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+		return
+	}
+	c.JSON(http.StatusOK, backupResp)
 }
 
 func (v *VolBackupAPI) getVolBackupResponse(ctx context.Context, backup *model.VolumeBackup) (backupResp *VolBackupResponse, err error) {
@@ -243,6 +249,12 @@ func (v *VolBackupAPI) getVolBackupResponse(ctx context.Context, backup *model.V
 		backupResp.Volume = &BaseReference{
 			ID:   backup.Volume.UUID,
 			Name: backup.Volume.Name,
+		}
+	}
+	if backup.Task != nil {
+		backupResp.Task = &BaseReference{
+			ID:   backup.Task.UUID,
+			Name: backup.Task.Name,
 		}
 	}
 	return
