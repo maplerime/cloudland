@@ -23,6 +23,7 @@ if [ $nlistener -eq 0 -o $nfloating_ip -eq 0 ]; then
     rm -rf $lb_dir
     exit 0
 fi
+ip netns exec $router sysctl -w net.ipv4.ip_nonlocal_bind=1
 cat >$lb_dir/haproxy.conf <<EOF
 global
     log /dev/log local0 info
@@ -105,14 +106,13 @@ EOF
         backend=$(jq -r .[$j] <<< $backends)
         read -d'\n' -r backend < <(jq -r ".backend_url" <<<$backend)
         cat >>$lb_dir/haproxy.conf <<EOF
-    server ${name}$j $backend check weight 100 maxconn 1000
+    server ${name}-$j $backend check weight 100 maxconn 1000
 EOF
         let j=$j+1
     done
     let i=$i+1
 done
 
-sysctl -w net.ipv4.ip_nonlocal_bind=1
 haproxy_pid=$(cat $lb_dir/haproxy.pid)
 [ $haproxy_pid -gt 0 ] && ip netns exec $router haproxy -D -f $lb_dir/haproxy.conf -sf $haproxy_pid -p $lb_dir/haproxy.pid
 [ $? -ne 0 ] && ip netns exec $router haproxy -D -p $lb_dir/haproxy.pid -f $lb_dir/haproxy.conf

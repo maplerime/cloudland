@@ -46,7 +46,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 				})
 			}
 			listenerCfgs = append(listenerCfgs, &ListenerConfig{
-				Name:     fmt.Sprintf("lb-%d-lsn-%d-%s", loadBalancer.ID, listener.ID, listener.Name),
+				Name:     fmt.Sprintf("lb-%d-lsn-%d", loadBalancer.ID, listener.ID),
 				Mode:     listener.Mode,
 				Key:      listener.Key,
 				Cert:     listener.Certificate,
