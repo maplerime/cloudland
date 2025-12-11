@@ -1616,6 +1616,8 @@ definitions:
     properties:
       name:
         type: string
+      pool_id:
+        type: string
       type:
         enum:
         - snapshot
@@ -1910,6 +1912,28 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /api/v1/metrics/alarm/sync-mappings:
+    post:
+      consumes:
+      - application/json
+      description: Perform a full synchronization of all VM rule mappings to ensure
+        matched_vms.json is consistent with the database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Synchronization successful
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Synchronize all VM rule mappings
+      tags:
+      - alarm
   /backups:
     get:
       consumes:
@@ -3149,6 +3173,32 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: set user password for a instance
+      tags:
+      - Compute
+  /instances/rule-links:
+    get:
+      consumes:
+      - application/json
+      description: Get all rule groups linked to specific instances
+      parameters:
+      - description: Comma-separated instance UUIDs
+        in: query
+        name: instance_ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get instance rule links
       tags:
       - Compute
   /ip_groups:
