@@ -19,6 +19,37 @@ const docTemplatev1 = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/api/v1/metrics/alarm/sync-mappings": {
+            "post": {
+                "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "alarm"
+                ],
+                "summary": "Synchronize all VM rule mappings",
+                "responses": {
+                    "200": {
+                        "description": "Synchronization successful",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/backups": {
             "get": {
                 "description": "list volume backups/snapshots by volume UUID and backup type",
@@ -1447,6 +1478,45 @@ const docTemplatev1 = `{
                     },
                     "401": {
                         "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/instances/rule-links": {
+            "get": {
+                "description": "Get all rule groups linked to specific instances",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "Get instance rule links",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated instance UUIDs",
+                        "name": "instance_ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
@@ -6488,6 +6558,9 @@ const docTemplatev1 = `{
             ],
             "properties": {
                 "name": {
+                    "type": "string"
+                },
+                "pool_id": {
                     "type": "string"
                 },
                 "type": {

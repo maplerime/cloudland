@@ -108,6 +108,13 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		wdsUUID := volume.GetOriginVolumeID()
 		wdsOriginPoolID := volume.GetVolumePoolID()
 		if poolID != "" && poolID != wdsOriginPoolID {
+			// check the pool id is valid
+			_, err = dictionaryAdmin.Find(ctx, model.DICT_CATEGORY_STORAGE_POOL, poolID)
+			if err != nil {
+				logger.Error("DB: query dictionary failed, storage_pool(%s) not found %+v", poolID, err)
+				err = NewCLError(ErrDictionaryRecordsNotFound, fmt.Sprintf("Storage pool (%s) not found", poolID), err)
+				return
+			}
 			logger.Debugf("Backup volume %s from pool %s to pool %s", volume.UUID, wdsOriginPoolID, poolID)
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_snapshot_%s.sh '%d' '%d' '%s' '%s' '%d' '%s' '%s' '%s'", vol_driver, task.ID, backup.ID, backup.UUID, backup.Name, volume.ID, wdsUUID, wdsOriginPoolID, poolID)
 			err = HyperExecute(ctx, control, command)
