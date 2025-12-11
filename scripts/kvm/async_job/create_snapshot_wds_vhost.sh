@@ -17,7 +17,7 @@ wdsOriginPoolID=$7
 if [ $# -lt 8 ]; then
     wdsPoolID=$wdsOriginPoolID
 else
-    wdsPoolID=$7
+    wdsPoolID=$8
 fi
 
 state='error'
