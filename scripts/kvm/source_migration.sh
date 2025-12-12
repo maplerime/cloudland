@@ -16,7 +16,12 @@ state=failed
 
 vm_xml=$(virsh dumpxml $vm_ID)
 if [ "$migration_type" = "warm" ]; then
-    virsh migrate --persistent --live $vm_ID qemu+ssh://$target_hyper/system
+    vm_state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2 | xargs)
+    if [ "$vm_state" = "shut off" ]; then
+        virsh migrate --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
+    else
+        virsh migrate --persistent --live $vm_ID qemu+ssh://$target_hyper/system
+    fi
     if [ $? -ne 0 ]; then
         ./clear_source_vhost.sh $ID
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
