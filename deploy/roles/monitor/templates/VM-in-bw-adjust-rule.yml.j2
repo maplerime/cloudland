@@ -5,7 +5,7 @@ groups:
   # Get total inbound bandwidth configuration from custom metrics (Mbps)
   - record: vm_in_bw_total_mbps_{{ rule_group }}
     expr: |
-      vm_interface_bandwidth_config_mbps{direction="in"}
+      sum by (domain, target_device) (vm_interface_bandwidth_config_mbps{direction="in"})
       * on(domain, target_device) group_right()
       max by (domain, target_device, rule_id, instance_id) (
         up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1
@@ -14,7 +14,7 @@ groups:
   # Raw inbound bandwidth speed (per interface, unit: kB/s)
   - record: vm_in_bw_speed_raw_{{ rule_group }}
     expr: |
-      rate(libvirt_domain_interface_stats_receive_bytes_total[1m]) / 1024
+      sum by (domain, target_device) (rate(libvirt_domain_interface_stats_receive_bytes_total[1m])) / 1024
 
   # Smoothed inbound bandwidth speed (5-minute moving average, unit: kB/s)
   - record: vm_in_bw_speed_{{ rule_group }}

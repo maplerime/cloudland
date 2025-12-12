@@ -6,7 +6,8 @@ groups:
   - record: vm_cpu_usage_percent_raw_{{ rule_group }}
     expr: |
       sum by (domain) (rate(libvirt_domain_info_cpu_time_seconds_total[1m]))
-      / on (domain) group_left() libvirt_domain_info_virtual_cpus * 100
+      / on (domain) group_left()
+      sum by (domain) (libvirt_domain_info_virtual_cpus) * 100
 
   # Smoothed CPU usage percentage (5-minute moving average)
   - record: vm_cpu_usage_percent_{{ rule_group }}
