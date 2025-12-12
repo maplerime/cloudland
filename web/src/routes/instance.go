@@ -161,19 +161,20 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}
 
 	driver := GetVolumeDriver()
+	imageVolumeID := ""
 	if driver != "local" {
 		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 		if poolID == "" {
 			poolID = defaultPoolID
 		}
-		if poolID != defaultPoolID {
-			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
-			if err != nil {
-				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
-				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
-				return
-			}
+		storage := model.ImageStorage{}
+		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
+		if err != nil {
+			logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
+			err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
+			return
 		}
+		imageVolumeID = storage.VolumeID
 		logger.Debugf("Using volume driver %s with pool ID %s", driver, poolID)
 	}
 
@@ -263,7 +264,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -556,7 +557,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 	driver := GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
-	defaultPoolID := viper.GetString("volume.default_wds_pool_id")
+	imageVolumeID := ""
 	total := 0
 	if driver == "local" {
 		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
@@ -564,14 +565,14 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 			return NewCLError(ErrInstanceNotFound, "Failed to query total instances with the image", err)
 		}
 	} else {
-		if poolID != defaultPoolID {
-			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&model.ImageStorage{}).Error
-			if err != nil {
-				logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
-				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
-				return
-			}
+		storage := model.ImageStorage{}
+		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
+		if err != nil {
+			logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
+			err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
+			return
 		}
+		imageVolumeID = storage.VolumeID
 		if err = db.Model(&model.Instance{}).
 			Unscoped().
 			Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
@@ -672,7 +673,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)
