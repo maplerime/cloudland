@@ -68,7 +68,7 @@ function inst_status()
     old_state_time=$(stat -c %W $inst_list_file)
     [ -z "$old_state_time" ] && old_state_time=0
     current_time=$(date +"%s")
-    [ $(( $current_time - $old_state_time )) -gt 600 ] && rm -f $inst_list_file
+    [ $(( $current_time - $old_state_time )) -gt 900 ] && rm -f $inst_list_file
     old_inst_list=$(cat $inst_list_file 2>/dev/null)
     all_inst_list=$(sudo virsh list --all | tail -n +3 | cut -d' ' -f3-)
     shutoff_list=$(sudo virsh list --all | grep 'shut off' | awk '{print $2}')
