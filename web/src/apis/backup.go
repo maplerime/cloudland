@@ -21,6 +21,7 @@ type VolBackupPayload struct {
 	Name     string `json:"name" binding:"required"`
 	VolumeID string `json:"volume_id" binding:"required"`
 	Type     string `json:"type" binding:"required,oneof=snapshot backup"`
+	PoolID   string `json:"pool_id" binding:"omitempty"`
 }
 
 type VolBackupResponse struct {
@@ -67,7 +68,7 @@ func (v *VolBackupAPI) Create(c *gin.Context) {
 	if payload.Type == "snapshot" {
 		backup, err = volBackupAdmin.CreateSnapshotByUUID(ctx, volume.UUID, payload.Name)
 	} else {
-		backup, err = volBackupAdmin.CreateBackupByUUID(ctx, volume.UUID, "", payload.Name)
+		backup, err = volBackupAdmin.CreateBackupByUUID(ctx, volume.UUID, payload.PoolID, payload.Name)
 	}
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create backup", err)
