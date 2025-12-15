@@ -41,9 +41,7 @@ type VolumePatchPayload struct {
 	Size      int32   `json:"size" binding:"omitempty"`
 	Instance  *BaseID `json:"instance" binding:"omitempty"`
 	IopsLimit int32   `json:"iops_limit" binding:"omitempty"`
-	IopsBurst int32   `json:"iops_burst" binding:"omitempty"`
 	BpsLimit  int32   `json:"bps_limit" binding:"omitempty"`
-	BpsBurst  int32   `json:"bps_burst" binding:"omitempty"`
 }
 
 type VolumeResponse struct {
@@ -141,7 +139,7 @@ func (v *VolumeAPI) Patch(c *gin.Context) {
 		instanceID = instance.ID
 	}
 
-	volume, err := volumeAdmin.UpdateByUUID(ctx, uuID, payload.Name, instanceID)
+	volume, err := volumeAdmin.UpdateByUUID(ctx, uuID, payload.Name, instanceID, payload.IopsLimit, payload.BpsLimit)
 	if err != nil {
 		logger.Errorf("Failed to update volume %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update volume", err)

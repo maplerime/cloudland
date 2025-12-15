@@ -6659,17 +6659,11 @@ const docTemplatev1 = `{
         "apis.VolumePatchPayload": {
             "type": "object",
             "properties": {
-                "bps_burst": {
-                    "type": "integer"
-                },
                 "bps_limit": {
                     "type": "integer"
                 },
                 "instance": {
                     "$ref": "#/definitions/common.BaseID"
-                },
-                "iops_burst": {
-                    "type": "integer"
                 },
                 "iops_limit": {
                     "type": "integer"

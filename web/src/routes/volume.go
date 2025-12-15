@@ -164,7 +164,8 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	return
 }
 
-func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
+func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
+	logger.Debugf("Update volume by UUID %s, name: %s, instID: %d, iopsLimit: %d, bpsLimit: %d", uuid, name, instID, iopsLimit, bpsLimit)
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
@@ -172,10 +173,11 @@ func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
-	return a.Update(ctx, volume.ID, name, instID)
+	return a.Update(ctx, volume.ID, name, instID, iopsLimit, bpsLimit)
 }
 
-func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64) (volume *model.Volume, err error) {
+func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
+	logger.Debugf("Update volume %d, name: %s, instID: %d, iopsLimit: %d, bpsLimit: %d", id, name, instID, iopsLimit, bpsLimit)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -259,6 +261,17 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		// the instance ID should be set to instID after the volume is attached successfully (after script executed successfully)
 		//volume.InstanceID = instID
 		//volume.Instance = nil
+	} else if iopsLimit > 0 && bpsLimit > 0 && (volume.IopsLimit != iopsLimit || volume.BpsLimit != bpsLimit) {
+		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
+		volume.IopsLimit = iopsLimit
+		volume.BpsLimit = bpsLimit
+		control := fmt.Sprintf("inter=")
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Create volume execution failed", err)
+			return
+		}
 	}
 	if err = db.Model(volume).Updates(volume).Error; err != nil {
 		logger.Error("DB: update volume failed", err)
@@ -627,7 +640,21 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 	id := c.Params(":id")
 	name := c.QueryTrim("name")
 	instance := c.QueryTrim("instance")
+	iopsLimit := c.QueryTrim("iops_limit")
+	bpsLimit := c.QueryTrim("bps_limit")
 	volID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	iopsLimitInt, err := strconv.Atoi(iopsLimit)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	bpsLimitInt, err := strconv.Atoi(bpsLimit)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
@@ -671,7 +698,7 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	_, err = volumeAdmin.Update(c.Req.Context(), int64(volID), name, int64(instID))
+	_, err = volumeAdmin.Update(c.Req.Context(), int64(volID), name, int64(instID), int32(iopsLimitInt), int32(bpsLimitInt))
 	if err != nil {
 		logger.Error("Failed to update volume", err)
 		c.Data["ErrorMsg"] = err.Error()

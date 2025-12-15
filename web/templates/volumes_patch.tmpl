@@ -44,6 +44,14 @@
 						</div>
                     </div>
                     <div class="inline field">
+                        <label for="iops_limit">{{.i18n.Tr "IOPS_Limit"}}</label>
+                        <input id="iops_limit" name="iops_limit" value="{{ .Volume.IopsLimit }}">
+                    </div>
+                    <div class="inline field">
+                        <label for="bps_limit">{{.i18n.Tr "BPS_Limit"}}</label>
+                        <input id="bps_limit" name="bps_limit" value="{{ .Volume.BpsLimit }}">
+                    </div>
+                    <div class="inline field">
                         <label></label>
                         <button class="ui green button">{{.i18n.Tr "Update Volume"}}</button>
                     </div>
