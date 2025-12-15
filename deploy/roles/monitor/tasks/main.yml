@@ -426,6 +426,7 @@
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network|vcpu)
                   severity: critical|warning|info|error
+                group_by: []
                 receiver: 'node-webhook'
                 continue: true
 
@@ -433,6 +434,7 @@
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network|vcpu)
                   severity: critical|warning|info|error
+                group_by: []
                 receiver: 'slack-notifications'
                 continue: true
 
