@@ -62,6 +62,8 @@ while [ $i -lt $nvolume ]; do
                 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
 	        exit 1
             fi
+        else
+            wds_curl DELETE "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}"
 	fi
         let j=$j+1
     done

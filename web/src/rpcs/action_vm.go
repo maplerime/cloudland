@@ -20,7 +20,7 @@ func init() {
 }
 
 func ActionVM(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| clear_vm.sh '127'
+	//|:-COMMAND-:| action_vm.sh '127' 'running'
 	db := DB()
 	argn := len(args)
 	if argn < 2 {

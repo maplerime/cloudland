@@ -219,6 +219,10 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	db := DB()
 	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			err = nil
+			return
+		}
 		logger.Error("Failed to get migrations", err)
 		return
 	}
