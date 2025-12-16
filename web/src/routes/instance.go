@@ -1150,7 +1150,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 					return NewCLError(ErrBootVolumeDeleteFailed, "Delete boot volume failed", err)
 				}
 			} else {
-				_, err = volumeAdmin.Update(ctx, volume.ID, "", 0)
+				_, err = volumeAdmin.Update(ctx, volume.ID, "", 0, 0, 0)
 				if err != nil {
 					logger.Error("Failed to detach volume, %v", err)
 					return
