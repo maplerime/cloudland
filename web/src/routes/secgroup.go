@@ -305,7 +305,8 @@ func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *m
 	}
 	count := 0
 	ctx, db := GetContextDB(ctx)
-	err = db.Model(&model.Instance{}).Where("login_port = ? and router_id = ?", port, instance.RouterID).Count(&count).Error
+	where := GetMemberShip(ctx).GetWhere()
+	err = db.Model(&model.Instance{}).Where(where).Where("login_port = ? and router_id = ?", port, instance.RouterID).Count(&count).Error
 	if err != nil {
 		logger.Error("Failed to count instances of the login port", err)
 		err = NewCLError(ErrDatabaseError, "Failed to count instances of the login port", err)
