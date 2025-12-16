@@ -127,3 +127,53 @@
     group: prometheus
     mode: '0755'
   tags: [monitor]
+
+- name: Set conntrack collection interval variable
+  set_fact:
+    conntrack_collection_interval: "{{ conntrack_collection_interval | default('2') }}"
+  tags: [monitor]
+
+- name: Install conntrack tools
+  become: true
+  apt:
+    name: conntrack
+    state: present
+  tags: [monitor]
+
+- name: Stop conntrack-collection.timer before update
+  become: true
+  systemd:
+    name: conntrack-collection.timer
+    state: stopped
+  ignore_errors: true
+  tags: [monitor]
+
+- name: Deploy systemd service for conntrack collection
+  become: true
+  template:
+    src: conntrack-collection.service.j2
+    dest: /etc/systemd/system/conntrack-collection.service
+    mode: '0644'
+  tags: [monitor]
+
+- name: Deploy systemd timer for conntrack collection
+  become: true
+  template:
+    src: conntrack-collection.timer.j2
+    dest: /etc/systemd/system/conntrack-collection.timer
+    mode: '0644'
+  tags: [monitor]
+
+- name: Reload systemd daemon
+  become: true
+  systemd:
+    daemon_reload: yes
+  tags: [monitor]
+
+- name: Enable and start conntrack-collection.timer
+  become: true
+  systemd:
+    name: conntrack-collection.timer
+    enabled: yes
+    state: started
+  tags: [monitor]

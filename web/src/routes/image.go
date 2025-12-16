@@ -367,6 +367,18 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 	}
 
 	logger.Debugf("Image %s storages: %+v", image.UUID, storages)
+
+	sourceVolumeID := ""
+	for _, storage := range storages {
+		if storage.PoolID == defaultPoolID {
+			sourceVolumeID = storage.VolumeID
+			break
+		}
+	}
+	if sourceVolumeID == "" {
+		logger.Error("Source volume ID not found for image")
+		return NewCLError(ErrImageStorageNotFound, "Source volume ID not found for image", err)
+	}
 	for _, storage := range storages {
 		// ignore already synced or syncing storages
 		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
@@ -375,7 +387,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
 		control := "inter="
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d' '%s'", image.ID, prefix, storage.PoolID, storage.ID, sourceVolumeID)
 		if storage.PoolID == defaultPoolID {
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
 		}

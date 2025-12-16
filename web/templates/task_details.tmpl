@@ -1,0 +1,67 @@
+{{template "_head" .}}
+<div class="admin user">
+
+    <div class="ui container">
+
+        <div class="ui grid">
+
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Task Details"}}
+							</h3>
+							<div class="ui attached segment">
+								<input type="hidden" id="id" name="id" value="{{.Task.ID}}">
+								<div class="inline field">
+									<label for="uuid">{{.i18n.Tr "UUID"}}</label>
+									<input id="uuid" name="uuid" value="{{.Task.UUID}}" disabled>
+								</div>
+								<div class="inline field">
+                                    <label for="source">{{.i18n.Tr "Source"}}</label>
+                                    <input id="source" name="source" value="{{.Task.Source}}" disabled>
+								</div>
+								<div class="inline field">
+									<label for="name">{{.i18n.Tr "Name"}}</label>
+									<input id="name" name="name" value="{{.Task.Name}}" disabled>
+								</div>
+								<div class="inline field">
+									<label for="summary">{{.i18n.Tr "Summary"}}</label>
+									<input id="summary" name="summary" value="{{.Task.Summary}}" disabled>
+								</div>
+                                <div class="inline field">
+                                    <label for="status">{{.i18n.Tr "Status"}}</label>
+                                    <input id="status" name="status" value="{{.Task.Status}}" disabled>
+                                </div>
+								<div class="inline field">
+									<label for="message">{{.i18n.Tr "Message"}}</label>
+									<input id="message" name="message" value="{{.Task.Message}}" disabled>
+								</div>
+                                <div class="inline field">
+                                    <label for="action">{{.i18n.Tr "Action"}}</label>
+                                    <input id="action" name="action" value="{{.Task.Action}}" disabled>
+                                </div>
+                                <div class="inline field">
+                                    <label for="resources">{{.i18n.Tr "Resources"}}</label>
+                                    <input id="resources" name="resources" value="{{.Task.Resources}}" disabled>
+                                </div>
+                                {{ if eq .Task.Source "scheduler" }}
+                                <div class="inline field">
+                                    <label for="cron">{{.i18n.Tr "Cron"}}</label>
+                                    <input id="cron" name="cron" value="{{.Task.Cron}}" disabled>
+                                </div>
+                                {{ end }}
+                                
+                            </div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+{{template "_footer" .}}
+
+

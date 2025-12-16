@@ -1,0 +1,36 @@
+groups:
+- name: node-conntrack-anomaly
+  rules:
+    # Rule 1: High unreplied SYN connections detected from source IP
+    - alert: HighUnrepliedSynFromSourceIP
+      expr: sum by (source_ip, instance, hostname) (conntrack_unreplied_syn_flows) > {{ source_threshold | default(150) }}
+      for: {{ source_duration | default("2m") }}
+      labels:
+        severity: {{ source_severity | default("warning") }}
+        component: network
+        alert_type: node-unreplied-syn-source
+      annotations:
+        summary: "High unreplied SYN connections from source IP {{ $labels.source_ip }} (instance: {{ $labels.instance }})"
+        description: |
+          Source IP: {{ $labels.source_ip }}
+          Total unreplied SYN connections: {{ $value }}
+          Instance: {{ $labels.instance }}
+          Hostname: {{ $labels.hostname }}
+          Query: conntrack_unreplied_syn_flows{source_ip="{{ $labels.source_ip }}"}
+    
+    # Rule 2: High unreplied SYN connections detected to target IP
+    - alert: HighUnrepliedSynToTargetIP
+      expr: sum by (target_ip, instance, hostname) (conntrack_unreplied_syn_flows) > {{ target_threshold | default(150) }}
+      for: {{ target_duration | default("2m") }}
+      labels:
+        severity: {{ target_severity | default("warning") }}
+        component: network
+        alert_type: node-unreplied-syn-target
+      annotations:
+        summary: "High unreplied SYN connections to target IP {{ $labels.target_ip }} (instance: {{ $labels.instance }})"
+        description: |
+          Target IP: {{ $labels.target_ip }}
+          Total unreplied SYN connections: {{ $value }}
+          Instance: {{ $labels.instance }}
+          Hostname: {{ $labels.hostname }}
+          Query: conntrack_unreplied_syn_flows{target_ip="{{ $labels.target_ip }}"}
