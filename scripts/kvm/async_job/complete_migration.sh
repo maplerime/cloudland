@@ -13,8 +13,7 @@ state="failed"
 
 for i in {1..1800}; do
     vm_state=$(virsh domstate $vm_ID)
-    if [ "$vm_state" = "running" ]; then
-        echo
+    if [ -n "$vm_state" ]; then
         state="completed"
         vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
         virsh define $vm_xml

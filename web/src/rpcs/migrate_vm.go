@@ -42,6 +42,13 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 		return
 	}
 	volumes := []*VolumeInfo{}
+	if len(instance.Volumes) == 0 {
+		err = db.Where("instance_id = ?", instance.ID).Find(&instance.Volumes).Error
+		if err != nil {
+			logger.Error("Failed to query source hyper", err)
+			return
+		}
+	}
 	for _, volume := range instance.Volumes {
 		volumes = append(volumes, &VolumeInfo{
 			ID:      volume.ID,
@@ -57,7 +64,7 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 	}
 	if sourceHyper.Status == 1 {
 		control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/source_migration.sh '%d' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migration.Type, volumesJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/source_migration.sh '%d' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migrationType, volumesJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Source migration command execution failed", err)

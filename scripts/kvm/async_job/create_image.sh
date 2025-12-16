@@ -52,7 +52,7 @@ else
         task_id=$(jq -r .task_id <<<$task_ret)
         state=uploading
         echo $task_ret >>$log_dir/image_upload.log
-        [ -z "$task_id" -o "$task_id" = null ] && continue
+        [ -z "$task_id" -o "$task_id" = null ] && sleep 2 && continue
         for j in {1..1000}; do
             st=$(wds_curl GET "api/v2/sync/block/volumes/tasks/$task_id" | jq -r .task.state)
             [ "$st" = "TASK_COMPLETE" ] && state=uploaded && break
