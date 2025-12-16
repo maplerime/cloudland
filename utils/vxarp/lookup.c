@@ -135,8 +135,10 @@ int check_entries()
     int ret = -1;
     char cmd[256] = {0};
     struct ip_mac_map *p = NULL;
+    struct ip_mac_map *next = NULL;
 
-    for (p = ip_mac_head.next; p != NULL; p = p->next) {
+    for (p = ip_mac_head.next; p != NULL; ;) {
+        next = p->next;
         sprintf(cmd, "arping -w 2 -f -I %s %s", p->bridge, p->ip);
         ret = system(cmd);
         if (WEXITSTATUS(ret) != 0) {
@@ -145,6 +147,7 @@ int check_entries()
                 p->next->prev = p->prev;
             free(p);
         }
+	p = next;
     }
 
     return 0;
