@@ -810,13 +810,13 @@ func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
 		return
 	}
 	logger.Debugf("Update volume(%d) qos, iops_limit: %s, bps_limit: %s", volID, iopsLimitStr, bpsLimitStr)
-	iopsLimit, err := strconv.Atoi(iopsLimitStr)
+	iopsLimit, err := strconv.ParseInt(iopsLimitStr, 10, 32)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	bpsLimit, err := strconv.Atoi(bpsLimitStr)
+	bpsLimit, err := strconv.ParseInt(bpsLimitStr, 10, 32)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
