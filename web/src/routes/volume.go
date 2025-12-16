@@ -164,8 +164,8 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	return
 }
 
-func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
-	logger.Debugf("Update volume by UUID %s, name: %s, instID: %d, iopsLimit: %d, bpsLimit: %d", uuid, name, instID, iopsLimit, bpsLimit)
+func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string, instID int64) (volume *model.Volume, err error) {
+	logger.Debugf("Update volume by UUID %s, name: %s, instID: %d", uuid, name, instID)
 	ctx, db := GetContextDB(ctx)
 	volume = &model.Volume{}
 	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
@@ -173,11 +173,77 @@ func (a *VolumeAdmin) UpdateByUUID(ctx context.Context, uuid string, name string
 		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
 		return
 	}
-	return a.Update(ctx, volume.ID, name, instID, iopsLimit, bpsLimit)
+	return a.Update(ctx, volume.ID, name, instID)
 }
 
-func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
-	logger.Debugf("Update volume %d, name: %s, instID: %d, iopsLimit: %d, bpsLimit: %d", id, name, instID, iopsLimit, bpsLimit)
+func (a *VolumeAdmin) UpdateQosByUUID(ctx context.Context, uuid string, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
+	logger.Debugf("Update volume qos by UUID %s, iopsLimit: %d, bpsLimit: %d", uuid, iopsLimit, bpsLimit)
+	ctx, db := GetContextDB(ctx)
+	volume = &model.Volume{}
+	if err = db.Where("uuid = ?", uuid).Take(volume).Error; err != nil {
+		logger.Error("DB: query volume failed", err)
+		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
+		return
+	}
+	return a.UpdateQos(ctx, volume.ID, iopsLimit, bpsLimit)
+}
+
+func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
+	logger.Debugf("Update volume qos by ID %d, iopsLimit: %d, bpsLimit: %d", id, iopsLimit, bpsLimit)
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+	volume = &model.Volume{Model: model.Model{ID: id}}
+	if err = db.Preload("Instance").Take(volume).Error; err != nil {
+		logger.Error("DB: query volume failed", err)
+		err = NewCLError(ErrVolumeNotFound, "Volume not found", err)
+		return
+	}
+	// check the permission
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	if !permit {
+		logger.Error("Not authorized to update the volume")
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update the volume", nil)
+		return
+	}
+
+	if volume.IsError() {
+		err = NewCLError(ErrVolumeInvalidState, fmt.Sprintf("Volume %s is in error state, cannot update now", volume.UUID), nil)
+		return
+	}
+
+	vol_driver := GetVolumeDriver()
+	if vol_driver == "local" {
+		err = NewCLError(ErrOperationNotSupported, "Local volume does not support update qos", nil)
+		return
+	}
+	// RN-156: append the volume UUID to the command
+	if volume.IopsLimit != iopsLimit || volume.BpsLimit != bpsLimit {
+		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
+		volume.IopsLimit = iopsLimit
+		volume.BpsLimit = bpsLimit
+		control := fmt.Sprintf("inter=")
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Create volume execution failed", err)
+			return
+		}
+	}
+	if err = db.Model(volume).Updates(map[string]interface{}{"iops_limit": iopsLimit, "bps_limit": bpsLimit}).Error; err != nil {
+		logger.Error("DB: update volume failed", err)
+		err = NewCLError(ErrVolumeUpdateFailed, "Failed to update volume", err)
+		return
+	}
+	return
+}
+
+func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID int64) (volume *model.Volume, err error) {
+	logger.Debugf("Update volume %d, name: %s, instID: %d", id, name, instID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -261,17 +327,6 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		// the instance ID should be set to instID after the volume is attached successfully (after script executed successfully)
 		//volume.InstanceID = instID
 		//volume.Instance = nil
-	} else if iopsLimit > 0 && bpsLimit > 0 && (volume.IopsLimit != iopsLimit || volume.BpsLimit != bpsLimit) {
-		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
-		volume.IopsLimit = iopsLimit
-		volume.BpsLimit = bpsLimit
-		control := fmt.Sprintf("inter=")
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
-		err = HyperExecute(ctx, control, command)
-		if err != nil {
-			logger.Error("Create volume execution failed", err)
-			return
-		}
 	}
 	if err = db.Model(volume).Updates(volume).Error; err != nil {
 		logger.Error("DB: update volume failed", err)
@@ -640,21 +695,7 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 	id := c.Params(":id")
 	name := c.QueryTrim("name")
 	instance := c.QueryTrim("instance")
-	iopsLimit := c.QueryTrim("iops_limit")
-	bpsLimit := c.QueryTrim("bps_limit")
 	volID, err := strconv.Atoi(id)
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	iopsLimitInt, err := strconv.Atoi(iopsLimit)
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	bpsLimitInt, err := strconv.Atoi(bpsLimit)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
@@ -698,7 +739,7 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	_, err = volumeAdmin.Update(c.Req.Context(), int64(volID), name, int64(instID), int32(iopsLimitInt), int32(bpsLimitInt))
+	_, err = volumeAdmin.Update(c.Req.Context(), int64(volID), name, int64(instID))
 	if err != nil {
 		logger.Error("Failed to update volume", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -706,7 +747,88 @@ func (v *VolumeView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.Redirect(redirectTo)
-	return
+}
+
+func (v *VolumeView) EditQos(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	db := DB()
+	id := c.Params(":id")
+	volID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	permit, err := memberShip.CheckOwner(model.Writer, "volumes", int64(volID))
+	if err != nil {
+		logger.Error("Failed to check permission", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
+	if err := db.Preload("Instance").Take(volume).Error; err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, err.Error())
+		return
+	}
+
+	c.Data["Volume"] = volume
+	c.HTML(200, "volumes_qos")
+}
+
+func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	redirectTo := "../volumes"
+	id := c.Params(":id")
+	volID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	permit, err := memberShip.CheckOwner(model.Writer, "volumes", int64(volID))
+	if err != nil {
+		logger.Error("Failed to check permission", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	iopsLimitStr := c.QueryTrim("iops_limit")
+	bpsLimitStr := c.QueryTrim("bps_limit")
+	logger.Debugf("Update volume(%d) qos, iops_limit: %s, bps_limit: %s", volID, iopsLimitStr, bpsLimitStr)
+	iopsLimit, err := strconv.Atoi(iopsLimitStr)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	bpsLimit, err := strconv.Atoi(bpsLimitStr)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	_, err = volumeAdmin.UpdateQos(c.Req.Context(), int64(volID), int32(iopsLimit), int32(bpsLimit))
+	if err != nil {
+		logger.Error("Failed to update volume qos", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect(redirectTo)
 }
 
 func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
