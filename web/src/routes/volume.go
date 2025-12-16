@@ -317,17 +317,6 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	return
 }
 
-func (a *VolumeAdmin) CanDeleteVolume(volume *model.Volume) bool {
-	switch volume.Status {
-	case model.VolumeStatusAvailable,
-		model.VolumeStatusPending,
-		model.VolumeStatusError:
-		return true
-	default:
-		return false
-	}
-}
-
 func (a *VolumeAdmin) DeleteVolumeByUUID(ctx context.Context, uuID string) (err error) {
 	ctx, db := GetContextDB(ctx)
 	volume := &model.Volume{}

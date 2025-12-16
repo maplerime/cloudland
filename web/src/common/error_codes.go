@@ -87,21 +87,21 @@ const (
 	ErrMigrationInProgress   ErrCode = 111805
 
 	// Volume related errors (121xxx)
-	ErrVolumeNotFound         = 121001
-	ErrVolumeCreationFailed   = 121002
-	ErrVolumeUpdateFailed     = 121003
-	ErrVolumeDeleteFailed     = 121004
-	ErrVolumeAttachFailed     = 121005
-	ErrVolumeDetachFailed     = 121006
-	ErrVolumeInvalidState     = 121007
-	ErrVolumeInvalidSize      = 121008
-	ErrBootVolumeNotFound     = 121009
-	ErrBootVolumeUpdateFailed = 121010
-	ErrBootVolumeDeleteFailed = 121011
-	ErrVolumeIsInUse          = 121012
-	ErrBootVolumeCannotDetach = 121013
-	ErrVolumeIsBusy           = 121014
-	ErrVolumeIsRestoring      = 121015
+	ErrVolumeNotFound         ErrCode = 121001
+	ErrVolumeCreationFailed   ErrCode = 121002
+	ErrVolumeUpdateFailed     ErrCode = 121003
+	ErrVolumeDeleteFailed     ErrCode = 121004
+	ErrVolumeAttachFailed     ErrCode = 121005
+	ErrVolumeDetachFailed     ErrCode = 121006
+	ErrVolumeInvalidState     ErrCode = 121007
+	ErrVolumeInvalidSize      ErrCode = 121008
+	ErrBootVolumeNotFound     ErrCode = 121009
+	ErrBootVolumeUpdateFailed ErrCode = 121010
+	ErrBootVolumeDeleteFailed ErrCode = 121011
+	ErrVolumeIsInUse          ErrCode = 121012
+	ErrBootVolumeCannotDetach ErrCode = 121013
+	ErrVolumeIsBusy           ErrCode = 121014
+	ErrVolumeIsRestoring      ErrCode = 121015
 
 	// Snapshot/Backup related errors (1251xx)
 	ErrBackupNotFound                      ErrCode = 125100
