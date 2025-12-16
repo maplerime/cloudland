@@ -785,8 +785,11 @@ func (v *VolumeView) EditQos(c *macaron.Context, store session.Store) {
 
 func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
-	redirectTo := "../volumes"
+	redirectTo := "/volumes"
 	id := c.Params(":id")
+	iopsLimitStr := c.QueryTrim("iops_limit")
+	bpsLimitStr := c.QueryTrim("bps_limit")
+	logger.Debugf("Update volume(%s) qos, iops_limit: %s, bps_limit: %s", id, iopsLimitStr, bpsLimitStr)
 	volID, err := strconv.Atoi(id)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -806,8 +809,6 @@ func (v *VolumeView) UpdateQos(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	iopsLimitStr := c.QueryTrim("iops_limit")
-	bpsLimitStr := c.QueryTrim("bps_limit")
 	logger.Debugf("Update volume(%d) qos, iops_limit: %s, bps_limit: %s", volID, iopsLimitStr, bpsLimitStr)
 	iopsLimit, err := strconv.Atoi(iopsLimitStr)
 	if err != nil {
