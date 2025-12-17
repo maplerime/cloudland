@@ -171,6 +171,8 @@ func New() (m *macaron.Macaron) {
 	m.Post("/volumes/:id", volumeView.Patch)
 	m.Get("/volumes/:id/resize", volumeView.Resize)
 	m.Post("/volumes/:id/resize", volumeView.Resize)
+	m.Get("/volumes/:id/qos", volumeView.EditQos)
+	m.Post("/volumes/:id/qos", volumeView.UpdateQos)
 	m.Get("/ipgroups", ipGroupView.List)
 	m.Get("/ipgroups/new", ipGroupView.New)
 	m.Post("/ipgroups/new", ipGroupView.Create)

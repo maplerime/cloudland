@@ -36,14 +36,15 @@ type VolumePayload struct {
 	BpsBurst  int32  `json:"bps_burst" binding:"omitempty,gte=0"`
 }
 
+type VolumeQosPayload struct {
+	IopsLimit int32 `json:"iops_limit" binding:"omitempty,gte=0"`
+	BpsLimit  int32 `json:"bps_limit" binding:"omitempty,gte=0"`
+}
+
 type VolumePatchPayload struct {
-	Name      string  `json:"name" binding:"omitempty"`
-	Size      int32   `json:"size" binding:"omitempty"`
-	Instance  *BaseID `json:"instance" binding:"omitempty"`
-	IopsLimit int32   `json:"iops_limit" binding:"omitempty"`
-	IopsBurst int32   `json:"iops_burst" binding:"omitempty"`
-	BpsLimit  int32   `json:"bps_limit" binding:"omitempty"`
-	BpsBurst  int32   `json:"bps_burst" binding:"omitempty"`
+	Name     string  `json:"name" binding:"omitempty"`
+	Size     int32   `json:"size" binding:"omitempty"`
+	Instance *BaseID `json:"instance" binding:"omitempty"`
 }
 
 type VolumeResponse struct {
@@ -105,6 +106,42 @@ func (v *VolumeAPI) Get(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Got volume : %+v", volumeResp)
+	c.JSON(http.StatusOK, volumeResp)
+}
+
+// @Summary update qos of a volume
+// @Description update iops and bps limit of a volume
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   message	body   VolumeQosPayload  true   "Volume qos payload"
+// @Success 200 {object} VolumeResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /volumes/{id}/qos [put]
+func (v *VolumeAPI) UpdateQos(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := &VolumeQosPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind json: %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	logger.Debugf("Updating qos of volume %s with %+v", uuID, payload)
+	volume, err := volumeAdmin.UpdateQosByUUID(ctx, uuID, payload.IopsLimit, payload.BpsLimit)
+	if err != nil {
+		logger.Errorf("Failed to update qos of volume %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to update qos of volume", err)
+		return
+	}
+	volumeResp, err := v.getVolumeResponse(ctx, volume)
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to update qos of volume response", err)
+		return
+	}
+	logger.Debugf("Updated qos of volume successfully, %s, %+v", uuID, volumeResp)
 	c.JSON(http.StatusOK, volumeResp)
 }
 
