@@ -98,7 +98,7 @@ else
         vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
 	      [ "$vhost_name" != "$old_vhost_name" ] && break
     done
-    volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\", \"iops_limit\": $sysdisk_iops_limit, \"bps_limit\": $sysdisk_bps_limit}")
+    volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\", \"qos\": {\"iops_limit\": $sysdisk_iops_limit, \"bps_limit\": $sysdisk_bps_limit}}")
     volume_id=$(echo $volume_ret | jq -r .id)
     if [ -z "$volume_id" -o "$volume_id" = null ]; then
         echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create boot volume based on snapshot $snapshot_name, $volume_ret!'"
