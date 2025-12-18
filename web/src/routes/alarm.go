@@ -1575,8 +1575,9 @@ func ReloadPrometheusViaHTTP() error {
 	}
 
 	// Step 2: Create HTTP client with timeout
+	// Use a longer timeout to handle slow Prometheus reloads on large deployments
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 2 * time.Minute,
 	}
 
 	// Step 3: Send POST request
