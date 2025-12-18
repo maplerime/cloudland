@@ -651,6 +651,12 @@ definitions:
       disk:
         minimum: 1
         type: integer
+      disk_bps_limit:
+        minimum: 0
+        type: integer
+      disk_iops_limit:
+        minimum: 0
+        type: integer
       flavor:
         maxLength: 32
         minLength: 1
