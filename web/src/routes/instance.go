@@ -2500,8 +2500,19 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			userdataType = model.UserDataTypePlain
 		}
 	}
+	vendordata := c.QueryTrim("vendordata")
+	vendordataTypeStr := c.QueryTrim("vendordata_type")
+	var vendordataType string
+	if vendordataTypeStr == "" {
+		vendordataType = model.UserDataTypePlain
+	} else {
+		vendordataType = vendordataTypeStr
+		if !model.IsValidUserDataType(vendordataType) {
+			vendordataType = model.UserDataTypePlain
+		}
+	}
 	poolID := c.QueryTrim("pool")
-	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, int32(diskIopsLimit), int32(diskBpsLimit), nestedEnable, poolID)
+	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendordata, vendordataType, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, int32(diskIopsLimit), int32(diskBpsLimit), nestedEnable, poolID)
 	if err != nil {
 		logger.Error("Create instance failed", err)
 		c.Data["ErrorMsg"] = err.Error()

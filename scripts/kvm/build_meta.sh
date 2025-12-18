@@ -105,31 +105,44 @@ if [ -n "${root_passwd}" ] && [ "${os_code}" != "windows" ]; then
 fi
 
 # change qemu-guest-agent config
+qa_script=""
+ssh_script=""
 if [ "${os_code}" = "linux" ]; then
-        cloud_config_txt+=$(cat <<EOF
-runcmd:
-  - |
-    if [ -f /etc/sysconfig/qemu-ga ]; then
-      sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
-    elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
-      sed -i \"s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
-      sed -i \"s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
-      systemctl daemon-reload
-    fi
-    systemctl restart qemu-guest-agent.service
+        qa_script=$(cat <<EOF
+\n\n--===============622551551551==\n
+Content-Type: text/x-shellscript; charset="us-ascii"\n
+MIME-Version: 1.0\n
+Content-Transfer-Encoding: 7bit\n
+Content-Disposition: attachment; filename="qemu-guest-agent.sh"\n\n
+
+#!/bin/bash -x
+if [ -f /etc/sysconfig/qemu-ga ]; then
+    sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
+elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
+    sed -i \"s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+    sed -i \"s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+    systemctl daemon-reload
+fi
+systemctl restart qemu-guest-agent.service
 
 EOF
     )
 # use runcmd to change the port value of /etc/ssh/sshd_config
 # and restart the ssh service
     if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
-        cloud_config_txt+=$(cat <<EOF
+        ssh_script=$(cat <<EOF
+\n\n--===============622551551551==\n
+Content-Type: text/x-shellscript; charset="us-ascii"\n
+MIME-Version: 1.0\n
+Content-Transfer-Encoding: 7bit\n
+Content-Disposition: attachment; filename="ssh_port.sh"\n\n
 
-    sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
-    sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
-    systemctl daemon-reload
-    systemctl restart ssh.socket
-    systemctl restart sshd || systemctl restart ssh
+#!/bin/bash -x
+sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+systemctl daemon-reload
+systemctl restart ssh.socket
+systemctl restart sshd || systemctl restart ssh
 EOF
         )
     fi
@@ -140,7 +153,7 @@ custom_vendordata=""
 vendordata_type=$(jq -r .vendordata_type <<<$vm_meta)
 vendordata=$(jq -r .vendordata <<<$vm_meta)
 if [ -n "$vendordata" ]; then
-    custom_vendordata='--===============622551551551==\n'
+    custom_vendordata='\n\n--===============622551551551==\n'
     custom_vendordata+=$(
         echo \
 'Content-Type: text/x-shellscript; charset="us-ascii"\n'\
@@ -159,7 +172,7 @@ vendor_data_end='\n--===============622551551551==--"'
 
 # write to vendor_data.json
 if [ "${os_code}" != "windows" ]; then
-    echo -e "$vendor_data_header""$cloud_config_txt""$custom_vendordata""$vendor_data_end" > $latest_dir/vendor_data.json
+    echo -e "$vendor_data_header""$cloud_config_txt""$qa_script""$ssh_script""$custom_vendordata""$vendor_data_end" > $latest_dir/vendor_data.json
     sed -i -n '1h; 1!H; ${ x; s/\n/\\n/g; p; }' $latest_dir/vendor_data.json
 fi
 
