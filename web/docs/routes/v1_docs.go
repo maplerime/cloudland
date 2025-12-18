@@ -5186,6 +5186,14 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "minimum": 1
                 },
+                "disk_bps_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "disk_iops_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
                 "flavor": {
                     "type": "string",
                     "maxLength": 32,
