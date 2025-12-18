@@ -24,6 +24,7 @@ vol_state=error
 
 md=$(cat)
 metadata=$(echo $md | base64 -d)
+read -d'\n' -r sysdisk_iops_limit sysdisk_bps_limit < <(jq -r ".disk_iops_limit, .disk_bps_limit" <<<$metadata)
 
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
@@ -97,7 +98,7 @@ else
         vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
 	      [ "$vhost_name" != "$old_vhost_name" ] && break
     done
-    volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
+    volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\", \"iops_limit\": $sysdisk_iops_limit, \"bps_limit\": $sysdisk_bps_limit}")
     volume_id=$(echo $volume_ret | jq -r .id)
     if [ -z "$volume_id" -o "$volume_id" = null ]; then
         echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create boot volume based on snapshot $snapshot_name, $volume_ret!'"

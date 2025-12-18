@@ -148,6 +148,15 @@
 
                                 </div>
 
+                                <div class="required inline field">
+                                    <label for="disk_iops_limit">{{.i18n.Tr "IOPS_Limit"}}</label>
+                                    <input id="disk_iops_limit" name="disk_iops_limit" value="0" required>
+                                </div>
+                                <div class="required inline field">
+                                    <label for="disk_bps_limit">{{.i18n.Tr "BPS_Limit"}}</label>
+                                    <input id="disk_bps_limit" name="disk_bps_limit" value="0" required>
+                                </div>
+
                                 <div class="inline field">
 
                                     <label for="public_ips">{{.i18n.Tr "Public IPs"}}</label>
