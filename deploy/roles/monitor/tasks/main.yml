@@ -422,19 +422,19 @@
             receiver: '{{ receiver_name }}'
 
             routes:
-              # Route node alarms to node-webhook (maintain compatibility with existing config)
+              # Route node alarms to node-webhook (one group per unique alert/host/IP/type/severity)
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
                   severity: critical|warning|info|error
-                group_by: []
+                group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'node-webhook'
                 continue: true
 
-              # Also send node alarms to slack-notifications
+              # Also send node alarms to slack-notifications with the same fine-grained grouping
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
                   severity: critical|warning|info|error
-                group_by: []
+                group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'slack-notifications'
                 continue: true
 
@@ -680,6 +680,7 @@
     dest: /etc/systemd/system/prometheus.service.d/override.conf
     content: |
       [Service]
+      LimitNOFILE=65535
       ExecStart=
       ExecStart=/usr/bin/prometheus \
         --config.file=/etc/prometheus/prometheus.yml \
@@ -941,6 +942,7 @@
 
 - name: Find all rule template files
   delegate_to: localhost
+  become: false
   run_once: true
   find:
     paths: "{{ playbook_dir }}/roles/monitor/templates"
