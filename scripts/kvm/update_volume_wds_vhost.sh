@@ -12,7 +12,7 @@ bps_limit=$4
 
 get_wds_token
 
-update_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$wds_vol_ID/qos" "{\"iops_limit\": $iops_limit, \"bps_limit\": $bps_limit}")
+update_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$wds_vol_ID/qos" "{\"qos\": {\"iops_limit\": $iops_limit, \"bps_limit\": $bps_limit}}")
 log_debug $vol_ID "update volume qos: $update_ret"
 
 
