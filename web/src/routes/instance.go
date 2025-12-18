@@ -61,7 +61,6 @@ type VolumeInfo struct {
 }
 
 type InstanceData struct {
-<<<<<<< HEAD
 	Userdata       string             `json:"userdata"`
 	UserdataType   string             `json:"userdata_type"`
 	Vendordata     string             `json:"vendordata"`
@@ -75,21 +74,8 @@ type InstanceData struct {
 	RootPasswd     string             `json:"root_passwd"`
 	LoginPort      int                `json:"login_port"`
 	OSCode         string             `json:"os_code"`
-=======
-	Userdata      string             `json:"userdata"`
-	UserdataType  string             `json:"userdata_type"`
-	DNS           string             `json:"dns"`
-	Vlans         []*VlanInfo        `json:"vlans"`
-	Networks      []*InstanceNetwork `json:"networks"`
-	Links         []*NetworkLink     `json:"links"`
-	Volumes       []*VolumeInfo      `json:"volumes"`
-	Keys          []string           `json:"keys"`
-	RootPasswd    string             `json:"root_passwd"`
-	LoginPort     int                `json:"login_port"`
-	OSCode        string             `json:"os_code"`
-	DiskIopsLimit int32              `json:"disk_iops_limit"`
-	DiskBpsLimit  int32              `json:"disk_bps_limit"`
->>>>>>> staging
+	DiskIopsLimit  int32              `json:"disk_iops_limit"`
+	DiskBpsLimit   int32              `json:"disk_bps_limit"`
 }
 
 type InstancesData struct {
@@ -960,20 +946,20 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:      userdata,
-		UserdataType:  instance.UserdataType,
+		Userdata:       userdata,
+		UserdataType:   instance.UserdataType,
 		Vendordata:     vendorData,
 		Vendordatatype: instance.Vendordatatype,
-		DNS:           dns,
-		Vlans:         vlans,
-		Networks:      instNetworks,
-		Links:         instLinks,
-		Keys:          instKeys,
-		RootPasswd:    rootPasswd,
-		LoginPort:     loginPort,
-		OSCode:        GetImageOSCode(ctx, instance),
-		DiskIopsLimit: diskIopsLimit,
-		DiskBpsLimit:  diskBpsLimit,
+		DNS:            dns,
+		Vlans:          vlans,
+		Networks:       instNetworks,
+		Links:          instLinks,
+		Keys:           instKeys,
+		RootPasswd:     rootPasswd,
+		LoginPort:      loginPort,
+		OSCode:         GetImageOSCode(ctx, instance),
+		DiskIopsLimit:  diskIopsLimit,
+		DiskBpsLimit:   diskBpsLimit,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -1033,21 +1019,21 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	instData := &InstanceData{
-		Userdata:      instance.Userdata,
-		UserdataType:  instance.UserdataType,
+		Userdata:       instance.Userdata,
+		UserdataType:   instance.UserdataType,
 		Vendordata:     instance.Vendordata,
 		Vendordatatype: instance.Vendordatatype,
-		DNS:           dns,
-		Vlans:         vlans,
-		Networks:      instNetworks,
-		Links:         instLinks,
-		Volumes:       volumes,
-		Keys:          instKeys,
-		RootPasswd:    rootPasswd,
-		LoginPort:     int(instance.LoginPort),
-		OSCode:        GetImageOSCode(ctx, instance),
-		DiskIopsLimit: diskIopsLimit,
-		DiskBpsLimit:  diskBpsLimit,
+		DNS:            dns,
+		Vlans:          vlans,
+		Networks:       instNetworks,
+		Links:          instLinks,
+		Volumes:        volumes,
+		Keys:           instKeys,
+		RootPasswd:     rootPasswd,
+		LoginPort:      int(instance.LoginPort),
+		OSCode:         GetImageOSCode(ctx, instance),
+		DiskIopsLimit:  diskIopsLimit,
+		DiskBpsLimit:   diskBpsLimit,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
