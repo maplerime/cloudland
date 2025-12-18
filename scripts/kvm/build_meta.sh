@@ -66,10 +66,10 @@ fi
 # vendor_data.json header
 vendor_data_header=$( 
     echo \
-'"Content-Type: multipart/mixed; boundary=\"//\"\n'\
+'"Content-Type: multipart/mixed; boundary=\"===============622551551551==\"\n'\
 'MIME-Version: 1.0\n'\
 '\n'\
-'--//\n'
+'--===============622551551551==\n'
 )
 
 # cloud-config.txt header
@@ -135,11 +135,31 @@ EOF
     fi
 fi
 
-vendor_data_end='\n--//--"'
+# insert customized vendor data from api
+custom_vendordata=""
+vendordata_type=$(jq -r .vendordata_type <<<$vm_meta)
+vendordata=$(jq -r .vendordata <<<$vm_meta)
+if [ -n "$vendordata" ]; then
+    custom_vendordata='--===============622551551551==\n'
+    custom_vendordata+=$(
+        echo \
+'Content-Type: text/x-shellscript; charset="us-ascii"\n'\
+'MIME-Version: 1.0\n'\
+'Content-Transfer-Encoding: 7bit\n'\
+'Content-Disposition: attachment; filename="custom-vendor-data.sh"\n'\
+'\n'\')
+   if [ "$vendordata_type" = "base64" ]; then
+      custom_vendordata+=$(echo "$vendordata" | base64 -d)
+   else
+      custom_vendordata+="$vendordata"
+   fi
+fi
+
+vendor_data_end='\n--===============622551551551==--"'
 
 # write to vendor_data.json
 if [ "${os_code}" != "windows" ]; then
-    echo -e "$vendor_data_header""$cloud_config_txt""$vendor_data_end" > $latest_dir/vendor_data.json
+    echo -e "$vendor_data_header""$cloud_config_txt""$custom_vendordata""$vendor_data_end" > $latest_dir/vendor_data.json
     sed -i -n '1h; 1!H; ${ x; s/\n/\\n/g; p; }' $latest_dir/vendor_data.json
 fi
 

@@ -67,7 +67,7 @@ type Instance struct {
 	Userdata       string `gorm:"type:text"`
 	UserdataType   string `gorm:"type:varchar(16);default:'plain'"`
 	Vendordata     string `gorm:"type:text"`
-	Vendordatatype string `gorm:"type:varchar(16);default:'plain'"`
+	VendordataType string `gorm:"type:varchar(16);default:'plain'"`
 	LoginPort      int32
 	Hyper          int32 `gorm:"default:-1"`
 	ZoneID         int64

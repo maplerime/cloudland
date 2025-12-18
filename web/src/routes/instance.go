@@ -64,7 +64,7 @@ type InstanceData struct {
 	Userdata       string             `json:"userdata"`
 	UserdataType   string             `json:"userdata_type"`
 	Vendordata     string             `json:"vendordata"`
-	Vendordatatype string             `json:"vendordatatype"`
+	VendordataType string             `json:"vendordata_type"`
 	DNS            string             `json:"dns"`
 	Vlans          []*VlanInfo        `json:"vlans"`
 	Networks       []*InstanceNetwork `json:"networks"`
@@ -219,7 +219,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			Userdata:       userdata,
 			UserdataType:   userdataType,
 			Vendordata:     vendorData,
-			Vendordatatype: vendorDataType,
+			VendordataType: vendorDataType,
 			Status:         model.InstanceStatusPending,
 			ZoneID:         zoneID,
 			RouterID:       routerID,
@@ -260,7 +260,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
 
-		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, userdata, vendorData, routerID, zoneID, "")
+		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, "")
 		if err != nil {
 			logger.Error("Build instance metadata failed", err)
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
@@ -849,15 +849,14 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 }
 
 func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-
-	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32, userdata string, vendorData string, routerID, zoneID int64,
+	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32, routerID, zoneID int64,
 	service string) (interfaces []*model.Interface, metadata string, err error) {
 	if rootPasswd == "" {
-		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, userdata: %s, vendorData: %s, routerID: %d, zoneID: %d, service: %s",
-			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, userdata, vendorData, routerID, zoneID, service)
+		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, routerID: %d, zoneID: %d, service: %s",
+			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, service)
 	} else {
-		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, userdata: %s, vendorData: %s, routerID: %d, zoneID: %d, service: %s, root password: %s",
-			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, userdata, vendorData, routerID, zoneID, service, "******")
+		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, routerID: %d, zoneID: %d, service: %s, root password: %s",
+			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, service, "******")
 	}
 	vlans := []*VlanInfo{}
 	instNetworks := []*InstanceNetwork{}
@@ -946,10 +945,10 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:       userdata,
+		Userdata:       instance.Userdata,
 		UserdataType:   instance.UserdataType,
-		Vendordata:     vendorData,
-		Vendordatatype: instance.Vendordatatype,
+		Vendordata:     instance.Vendordata,
+		VendordataType: instance.VendordataType,
 		DNS:            dns,
 		Vlans:          vlans,
 		Networks:       instNetworks,
@@ -1022,7 +1021,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		Userdata:       instance.Userdata,
 		UserdataType:   instance.UserdataType,
 		Vendordata:     instance.Vendordata,
-		Vendordatatype: instance.Vendordatatype,
+		VendordataType: instance.VendordataType,
 		DNS:            dns,
 		Vlans:          vlans,
 		Networks:       instNetworks,
