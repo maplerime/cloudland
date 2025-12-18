@@ -72,6 +72,14 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		err = NewCLError(ErrVolumeIsBusy, msg, nil)
 		return
 	}
+	// check the pool id is valid
+	_, err = dictionaryAdmin.Find(ctx, model.DICT_CATEGORY_STORAGE_POOL, poolID)
+	if err != nil {
+		logger.Error("DB: query dictionary failed, storage_pool(%s) not found %+v", poolID, err)
+		err = NewCLError(ErrDictionaryRecordsNotFound, fmt.Sprintf("Storage pool (%s) not found", poolID), err)
+		return
+	}
+
 	backup, task, err := a.createBackupModel(ctx, name, "backup", volume, "")
 	if err != nil {
 		logger.Errorf("Failed to create backup record for volume(%s), %+v", volume.UUID, err)

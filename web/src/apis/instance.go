@@ -63,6 +63,8 @@ type InstancePayload struct {
 	Cpu                 int32               `json:"cpu" binding:"omitempty,gte=1"`
 	Memory              int32               `json:"memory" binding:"omitempty,gte=1"`
 	Disk                int32               `json:"disk" binding:"omitempty,gte=1"`
+	DiskIopsLimit       int32               `json:"disk_iops_limit" binding:"omitempty,gte=0"`
+	DiskBpsLimit        int32               `json:"disk_bps_limit" binding:"omitempty,gte=0"`
 	Flavor              string              `json:"flavor" binding:"omitempty,min=1,max=32"`
 	Image               *BaseReference      `json:"image" binding:"required"`
 	PrimaryInterface    *InterfacePayload   `json:"primary_interface" binding:"required"`
@@ -600,9 +602,10 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid vendor_data_type", nil)
 		return
 	}
-	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, nestedEnable %v, poolID: %s",
-		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
-	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.NestedEnable, payload.PoolID)
+
+	logger.Debugf("Creating %d instances with hostname %s, userdata %s, userdata_type %s, vendordata %s, vendordatatype %s, image %s, zone %s, router %d, primaryIface %v, secondaryIfaces %v, keys %v, login_port %d, hypervisor %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %v, poolID: %s",
+		count, hostname, userdata, userdataType, vendorData, vendorDataType, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
+	instances, err := instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, vendorData, vendorDataType, image, zone, routerID, primaryIface, secondaryIfaces, keys, rootPasswd, payload.LoginPort, hypervisor, payload.Cpu, payload.Memory, payload.Disk, payload.DiskIopsLimit, payload.DiskBpsLimit, payload.NestedEnable, payload.PoolID)
 	if err != nil {
 		logger.Errorf("Failed to create instances, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create instances", err)

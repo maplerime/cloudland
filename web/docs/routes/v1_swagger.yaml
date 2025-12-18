@@ -651,6 +651,12 @@ definitions:
       disk:
         minimum: 1
         type: integer
+      disk_bps_limit:
+        minimum: 0
+        type: integer
+      disk_iops_limit:
+        minimum: 0
+        type: integer
       flavor:
         maxLength: 32
         minLength: 1
@@ -1616,6 +1622,8 @@ definitions:
     properties:
       name:
         type: string
+      pool_id:
+        type: string
       type:
         enum:
         - snapshot
@@ -1683,16 +1691,8 @@ definitions:
     type: object
   apis.VolumePatchPayload:
     properties:
-      bps_burst:
-        type: integer
-      bps_limit:
-        type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
-      iops_burst:
-        type: integer
-      iops_limit:
-        type: integer
       name:
         type: string
       size:
@@ -1725,6 +1725,15 @@ definitions:
     required:
     - name
     - size
+    type: object
+  apis.VolumeQosPayload:
+    properties:
+      bps_limit:
+        minimum: 0
+        type: integer
+      iops_limit:
+        minimum: 0
+        type: integer
     type: object
   apis.VolumeResizePayload:
     properties:
@@ -1910,6 +1919,28 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /api/v1/metrics/alarm/sync-mappings:
+    post:
+      consumes:
+      - application/json
+      description: Perform a full synchronization of all VM rule mappings to ensure
+        matched_vms.json is consistent with the database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Synchronization successful
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Synchronize all VM rule mappings
+      tags:
+      - alarm
   /backups:
     get:
       consumes:
@@ -3151,6 +3182,32 @@ paths:
       summary: set user password for a instance
       tags:
       - Compute
+  /instances/rule-links:
+    get:
+      consumes:
+      - application/json
+      description: Get all rule groups linked to specific instances
+      parameters:
+      - description: Comma-separated instance UUIDs
+        in: query
+        name: instance_ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get instance rule links
+      tags:
+      - Compute
   /ip_groups:
     get:
       consumes:
@@ -4337,6 +4394,36 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/qos:
+    put:
+      consumes:
+      - application/json
+      description: update iops and bps limit of a volume
+      parameters:
+      - description: Volume qos payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeQosPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update qos of a volume
       tags:
       - Compute
   /volumes/{id}/resize:

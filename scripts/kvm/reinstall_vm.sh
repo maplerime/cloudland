@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 12 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <boot_loader> <instance_uuid>"
+[ $# -lt 12 ] && die "$0 <vm_ID> <image> <snapshot> <volume_id> <pool_id> <old_volume_uuid> <cpu> <memory> <disk_size> <hostname> <boot_loader> <instance_uuid> <image_volume_id>"
 
 ID=$1
 vm_ID=inst-$ID
@@ -18,11 +18,13 @@ disk_size=$9
 vm_name=${10}
 boot_loader=${11}
 instance_uuid=${12:-$ID}
+image_volume_id=${13}
 state=error
 vol_state=error
 
 md=$(cat)
 metadata=$(echo $md | base64 -d)
+read -d'\n' -r sysdisk_iops_limit sysdisk_bps_limit < <(jq -r ".disk_iops_limit, .disk_bps_limit" <<<$metadata)
 
 vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
@@ -83,7 +85,6 @@ else
     snapshot_name=${image}-${snapshot}
     read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
     if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-	    image_volume_id=$(wds_curl GET "api/v2/sync/block/volumes?name=$image" | jq -r '.volumes[0].id')
 	    snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
         read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
         if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
@@ -110,6 +111,11 @@ else
             echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
             exit -1
         fi
+    fi
+    # if sysdisk_iops_limit > 0 or sysdisk_bps_limit > 0 update volume qos
+    if [ "$sysdisk_iops_limit" -gt 0 -o "$sysdisk_bps_limit" -gt 0 ]; then
+        update_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/qos" "{\"qos\": {\"iops_limit\": $sysdisk_iops_limit, \"bps_limit\": $sysdisk_bps_limit}}")
+        log_debug $vol_ID "update volume qos: $update_ret"
     fi
     vhost_ret=$(wds_curl POST "api/v2/sync/block/vhost" "{\"name\": \"$vhost_name\"}")
     vhost_id=$(echo $vhost_ret | jq -r .id)
