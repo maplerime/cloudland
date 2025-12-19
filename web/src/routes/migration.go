@@ -83,7 +83,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		task1 := &model.Task{
 			Name:    "Prepare_Target",
 			Summary: "Prepare resources on target hypervisor",
-			Status:  status,
+			Status:  model.TaskStatus(status),
 		}
 		migration := &model.Migration{
 			Model:       model.Model{Creater: memberShip.UserID},

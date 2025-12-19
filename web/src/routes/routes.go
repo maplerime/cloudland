@@ -171,6 +171,8 @@ func New() (m *macaron.Macaron) {
 	m.Post("/volumes/:id", volumeView.Patch)
 	m.Get("/volumes/:id/resize", volumeView.Resize)
 	m.Post("/volumes/:id/resize", volumeView.Resize)
+	m.Get("/volumes/:id/qos", volumeView.EditQos)
+	m.Post("/volumes/:id/qos", volumeView.UpdateQos)
 	m.Get("/ipgroups", ipGroupView.List)
 	m.Get("/ipgroups/new", ipGroupView.New)
 	m.Post("/ipgroups/new", ipGroupView.Create)
@@ -256,6 +258,8 @@ func New() (m *macaron.Macaron) {
 	m.Post("/backups/new", backupView.Create)
 	m.Delete("/backups/:id", backupView.Delete)
 	m.Post("/restore", backupView.Restore)
+	m.Get("/tasks", taskView.List)
+	m.Get("/tasks/:id", taskView.Get)
 
 	m.Get("/error", func(c *macaron.Context) {
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")

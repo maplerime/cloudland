@@ -40,6 +40,7 @@ const (
 	RuleTypeControl        = "control_node"
 	RuleTypeAvailable      = "node_available"
 	RuleTypeHypervisorVCPU = "hypervisor_vcpu"
+	RuleTypeConntrack      = "conntrack"
 	RulesEnabled           = "/etc/prometheus/rules_enabled"
 	RulesGeneral           = "/etc/prometheus/general_rules"
 	RulesSpecial           = "/etc/prometheus/special_rules"
@@ -1574,8 +1575,9 @@ func ReloadPrometheusViaHTTP() error {
 	}
 
 	// Step 2: Create HTTP client with timeout
+	// Use a longer timeout to handle slow Prometheus reloads on large deployments
 	client := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: 2 * time.Minute,
 	}
 
 	// Step 3: Send POST request
@@ -1992,6 +1994,8 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
 	case RuleTypeHypervisorVCPU:
 		templateFiles = []string{"compute-vcpu-resources.yml.j2"}
+	case RuleTypeConntrack:
+		templateFiles = []string{"node-conntrack-anomaly.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
@@ -2222,6 +2226,8 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		}
 	case RuleTypeHypervisorVCPU:
 		templateFiles = []string{"compute-vcpu-resources.yml"}
+	case RuleTypeConntrack:
+		templateFiles = []string{"node-conntrack-anomaly.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
 	}

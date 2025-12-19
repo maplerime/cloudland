@@ -214,7 +214,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	if serverStatus == "running" && reason == "sync" {
 		err = syncMigration(ctx, instance)
 		if err != nil {
-			logger.Error("Failed to sync migrationinfo", err)
+			logger.Error("Failed to sync migration info", err)
 			return
 		}
 		err = syncNicInfo(ctx, instance)
@@ -234,20 +234,22 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 }
 
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
-	var migrations []*model.Migration
+	migration := &model.Migration{}
 	db := DB()
-	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and status = 'completed' and source_hyper = ?", instance.ID, instance.Hyper).Find(&migrations).Error
+	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			err = nil
+			return
+		}
 		logger.Error("Failed to get migrations", err)
 		return
 	}
-	for _, migration := range migrations {
-		for _, task := range migration.Phases {
-			err = execSourceMigrate(ctx, instance, migration, task.ID, "cold")
-			if err != nil {
-				logger.Error("Failed to exec source migration", err)
-				return
-			}
+	for _, task := range migration.Phases {
+		err = execSourceMigrate(ctx, instance, migration, task.ID, "cold")
+		if err != nil {
+			logger.Error("Failed to exec source migration", err)
+			return
 		}
 	}
 	return

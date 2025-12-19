@@ -23,7 +23,7 @@ func init() {
 }
 
 func InstanceStatus(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| launch_vm.sh '3' '5 running 7 running 9 shut_off'
+	//|:-COMMAND-:| inst_status.sh '3' '5 running 7 running 9 shut_off'
 	db := DB()
 	argn := len(args)
 	if argn < 3 {
@@ -77,12 +77,19 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 		}
 		if instance.Hyper != int32(hyperID) {
-			instance.Hyper = int32(hyperID)
+			if instance.Hyper >= 0 {
+				instance.Hyper = int32(hyperID)
+				err = syncMigration(ctx, instance)
+				if err != nil {
+					logger.Error("Failed to sync migration info", err)
+					continue
+				}
+			}
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
 				"hyper": int32(hyperID),
 			}).Error
 			if err != nil {
-				logger.Error("Failed to hypervisor", err)
+				logger.Error("Failed to update hypervisor", err)
 			}
 			err = db.Unscoped().Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{
 				"hyper":   int32(hyperID),

@@ -10,14 +10,6 @@ import (
 	"web/src/dbs"
 )
 
-type Task struct {
-	Model
-	Mission int64
-	Name    string `gorm:"type:varchar(64)"`
-	Summary string `gorm:"type:varchar(128)`
-	Status  string `gorm:"type:varchar(32)"`
-}
-
 type Migration struct {
 	Model
 	Name        string `gorm:"type:varchar(64)"`
@@ -32,6 +24,5 @@ type Migration struct {
 }
 
 func init() {
-	dbs.AutoMigrate(&Task{})
 	dbs.AutoMigrate(&Migration{})
 }

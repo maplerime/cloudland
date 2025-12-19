@@ -19,18 +19,19 @@ type ErrCode int
 
 const (
 	// common errors (1000xx)
-	ErrUnknown              ErrCode = 100000
-	ErrInsufficientResource ErrCode = 100001
-	ErrResourceNotFound     ErrCode = 100002
-	ErrInvalidParameter     ErrCode = 100003
-	ErrPermissionDenied     ErrCode = 100004
-	ErrExecuteOnHyperFailed ErrCode = 100005
-	ErrOwnerNotFound        ErrCode = 100006
-	ErrEncryptionFailed     ErrCode = 100008
-	ErrJSONMarshalFailed    ErrCode = 100009
-	ErrResourcesInOrg       ErrCode = 100010
-	ErrInvalidCIDR          ErrCode = 100011
-	ErrCIDRTooBig           ErrCode = 100012
+	ErrUnknown               ErrCode = 100000
+	ErrInsufficientResource  ErrCode = 100001
+	ErrResourceNotFound      ErrCode = 100002
+	ErrInvalidParameter      ErrCode = 100003
+	ErrPermissionDenied      ErrCode = 100004
+	ErrExecuteOnHyperFailed  ErrCode = 100005
+	ErrOwnerNotFound         ErrCode = 100006
+	ErrEncryptionFailed      ErrCode = 100008
+	ErrJSONMarshalFailed     ErrCode = 100009
+	ErrResourcesInOrg        ErrCode = 100010
+	ErrInvalidCIDR           ErrCode = 100011
+	ErrCIDRTooBig            ErrCode = 100012
+	ErrOperationNotSupported ErrCode = 100013
 
 	// database related errors (1001xx)
 	ErrDatabaseError  ErrCode = 100100
@@ -246,6 +247,9 @@ const (
 	ErrZoneUpdateFailed       ErrCode = 171009
 	ErrZoneDeleteFailed       ErrCode = 171010
 	ErrHypersInZone           ErrCode = 171011
+
+	// task related errors (181xxx)
+	ErrTaskNotFound ErrCode = 181001
 
 	// dictionary related errors (1998xx)
 	ErrDictionaryRecordsNotFound ErrCode = 199801

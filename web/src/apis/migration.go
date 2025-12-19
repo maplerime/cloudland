@@ -25,6 +25,7 @@ var migrationAdmin = &routes.MigrationAdmin{}
 type MigrationAPI struct{}
 
 type TaskResponse struct {
+	Source  string `json:"source"`
 	Name    string `json:"name"`
 	Summary string `json:"summary"`
 	Status  string `json:"status"`
@@ -52,7 +53,7 @@ type MigrationPayload struct {
 	Name        string    `json:"name" binding:"required,min=2,max=32"`
 	Instances   []*BaseID `json:"instances" binding:"required,gte=1"`
 	Force       bool      `json:"force" binding:"omitempty"`
-	TargetHyper *int32     `json:"target_hyper" binding:"omitempty,gte=0,lte=65535"`
+	TargetHyper *int32    `json:"target_hyper" binding:"omitempty,gte=0,lte=65535"`
 }
 
 // @Summary get a migration
@@ -164,9 +165,10 @@ func (v *MigrationAPI) getMigrationResponse(ctx context.Context, migration *mode
 	migrationResp.Phases = make([]*TaskResponse, len(migration.Phases))
 	for i, task := range migration.Phases {
 		migrationResp.Phases[i] = &TaskResponse{
+			Source:  string(task.Source),
 			Name:    task.Name,
 			Summary: task.Summary,
-			Status:  task.Status,
+			Status:  string(task.Status),
 		}
 	}
 	return

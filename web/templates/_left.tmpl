@@ -29,6 +29,9 @@
         <a {{ if eq .Link "/images" }} class="active item" {{ else }} class="item" {{ end }} href="/images">
             {{.i18n.Tr "Images"}}
         </a>
+        <a {{ if eq .Link "/tasks" }} class="active item" {{ else }} class="item" {{ end }} href="/tasks">
+            {{.i18n.Tr "Tasks"}}
+        </a>
         <div class="header item">{{.i18n.Tr "Network_Security"}}</div>
         <a {{ if eq .Link "/routers" }} class="active item" {{ else }} class="item" {{ end }} href="/routers">
             {{.i18n.Tr "VPCs"}}

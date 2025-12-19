@@ -107,6 +107,44 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.CLTaskListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      tasks:
+        items:
+          $ref: '#/definitions/apis.CLTaskResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.CLTaskResponse:
+    properties:
+      action:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      resources:
+        type: string
+      source:
+        type: string
+      status:
+        type: string
+      summary:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.ConsoleResponse:
     properties:
       console_host:
@@ -678,6 +716,12 @@ definitions:
         type: integer
       disk:
         minimum: 1
+        type: integer
+      disk_bps_limit:
+        minimum: 0
+        type: integer
+      disk_iops_limit:
+        minimum: 0
         type: integer
       flavor:
         maxLength: 32
@@ -1660,6 +1704,8 @@ definitions:
     properties:
       name:
         type: string
+      source:
+        type: string
       status:
         type: string
       summary:
@@ -1784,6 +1830,8 @@ definitions:
     properties:
       name:
         type: string
+      pool_id:
+        type: string
       type:
         enum:
         - snapshot
@@ -1812,6 +1860,8 @@ definitions:
         type: integer
       status:
         $ref: '#/definitions/model.BackupStatus'
+      task:
+        $ref: '#/definitions/common.BaseReference'
       updated_at:
         type: string
       volume:
@@ -1849,16 +1899,8 @@ definitions:
     type: object
   apis.VolumePatchPayload:
     properties:
-      bps_burst:
-        type: integer
-      bps_limit:
-        type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
-      iops_burst:
-        type: integer
-      iops_limit:
-        type: integer
       name:
         type: string
       size:
@@ -1891,6 +1933,15 @@ definitions:
     required:
     - name
     - size
+    type: object
+  apis.VolumeQosPayload:
+    properties:
+      bps_limit:
+        minimum: 0
+        type: integer
+      iops_limit:
+        minimum: 0
+        type: integer
     type: object
   apis.VolumeResizePayload:
     properties:
@@ -2226,8 +2277,10 @@ paths:
       produces:
       - application/json
       responses:
-        "204":
-          description: No Content
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
         "400":
           description: Bad request
           schema:
@@ -4668,6 +4721,75 @@ paths:
       summary: update address lock
       tags:
       - Network
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      description: list tasks
+      parameters:
+      - description: 'Source: empty or manual or scheduler or migration or not_migration
+          or all'
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: Offset
+        in: query
+        name: offset
+        required: true
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.CLTaskListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list tasks
+      tags:
+      - Compute
+  /tasks/{id}:
+    get:
+      consumes:
+      - application/json
+      description: get a task
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.CLTaskResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a task
+      tags:
+      - Compute
   /users:
     get:
       consumes:
@@ -4935,6 +5057,36 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/qos:
+    put:
+      consumes:
+      - application/json
+      description: update iops and bps limit of a volume
+      parameters:
+      - description: Volume qos payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeQosPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update qos of a volume
       tags:
       - Compute
   /volumes/{id}/resize:

@@ -303,8 +303,11 @@ const docTemplatealarm_v1 = `{
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No Content"
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolBackupResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad request",
@@ -4008,6 +4011,108 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/tasks": {
+            "get": {
+                "description": "list tasks",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "list tasks",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Source: empty or manual or scheduler or migration or not_migration or all",
+                        "name": "source",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.CLTaskListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/tasks/{id}": {
+            "get": {
+                "description": "get a task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "get a task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.CLTaskResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "list users",
@@ -4391,6 +4496,52 @@ const docTemplatealarm_v1 = `{
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/apis.VolumePatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/volumes/{id}/qos": {
+            "put": {
+                "description": "update iops and bps limit of a volume",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "update qos of a volume",
+                "parameters": [
+                    {
+                        "description": "Volume qos payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeQosPayload"
                         }
                     }
                 ],
@@ -4977,6 +5128,64 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.CLTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.CLTaskResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.CLTaskResponse": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "resources": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "summary": {
                     "type": "string"
                 },
                 "updated_at": {
@@ -5821,6 +6030,14 @@ const docTemplatealarm_v1 = `{
                 "disk": {
                     "type": "integer",
                     "minimum": 1
+                },
+                "disk_bps_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "disk_iops_limit": {
+                    "type": "integer",
+                    "minimum": 0
                 },
                 "flavor": {
                     "type": "string",
@@ -7255,6 +7472,9 @@ const docTemplatealarm_v1 = `{
                 "name": {
                     "type": "string"
                 },
+                "source": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -7447,6 +7667,9 @@ const docTemplatealarm_v1 = `{
                 "name": {
                     "type": "string"
                 },
+                "pool_id": {
+                    "type": "string"
+                },
                 "type": {
                     "type": "string",
                     "enum": [
@@ -7482,6 +7705,9 @@ const docTemplatealarm_v1 = `{
                 },
                 "status": {
                     "$ref": "#/definitions/model.BackupStatus"
+                },
+                "task": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "updated_at": {
                     "type": "string"
@@ -7540,20 +7766,8 @@ const docTemplatealarm_v1 = `{
         "apis.VolumePatchPayload": {
             "type": "object",
             "properties": {
-                "bps_burst": {
-                    "type": "integer"
-                },
-                "bps_limit": {
-                    "type": "integer"
-                },
                 "instance": {
                     "$ref": "#/definitions/common.BaseID"
-                },
-                "iops_burst": {
-                    "type": "integer"
-                },
-                "iops_limit": {
-                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -7599,6 +7813,19 @@ const docTemplatealarm_v1 = `{
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.VolumeQosPayload": {
+            "type": "object",
+            "properties": {
+                "bps_limit": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "iops_limit": {
+                    "type": "integer",
+                    "minimum": 0
                 }
             }
         },
