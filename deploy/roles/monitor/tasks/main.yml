@@ -982,6 +982,7 @@
   set_fact:
     vm_group_block: |
       - job_name: 'vm-group-metadata'
+        metrics_path: /-/ready
         file_sd_configs:
           - files:
               - '/etc/prometheus/lists/matched_vms.json'
