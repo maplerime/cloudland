@@ -982,6 +982,15 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			siteSubnets = append(siteSubnets, siteSubnet)
 		}
 	}
+	address := c.QueryTrim("address")
+	if address != iface.Address.Address {
+		for i, pubAddr := range publicAddresses {
+			if address == pubAddr.FipAddress {
+				publicAddresses[0], publicAddresses[i] = publicAddresses[i], publicAddresses[0]
+				break
+			}
+		}
+	}
 	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, publicAddresses)
 	if err != nil {
 		logger.Debug("Failed to update interface", err)

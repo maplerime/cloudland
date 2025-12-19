@@ -13,7 +13,22 @@
                     </div>
                     <div class="required inline field">
                         <label for="address">{{.i18n.Tr "IP Address"}}</label>
-                        <input id="address" name="address" value="{{ .Interface.Address.Address }}" disabled>
+			<div class="ui selection dropdown">
+			    <input id="address" name="address" type="hidden" value="{{ .Interface.Address.Address }}">
+			    <i class="dropdown icon"></i>
+				<div class="default text">{{ .Interface.Address.Address }}</div>
+				<div class="menu">
+			        <div class="item" data-value={{.Interface.Address.Address}} data-text={{.Interface.Address.Address}}>
+                                   {{.Interface.Address.Address}}
+			        </div>
+                                {{ if .Interface.SecondAddresses }}
+                                {{ range .Interface.SecondAddresses }}
+			        <div class="item" data-value={{.Address}} data-text={{.Address}}>
+                                   {{.Address}}
+			        </div>
+                                {{ end }}
+                                {{ end }}
+			</div>
                     </div>
                     <div class="inline field">
                         <label for="second_addresses">{{.i18n.Tr "Secondary IP Addresses"}}</label>
