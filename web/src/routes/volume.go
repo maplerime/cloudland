@@ -105,6 +105,18 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	if poolID == "" {
 		poolID = viper.GetString("volume.default_wds_pool_id")
 	}
+	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
+		logger.Error("Invalid bps limit: %d", bpsLimit)
+		errMsg := fmt.Sprintf("Invalid bps limit: %d, should be between %d and %d (MB/s)", bpsLimit, model.VolumeBpsLimitMin, model.VolumeBpsLimitMax)
+		err = NewCLError(ErrInvalidParameter, errMsg, nil)
+		return
+	}
+	if iopsLimit > 0 && (iopsLimit < model.VolumeIopsLimitMin || iopsLimit > model.VolumeIopsLimitMax) {
+		logger.Error("Invalid iops limit: %d", iopsLimit)
+		errMsg := fmt.Sprintf("Invalid iops limit: %d, should be between %d and %d (IOPS)", iopsLimit, model.VolumeIopsLimitMin, model.VolumeIopsLimitMax)
+		err = NewCLError(ErrInvalidParameter, errMsg, nil)
+		return
+	}
 	target := ""
 	if booting {
 		target = "vda"
@@ -190,6 +202,18 @@ func (a *VolumeAdmin) UpdateQosByUUID(ctx context.Context, uuid string, iopsLimi
 
 func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, bpsLimit int32) (volume *model.Volume, err error) {
 	logger.Debugf("Update volume qos by ID %d, iopsLimit: %d, bpsLimit: %d", id, iopsLimit, bpsLimit)
+	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
+		logger.Error("Invalid bps limit: %d", bpsLimit)
+		errMsg := fmt.Sprintf("Invalid bps limit: %d, should be between %d and %d (MB/s)", bpsLimit, model.VolumeBpsLimitMin, model.VolumeBpsLimitMax)
+		err = NewCLError(ErrInvalidParameter, errMsg, nil)
+		return
+	}
+	if iopsLimit > 0 && (iopsLimit < model.VolumeIopsLimitMin || iopsLimit > model.VolumeIopsLimitMax) {
+		logger.Error("Invalid iops limit: %d", iopsLimit)
+		errMsg := fmt.Sprintf("Invalid iops limit: %d, should be between %d and %d (IOPS)", iopsLimit, model.VolumeIopsLimitMin, model.VolumeIopsLimitMax)
+		err = NewCLError(ErrInvalidParameter, errMsg, nil)
+		return
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
