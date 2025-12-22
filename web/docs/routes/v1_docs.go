@@ -5187,11 +5187,14 @@ const docTemplatev1 = `{
                     "minimum": 1
                 },
                 "disk_bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "disk_iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 },
                 "flavor": {
@@ -6736,7 +6739,9 @@ const docTemplatev1 = `{
                     "minimum": 0
                 },
                 "bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "count": {
@@ -6750,6 +6755,7 @@ const docTemplatev1 = `{
                 },
                 "iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 },
                 "name": {
@@ -6767,11 +6773,14 @@ const docTemplatev1 = `{
             "type": "object",
             "properties": {
                 "bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 }
             }
