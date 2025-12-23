@@ -41,6 +41,15 @@ func (s BackupStatus) String() string {
 	return string(s)
 }
 
+const (
+	// in cloudland, the bps limit is in MB/s, while the bps of WDS is in B/s
+	// so we need to convert the bps limit to B/s when invoking WDS API (WDSBpsFactor = 1024 * 1024)
+	VolumeBpsLimitMax  int32 = 102400 // max is 100GB/s
+	VolumeBpsLimitMin  int32 = 10     // min is 10MB/s
+	VolumeIopsLimitMax int32 = 10000000
+	VolumeIopsLimitMin int32 = 100
+)
+
 type Volume struct {
 	Model
 	Owner int64  `gorm:"default:1","index"` /* The organization ID of the resource */
