@@ -640,9 +640,6 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	if instance.Flavor != nil {
 		instanceResp.Flavor = instance.Flavor.Name
 	}
-	if instance.Zone != nil {
-		instanceResp.Zone = instance.Zone.Name
-	}
 	keys := make([]*ResourceReference, len(instance.Keys))
 	for i, key := range instance.Keys {
 		keys[i] = &ResourceReference{
@@ -666,6 +663,9 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	hyper, hyperErr := hyperAdmin.GetHyperByHostid(ctx, instance.Hyper)
 	if hyperErr == nil {
 		instanceResp.Hypervisor = hyper.Hostname
+		if hyper.Zone != nil {
+			instanceResp.Zone = hyper.Zone.Name
+		}
 	}
 	interfaces := make([]*InterfaceResponse, len(instance.Interfaces))
 	for i, iface := range instance.Interfaces {
