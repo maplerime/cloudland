@@ -48,6 +48,9 @@
         <a {{ if eq .Link "/secgroups" }} class="active item" {{ else }} class="item" {{ end }} href="/secgroups">
             {{.i18n.Tr "SecurityGroups"}}
         </a>
+        <a {{ if eq .Link "/loadbalancers" }} class="active item" {{ else }} class="item" {{ end }} href="/loadbalancers">
+            {{.i18n.Tr "LoadBalancers"}}
+        </a>
 		{{ if $.IsAdmin }}
         <div class="header item">{{.i18n.Tr "Administration"}}</div>
         <a {{ if eq .Link "/zones" }} class="active item" {{ else }} class="item" {{ end }} href="/zones">

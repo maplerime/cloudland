@@ -1,0 +1,36 @@
+#!/bin/bash
+
+cd `dirname $0`
+source ../cloudrc
+
+[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_mac> <local_ip> <peer_mac> <peer_ip> <role>"
+
+router=$1
+[ "${router/router-/}" = "$router" ] && router=router-$1
+vrrp_ID=$2
+vrrp_vlan=$3
+local_mac=$4
+local_ip=$5
+peer_mac=$6
+peer_ip=$7
+role=$8
+
+./create_local_router.sh $router
+./create_link.sh $vrrp_vlan
+cat /proc/net/dev | grep -q "^\<ln-$vrrp_vlan\>"
+if [ $? -ne 0 ]; then
+    ./create_veth.sh $router ln-$vrrp_vlan ns-$vrrp_vlan
+    apply_vnic -I ln-$vrrp_vlan
+    ip netns exec $router ip link set ns-$vrrp_vlan address $local_mac
+else
+    local_mac=$(ip netns exec $router cat /sys/class/net/ns-$vrrp_vlan/address)
+fi
+brctl addif br$vrrp_vlan ln-$vrrp_vlan
+ip netns exec $router ip addr add $local_ip dev ns-$vrrp_vlan
+read -d'\n' -r network < <(ipcalc -nb $local_ip | awk '/Network/ {print $2}')
+ip netns exec $router ipset add nonat $network
+ns_ip=${local_ip%/*}
+ip netns exec $router iptables -C INPUT -d $ns_ip -m conntrack --ctstate NEW -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -A INPUT -d $ns_ip -m conntrack --ctstate NEW -j ACCEPT
+
+echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role' '$local_mac'"

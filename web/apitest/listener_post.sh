@@ -1,0 +1,93 @@
+#!/bin/bash
+
+source tokenrc
+
+cat >tmp.json <<EOF
+{
+  "name": "vpc-$RANDOM"
+}
+EOF
+vpc_id=$(curl -k -XPOST -H "Authorization: bearer $token" -H "X-Resource-User: cathy" -H "X-Resource-Org: cathy" "$endpoint/api/v1/vpcs" -d @./tmp.json | jq -r .id)
+
+cat >tmp.json <<EOF
+{
+  "name": "loadbalancer-$RANDOM",
+  "vpc": {
+    "id": "$vpc_id"
+  }
+}
+EOF
+loadbalancer_id=$(curl -k -XPOST -H "Authorization: bearer $token" -H "X-Resource-User: cathy" -H "X-Resource-Org: cathy" "$endpoint/api/v1/load_balancers" -d @./tmp.json | jq -r .id)
+
+cat >tmp.json <<EOF
+{
+  "name": "listener-$RANDOM",
+  "mode": "http",
+  "port": 443,
+  "key": "-----BEGIN RSA PRIVATE KEY-----
+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
+-----END RSA PRIVATE KEY-----",
+  "cert": "-----BEGIN CERTIFICATE-----
+MIIEHjCCAoagAwIBAgIUT3cSam+F1VT6nBzNMI+ajy6XlTIwDQYJKoZIhvcNAQEL
+BQAwFDESMBAGA1UEChMJY2xvdWRsYW5kMB4XDTI0MTIxNjA2NTQxNloXDTI1MTIx
+NjA2NTQxNlowFDESMBAGA1UEChMJY2xvdWRsYW5kMIIBojANBgkqhkiG9w0BAQEF
+AAOCAY8AMIIBigKCAYEAwj3aaDjoO+1RJ9ylJKqOS3kPsj5ZPqaYOyb0GPdVrpdE
+HhDJ3bqZyCMW55bXhdr1vxgWRZVi/XdKh+bGOIlAO0kTFSIdXJuseBZuJCzvJFss
+T+CzjombLcqtC/1pWljKQ3Z2iwhBhVagkJVKisXIKS0+vsC/Ycqg7HBSAA/DLwco
+rG5ByShCT73VLoQFJK9UDsWv3vRnIYPBOgh43WFx0vyzxlf9QYaWJc1BF4+KGww1
+fPvhtTTvpwnDcHQUKwmE8tB5bMVOLFSpfeSiDpUl4ie5cCR5qlPr8FoCao5Uwa0t
+bPFHfalTRkMWFmi1LK1DpmpXZyDbYUAFkTyKN1+sffxfZ+ULmD/VkClSY9g5WdKm
+LpqbMwpvCnFYamHFB0KL72dk2PzGRHrSpY9FnQ9YuNIupaIp9KB0nr5t5K11J13e
+UdN+0iBVR9uVA9lNTBsLOunjPebRgmw0lKEGsJRxmWNnfPecxDL+RiDQn/e9QMXs
+8Ee7MFwzsH5c/+fHTN/5AgMBAAGjaDBmMA8GA1UdEwEB/wQFMAMBAf8wDwYDVR0R
+BAgwBocEfwAAATATBgNVHSUEDDAKBggrBgEFBQcDATAOBgNVHQ8BAf8EBAMCBaAw
+HQYDVR0OBBYEFPAwW3hp6R0dlsnUY9wWyoa3eerNMA0GCSqGSIb3DQEBCwUAA4IB
+gQCJywhu3sUnJehNOssb8+1j2QJ5E6FFaPeQAth9adr0c3OMyG1GQ974FSA992L8
+/W5SxeUAjU9XGtkEDGCMU8GTv3tzcCeibnah7ahF1d63bPnvgA/GscoW55mS3xSO
+2KIvX819r0HdcN+xJ7HhcTFoSIKqEErUK6oTGeBP+jic5NTy6M+EhbpOeTvw72tv
+mdZeYAwljas0AA/h8gJG/5ZGIkgOuw7R8N0T6surtleR73YRBOisiGBVUUgjQGN7
+hf6JUR+i4v0Ctpk62cey3JsCL2nyCK25GJYHFYLil3HIMg5rv/Hb95gUdaRyEdXG
+5t0ZBKAHKQobIo7Gld5XM9tlNez1zzIAJzQ8C0IR8ZYsimlB00OKArxkrTQlu7Rb
+TQAKk8PQSmc9VlYKr5LUEjkuvvHGOy9I6PCXx+5ZglHjRZpbx1TCxp33vW4lECyR
+agt5PmkX/d/6yc9FBFbbZDANGUUvs5zlFSCsFartFa4oqXZ0Jx+p6UZev35FJc3P
+xpc=
+-----END CERTIFICATE-----"
+}
+EOF
+curl -k -XPOST -H "Authorization: bearer $token" -H "X-Resource-User: cathy" -H "X-Resource-Org: cathy" "$endpoint/api/v1/load_balancers/$loadbalancer_id/listeners" -d @./tmp.json | jq .

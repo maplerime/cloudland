@@ -157,6 +157,7 @@ const (
 	ErrFIPInUse                  ErrCode = 131209
 	ErrDummyFIPCreateFailed      ErrCode = 131210
 	ErrUpdateGroupIDFailed       ErrCode = 131211
+	ErrFIPListFailed             ErrCode = 131212
 
 	// VPC/Router related errors (1313xx)
 	ErrRouterNotFound              ErrCode = 131301
@@ -175,6 +176,27 @@ const (
 	ErrIpGroupUpdateFailed ErrCode = 131403
 	ErrIpGroupDeleteFailed ErrCode = 131404
 	ErrIpGroupInUse        ErrCode = 131405
+
+	// load balancer related errors (1315xx)
+	ErrLoadBalancerNotFound     = 131501
+	ErrLoadBalancerListFailed   = 131502
+	ErrLoadBalancerCreateFailed = 131503
+	ErrLoadBalancerUpdateFailed = 131504
+	ErrLoadBalancerDeleteFailed = 131505
+	ErrVrrpInstanceNotFound     = 131506
+	ErrVrrpInstanceCreateFailed = 131507
+	ErrVrrpInstanceUpdateFailed = 131508
+	ErrVrrpInstanceDeleteFailed = 131509
+	ErrListenerNotFound         = 131510
+	ErrListenerListFailed       = 131511
+	ErrListenerCreateFailed     = 131512
+	ErrListenerUpdateFailed     = 131513
+	ErrListenerDeleteFailed     = 131514
+	ErrBackendNotFound          = 131515
+	ErrBackendListFailed        = 131516
+	ErrBackendCreateFailed      = 131517
+	ErrBackendUpdateFailed      = 131518
+	ErrBackendDeleteFailed      = 131519
 
 	// Security related errors (141xxx)
 	ErrSecurityGroupNotFound       ErrCode = 141001

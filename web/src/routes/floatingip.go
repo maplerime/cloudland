@@ -37,10 +37,18 @@ type FloatingIps struct {
 type FloatingIpAdmin struct{}
 type FloatingIpView struct{}
 
-func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool, group *model.IpGroup) ([]*model.FloatingIp, error) {
+func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name string, inbound, outbound int32, count int, subnets []*model.Subnet, publicIp string, instance *model.Instance, isSite bool, group *model.IpGroup, loadBalancer *model.LoadBalancer) ([]*model.FloatingIp, error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 	floatingIps := make([]*model.FloatingIp, 0)
+	publicType := string(PublicFloating)
+	routerID := int64(0)
+	loadBalancerID := int64(0)
+	if loadBalancer != nil {
+		publicType = string(PublicLoadBalancer)
+		loadBalancerID = loadBalancer.ID
+		routerID = loadBalancer.RouterID
+	}
 	logger.Debugf("subnets: %v, publicIp: %s, instance: %v, count: %d, inbound: %d, outbound: %d", subnets, publicIp, instance, count, inbound, outbound)
 	for i := 0; i < count; i++ {
 		uniqueName := fmt.Sprintf("%s-%d-%d", name, i, time.Now().UnixNano())
@@ -48,7 +56,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		if group != nil && group.ID != 0 {
 			groupID = group.ID
 		}
-		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: string(PublicFloating), GroupID: groupID}
+		fip := &model.FloatingIp{Model: model.Model{Creater: memberShip.UserID}, Owner: memberShip.OrgID, Name: uniqueName, Inbound: inbound, Outbound: outbound, Type: publicType, GroupID: groupID, LoadBalancerID: loadBalancerID, RouterID: routerID}
 		if err := db.Create(fip).Error; err != nil {
 			logger.Error("DB failed to create floating ip", err)
 			return nil, NewCLError(ErrFIPCreateFailed, "Failed to create floating ip", err)
@@ -65,7 +73,7 @@ func (a *FloatingIpAdmin) createAndAllocateFloatingIps(ctx context.Context, name
 		fip.SubnetID = fipIface.Address.Subnet.ID
 		if instance != nil {
 			if err := a.Attach(ctx, fip, instance); err != nil {
-				logger.Error("Execute floating ip failed", err)
+				logger.Error("Execute attaching floating ip failed", err)
 				return nil, err
 			}
 		}
@@ -111,7 +119,7 @@ func (a *FloatingIpAdmin) createDummyFloatingIp(ctx context.Context, instance *m
 	return
 }
 
-func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, pubSubnets []*model.Subnet, publicIp string, name string, inbound, outbound, activationCount int32, siteSubnets []*model.Subnet, group *model.IpGroup) (floatingIps []*model.FloatingIp, err error) {
+func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, pubSubnets []*model.Subnet, publicIp string, name string, inbound, outbound, activationCount int32, siteSubnets []*model.Subnet, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIps []*model.FloatingIp, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Writer)
 	if !permit {
@@ -190,7 +198,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	floatingIps = make([]*model.FloatingIp, 0)
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d, siteSubnets: %v, group: %v", pubSubnets, publicIp, instance, activationCount, inbound, outbound, siteSubnets, group)
 	var fips []*model.FloatingIp
-	fips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false, group)
+	fips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(activationCount), pubSubnets, publicIp, instance, false, group, loadBalancer)
 	if err != nil {
 		return
 	}
@@ -200,11 +208,26 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	for i := 0; i < len(siteSubnets); i++ {
 		logger.Debugf("siteSubnets[%d]: %v, idleCount: %d, activationCount: %d, inbound: %d, outbound: %d, group: %v", i, siteSubnets[i], siteSubnets[i].IdleCount, siteSubnets[i].IdleCount, inbound, outbound, group)
 		var siteFips []*model.FloatingIp
-		siteFips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true, group)
+		siteFips, err = a.createAndAllocateFloatingIps(ctx, name, inbound, outbound, int(siteSubnets[i].IdleCount), []*model.Subnet{siteSubnets[i]}, "", instance, true, group, nil)
 		if err != nil {
 			return
 		}
 		floatingIps = append(floatingIps, siteFips...)
+	}
+
+	if loadBalancer != nil {
+		loadBalancer.FloatingIps = append(loadBalancer.FloatingIps, floatingIps...)
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
+			return
+		}
+		err = backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)
+		if err != nil {
+			logger.Error("Failed to create haproxy conf ", err)
+			err = NewCLError(ErrBackendCreateFailed, "Failed to create haproxy conf", err)
+			return
+		}
 	}
 
 	return floatingIps, nil
@@ -308,6 +331,12 @@ func (a *FloatingIpAdmin) Get(ctx context.Context, id int64) (floatingIp *model.
 			logger.Error("Failed to query interfaces %v", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 		}
+	} else if floatingIp.LoadBalancerID > 0 {
+		floatingIp.LoadBalancer, err = loadBalancerAdmin.Get(ctx, floatingIp.LoadBalancerID)
+		if err != nil {
+			logger.Error("Failed to get ip load balancer ", err)
+			return
+		}
 	}
 	if floatingIp.RouterID > 0 {
 		floatingIp.Router = &model.Router{Model: model.Model{ID: floatingIp.RouterID}}
@@ -352,6 +381,12 @@ func (a *FloatingIpAdmin) GetFloatingIpByUUID(ctx context.Context, uuID string) 
 			msg := fmt.Sprintf("Failed to query interfaces for instance: %d", instance.ID)
 			logger.Error(msg, err)
 			return nil, NewCLError(ErrSQLSyntaxError, msg, err)
+		}
+	} else if floatingIp.LoadBalancerID > 0 {
+		floatingIp.LoadBalancer, err = loadBalancerAdmin.Get(ctx, floatingIp.LoadBalancerID)
+		if err != nil {
+			logger.Error("DB failed to query load balancer ", err)
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query load balancer", err)
 		}
 	}
 	if floatingIp.RouterID > 0 {
@@ -408,6 +443,7 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		}
 		return
 	}
+	loadBalancer := floatingIp.LoadBalancer
 	if floatingIp.Instance != nil {
 		var primaryIface *model.Interface
 		instance := floatingIp.Instance
@@ -424,19 +460,60 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 			logger.Error("Detach floating ip failed", err)
 			return
 		}
+	} else if loadBalancer != nil {
+		hyperGroup := ""
+		hyperGroup, _, _, err = GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
+		if err != nil {
+			logger.Error("Failed to query vrrp hyper group and interfaces", err)
+			return
+		}
+		control := "toall=" + hyperGroup
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_lb_floating.sh '%d' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.Subnet.Vlan, floatingIp.ID)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Clear lb floating ip execution failed ", err)
+			err = NewCLError(ErrExecuteOnHyperFailed, "Clear lb floating execution failed", err)
+			return
+		}
 	}
 	logger.Debugf("Floating ip: %v\n", floatingIp)
 	floatingIp.InstanceID = 0
 	floatingIp.Instance = nil
-	err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update(map[string]interface{}{"instance_id": 0}).Error
+	err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update(map[string]interface{}{
+		"instance_id":      0,
+		"load_balancer_id": 0,
+		"router_id":        0,
+		"int_address":      "",
+		"type":             PublicFloating,
+	}).Error
 	if err != nil {
 		logger.Error("Failed to update instance ID for floating ip", err)
 		return NewCLError(ErrUpdateInstIDOfFIPFailed, "Failed to update instance ID for floating ip", err)
 	}
+	if loadBalancer != nil {
+		intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
+		_, loadBalancer.FloatingIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
+		if err != nil {
+			logger.Error("Failed to list floating ip(s), %v", err)
+			return
+		}
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			logger.Error("Recreate keepalived config failed", err)
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
+			return
+		}
+		err = backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)
+		if err != nil {
+			logger.Error("Failed to create haproxy conf ", err)
+			err = NewCLError(ErrBackendCreateFailed, "Failed to create haproxy conf", err)
+			return
+		}
+	}
 	return
 }
 
-func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup) (floatingIpTemp *model.FloatingIp, err error) {
+func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIpTemp *model.FloatingIp, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -456,6 +533,23 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 			logger.Errorf("Failed to attach floating ip %+v", err)
 			return
 		}
+	} else if loadBalancer != nil {
+		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update(map[string]interface{}{
+			"load_balancer_id": loadBalancer.ID,
+			"router_id":        loadBalancer.RouterID,
+			"type":             PublicLoadBalancer,
+		}).Error
+		err = CreateVrrpConf(ctx, loadBalancer)
+		if err != nil {
+			err = NewCLError(ErrVrrpInstanceCreateFailed, "Recreate keepalived config failed", err)
+			return
+		}
+		err = backendAdmin.CreateHaproxyConf(ctx, nil, loadBalancer)
+		if err != nil {
+			logger.Error("Failed to create haproxy conf ", err)
+			err = NewCLError(ErrBackendCreateFailed, "Failed to create haproxy conf", err)
+			return
+		}
 	}
 
 	if group != nil {
@@ -464,7 +558,7 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 			groupID = group.ID
 		}
 
-		err = db.Model(floatingIp).Where("id = ?", floatingIp.ID).Update("group_id", groupID).Error
+		err = db.Model(&model.FloatingIp{Model: model.Model{ID: floatingIp.ID}}).Update("group_id", groupID).Error
 		if err != nil {
 			logger.Error("Failed to update floating ip group_id", err)
 			return nil, NewCLError(ErrUpdateGroupIDFailed, "Failed to update floating ip group_id", err)
@@ -481,8 +575,8 @@ func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.FloatingIp) (err error) {
-	if floatingIp.Type != string(PublicFloating) {
-		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating type is supported for deletion", floatingIp.Type)
+	if floatingIp.Type != string(PublicFloating) && floatingIp.Type != string(PublicLoadBalancer) {
+		errorStr := fmt.Sprintf("Cannot delete floating IP of type %s, only PublicFloating or PublicLoadBalancer type is supported for deletion", floatingIp.Type)
 		logger.Info(errorStr)
 		err = NewCLError(ErrInvalidParameter, errorStr, nil)
 		return
@@ -493,7 +587,7 @@ func (a *FloatingIpAdmin) Delete(ctx context.Context, floatingIp *model.Floating
 			EndTransaction(ctx, err)
 		}
 	}()
-	if floatingIp.Instance != nil {
+	if floatingIp.Instance != nil || floatingIp.LoadBalancer != nil {
 		err = a.Detach(ctx, floatingIp)
 		if err != nil {
 			logger.Error("Failed to detach floating ip", err)
@@ -529,36 +623,33 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count floating IPs", err)
 	}
 	db = dbs.Sortby(db.Offset(offset).Limit(limit), order)
-	if err = db.Preload("Group").Preload("Instance").Preload("Instance.Zone").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
+	if err = db.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Where(where).Where(query).Where(intQuery).Find(&floatingIps).Error; err != nil {
 		logger.Error("DB failed to query floating ip(s), %v", err)
 		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, fip := range floatingIps {
 		if fip.InstanceID > 0 {
-			if fip.Instance != nil && fip.Instance.ID > 0 {
-				instance := fip.Instance
-				err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
-				if err != nil {
-					logger.Error("Failed to query interfaces ", err)
-					err = nil
-					continue
-				}
-			} else {
-				fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
-				err = db.Take(fip.Instance).Error
-				if err != nil {
-					logger.Error("DB failed to query instance ", err)
-					err = nil
-					continue
-				}
-				instance := fip.Instance
-				err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
-				if err != nil {
-					logger.Error("Failed to query interfaces ", err)
-					err = nil
-					continue
-				}
+			fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
+			err = db.Preload("Zone").Take(fip.Instance).Error
+			if err != nil {
+				logger.Error("DB failed to query instance ", err)
+				err = nil
+				continue
+			}
+			instance := fip.Instance
+			err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
+			if err != nil {
+				logger.Error("Failed to query interfaces ", err)
+				err = nil
+				continue
+			}
+		} else if fip.LoadBalancerID > 0 {
+			fip.LoadBalancer, err = loadBalancerAdmin.Get(ctx, fip.LoadBalancerID)
+			if err != nil {
+				logger.Error("DB failed to query load balancer ", err)
+				err = nil
+				continue
 			}
 		}
 
@@ -604,8 +695,20 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	intQuery := ""
+	lbid := c.Params("lbid")
+	if lbid != "" {
+		loadBalancerID, err := strconv.Atoi(lbid)
+		if err != nil {
+			logger.Error("Invalid load balancer ID", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		intQuery = fmt.Sprintf("load_balancer_id = %d", loadBalancerID)
+	}
 	query := c.QueryTrim("q")
-	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, "")
+	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, intQuery)
 	if err != nil {
 		logger.Error("Failed to list floating ip(s), %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -655,6 +758,35 @@ func (v *FloatingIpView) Delete(c *macaron.Context, store session.Store) (err er
 	return
 }
 
+func (v *FloatingIpView) LBNew(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	db := DB()
+
+	subnets := []*model.Subnet{}
+	err := db.Where("type = ?", "public").Find(&subnets).Error
+	if err != nil {
+		logger.Error("Failed to query subnets %v", err)
+		return
+	}
+	ipGroups := []*model.IpGroup{}
+	err = db.Where("type = ?", string(ResourceIpGroupType)).Find(&ipGroups).Error
+	if err != nil {
+		logger.Error("Failed to query resource ip groups %v", err)
+		return
+	}
+
+	c.Data["Subnets"] = subnets
+	c.Data["IpGroups"] = ipGroups
+	c.HTML(200, "floatingips_lbnew")
+}
+
 func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Writer)
@@ -679,6 +811,12 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 		}
 	}
 	logger.Debugf("Instances count: %d", len(instances))
+	total, loadBalancers, err := loadBalancerAdmin.List(c.Req.Context(), 0, -1, "", "")
+	if err != nil {
+		logger.Error("Failed to query load balancers %v", err)
+		return
+	}
+	logger.Debugf("Load balancers count: %d", total)
 
 	subnets := []*model.Subnet{}
 	err = db.Where("type = ?", "public").Find(&subnets).Error
@@ -715,6 +853,7 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 	siteSubnets = validSiteSubnets
 
 	c.Data["Instances"] = instances
+	c.Data["LoadBalancers"] = loadBalancers
 	c.Data["Subnets"] = subnets
 	c.Data["SiteSubnets"] = siteSubnets
 	c.Data["IpGroups"] = ipGroups
@@ -767,6 +906,12 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 		}
 	}
 	logger.Debugf("Instances count: %d", len(instances))
+	total, loadBalancers, err := loadBalancerAdmin.List(c.Req.Context(), 0, -1, "", "")
+	if err != nil {
+		logger.Error("Failed to query load balancers %v", err)
+		return
+	}
+	logger.Debugf("Load balancers count: %d", total)
 
 	ipGroups := []*model.IpGroup{}
 	err = db.Where("type = ?", string(ResourceIpGroupType)).Find(&ipGroups).Error
@@ -776,6 +921,7 @@ func (v *FloatingIpView) Edit(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Instances"] = instances
+	c.Data["LoadBalancers"] = loadBalancers
 	c.Data["IpGroups"] = ipGroups
 	c.Data["FloatingIp"] = floatingIp
 	c.HTML(200, "floatingips_patch")
@@ -815,8 +961,9 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	}
 
 	name := c.QueryTrim("name")
-	groupID := c.QueryTrim("group")
+	groupID := c.QueryInt64("group")
 	instanceID := c.QueryInt64("instance")
+	loadBalancerID := c.QueryInt64("load_balancer")
 	inbound := c.QueryInt("inbound")
 	outbound := c.QueryInt("outbound")
 
@@ -842,15 +989,8 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	floatingIp.Outbound = int32(outbound)
 
 	var group *model.IpGroup
-	if groupID != "" {
-		groupIDInt, err := strconv.ParseInt(groupID, 10, 64)
-		if err != nil {
-			logger.Error("Invalid group ID ", err)
-			c.Data["ErrorMsg"] = err.Error()
-			c.HTML(http.StatusBadRequest, "error")
-			return
-		}
-		group, err = ipGroupAdmin.Get(ctx, groupIDInt)
+	if groupID > 0 {
+		group, err = ipGroupAdmin.Get(ctx, groupID)
 		if err != nil {
 			logger.Error("Failed to get ip group ", err)
 			c.Data["ErrorMsg"] = err.Error()
@@ -860,6 +1000,7 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 	}
 
 	var instance *model.Instance
+	var loadBalancer *model.LoadBalancer
 	if instanceID > 0 {
 		instance, err = instanceAdmin.Get(ctx, instanceID)
 		if err != nil {
@@ -868,9 +1009,17 @@ func (v *FloatingIpView) Patch(c *macaron.Context, store session.Store) {
 			c.HTML(500, "500")
 			return
 		}
+	} else if loadBalancerID > 0 {
+		loadBalancer, err = loadBalancerAdmin.Get(ctx, loadBalancerID)
+		if err != nil {
+			logger.Error("Failed to get load balancer ", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(500, "500")
+			return
+		}
 	}
 
-	_, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group)
+	_, err = floatingIpAdmin.Update(ctx, floatingIp, instance, group, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to update floating ip, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -887,6 +1036,7 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	ctx := c.Req.Context()
 	redirectTo := "../floatingips"
 	instID := c.QueryInt64("instance")
+	loadBalancerID := c.QueryInt64("load_balancer")
 	publicIp := c.QueryTrim("publicip")
 	name := c.QueryTrim("name")
 	inbound := c.QueryInt("inbound")
@@ -894,19 +1044,33 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	count := c.QueryInt("count")
 	publicSubnetStr := c.QueryTrim("publicsubnet")
 	siteSubnetStr := c.QueryTrim("sitesubnet")
-	groupID := c.QueryTrim("group")
+	groupID := c.QueryInt64("group")
+	var err error
 	var group *model.IpGroup
-	if groupID != "" {
-		groupID, err := strconv.ParseInt(groupID, 10, 64)
+	if groupID > 0 {
+		group, err = ipGroupAdmin.Get(ctx, groupID)
 		if err != nil {
-			logger.Error("Invalid group ID ", err)
+			logger.Error("Failed to get ip group ", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
-		group, err = ipGroupAdmin.Get(ctx, groupID)
+	}
+	var loadBalancer *model.LoadBalancer
+	lbid := c.Params("lbid")
+	if lbid != "" {
+		loadBalancerID, err = strconv.ParseInt(lbid, 10, 64)
 		if err != nil {
-			logger.Error("Failed to get ip group ", err)
+			logger.Error("Invalid load balancer ID", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+	}
+	if loadBalancerID > 0 {
+		loadBalancer, err = loadBalancerAdmin.Get(ctx, int64(loadBalancerID))
+		if err != nil {
+			logger.Error("Failed to get ip load balancer ", err)
 			c.Data["ErrorMsg"] = err.Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
@@ -942,7 +1106,6 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 	}
 
 	var instance *model.Instance
-	var err error
 	if instID > 0 {
 		instance, err = instanceAdmin.Get(ctx, int64(instID))
 		if err != nil {
@@ -1033,7 +1196,7 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 		}
 	}
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d, siteSubnets: %v, group: %v", pubSubnets, publicIp, instance, count, inbound, outbound, siteSubnetList, group)
-	_, err = floatingIpAdmin.Create(c.Req.Context(), instance, pubSubnets, publicIp, name, int32(inbound), int32(outbound), int32(count), siteSubnetList, group)
+	_, err = floatingIpAdmin.Create(c.Req.Context(), instance, pubSubnets, publicIp, name, int32(inbound), int32(outbound), int32(count), siteSubnetList, group, loadBalancer)
 	if err != nil {
 		logger.Error("Failed to create floating ip", err)
 		c.Data["ErrorMsg"] = err.Error()

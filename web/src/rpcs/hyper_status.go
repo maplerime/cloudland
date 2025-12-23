@@ -136,9 +136,9 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	}
 	if availCpu == 0 || availMem == 0 || availDisk == 0 {
 		err = db.Model(&model.Resource{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
-			"cpu": availCpu,
+			"cpu":    availCpu,
 			"memory": availMem,
-			"disk": availDisk}).Error
+			"disk":   availDisk}).Error
 		if err != nil {
 			logger.Error("Failed to update hypervisor resource", err)
 		}
