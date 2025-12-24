@@ -9,6 +9,7 @@ rdp_port=$2
 
 
 TIMEOUT=1200 # 20 minutes
+EXEC_TIMEOUT=60 # 1 minutes
 WAIT_TIME=5
 ELAPSED_TIME=0
 
@@ -63,7 +64,44 @@ while true; do
         log_debug $vm_ID "$vm_ID exec powershell: $OUTPUT"
         QA_RS=$(jq -r '.return' <<< $OUTPUT)
         if [ -n "${QA_RS}" ]; then
-            PS_SUCEED_TIMES=$((PS_SUCEED_TIMES + 1))
+            PID=$(jq -r '.pid' <<< $QA_RS)
+            if [ -n "${PID}" ]; then
+                log_debug $vm_ID "$vm_ID exec powershell succeed, PID: $PID"
+                # wait for the powershell to finish
+                EXEC_ELAPSED_TIME=0
+                EXEC_OUT_PUT=""
+                while true; do
+                    if [ $EXEC_ELAPSED_TIME -ge $EXEC_TIMEOUT ]; then
+                        log_debug $vm_ID "$vm_ID timeout while waiting guest agent ready"
+                        break
+                    fi
+                    OUTPUT=$(virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec-status","arguments":{"pid":'"$PID"'}}')
+                    EXEC_ELAPSED_TIME=$((EXEC_ELAPSED_TIME + WAIT_TIME))
+                    log_debug $vm_ID "$vm_ID exec powershell guest-exec-status: $OUTPUT"
+                    if [ -n "${OUTPUT}" ]; then
+                        log_debug $vm_ID "$vm_ID exec powershell info: $OUTPUT"
+                        # {"return":{"exited":false}}
+                        if [ $(jq -r '.return.exited' <<< $OUTPUT) == "false" ]; then
+                            log_debug $vm_ID "$vm_ID exec powershell not finished"
+                            sleep $WAIT_TIME
+                            continue
+                        fi
+                        
+                        log_debug $vm_ID "$vm_ID exec powershell finished"
+                        EXEC_OUT_PUT=$(jq -r '.return.out-data' <<< $OUTPUT)
+                        log_debug $vm_ID "$vm_ID exec powershell output: $EXEC_OUT_PUT"
+                        if [ -n "${EXEC_OUT_PUT}" ]; then
+                            PS_SUCEED_TIMES=$((PS_SUCEED_TIMES + 1))
+                            log_debug $vm_ID "$vm_ID exec powershell succeed, output: $(echo $EXEC_OUT_PUT | base64 --decode)"
+                        fi
+                        break
+                    else
+                        log_debug $vm_ID "$vm_ID exec powershell failed, wait next retry"
+                        break
+                    fi
+                done
+            fi
+
             if [ ${PS_SUCEED_TIMES} -gt 2 ]; then
                 log_debug $vm_ID "$vm_ID exec powershell succeed"
                 break
