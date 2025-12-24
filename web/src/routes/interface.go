@@ -490,8 +490,25 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 	}
 	changed := false
 	if iface.PrimaryIf && iface.Address.Subnet.RouterID == 0 {
+		if len(publicIps) > 0 && iface.FloatingIp > 0 && iface.FloatingIp != publicIps[0].ID {
+			changed = true
+			var floatingIp *model.FloatingIp
+			floatingIp, err = floatingIpAdmin.Get(ctx, iface.FloatingIp)
+			if err != nil {
+				logger.Errorf("Failed to get floating ip, %v", err)
+				return
+			}
+			err = floatingIpAdmin.Detach(ctx, floatingIp)
+			if err != nil {
+				logger.Errorf("Failed to detach floating ip, %v", err)
+				return
+			}
+			iface = nil
+		}
 		// valid := true
-		_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		if !changed {
+			_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+		}
 		// if !valid {
 		// 	logger.Errorf("Failed to check addresses, %v", err)
 		// 	err = fmt.Errorf("Failed to check addresses")
@@ -982,13 +999,25 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			siteSubnets = append(siteSubnets, siteSubnet)
 		}
 	}
-	address := c.QueryTrim("address")
-	if address != iface.Address.Address {
+	PrimaryFloating := c.QueryInt64("primary_floating")
+	if PrimaryFloating > 0 && PrimaryFloating != iface.FloatingIp {
+		primaryFip, err := floatingIpAdmin.Get(ctx, int64(PrimaryFloating))
+		if err != nil {
+			logger.Error("Get primary public ip failed", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		found := false
 		for i, pubAddr := range publicAddresses {
-			if address == pubAddr.FipAddress {
-				publicAddresses[0], publicAddresses[i] = publicAddresses[i], publicAddresses[0]
+			if PrimaryFloating == pubAddr.ID {
+				publicAddresses = append(publicAddresses[:i], publicAddresses[i+1:]...)
+				found = true
 				break
 			}
+		}
+		if !found {
+			publicAddresses = append([]*model.FloatingIp{primaryFip}, publicAddresses...)
 		}
 	}
 	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, publicAddresses)

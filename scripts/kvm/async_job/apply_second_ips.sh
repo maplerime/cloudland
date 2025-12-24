@@ -51,7 +51,11 @@ elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
     mount ${cache_dir}/meta/${vm_ID}.iso $tmp_mnt
     cp -r $tmp_mnt/* $working_dir
     net_json=$(cat $latest_dir/network_data.json)
-    networks="[$(jq -r '.networks[] | select(.id == "network0" and .routes[0].network == "0.0.0.0")' <<<$net_json)$second_addrs_json]"
+    if [ -n "$primary_ip" ]; then
+        read -d'\n' -r ip netmask  < <(ipcalc -nb $primary_ip | awk '/Address/ {print $2} /Netmask/ {print $2}')
+	net_json=$(jq --arg ip $ip --arg netmask $netmask --arg gateway $gateway '.networks[] |= (select(.id == "network0" and .routes[0].network == "0.0.0.0") | .ip_address = $ip | .netmask = $netmask | .routes[0].gateway = $gateway)' <<<$net_json)
+    fi
+    networks="[$(jq -r '.networks[] | select(.id == "network0" and .routes[0].network == "0.0.0.0") | .ip_address = ' <<<$net_json)$second_addrs_json]"
     echo "$net_json" | jq --argjson new_networks "$networks" '.networks |= (map(select(.id != "network0")) + $new_networks)' >$latest_dir/network_data.json
     umount $tmp_mnt
     mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null
