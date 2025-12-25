@@ -3772,6 +3772,52 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/volumes/{id}/qos": {
+            "put": {
+                "description": "update iops and bps limit of a volume",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "update qos of a volume",
+                "parameters": [
+                    {
+                        "description": "Volume qos payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeQosPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.VolumeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/volumes/{id}/resize": {
             "post": {
                 "description": "resize a volume",
@@ -5139,6 +5185,17 @@ const docTemplatev1 = `{
                 "disk": {
                     "type": "integer",
                     "minimum": 1
+                },
+                "disk_bps_limit": {
+                    "description": "in MB/s",
+                    "type": "integer",
+                    "maximum": 102400,
+                    "minimum": 0
+                },
+                "disk_iops_limit": {
+                    "type": "integer",
+                    "maximum": 10000000,
+                    "minimum": 0
                 },
                 "flavor": {
                     "type": "string",
@@ -6659,20 +6716,8 @@ const docTemplatev1 = `{
         "apis.VolumePatchPayload": {
             "type": "object",
             "properties": {
-                "bps_burst": {
-                    "type": "integer"
-                },
-                "bps_limit": {
-                    "type": "integer"
-                },
                 "instance": {
                     "$ref": "#/definitions/common.BaseID"
-                },
-                "iops_burst": {
-                    "type": "integer"
-                },
-                "iops_limit": {
-                    "type": "integer"
                 },
                 "name": {
                     "type": "string"
@@ -6694,7 +6739,9 @@ const docTemplatev1 = `{
                     "minimum": 0
                 },
                 "bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "count": {
@@ -6708,6 +6755,7 @@ const docTemplatev1 = `{
                 },
                 "iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 },
                 "name": {
@@ -6718,6 +6766,22 @@ const docTemplatev1 = `{
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.VolumeQosPayload": {
+            "type": "object",
+            "properties": {
+                "bps_limit": {
+                    "description": "in MB/s",
+                    "type": "integer",
+                    "maximum": 102400,
+                    "minimum": 0
+                },
+                "iops_limit": {
+                    "type": "integer",
+                    "maximum": 10000000,
+                    "minimum": 0
                 }
             }
         },

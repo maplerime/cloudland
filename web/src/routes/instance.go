@@ -61,17 +61,19 @@ type VolumeInfo struct {
 }
 
 type InstanceData struct {
-	Userdata     string             `json:"userdata"`
-	UserdataType string             `json:"userdata_type"`
-	DNS          string             `json:"dns"`
-	Vlans        []*VlanInfo        `json:"vlans"`
-	Networks     []*InstanceNetwork `json:"networks"`
-	Links        []*NetworkLink     `json:"links"`
-	Volumes      []*VolumeInfo      `json:"volumes"`
-	Keys         []string           `json:"keys"`
-	RootPasswd   string             `json:"root_passwd"`
-	LoginPort    int                `json:"login_port"`
-	OSCode       string             `json:"os_code"`
+	Userdata      string             `json:"userdata"`
+	UserdataType  string             `json:"userdata_type"`
+	DNS           string             `json:"dns"`
+	Vlans         []*VlanInfo        `json:"vlans"`
+	Networks      []*InstanceNetwork `json:"networks"`
+	Links         []*NetworkLink     `json:"links"`
+	Volumes       []*VolumeInfo      `json:"volumes"`
+	Keys          []string           `json:"keys"`
+	RootPasswd    string             `json:"root_passwd"`
+	LoginPort     int                `json:"login_port"`
+	OSCode        string             `json:"os_code"`
+	DiskIopsLimit int32              `json:"disk_iops_limit"`
+	DiskBpsLimit  int32              `json:"disk_bps_limit"`
 }
 
 type InstancesData struct {
@@ -104,9 +106,9 @@ func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyp
 
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
-	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, nestedEnable %t, poolID %s",
-		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, nestedEnable, poolID)
+	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, diskIopsLimit int32, diskBpsLimit int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
+	logger.Debugf("Create %d instances with image %s, zone %s, router %d, primary interface %v, secondary interfaces %v, keys %v, root password %s, hyper %d, cpu %d, memory %d, disk %d, disk_iops_limit %d, disk_bps_limit %d, nestedEnable %t, poolID %s",
+		count, image.Name, zone.Name, routerID, primaryIface, secondaryIfaces, keys, "********", hyperID, cpu, memory, disk, diskIopsLimit, diskBpsLimit, nestedEnable, poolID)
 	if count > 1 && len(primaryIface.PublicIps) > 0 {
 		err = NewCLError(ErrInvalidParameter, "Public addresses are not allowed to set when count > 1", nil)
 		return
@@ -231,7 +233,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, 0, 0, 0, 0, poolID)
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0, poolID)
 		if err != nil {
 			logger.Error("Failed to create boot volume", err)
 			return
@@ -253,7 +255,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			logger.Error("Invalid or duplicate subnets for interfaces", err)
 			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
-		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, userdata, routerID, zoneID, "")
+		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, userdata, routerID, zoneID, "")
 		if err != nil {
 			logger.Error("Build instance metadata failed", err)
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
@@ -842,14 +844,14 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 }
 
 func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
-	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, userdata string, routerID, zoneID int64,
+	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32, userdata string, routerID, zoneID int64,
 	service string) (interfaces []*model.Interface, metadata string, err error) {
 	if rootPasswd == "" {
-		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, userdata: %s, routerID: %d, zoneID: %d, service: %s",
-			primaryIface, secondaryIfaces, loginPort, keys, instance, userdata, routerID, zoneID, service)
+		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, userdata: %s, routerID: %d, zoneID: %d, service: %s",
+			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, userdata, routerID, zoneID, service)
 	} else {
-		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, userdata: %s, routerID: %d, zoneID: %d, service: %s, root password: %s",
-			primaryIface, secondaryIfaces, loginPort, keys, instance, userdata, routerID, zoneID, service, "******")
+		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, userdata: %s, routerID: %d, zoneID: %d, service: %s, root password: %s",
+			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, userdata, routerID, zoneID, service, "******")
 	}
 	vlans := []*VlanInfo{}
 	instNetworks := []*InstanceNetwork{}
@@ -938,16 +940,18 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:     userdata,
-		UserdataType: instance.UserdataType,
-		DNS:          dns,
-		Vlans:        vlans,
-		Networks:     instNetworks,
-		Links:        instLinks,
-		Keys:         instKeys,
-		RootPasswd:   rootPasswd,
-		LoginPort:    loginPort,
-		OSCode:       GetImageOSCode(ctx, instance),
+		Userdata:      userdata,
+		UserdataType:  instance.UserdataType,
+		DNS:           dns,
+		Vlans:         vlans,
+		Networks:      instNetworks,
+		Links:         instLinks,
+		Keys:          instKeys,
+		RootPasswd:    rootPasswd,
+		LoginPort:     loginPort,
+		OSCode:        GetImageOSCode(ctx, instance),
+		DiskIopsLimit: diskIopsLimit,
+		DiskBpsLimit:  diskBpsLimit,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -967,6 +971,8 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 	for _, key := range instance.Keys {
 		instKeys = append(instKeys, key.PublicKey)
 	}
+	diskIopsLimit := int32(0)
+	diskBpsLimit := int32(0)
 	for _, volume := range instance.Volumes {
 		volumes = append(volumes, &VolumeInfo{
 			ID:      volume.ID,
@@ -974,6 +980,10 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 			Device:  volume.Target,
 			Booting: volume.Booting,
 		})
+		if volume.Booting {
+			diskIopsLimit = volume.IopsLimit
+			diskBpsLimit = volume.BpsLimit
+		}
 	}
 	dns := ""
 	instNetworks, moreAddresses, err = GetInstanceNetworks(ctx, instance, nil)
@@ -1001,17 +1011,19 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 		})
 	}
 	instData := &InstanceData{
-		Userdata:     instance.Userdata,
-		UserdataType: instance.UserdataType,
-		DNS:          dns,
-		Vlans:        vlans,
-		Networks:     instNetworks,
-		Links:        instLinks,
-		Volumes:      volumes,
-		Keys:         instKeys,
-		RootPasswd:   rootPasswd,
-		LoginPort:    int(instance.LoginPort),
-		OSCode:       GetImageOSCode(ctx, instance),
+		Userdata:      instance.Userdata,
+		UserdataType:  instance.UserdataType,
+		DNS:           dns,
+		Vlans:         vlans,
+		Networks:      instNetworks,
+		Links:         instLinks,
+		Volumes:       volumes,
+		Keys:          instKeys,
+		RootPasswd:    rootPasswd,
+		LoginPort:     int(instance.LoginPort),
+		OSCode:        GetImageOSCode(ctx, instance),
+		DiskIopsLimit: diskIopsLimit,
+		DiskBpsLimit:  diskBpsLimit,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -2246,6 +2258,8 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
+	diskIopsLimit := c.QueryInt("disk_iops_limit")
+	diskBpsLimit := c.QueryInt("disk_bps_limit")
 	zoneID := c.QueryInt64("zone")
 	zone, err := zoneAdmin.Get(ctx, zoneID)
 	if err != nil {
@@ -2478,7 +2492,7 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		}
 	}
 	poolID := c.QueryTrim("pool")
-	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, nestedEnable, poolID)
+	_, err = instanceAdmin.Create(ctx, count, hostname, userdata, userdataType, image, zone, routerID, primaryIface, secondaryIfaces, instKeys, rootPasswd, loginPort, hyperID, flavor.Cpu, flavor.Memory, flavor.Disk, int32(diskIopsLimit), int32(diskBpsLimit), nestedEnable, poolID)
 	if err != nil {
 		logger.Error("Create instance failed", err)
 		c.Data["ErrorMsg"] = err.Error()

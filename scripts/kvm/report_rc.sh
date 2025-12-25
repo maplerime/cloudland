@@ -64,7 +64,12 @@ function halfday_job()
 
 function inst_status()
 {
-    old_inst_list=$(cat $image_dir/old_inst_list 2>/dev/null)
+    inst_list_file=$image_dir/old_inst_list
+    old_state_time=$(stat -c %W $inst_list_file)
+    [ -z "$old_state_time" ] && old_state_time=0
+    current_time=$(date +"%s")
+    [ $(( $current_time - $old_state_time )) -gt 600 ] && rm -f $inst_list_file
+    old_inst_list=$(cat $inst_list_file 2>/dev/null)
     all_inst_list=$(sudo virsh list --all | tail -n +3 | cut -d' ' -f3-)
     shutoff_list=$(sudo virsh list --all | grep 'shut off' | awk '{print $2}')
     for inst in $shutoff_list; do
@@ -86,7 +91,7 @@ function inst_status()
         fi
         let n=$n+1
     done <<<$all_inst_list
-    echo "$all_inst_list" >$image_dir/old_inst_list
+    echo "$all_inst_list" >$inst_list_file
     inst_list=$(echo $inst_list)
     [ -n "$inst_list" ] && echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$inst_list'"
 }

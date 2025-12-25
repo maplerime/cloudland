@@ -651,6 +651,15 @@ definitions:
       disk:
         minimum: 1
         type: integer
+      disk_bps_limit:
+        description: in MB/s
+        maximum: 102400
+        minimum: 0
+        type: integer
+      disk_iops_limit:
+        maximum: 10000000
+        minimum: 0
+        type: integer
       flavor:
         maxLength: 32
         minLength: 1
@@ -1685,16 +1694,8 @@ definitions:
     type: object
   apis.VolumePatchPayload:
     properties:
-      bps_burst:
-        type: integer
-      bps_limit:
-        type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
-      iops_burst:
-        type: integer
-      iops_limit:
-        type: integer
       name:
         type: string
       size:
@@ -1706,6 +1707,8 @@ definitions:
         minimum: 0
         type: integer
       bps_limit:
+        description: in MB/s
+        maximum: 102400
         minimum: 0
         type: integer
       count:
@@ -1716,6 +1719,7 @@ definitions:
         minimum: 0
         type: integer
       iops_limit:
+        maximum: 10000000
         minimum: 0
         type: integer
       name:
@@ -1727,6 +1731,18 @@ definitions:
     required:
     - name
     - size
+    type: object
+  apis.VolumeQosPayload:
+    properties:
+      bps_limit:
+        description: in MB/s
+        maximum: 102400
+        minimum: 0
+        type: integer
+      iops_limit:
+        maximum: 10000000
+        minimum: 0
+        type: integer
     type: object
   apis.VolumeResizePayload:
     properties:
@@ -4387,6 +4403,36 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/qos:
+    put:
+      consumes:
+      - application/json
+      description: update iops and bps limit of a volume
+      parameters:
+      - description: Volume qos payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeQosPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update qos of a volume
       tags:
       - Compute
   /volumes/{id}/resize:
