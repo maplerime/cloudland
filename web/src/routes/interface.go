@@ -260,6 +260,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	iface.SiteSubnets = nil
 
 	if len(publicIps) > 0 {
+		primaryMac := iface.MacAddr
 		if iface.FloatingIp != publicIps[0].ID {
 			var floatingIp *model.FloatingIp
 			floatingIp, err = floatingIpAdmin.Get(ctx, iface.FloatingIp)
@@ -272,13 +273,24 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				logger.Errorf("Failed to detach floating ip, %v", err)
 				return
 			}
-			if err = db.Model(iface).Association("Security_Groups").Replace(nil).Error; err != nil {
+			if err = db.Model(iface).Association("Security_Groups").Replace([]*model.SecurityGroup{}).Error; err != nil {
 				logger.Debug("Failed to save interface", err)
+				return
+			}
+			mac := ""
+			mac, err = GenerateMacaddr()
+			if err != nil {
+				logger.Error("Failed to generate random Mac address, %v", err)
+				return
+			}
+			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
+			if err != nil {
+				logger.Error("Failed to Update addresses, %v", err)
 				return
 			}
 			iface = nil
 		}
-		iface2, _, err = DerivePublicInterface(ctx, instance, iface, publicIps)
+		iface2, _, err = DerivePublicInterface(ctx, instance, iface, publicIps, primaryMac)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
@@ -1023,7 +1035,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 		found := false
 		for i, pubAddr := range publicAddresses {
 			if PrimaryFloating == pubAddr.ID {
-				publicAddresses = append(publicAddresses[:i], publicAddresses[i+1:]...)
+				publicAddresses[0], publicAddresses[i] = publicAddresses[i], publicAddresses[0]
 				found = true
 				break
 			}

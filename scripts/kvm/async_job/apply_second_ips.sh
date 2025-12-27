@@ -13,11 +13,11 @@ update_meta=$4
 primary_ip=$5
 gateway=${6%/*}
 more_addresses=$(cat)
-naddrs=$(jq length <<< $more_addresses)
+naddrs=$(jq length <<< "$more_addresses")
 
 i=0
 while [ $i -lt $naddrs ]; do
-    read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
+    read -d'\n' -r address < <(jq -r ".[$i]" <<< "$more_addresses")
     read -d'\n' -r ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
     second_addrs_json="$second_addrs_json,{
         \"type\": \"ipv4\",
@@ -38,7 +38,7 @@ if [ "$os_code" = "windows" ]; then
     fi
     i=0
     while [ $i -lt $naddrs ]; do
-        read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
+        read -d'\n' -r address < <(jq -r ".[$i]" <<< "$more_addresses")
         read -d'\n' -r ip netmask  < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
         virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","add","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
         let i=$i+1
@@ -53,9 +53,9 @@ elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
     net_json=$(cat $latest_dir/network_data.json)
     if [ -n "$primary_ip" ]; then
         read -d'\n' -r ip netmask  < <(ipcalc -nb $primary_ip | awk '/Address/ {print $2} /Netmask/ {print $2}')
-	net_json=$(jq --arg ip $ip --arg netmask $netmask --arg gateway $gateway '.networks[] |= (select(.id == "network0" and .routes[0].network == "0.0.0.0") | .ip_address = $ip | .netmask = $netmask | .routes[0].gateway = $gateway)' <<<$net_json)
+	net_json=$(jq --arg ip "$ip" --arg netmask "$netmask" --arg gateway "$gateway" '.networks[] |= (select(.id == "network0" and .routes[0].network == "0.0.0.0") | .ip_address = $ip | .netmask = $netmask | .routes[0].gateway = $gateway)' <<< "$net_json")
     fi
-    networks="[$(jq -r '.networks[] | select(.id == "network0" and .routes[0].network == "0.0.0.0") | .ip_address = ' <<<$net_json)$second_addrs_json]"
+    networks="[$(jq -r '.networks[] | select(.id == "network0" and .routes[0].network == "0.0.0.0")' <<<$net_json)$second_addrs_json]"
     echo "$net_json" | jq --argjson new_networks "$networks" '.networks |= (map(select(.id != "network0")) + $new_networks)' >$latest_dir/network_data.json
     umount $tmp_mnt
     mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null
