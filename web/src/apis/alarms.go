@@ -2027,7 +2027,7 @@ func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, 
 			}
 
 			mappings = append(mappings, map[string]interface{}{
-				"targets": []string{"localhost:9090"},
+				"targets": []string{"localhost:9109"},
 				"labels":  labels,
 			})
 		}

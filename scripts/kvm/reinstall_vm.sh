@@ -114,6 +114,7 @@ else
     fi
     # if sysdisk_iops_limit > 0 or sysdisk_bps_limit > 0 update volume qos
     if [ "$sysdisk_iops_limit" -gt 0 -o "$sysdisk_bps_limit" -gt 0 ]; then
+        sysdisk_bps_limit=$(($sysdisk_bps_limit * $wds_bps_factor))
         update_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/qos" "{\"qos\": {\"iops_limit\": $sysdisk_iops_limit, \"bps_limit\": $sysdisk_bps_limit}}")
         log_debug $vol_ID "update volume qos: $update_ret"
     fi

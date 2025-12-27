@@ -25,6 +25,7 @@ debug_log_file=/opt/cloudland/log/script.log
 debug_flag_file=/opt/cloudland/run/debug
 uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
 nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
+wds_bps_factor=1048576 # 1024 * 1024 
 #export JAEGER_SERVICE_NAME="SCI-Backend"
 function die()
 {

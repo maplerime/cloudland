@@ -652,9 +652,12 @@ definitions:
         minimum: 1
         type: integer
       disk_bps_limit:
+        description: in MB/s
+        maximum: 102400
         minimum: 0
         type: integer
       disk_iops_limit:
+        maximum: 10000000
         minimum: 0
         type: integer
       flavor:
@@ -1704,6 +1707,8 @@ definitions:
         minimum: 0
         type: integer
       bps_limit:
+        description: in MB/s
+        maximum: 102400
         minimum: 0
         type: integer
       count:
@@ -1714,6 +1719,7 @@ definitions:
         minimum: 0
         type: integer
       iops_limit:
+        maximum: 10000000
         minimum: 0
         type: integer
       name:
@@ -1729,9 +1735,12 @@ definitions:
   apis.VolumeQosPayload:
     properties:
       bps_limit:
+        description: in MB/s
+        maximum: 102400
         minimum: 0
         type: integer
       iops_limit:
+        maximum: 10000000
         minimum: 0
         type: integer
     type: object
