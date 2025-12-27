@@ -794,6 +794,89 @@
   when: not ansible_check_mode
   tags: [monitor]
 
+- name: Create vm-metadata-metrics directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/vm-metadata-anchor
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  tags: [monitor]
+
+- name: Write anchor metrics file for vm-metadata-anchor
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /etc/vm-metadata-anchor/response.http
+    content: |
+      HTTP/1.1 200 OK
+      Content-Type: text/plain; version=0.0.4
+      Connection: close
+
+      # HELP vm_metadata_anchor Anchor metric for VM rule join/gating
+      # TYPE vm_metadata_anchor gauge
+      vm_metadata_anchor 1
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  tags: [monitor]
+
+- name: Install socat on Prometheus server
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  apt:
+    name: socat
+    state: present
+    update_cache: yes
+  tags: [monitor]
+
+- name: Create vm-metadata-anchor systemd service
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /lib/systemd/system/vm-metadata-anchor.service
+    content: |
+      [Unit]
+      Description=VM metadata anchor metrics (IPv4 127.0.0.1:9109)
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=prometheus
+      Group=prometheus
+      ExecStart=/usr/bin/socat -T 1 TCP-LISTEN:9109,bind=127.0.0.1,reuseaddr,fork SYSTEM:"cat /etc/vm-metadata-anchor/response.http"
+      Restart=always
+      RestartSec=1
+
+      [Install]
+      WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [monitor]
+
+- name: Reload systemd and start vm-metadata-anchor service
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  block:
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+    - name: Enable and restart vm-metadata-anchor
+      systemd:
+        name: vm-metadata-anchor
+        enabled: yes
+        state: restarted
+  tags: [monitor]
+
+- name: Reload Prometheus configuration (SIGHUP)
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: sudo systemctl kill -s SIGHUP prometheus.service
+  tags: [monitor]
+
 - name: Update apt cache and install Grafana
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -986,6 +1069,10 @@
           - files:
               - '/etc/prometheus/lists/matched_vms.json'
             refresh_interval: 30s
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            regex: 'up|vm_metadata_anchor'
+            action: keep          # keep only up and vm_metadata_anchor metrics
         relabel_configs:
           # 1. Keep domain label
           - source_labels: [domain]

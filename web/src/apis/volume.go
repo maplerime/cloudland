@@ -30,15 +30,15 @@ type VolumePayload struct {
 	Name      string `json:"name" binding:"required"`
 	Size      int32  `json:"size" binding:"required"`
 	PoolID    string `json:"pool_id" binding:"omitempty"`
-	IopsLimit int32  `json:"iops_limit" binding:"omitempty,gte=0"`
+	IopsLimit int32  `json:"iops_limit" binding:"omitempty,gte=0,lte=10000000"`
 	IopsBurst int32  `json:"iops_burst" binding:"omitempty,gte=0"`
-	BpsLimit  int32  `json:"bps_limit" binding:"omitempty,gte=0"`
+	BpsLimit  int32  `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
 	BpsBurst  int32  `json:"bps_burst" binding:"omitempty,gte=0"`
 }
 
 type VolumeQosPayload struct {
-	IopsLimit int32 `json:"iops_limit" binding:"omitempty,gte=0"`
-	BpsLimit  int32 `json:"bps_limit" binding:"omitempty,gte=0"`
+	IopsLimit int32 `json:"iops_limit" binding:"omitempty,gte=0,lte=10000000"`
+	BpsLimit  int32 `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
 }
 
 type VolumePatchPayload struct {

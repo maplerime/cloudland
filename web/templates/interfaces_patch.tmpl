@@ -13,7 +13,25 @@
                     </div>
                     <div class="required inline field">
                         <label for="address">{{.i18n.Tr "IP Address"}}</label>
+                        {{ if eq .Interface.FloatingIp 0 }}
                         <input id="address" name="address" value="{{ .Interface.Address.Address }}" disabled>
+                        {{ else }}
+			<div class="ui selection dropdown">
+			    <input id="primary_floating" name="primary_floating" type="hidden" value="{{ .Interface.Address.Address }}">
+			    <i class="dropdown icon"></i>
+				<div class="default text">{{ .Interface.Address.Address }}</div>
+				<div class="menu">
+			        <div class="item" data-value={{.Interface.FloatingIp }} data-text={{.Interface.Address.Address}}>
+                                   {{.Interface.Address.Address}}
+			        </div>
+                                {{ range .PublicIps }}
+			           <div class="item" data-value={{.ID}} data-text={{.FipAddress}}>
+                                     {{.FipAddress}}
+			           </div>
+                                {{ end }}
+			        </div>
+			</div>
+                        {{ end }}
                     </div>
                     <div class="inline field">
                         <label for="second_addresses">{{.i18n.Tr "Secondary IP Addresses"}}</label>

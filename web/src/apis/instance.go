@@ -63,8 +63,8 @@ type InstancePayload struct {
 	Cpu                 int32               `json:"cpu" binding:"omitempty,gte=1"`
 	Memory              int32               `json:"memory" binding:"omitempty,gte=1"`
 	Disk                int32               `json:"disk" binding:"omitempty,gte=1"`
-	DiskIopsLimit       int32               `json:"disk_iops_limit" binding:"omitempty,gte=0"`
-	DiskBpsLimit        int32               `json:"disk_bps_limit" binding:"omitempty,gte=0"`
+	DiskIopsLimit       int32               `json:"disk_iops_limit" binding:"omitempty,gte=0,lte=10000000"`
+	DiskBpsLimit        int32               `json:"disk_bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
 	Flavor              string              `json:"flavor" binding:"omitempty,min=1,max=32"`
 	Image               *BaseReference      `json:"image" binding:"required"`
 	PrimaryInterface    *InterfacePayload   `json:"primary_interface" binding:"required"`
