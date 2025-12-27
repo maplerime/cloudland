@@ -247,7 +247,7 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *
 	return
 }
 
-func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (err error) {
+func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp, secgroups []*model.SecurityGroup) (iface2 *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
@@ -258,21 +258,40 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		}
 	}
 	iface.SiteSubnets = nil
-	for _, site := range siteSubnets {
-		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
-		if err != nil {
-			logger.Error("Failed to update interface", err)
-			err = NewCLError(ErrSiteSubnetUpdateFailed, "Failed to update interface", err)
-			return
-		}
-		iface.SiteSubnets = append(iface.SiteSubnets, site)
-	}
 
 	if len(publicIps) > 0 {
-		iface, _, err = DerivePublicInterface(ctx, instance, iface, publicIps)
+		if iface.FloatingIp != publicIps[0].ID {
+			var floatingIp *model.FloatingIp
+			floatingIp, err = floatingIpAdmin.Get(ctx, iface.FloatingIp)
+			if err != nil {
+				logger.Errorf("Failed to get floating ip, %v", err)
+				return
+			}
+			err = floatingIpAdmin.Detach(ctx, floatingIp)
+			if err != nil {
+				logger.Errorf("Failed to detach floating ip, %v", err)
+				return
+			}
+			if err = db.Model(iface).Association("Security_Groups").Replace(nil).Error; err != nil {
+				logger.Debug("Failed to save interface", err)
+				return
+			}
+			iface = nil
+		}
+		iface2, _, err = DerivePublicInterface(ctx, instance, iface, publicIps)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
+		}
+		if iface2 != iface {
+			iface = iface2
+			if len(secgroups) > 0 {
+				if err = db.Model(iface).Association("Security_Groups").Replace(secgroups).Error; err != nil {
+					logger.Debug("Failed to save interface", err)
+					return
+				}
+				iface.SecurityGroups = secgroups
+			}
 		}
 	} else {
 		cnt := secondAddrsCount - len(iface.SecondAddresses)
@@ -292,6 +311,15 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 			}
 		}
 	}
+	for _, site := range siteSubnets {
+		err = db.Model(site).Updates(map[string]interface{}{"interface": iface.ID}).Error
+		if err != nil {
+			logger.Error("Failed to update interface", err)
+			err = NewCLError(ErrSiteSubnetUpdateFailed, "Failed to update interface", err)
+			return
+		}
+		iface.SiteSubnets = append(iface.SiteSubnets, site)
+	}
 	iface.SecondAddresses = nil
 	err = db.Preload("Subnet").Where("second_interface = ?", iface.ID).Find(&iface.SecondAddresses).Error
 	if err != nil {
@@ -299,6 +327,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 		err = NewCLError(ErrSQLSyntaxError, "Failed to query second addresses of interface", err)
 		return
 	}
+	iface2 = iface
 
 	return
 }
@@ -490,25 +519,8 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 	}
 	changed := false
 	if iface.PrimaryIf && iface.Address.Subnet.RouterID == 0 {
-		if len(publicIps) > 0 && iface.FloatingIp > 0 && iface.FloatingIp != publicIps[0].ID {
-			changed = true
-			var floatingIp *model.FloatingIp
-			floatingIp, err = floatingIpAdmin.Get(ctx, iface.FloatingIp)
-			if err != nil {
-				logger.Errorf("Failed to get floating ip, %v", err)
-				return
-			}
-			err = floatingIpAdmin.Detach(ctx, floatingIp)
-			if err != nil {
-				logger.Errorf("Failed to detach floating ip, %v", err)
-				return
-			}
-			iface = nil
-		}
 		// valid := true
-		if !changed {
-			_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
-		}
+		_, changed = a.checkAddresses(ctx, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
 		// if !valid {
 		// 	logger.Errorf("Failed to check addresses, %v", err)
 		// 	err = fmt.Errorf("Failed to check addresses")
@@ -530,7 +542,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				return
 			}
 			// 1. Get old addresses 2. Change addresses 3. Remote execute
-			err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps)
+			iface, err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps, secgroups)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
