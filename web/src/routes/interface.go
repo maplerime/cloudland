@@ -165,10 +165,12 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 		}
 		for i, pubIp := range publicIps {
 			if vlan != pubIp.Interface.Address.Subnet.Vlan {
+				changed = true
 				return
 			}
 			if i == 0 {
 				if pubIp.FipAddress != iface.Address.Address {
+					changed = true
 					logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, iface.Address.Address, i)
 					return
 				}
@@ -176,6 +178,7 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 				if (i - 1) < secondIpsLength {
 					secondAddr := iface.SecondAddresses[i-1].Address
 					if pubIp.FipAddress != secondAddr {
+						changed = true
 						logger.Errorf("pubIp.FipAddress: %s, iface.Address.Address: %s, %d", pubIp.FipAddress, secondAddr, i)
 						return
 					}
@@ -188,6 +191,7 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 		}
 		for _, subnet := range ifaceSubnets {
 			if vlan != subnet.Vlan {
+				changed = true
 				return
 			}
 		}
@@ -197,6 +201,7 @@ func (a *InterfaceAdmin) checkAddresses(ctx context.Context, iface *model.Interf
 	}
 	for _, site := range siteSubnets {
 		if vlan != site.Vlan {
+			changed = true
 			return
 		}
 		found := false
@@ -1032,17 +1037,13 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
-		found := false
 		for i, pubAddr := range publicAddresses {
 			if PrimaryFloating == pubAddr.ID {
-				publicAddresses[0], publicAddresses[i] = publicAddresses[i], publicAddresses[0]
-				found = true
+				publicAddresses = append(publicAddresses[:i], publicAddresses[i+1:]...)
 				break
 			}
 		}
-		if !found {
-			publicAddresses = append([]*model.FloatingIp{primaryFip}, publicAddresses...)
-		}
+		publicAddresses = append([]*model.FloatingIp{primaryFip}, publicAddresses...)
 	}
 	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, publicAddresses)
 	if err != nil {
