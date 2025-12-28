@@ -29,6 +29,8 @@
 									<th>{{.i18n.Tr "Path"}}</th>
 			                        <th>{{.i18n.Tr "Name"}}</th>
 			                        <th>{{.i18n.Tr "Size"}} (G)</th>
+			                        <th>{{.i18n.Tr "IOPS_Limit"}}</th>
+			                        <th>{{.i18n.Tr "BPS_Limit"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
 									<th>{{.i18n.Tr "Bootable"}}</th>
 			                        <th>{{.i18n.Tr "Attached_as"}}</th>
@@ -49,6 +51,8 @@
 									<td>{{.Path}}</td>
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
 			                        <td>{{.Size}}</td>
+									<td>{{.IopsLimit}}</td>
+			                        <td>{{.BpsLimit}}</td>
 			                        <td>{{.Status}}</td>
 									<td>{{.Booting}}</td>
 			                        <td>{{ if .Instance }} {{.Instance.ID}}-{{.Instance.Hostname}}:{{.Target}} {{ end }}</td>

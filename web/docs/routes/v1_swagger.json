@@ -5964,11 +5964,14 @@
                     "minimum": 1
                 },
                 "disk_bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "disk_iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 },
                 "flavor": {
@@ -7721,7 +7724,9 @@
                     "minimum": 0
                 },
                 "bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "count": {
@@ -7735,6 +7740,7 @@
                 },
                 "iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 },
                 "name": {
@@ -7752,11 +7758,14 @@
             "type": "object",
             "properties": {
                 "bps_limit": {
+                    "description": "in MB/s",
                     "type": "integer",
+                    "maximum": 102400,
                     "minimum": 0
                 },
                 "iops_limit": {
                     "type": "integer",
+                    "maximum": 10000000,
                     "minimum": 0
                 }
             }

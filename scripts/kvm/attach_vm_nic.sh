@@ -36,6 +36,6 @@ async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
 ./set_host.sh "$router" "$vlan" "$mac" "$vm_name" "$ip"
 more_addresses=$(jq -r .more_addresses <<< $vlan_info)
 if [ -n "$more_addresses" ]; then
-    echo "$more_addresses" | ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta"
+    ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta" <<<$more_addresses
 fi
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"
