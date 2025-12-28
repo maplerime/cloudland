@@ -189,4 +189,5 @@ if [ "$os_code" = "windows" ]; then
         # run the script to change the rdp port in background
         async_exec ./async_job/win_rdp_port.sh $ID $rdp_port
     fi
+    async_exec ./async_job/win_primary_ip.sh $ID <<< $metadata
 fi
