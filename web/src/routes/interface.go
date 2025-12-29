@@ -577,7 +577,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 		}
 
 	}
-	if needRemoteUpdate {
+	if needRemoteUpdate || changed {
 		err = ApplyInterface(ctx, instance, iface, changed)
 		if err != nil {
 			logger.Error("Update vm nic command execution failed", err)
