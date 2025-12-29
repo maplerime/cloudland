@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 3 ] && echo "$0 <vm_ID> <hostname> <os_code> <update_meta>" && exit -1
+[ $# -lt 3 ] && echo "$0 <vm_ID> <hostname> <os_code> [update_meta]" && exit -1
 
 ID=$1
 vm_name=$2
