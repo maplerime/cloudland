@@ -138,6 +138,12 @@ function check_system_router()
     fi
 }
 
+function check_conntrack()
+{
+	[ -z "$syn_attack_threshold" ] && syn_attack_threshold=2000
+        sudo $base_dir/operation/check_halfopen_connections.sh $syn_attack_threshold
+}
+
 function sync_instance()
 {
     flag_file=$run_dir/need_to_sync
@@ -238,6 +244,7 @@ calc_resource
 sync_instance
 sync_delayed_job
 check_system_router
+check_conntrack
 #probe_arp >/dev/null 2>&1
 inst_status
 daily_job
