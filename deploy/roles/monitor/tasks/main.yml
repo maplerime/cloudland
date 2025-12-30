@@ -424,7 +424,7 @@
             routes:
               # Route node alarms to node-webhook (one group per unique alert/host/IP/type/severity)
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu|syn-(inbound|outbound))
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'node-webhook'
@@ -432,7 +432,7 @@
 
               # Also send node alarms to slack-notifications with the same fine-grained grouping
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu|syn-(inbound|outbound))
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'slack-notifications'

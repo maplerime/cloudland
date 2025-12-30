@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Script to collect conntrack unreplied SYN connections and export as Prometheus metrics
-# Output format: conntrack_unreplied_syn_flows{source_ip="x.x.x.x",target_ip="y.y.y.y",proto="tcp",state="SYN_SENT"} count
+# Output format: conntrack_unreplied_syn_flows{direction="outbound|inbound",tcp_state="SYN_SENT|SYN_RECV",source_ip="x.x.x.x",target_ip="y.y.y.y",hostname="node"} count
 #
 
 # Configuration
@@ -16,32 +16,34 @@ mkdir -p "$OUTPUT_DIR"
 TMP_FILE=$(mktemp /tmp/conntrack_unreplied_syn.XXXXXX)
 trap "rm -f $TMP_FILE" EXIT
 
-# Collect conntrack data and process - emit source_ip/target_ip
+# Collect conntrack data and process - emit source_ip/target_ip with direction
 conntrack -L 2>/dev/null \
-  | grep SYN_SENT | grep UNREPLIED \
+  | awk '/(SYN_SENT|SYN_RECV).*UNREPLIED/' \
   | awk '{
-      proto=$1;      # Protocol field, e.g., tcp
-      state=$4;      # State field, e.g., SYN_SENT
+      proto=$1;
+      state=$4;
       src=""; dst="";
       # Scan all fields to extract src=... and dst=...
       for (i = 1; i <= NF; i++) {
         if ($i ~ /^src=/) src=$i;
         else if ($i ~ /^dst=/) dst=$i;
       }
-      if (src != "" && dst != "")
-        print proto, state, src, dst;
-    }' \
-  | sort | uniq -c | sort -nr | head -20 \
-  | awk -v hostname="$HOSTNAME_VAL" '{
-      count=$1;
-      proto=$2;
-      state=$3;
-      src=$4;
-      dst=$5;
       sub(/^src=/,"",src);
       sub(/^dst=/,"",dst);
-      printf "conntrack_unreplied_syn_flows{source_ip=\"%s\",target_ip=\"%s\",proto=\"%s\",state=\"%s\",hostname=\"%s\"} %d\n",
-             src, dst, proto, state, hostname, count;
+
+      # Define direction based on TCP state
+      direction="unknown";
+      if (state == "SYN_SENT") direction="outbound";
+      if (state == "SYN_RECV") direction="inbound";
+
+      if (src != "" && dst != "")
+        print proto, state, src, dst, direction;
+    }' \
+  | sort | uniq -c | sort -nr | head -50 \
+  | awk -v hostname="$HOSTNAME_VAL" '{
+      count=$1; proto=$2; state=$3; src=$4; dst=$5; dir=$6;
+      printf "conntrack_unreplied_syn_flows{direction=\"%s\",tcp_state=\"%s\",source_ip=\"%s\",target_ip=\"%s\",hostname=\"%s\"} %d\n",
+             dir, state, src, dst, hostname, count;
     }' > "$TMP_FILE"
 
 # Write to output file atomically - always overwrite to ensure fresh data
