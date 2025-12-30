@@ -35,16 +35,31 @@ type FdbRule struct {
 	Router   int64  `json:"router"`
 }
 
-func sendFdbRules(ctx context.Context, instance *model.Instance, instIface *model.Interface) (err error) {
-	if instance.RouterID == 0 {
+func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *model.VrrpInstance, instIface *model.Interface) (err error) {
+	if instance != nil && instance.RouterID == 0 {
+		logger.Error("No need to send fdb for classic")
 		return
 	}
 	db := DB()
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
-	hyperNode := instance.Hyper
+	hyperNode := int32(-1)
+	var interfaces []*model.Interface
+	routerID := int64(0)
+	if instance != nil {
+		hyperNode = instance.Hyper
+		interfaces = instance.Interfaces
+		routerID = instance.RouterID
+	} else if vrrpInstance != nil {
+		routerID = vrrpInstance.RouterID
+	}
 	if instIface != nil {
 		hyperNode = instIface.Hyper
+		interfaces = []*model.Interface{instIface}
+	}
+	if hyperNode == -1 {
+		logger.Error("Invalid hyper node")
+		return
 	}
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperNode).Take(hyper).Error
@@ -52,58 +67,62 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, instIface *mode
 		logger.Error("Failed to query hypervisor")
 		return
 	}
-	interfaces := instance.Interfaces
-	if instIface != nil {
-		interfaces = []*model.Interface{instIface}
-	}
 	for _, iface := range interfaces {
-		if iface.Address.Subnet.Type != "public" {
-			spreadRules = append(spreadRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
+		subnetType := iface.Address.Subnet.Type
+		if subnetType != string(Public) {
+			gateway := iface.Address.Subnet.Gateway
+			if subnetType == string(Vrrp) {
+				gateway = "nogateway"
+			}
+			spreadRules = append(spreadRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: gateway, Router: iface.Address.Subnet.RouterID})
 		}
 	}
 	allIfaces := []*model.Interface{}
 	hyperSet := make(map[int32]struct{})
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and instance > 0", instance.RouterID).Find(&allIfaces).Error
+	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Where("router_id = ? and type <> 'gateway' and hyper <> ?", routerID, hyperNode).Find(&allIfaces).Error
 	if err != nil {
 		logger.Error("Failed to query all interfaces", err)
 		return
 	}
-	if instance.Status != model.InstanceStatusDeleted {
-		for _, iface := range allIfaces {
-			if iface.Address == nil || iface.Address.Subnet == nil || iface.Address.Subnet.Type == "public" {
-				continue
-			}
-			if iface.Hyper == -1 {
-				continue
-			}
-			hyper := &model.Hyper{}
-			hyperErr := db.Where("hostid = ? and hostid != ?", iface.Hyper, hyperNode).Take(hyper).Error
-			if hyperErr != nil {
-				logger.Error("Failed to query hypervisor", hyperErr)
-				continue
-			}
-			hyperSet[iface.Hyper] = struct{}{}
-			localRules = append(localRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
+	for _, iface := range allIfaces {
+		subnetType := iface.Address.Subnet.Type
+		if iface.Address == nil || iface.Address.Subnet == nil || subnetType == "public" {
+			continue
 		}
-		if len(hyperSet) > 0 && len(spreadRules) > 0 {
-			hyperList := fmt.Sprintf("group-fdb-%d", hyperNode)
-			i := 0
-			for key := range hyperSet {
-				if i == 0 {
-					hyperList = fmt.Sprintf("%s:%d", hyperList, key)
-				} else {
-					hyperList = fmt.Sprintf("%s,%d", hyperList, key)
-				}
-				i++
+		if iface.Hyper == -1 {
+			continue
+		}
+		hyper := &model.Hyper{}
+		hyperErr := db.Where("hostid = ? and hostid != ?", iface.Hyper, hyperNode).Take(hyper).Error
+		if hyperErr != nil {
+			logger.Error("Failed to query hypervisor", hyperErr)
+			continue
+		}
+		hyperSet[iface.Hyper] = struct{}{}
+		gateway := iface.Address.Subnet.Gateway
+		if subnetType == string(Vrrp) {
+			gateway = "nogateway"
+		}
+		localRules = append(localRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: gateway, Router: iface.Address.Subnet.RouterID})
+	}
+	if len(hyperSet) > 0 && len(spreadRules) > 0 {
+		hyperList := fmt.Sprintf("group-fdb-%d", hyperNode)
+		i := 0
+		for key := range hyperSet {
+			if i == 0 {
+				hyperList = fmt.Sprintf("%s:%d", hyperList, key)
+			} else {
+				hyperList = fmt.Sprintf("%s,%d", hyperList, key)
 			}
-			fdbJson, _ := json.Marshal(spreadRules)
-			control := "toall=" + hyperList
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
-			err = HyperExecute(ctx, control, command)
-			if err != nil {
-				logger.Error("Add_fwrule execution failed", err)
-				return
-			}
+			i++
+		}
+		fdbJson, _ := json.Marshal(spreadRules)
+		control := "toall=" + hyperList
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Add_fwrule execution failed", err)
+			return
 		}
 	}
 	if len(localRules) > 0 {
