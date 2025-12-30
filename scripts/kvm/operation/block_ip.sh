@@ -23,7 +23,7 @@ CHAIN_NAME="BLACKLIST"
 
 # Create ipset if not exists
 if ! ipset list "$IPSET_NAME" &>/dev/null; then
-    ipset create "$IPSET_NAME" hash:ip
+    ipset create "$IPSET_NAME" hash:ip timeout 0
 fi
 
 # Create iptables chain if not exists
@@ -62,7 +62,7 @@ if ipset test "$IPSET_NAME" "$ip" &>/dev/null; then
     exit 0
 fi
 
-ipset add "$IPSET_NAME" "$ip"
+ipset add "$IPSET_NAME" "$ip" timeout 7200
 log "ACTION: Added $ip to blacklist"
 
 # Ensure iptables rule exists
