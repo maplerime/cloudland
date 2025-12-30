@@ -18,11 +18,11 @@ done
 
 lock_file="$run_dir/iptables.lock"
 exec 200>>"$lock_file"
-iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 for i in {1..10}; do
     ln=$(iptables -n -L FORWARD --line-numbers | grep 'state RELATED,ESTABLISHED' | tail -1 | cut -d' ' -f1)
     [ "$ln" = 1 ] && break
     iptables -D FORWARD $ln
+    iptables -I FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT
 done
 iptables -N secgroup-chain && iptables -A secgroup-chain -j ACCEPT
 ln=$(iptables -n -L secgroup-chain --line-numbers | grep 'ACCEPT' | head -1 | cut -d' ' -f1)
