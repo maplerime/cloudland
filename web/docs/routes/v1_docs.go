@@ -6225,6 +6225,9 @@ const docTemplatev1 = `{
                     "maximum": 20000,
                     "minimum": 0
                 },
+                "primary_address": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
                 "public_addresses": {
                     "type": "array",
                     "items": {
