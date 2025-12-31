@@ -903,6 +903,8 @@ definitions:
         maximum: 20000
         minimum: 0
         type: integer
+      primary_address:
+        $ref: '#/definitions/common.BaseReference'
       public_addresses:
         items:
           $ref: '#/definitions/common.BaseReference'
