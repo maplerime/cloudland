@@ -350,9 +350,9 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
 	if payload.PrimaryAddress != nil {
-		if !iface.PrimaryIf {
-			logger.Errorf("It is not allowed to update ip of secondary interface")
-			ErrorResponse(c, http.StatusBadRequest, "It is not allowed to update ip of secondary interface", err)
+		if !iface.PrimaryIf || iface.FloatingIp == 0 {
+			logger.Errorf("It is not allowed to update interface ip address")
+			ErrorResponse(c, http.StatusBadRequest, "It is not allowed to update interface ip address", err)
 			return
 		}
 		var primaryFip *model.FloatingIp
