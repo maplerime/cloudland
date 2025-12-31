@@ -133,13 +133,13 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	ctx, db := GetContextDB(ctx)
 	address = &model.Address{}
 	if ipaddr == "" {
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and address != ?", subnet.ID, false, subnet.Gateway).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Take(address).Error
 	} else {
 		if !strings.Contains(ipaddr, "/") {
 			preSize, _ := net.IPMask(net.ParseIP(subnet.Netmask).To4()).Size()
 			ipaddr = fmt.Sprintf("%s/%d", ipaddr, preSize)
 		}
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and address = ?", subnet.ID, false, ipaddr).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Take(address).Error
 	}
 	if err != nil {
 		logger.Error("Failed to query address, %v", err)
