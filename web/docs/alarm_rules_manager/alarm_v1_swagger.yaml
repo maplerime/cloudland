@@ -45,6 +45,106 @@ definitions:
       lock:
         type: boolean
     type: object
+  apis.BackendListResponse:
+    properties:
+      backends:
+        items:
+          $ref: '#/definitions/apis.BackendResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.BackendPatchPayload:
+    properties:
+      action:
+        enum:
+        - enable
+        - disable
+        type: string
+      endpoint:
+        maxLength: 128
+        minLength: 8
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.BackendPayload:
+    properties:
+      endpoint:
+        maxLength: 128
+        minLength: 8
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - endpoint
+    - name
+    type: object
+  apis.BackendResponse:
+    properties:
+      created_at:
+        type: string
+      endpoint:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.CLTaskListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      tasks:
+        items:
+          $ref: '#/definitions/apis.CLTaskResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.CLTaskResponse:
+    properties:
+      action:
+        type: string
+      created_at:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      resources:
+        type: string
+      source:
+        type: string
+      status:
+        type: string
+      summary:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.ConsoleResponse:
     properties:
       console_host:
@@ -236,6 +336,8 @@ definitions:
         type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
+      load_balancer:
+        $ref: '#/definitions/common.BaseID'
       outbound:
         maximum: 20000
         minimum: 1
@@ -254,6 +356,8 @@ definitions:
         minimum: 1
         type: integer
       instance:
+        $ref: '#/definitions/common.BaseID'
+      load_balancer:
         $ref: '#/definitions/common.BaseID'
       name:
         maxLength: 32
@@ -376,10 +480,14 @@ definitions:
         type: integer
       cpu_over_rate:
         type: number
+      cpu_total:
+        type: integer
       disk:
         type: integer
       disk_over_rate:
         type: number
+      disk_total:
+        type: integer
       host_ip:
         type: string
       hostid:
@@ -389,6 +497,8 @@ definitions:
       mem_over_rate:
         type: number
       memory:
+        type: integer
+      memory_total:
         type: integer
       parentid:
         type: integer
@@ -432,6 +542,8 @@ definitions:
         - windows
         - other
         type: string
+      os_family:
+        type: string
       os_version:
         maxLength: 32
         minLength: 2
@@ -444,9 +556,12 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      uuid:
+        type: string
     required:
     - name
     - os_code
+    - os_family
     - os_version
     - user
     type: object
@@ -473,6 +588,8 @@ definitions:
         - windows
         - other
         type: string
+      os_family:
+        type: string
       os_version:
         maxLength: 32
         minLength: 2
@@ -490,6 +607,7 @@ definitions:
     - download_url
     - name
     - os_code
+    - os_family
     - os_version
     - user
     type: object
@@ -508,6 +626,8 @@ definitions:
       name:
         type: string
       os_code:
+        type: string
+      os_family:
         type: string
       os_version:
         type: string
@@ -596,6 +716,15 @@ definitions:
         type: integer
       disk:
         minimum: 1
+        type: integer
+      disk_bps_limit:
+        description: in MB/s
+        maximum: 102400
+        minimum: 0
+        type: integer
+      disk_iops_limit:
+        maximum: 10000000
+        minimum: 0
         type: integer
       flavor:
         maxLength: 32
@@ -774,6 +903,8 @@ definitions:
         maximum: 20000
         minimum: 0
         type: integer
+      primary_address:
+        $ref: '#/definitions/common.BaseReference'
       public_addresses:
         items:
           $ref: '#/definitions/common.BaseReference'
@@ -1002,6 +1133,148 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  apis.ListenerListResponse:
+    properties:
+      limit:
+        type: integer
+      listeners:
+        items:
+          $ref: '#/definitions/apis.ListenerResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.ListenerPatchPayload:
+    properties:
+      action:
+        enum:
+        - enable
+        - disable
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.ListenerPayload:
+    properties:
+      cert:
+        type: string
+      key:
+        type: string
+      mode:
+        enum:
+        - http
+        - tcp
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      port:
+        maximum: 65535
+        minimum: 1
+        type: integer
+    required:
+    - mode
+    - name
+    - port
+    type: object
+  apis.ListenerResponse:
+    properties:
+      backends:
+        items:
+          $ref: '#/definitions/apis.BackendResponse'
+        type: array
+      created_at:
+        type: string
+      id:
+        type: string
+      mode:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      port:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  apis.LoadBalancerListResponse:
+    properties:
+      limit:
+        type: integer
+      load_balancers:
+        items:
+          $ref: '#/definitions/apis.LoadBalancerResponse'
+        type: array
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.LoadBalancerPatchPayload:
+    properties:
+      action:
+        enum:
+        - enable
+        - disable
+        type: string
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.LoadBalancerPayload:
+    properties:
+      name:
+        maxLength: 32
+        minLength: 2
+        type: string
+      vpc:
+        $ref: '#/definitions/common.BaseReference'
+      zone:
+        maxLength: 32
+        minLength: 1
+        type: string
+    required:
+    - name
+    - vpc
+    type: object
+  apis.LoadBalancerResponse:
+    properties:
+      created_at:
+        type: string
+      floating_ips:
+        items:
+          $ref: '#/definitions/apis.FloatingIpInfo'
+        type: array
+      id:
+        type: string
+      listeners:
+        items:
+          $ref: '#/definitions/apis.ListenerResponse'
+        type: array
+      name:
+        type: string
+      owner:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      vpc:
+        $ref: '#/definitions/common.ResourceReference'
     type: object
   apis.MemberInfo:
     properties:
@@ -1436,6 +1709,8 @@ definitions:
     properties:
       name:
         type: string
+      source:
+        type: string
       status:
         type: string
       summary:
@@ -1543,6 +1818,60 @@ definitions:
       version:
         type: string
     type: object
+  apis.VolBackupListResponse:
+    properties:
+      backups:
+        items:
+          $ref: '#/definitions/apis.VolBackupResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.VolBackupPayload:
+    properties:
+      name:
+        type: string
+      pool_id:
+        type: string
+      type:
+        enum:
+        - snapshot
+        - backup
+        type: string
+      volume_id:
+        type: string
+    required:
+    - name
+    - type
+    - volume_id
+    type: object
+  apis.VolBackupResponse:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      path:
+        type: string
+      size:
+        type: integer
+      status:
+        $ref: '#/definitions/model.BackupStatus'
+      task:
+        $ref: '#/definitions/common.BaseReference'
+      updated_at:
+        type: string
+      volume:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
   apis.VolumeInfoResponse:
     properties:
       booting:
@@ -1575,16 +1904,8 @@ definitions:
     type: object
   apis.VolumePatchPayload:
     properties:
-      bps_burst:
-        type: integer
-      bps_limit:
-        type: integer
       instance:
         $ref: '#/definitions/common.BaseID'
-      iops_burst:
-        type: integer
-      iops_limit:
-        type: integer
       name:
         type: string
       size:
@@ -1596,6 +1917,8 @@ definitions:
         minimum: 0
         type: integer
       bps_limit:
+        description: in MB/s
+        maximum: 102400
         minimum: 0
         type: integer
       count:
@@ -1606,6 +1929,7 @@ definitions:
         minimum: 0
         type: integer
       iops_limit:
+        maximum: 10000000
         minimum: 0
         type: integer
       name:
@@ -1617,6 +1941,18 @@ definitions:
     required:
     - name
     - size
+    type: object
+  apis.VolumeQosPayload:
+    properties:
+      bps_limit:
+        description: in MB/s
+        maximum: 102400
+        minimum: 0
+        type: integer
+      iops_limit:
+        maximum: 10000000
+        minimum: 0
+        type: integer
     type: object
   apis.VolumeResizePayload:
     properties:
@@ -1719,6 +2055,8 @@ definitions:
     properties:
       error_code:
         type: integer
+      error_code_str:
+        type: string
       error_message:
         type: string
     type: object
@@ -1774,11 +2112,13 @@ definitions:
     - public
     - internal
     - site
+    - vrrp
     type: string
     x-enum-varnames:
     - Public
     - Internal
     - Site
+    - Vrrp
   main.RuleFileRequest:
     description: Request for rule file operations
     properties:
@@ -1811,6 +2151,18 @@ definitions:
           @Enum(write,symlink,chown,reload,delete,read,check)
         type: string
     type: object
+  model.BackupStatus:
+    enum:
+    - pending
+    - available
+    - error
+    - restoring
+    type: string
+    x-enum-varnames:
+    - BackupStatusPending
+    - BackupStatusReady
+    - BackupStatusError
+    - BackupStatusRestoring
 host: localhost:8256
 info:
   contact: {}
@@ -1818,6 +2170,28 @@ info:
   title: Alarm Rules Manager API
   version: "1.0"
 paths:
+  /api/v1/metrics/alarm/sync-mappings:
+    post:
+      consumes:
+      - application/json
+      description: Perform a full synchronization of all VM rule mappings to ensure
+        matched_vms.json is consistent with the database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Synchronization successful
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Synchronize all VM rule mappings
+      tags:
+      - alarm
   /api/v1/rules:
     post:
       consumes:
@@ -1863,6 +2237,147 @@ paths:
       summary: Handle rule file operations
       tags:
       - rules
+  /backups:
+    get:
+      consumes:
+      - application/json
+      description: list volume backups/snapshots by volume UUID and backup type
+      parameters:
+      - description: Volume UUID
+        in: query
+        name: id
+        required: true
+        type: string
+      - description: 'Backup type: empty or snapshot or backup'
+        in: query
+        name: backup_type
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list volumes backups/snapshots
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: create a volume backup/snapshot
+      parameters:
+      - description: Volume backup/snapshot create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolBackupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a volume backup/snapshot
+      tags:
+      - Compute
+  /backups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a volume backup/snapshot by UUID
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a volume backup/snapshot
+      tags:
+      - Compute
+    get:
+      consumes:
+      - application/json
+      description: get a volume backup/snapshot by UUID
+      parameters:
+      - description: Volume backup/snapshot UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a volume backup/snapshot
+      tags:
+      - Compute
+  /backups/{id}/restore:
+    post:
+      consumes:
+      - application/json
+      description: restore volume from a backup/snapshot
+      parameters:
+      - description: Volume backup/snapshot UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolBackupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: restore volume from a backup/snapshot
+      tags:
+      - Compute
   /dictionaries:
     get:
       consumes:
@@ -2963,6 +3478,32 @@ paths:
       summary: set user password for a instance
       tags:
       - Compute
+  /instances/rule-links:
+    get:
+      consumes:
+      - application/json
+      description: Get all rule groups linked to specific instances
+      parameters:
+      - description: Comma-separated instance UUIDs
+        in: query
+        name: instance_ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get instance rule links
+      tags:
+      - Compute
   /ip_groups:
     get:
       consumes:
@@ -3203,6 +3744,459 @@ paths:
       summary: patch a key
       tags:
       - Authorization
+  /load_balancers:
+    get:
+      consumes:
+      - application/json
+      description: list loadBalancers
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list loadBalancers
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a loadBalancer
+      parameters:
+      - description: LoadBalancer create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.LoadBalancerPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a loadBalancer
+      tags:
+      - Network
+  /load_balancers/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a loadBalancer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a loadBalancer
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a loadBalancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a loadBalancer
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a loadBalancer
+      parameters:
+      - description: LoadBalancer patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.LoadBalancerPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.LoadBalancerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a loadBalancer
+      tags:
+      - Network
+  /load_balancers/{id}/floating_ips:
+    get:
+      consumes:
+      - application/json
+      description: list floating ips for load balancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list floating ips for load balancer
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a floating ip for load balancer
+      parameters:
+      - description: Floating ip create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.FloatingIpPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a floating ip for load balancer
+      tags:
+      - Network
+  /load_balancers/{id}/floating_ips/{floating_ip_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a floating ip for load balancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a floating ip for load balancer
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a floating ip for load balancer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.FloatingIpResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a floating ip for load balancer
+      tags:
+      - Network
+  /load_balancers/{id}/listeners:
+    get:
+      consumes:
+      - application/json
+      description: list listeners
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list listeners
+      tags:
+      - Network
+    post:
+      consumes:
+      - application/json
+      description: create a listener
+      parameters:
+      - description: Listener create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ListenerPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a listener
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/:listener_id/backends:
+    get:
+      consumes:
+      - application/json
+      description: list backends
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list backends
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/:listener_id/backends/{backend_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a backend
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a backend
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/{listener_id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a listener
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a listener
+      tags:
+      - Network
+    get:
+      consumes:
+      - application/json
+      description: get a listener
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a listener
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a listener
+      parameters:
+      - description: Listener patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ListenerPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ListenerResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a listener
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/{listener_id}/backends:
+    post:
+      consumes:
+      - application/json
+      description: create a backend
+      parameters:
+      - description: Backend create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.BackendPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a backend
+      tags:
+      - Network
+  /load_balancers/{id}/listeners/{listener_id}/backends/{backend_id}:
+    get:
+      consumes:
+      - application/json
+      description: get a backend
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a backend
+      tags:
+      - Network
+    patch:
+      consumes:
+      - application/json
+      description: patch a backend
+      parameters:
+      - description: Backend patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.BackendPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BackendResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: patch a backend
+      tags:
+      - Network
   /login:
     post:
       consumes:
@@ -3813,6 +4807,75 @@ paths:
       summary: update address lock
       tags:
       - Network
+  /tasks:
+    get:
+      consumes:
+      - application/json
+      description: list tasks
+      parameters:
+      - description: 'Source: empty or manual or scheduler or migration or not_migration
+          or all'
+        in: query
+        name: source
+        required: true
+        type: string
+      - description: Offset
+        in: query
+        name: offset
+        required: true
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.CLTaskListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list tasks
+      tags:
+      - Compute
+  /tasks/{id}:
+    get:
+      consumes:
+      - application/json
+      description: get a task
+      parameters:
+      - description: Task UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.CLTaskResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a task
+      tags:
+      - Compute
   /users:
     get:
       consumes:
@@ -4080,6 +5143,36 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/qos:
+    put:
+      consumes:
+      - application/json
+      description: update iops and bps limit of a volume
+      parameters:
+      - description: Volume qos payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.VolumeQosPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.VolumeResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update qos of a volume
       tags:
       - Compute
   /volumes/{id}/resize:

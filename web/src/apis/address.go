@@ -119,7 +119,7 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 	}
 
 	addr.Reserved = payload.Lock
-	addr.Allocated = payload.Lock || addr.Interface > 0
+	//addr.Allocated = payload.Lock || addr.Interface > 0
 
 	err = addressAdmin.Update(ctx, addr)
 	if err != nil {

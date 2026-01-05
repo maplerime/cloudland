@@ -41,6 +41,7 @@ const (
 	RuleTypeAvailable      = "node_available"
 	RuleTypeHypervisorVCPU = "hypervisor_vcpu"
 	RuleTypeConntrack      = "conntrack"
+	RuleTypeIPBlock        = "ip_block"
 	RulesEnabled           = "/etc/prometheus/rules_enabled"
 	RulesGeneral           = "/etc/prometheus/general_rules"
 	RulesSpecial           = "/etc/prometheus/special_rules"
@@ -1996,6 +1997,8 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"compute-vcpu-resources.yml.j2"}
 	case RuleTypeConntrack:
 		templateFiles = []string{"node-conntrack-anomaly.yml.j2"}
+	case RuleTypeIPBlock:
+		templateFiles = []string{"ip-block-monitor.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)

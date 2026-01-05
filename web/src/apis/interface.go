@@ -70,6 +70,7 @@ type InterfacePatchPayload struct {
 	Name            string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound         *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound        *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	PrimaryAddress  *BaseReference   `json:"primary_address,omitempty"`
 	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
 	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
 	Count           *int             `json:"count" binding:"omitempty,gte=1,lte=512"`
@@ -138,6 +139,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
 				if err != nil {
 					logger.Error("Failed to ensure subnet_id", err)
+					err = nil
 					continue
 				}
 
@@ -308,6 +310,8 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			var floatingIp *model.FloatingIp
 			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
 			if err != nil {
+				logger.Errorf("Failed to get public ip")
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 				return
 			}
 			publicIps = append(publicIps, floatingIp)
@@ -344,6 +348,29 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			return
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
+	}
+	if payload.PrimaryAddress != nil {
+		if !iface.PrimaryIf {
+			logger.Errorf("It is not allowed to update ip of secondary interface")
+			ErrorResponse(c, http.StatusBadRequest, "It is not allowed to update ip of secondary interface", err)
+			return
+		}
+		var primaryFip *model.FloatingIp
+		primaryFip, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, payload.PrimaryAddress.ID)
+		if err != nil {
+			logger.Errorf("Failed to get primary public ip")
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
+			return
+		}
+		if primaryFip.ID != iface.FloatingIp {
+			for i, pubAddr := range publicIps {
+				if primaryFip.ID == pubAddr.ID {
+					publicIps = append(publicIps[:i], publicIps[i+1:]...)
+					break
+				}
+			}
+			publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
+		}
 	}
 	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {

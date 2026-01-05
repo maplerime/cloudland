@@ -133,13 +133,13 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	ctx, db := GetContextDB(ctx)
 	address = &model.Address{}
 	if ipaddr == "" {
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and address != ?", subnet.ID, false, subnet.Gateway).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Take(address).Error
 	} else {
 		if !strings.Contains(ipaddr, "/") {
 			preSize, _ := net.IPMask(net.ParseIP(subnet.Netmask).To4()).Size()
 			ipaddr = fmt.Sprintf("%s/%d", ipaddr, preSize)
 		}
-		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and address = ?", subnet.ID, false, ipaddr).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Take(address).Error
 	}
 	if err != nil {
 		logger.Error("Failed to query address, %v", err)
@@ -177,7 +177,7 @@ func DeallocateAddress(ctx context.Context, ifaces []*model.Interface) (err erro
 	return
 }
 
-func genMacaddr() (mac string, err error) {
+func GenerateMacaddr() (mac string, err error) {
 	buf := make([]byte, 4)
 	_, err = rand.Read(buf)
 	if err != nil {
@@ -188,11 +188,13 @@ func genMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
+func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp, primaryMac string) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	primaryIface = iface
+	updatePrimary := false
 	if primaryIface == nil {
 		primaryIface = floatingIps[0].Interface
+		updatePrimary = true
 	}
 	primarySubnet = primaryIface.Address.Subnet
 	for _, address := range primaryIface.SecondAddresses {
@@ -227,7 +229,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 	}
 	primaryIface.SecondAddresses = nil
 	for i, fip := range floatingIps {
-		if fip.InstanceID > 0 {
+		if !updatePrimary && fip.InstanceID > 0 {
 			continue
 		}
 		fip.Instance = instance
@@ -236,6 +238,9 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			primaryIface.Instance = instance.ID
 			primaryIface.Name = "eth0"
 			primaryIface.PrimaryIf = true
+			if primaryMac != "" {
+				primaryIface.MacAddr = primaryMac
+			}
 			err = db.Model(primaryIface).Updates(primaryIface).Error
 			if err != nil {
 				logger.Errorf("Failed to update interface, %v", err)
@@ -288,7 +293,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 		primary = true
 	}
 	if mac == "" {
-		mac, err = genMacaddr()
+		mac, err = GenerateMacaddr()
 		if err != nil {
 			logger.Error("Failed to generate random Mac address, %v", err)
 			return
@@ -317,6 +322,8 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 	} else if ifType == "dhcp" {
 		iface.Dhcp = ID
 	} else if strings.Contains(ifType, "gateway") {
+		iface.Device = ID
+	} else if strings.Contains(ifType, "vrrp") {
 		iface.Device = ID
 	}
 	err = db.Create(iface).Error

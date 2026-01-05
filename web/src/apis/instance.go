@@ -670,6 +670,10 @@ func (v *InstanceAPI) getInstanceResponse(ctx context.Context, instance *model.I
 	interfaces := make([]*InterfaceResponse, len(instance.Interfaces))
 	for i, iface := range instance.Interfaces {
 		interfaces[i], err = interfaceAPI.getInterfaceResponse(ctx, instance, iface)
+		if err != nil {
+			logger.Errorf("Failed to get interface response, %+v", err)
+			return
+		}
 	}
 	instanceResp.Interfaces = interfaces
 	if instance.RouterID > 0 && instance.Router != nil {
