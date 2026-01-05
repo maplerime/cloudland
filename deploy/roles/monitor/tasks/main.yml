@@ -438,6 +438,17 @@
                 receiver: 'slack-notifications'
                 continue: true
 
+              # Route IP blocking alerts to slack-ip-block with alertname grouping (merge multiple IPs)
+              - match_re:
+                  alert_type: ip_blocked
+                  severity: warning|critical|info|error
+                group_by: ['alertname', 'hostname', 'ip']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 2h
+                receiver: 'slack-ip-block'
+                continue: true
+
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
               - match_re:
                   alert_type: (cpu|memory|bw)
@@ -492,6 +503,7 @@
               send_resolved: true
               username: 'alertmanager'
               icon_emoji: ':satellite:'
+              api_url: '{{ slack_webhook_url }}'
               title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}{% endraw %}'
               text: |-
                 {% raw %}
@@ -504,20 +516,30 @@
                 *[Labels]*: `{{ .CommonLabels }}`
                 *[Annotations]*: `{{ .CommonAnnotations }}`
                 {% endraw %}
+
+          - name: 'slack-ip-block'
+            slack_configs:
+            - channel: '{{ slack_channel }}'
+              send_resolved: true
+              username: 'alertmanager'
+              icon_emoji: ':shield:'
+              api_url: '{{ slack_webhook_url }}'
+              title: '{% raw %}IP {{ .CommonLabels.ip }} blocked on {{ .CommonLabels.hostname }}{% endraw %}'
+              text: |-
+                {% raw %}
+                *[Summary]*: {{ .CommonAnnotations.summary }}
+                *[Description]*: {{ .CommonAnnotations.description }}
+                *[Alert Type]*: {{ .CommonLabels.alert_type }}
+                *[Alert Name]*: {{ .CommonLabels.alertname }}
+                *[Severity]*: {{ .CommonLabels.severity }}
+                *[IP]*: {{ .CommonLabels.ip }}
+                *[Host]*: {{ .CommonLabels.hostname }}
+                {% endraw %}
+
         owner: prometheus
         group: prometheus
         mode: 0644
         force: yes
-      tags: [monitor]
-
-    - name: Add Slack API URL to Alertmanager config
-      delegate_to: "{{ prometheus_server_ip }}"
-      become: true
-      lineinfile:
-        path: /etc/alertmanager/alertmanager.yml
-        line: "    api_url: '{{ slack_webhook_url }}'"
-        state: present
-        backup: no
       tags: [monitor]
 
     - name: Run Alertmanager container
