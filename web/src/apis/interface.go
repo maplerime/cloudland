@@ -362,6 +362,11 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
 			return
 		}
+		if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+			logger.Error("New primary ip is not allowed to be in different vlan")
+			ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
+			return
+		}
 		if primaryFip.ID != iface.FloatingIp {
 			for i, pubAddr := range publicIps {
 				if primaryFip.ID == pubAddr.ID {
