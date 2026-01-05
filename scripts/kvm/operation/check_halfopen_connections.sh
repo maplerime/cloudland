@@ -32,7 +32,7 @@ if [ -n "$result" ]; then
     echo "$result" | while read count src dst; do
         if [ "$count" -gt "$THRESHOLD_SRC_DST" ]; then
             log "CRITICAL: Blocking syn attack from src $src to dst $dst (count: $count)"
-            $BLOCK_SCRIPT "$src"
+            $BLOCK_SCRIPT "$src" "block_src"
             ((blocked_count++))
         fi
     done
@@ -46,7 +46,7 @@ if [ -n "$result" ]; then
     echo "$result" | while read count src; do
         if [ "$count" -gt "$THRESHOLD_SRC" ]; then
             log "CRITICAL: Blocking syn attack from src $src (count: $count)"
-            $BLOCK_SCRIPT "$src"
+            $BLOCK_SCRIPT "$src" "block_src"
             ((blocked_count++))
         fi
     done
@@ -60,7 +60,7 @@ if [ -n "$result" ]; then
     echo "$result" | while read count dst; do
         if [ "$count" -gt "$THRESHOLD_DST" ]; then
             log "CRITICAL: Blocking syn attack to dst $dst (count: $count)"
-            $BLOCK_SCRIPT "$dst"
+            $BLOCK_SCRIPT "$dst" "block_dst"
             ((blocked_count++))
         fi
     done

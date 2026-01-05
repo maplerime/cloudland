@@ -141,8 +141,8 @@ function check_system_router()
 function check_conntrack()
 {
     [ -z "$syn_threshold_src_dst" ] && syn_threshold_src_dst=1500
-    [ -z "$syn_threshold_src" ] && syn_threshold_src=5000
-    [ -z "$syn_threshold_dst" ] && syn_threshold_dst=10000
+    [ -z "$syn_threshold_src" ] && syn_threshold_src=3000
+    [ -z "$syn_threshold_dst" ] && syn_threshold_dst=5000
     sudo $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
 }
 
