@@ -568,6 +568,7 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	err := db.Model(&model.Address{}).
 		Where("subnet_id = ?", subnet.ID).
 		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
 		Where("address != ?", subnet.Gateway).
 		Count(&idleCount).Error
 
