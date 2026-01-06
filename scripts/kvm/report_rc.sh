@@ -138,6 +138,14 @@ function check_system_router()
     fi
 }
 
+function check_conntrack()
+{
+    [ -z "$syn_threshold_src_dst" ] && syn_threshold_src_dst=1500
+    [ -z "$syn_threshold_src" ] && syn_threshold_src=3000
+    [ -z "$syn_threshold_dst" ] && syn_threshold_dst=5000
+    sudo $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
+}
+
 function sync_instance()
 {
     flag_file=$run_dir/need_to_sync
@@ -238,6 +246,7 @@ calc_resource
 sync_instance
 sync_delayed_job
 check_system_router
+check_conntrack
 #probe_arp >/dev/null 2>&1
 inst_status
 daily_job

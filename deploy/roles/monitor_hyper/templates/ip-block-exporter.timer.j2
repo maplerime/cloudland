@@ -1,0 +1,11 @@
+[Unit]
+Description=Run IP Block Exporter every {{ export_interval | default('30s') }}
+Requires=ip-block-exporter.service
+
+[Timer]
+OnBootSec=10
+OnUnitActiveSec={{ export_interval | default('30s') }}
+Unit=ip-block-exporter.service
+
+[Install]
+WantedBy=timers.target
