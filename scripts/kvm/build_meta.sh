@@ -63,58 +63,37 @@ if [ -n "${root_passwd}" ] && [ "${os_code}" != "windows" ]; then
     ssh_pwauth="true"
 fi
 
-# vendor_data.json header
-vendor_data_header=$( 
-    echo \
-'"Content-Type: multipart/mixed; boundary=\"===============622551551551==\"\n'\
-'MIME-Version: 1.0\n'\
-'\n'\
-'--===============622551551551==\n'
-)
-
-# cloud-config.txt header
 cloud_config_txt=$(
-    echo \
-'Content-Type: text/cloud-config; charset=\"us-ascii\"\n'\
-'MIME-Version: 1.0\n'\
-'Content-Transfer-Encoding: 7bit\n'\
-'Content-Disposition: attachment; filename=\"cloud-config.txt\"\n'\
-'\n'\
-'#cloud-config\n'\
-'ssh_pwauth: '${ssh_pwauth}'\n'\
-'disable_root: false\n'
+    cat <<EOF
+#cloud-config
+ssh_pwauth: '${ssh_pwauth}'
+disable_root: false
+EOF
 )
 
-# cloud-config.txt body
 if [ -n "${root_passwd}" ] && [ "${os_code}" != "windows" ]; then
     cloud_config_txt+=$(
-        echo \
-'chpasswd:\n'\
-'  expire: false\n'\
-'  users:\n'\
-'    - name: root\n'\
-'      password: '${root_passwd}'\n'\
-'  list: |\n'\
-'    root:'${root_passwd}'\n'\
-'write_files:\n'
-'  - path: /etc/ssh/sshd_config.d/allow_root.conf\n'\
-'    content: |\n'\
-'      PermitRootLogin yes\n'\
-'      PasswordAuthentication yes\n'
+        cat <<EOF
+chpasswd:
+  expire: false
+  users:
+    - name: root
+      password: '${root_passwd}'
+  list: |
+    root:'${root_passwd}'
+write_files:
+  - path: /etc/ssh/sshd_config.d/allow_root.conf
+    content: |
+      PermitRootLogin yes
+      PasswordAuthentication yes
+EOF
     )
 fi
-
+qemu_guest_agent_sh=""
+ssh_port_sh=""
 # change qemu-guest-agent config
-qa_script=""
-ssh_script=""
 if [ "${os_code}" = "linux" ]; then
-        qa_script=$(cat <<EOF
-\n\n--===============622551551551==\n
-Content-Type: text/x-shellscript; charset="us-ascii"\n
-MIME-Version: 1.0\n
-Content-Transfer-Encoding: 7bit\n
-Content-Disposition: attachment; filename="qemu-guest-agent.sh"\n\n
-
+    qemu_guest_agent_sh=$(cat <<EOF
 #!/bin/bash -x
 if [ -f /etc/sysconfig/qemu-ga ]; then
     sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
@@ -130,50 +109,49 @@ EOF
 # use runcmd to change the port value of /etc/ssh/sshd_config
 # and restart the ssh service
     if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
-        ssh_script=$(cat <<EOF
-\n\n--===============622551551551==\n
-Content-Type: text/x-shellscript; charset="us-ascii"\n
-MIME-Version: 1.0\n
-Content-Transfer-Encoding: 7bit\n
-Content-Disposition: attachment; filename="ssh_port.sh"\n\n
-
+        ssh_port_sh=$(cat <<EOF
 #!/bin/bash -x
 sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
 sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
 systemctl daemon-reload
 systemctl restart ssh.socket
 systemctl restart sshd || systemctl restart ssh
+
 EOF
         )
     fi
 fi
 
-# insert customized vendor data from api
-custom_vendordata=""
-vendordata_type=$(jq -r .vendordata_type <<<$vm_meta)
-vendordata=$(jq -r .vendordata <<<$vm_meta)
-if [ -n "$vendordata" ]; then
-    custom_vendordata='\n\n--===============622551551551==\n'
-    custom_vendordata+=$(
-        echo \
-'Content-Type: text/x-shellscript; charset="us-ascii"\n'\
-'MIME-Version: 1.0\n'\
-'Content-Transfer-Encoding: 7bit\n'\
-'Content-Disposition: attachment; filename="custom-vendor-data.sh"\n'\
-'\n'\')
-   if [ "$vendordata_type" = "base64" ]; then
-      custom_vendordata+=$(echo "$vendordata" | base64 -d)
-   else
-      custom_vendordata+="$vendordata"
-   fi
-fi
-
-vendor_data_end='\n--===============622551551551==--"'
-
+write_mime_multipart_args=""
 # write to vendor_data.json
 if [ "${os_code}" != "windows" ]; then
-    echo -e "$vendor_data_header""$cloud_config_txt""$qa_script""$ssh_script""$custom_vendordata""$vendor_data_end" > $latest_dir/vendor_data.json
-    sed -i -n '1h; 1!H; ${ x; s/\n/\\n/g; p; }' $latest_dir/vendor_data.json
+    echo -e "$cloud_config_txt" > $latest_dir/cloud_config.txt
+    write_mime_multipart_args+="cloud_config.txt:text/cloud-config "
+    if [ -n "$qemu_guest_agent_sh" ]; then
+        echo -e "$qemu_guest_agent_sh" > $latest_dir/qemu_guest_agent.sh
+        write_mime_multipart_args+="qemu_guest_agent.sh:text/x-shellscript "
+    fi
+    if [ -n "$ssh_port_sh" ]; then
+        echo -e "$ssh_port_sh" > $latest_dir/ssh_port.sh
+        write_mime_multipart_args+="ssh_port.sh:text/x-shellscript "
+    fi
+    # insert customized vendor data from api
+    custom_vendordata=""
+    vendordata_type=$(jq -r .vendordata_type <<<$vm_meta)
+    vendordata=$(jq -r .vendordata <<<$vm_meta)
+    if [ -n "$vendordata" ]; then
+        if [ "$vendordata_type" = "base64" ]; then
+            custom_vendordata+=$(echo "$vendordata" | base64 -d)
+        else
+            custom_vendordata+="$vendordata"
+        fi
+        echo -e "$custom_vendordata" > $latest_dir/custom_vendor_script.sh
+        write_mime_multipart_args+="custom_vendor_script.sh:text/x-shellscript "
+    fi
+    cd $latest_dir
+    write-mime-multipart -o vendor_data.json $write_mime_multipart_args
+    cd -
+    rm -f $latest_dir/cloud_config.txt $latest_dir/qemu_guest_agent.sh $latest_dir/ssh_port.sh $latest_dir/custom_vendor_script.sh
 fi
 
 [ -z "$dns" ] && dns=$dns_server
