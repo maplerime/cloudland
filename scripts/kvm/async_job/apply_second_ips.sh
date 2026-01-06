@@ -15,11 +15,6 @@ gateway=${6%/*}
 more_addresses=$(cat)
 naddrs=$(jq length <<< "$more_addresses")
 
-if [ "$update_meta" != true ]; then
-    log_debug "no need to update any ip addresses"
-    exit 0
-fi
-
 if [ "$os_code" = "windows" ]; then
     wait_qemu_ping $ID 10
     if [ -n "$primary_ip" ]; then
