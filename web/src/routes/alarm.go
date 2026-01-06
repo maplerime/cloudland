@@ -40,7 +40,7 @@ const (
 	RuleTypeControl        = "control_node"
 	RuleTypeAvailable      = "node_available"
 	RuleTypeHypervisorVCPU = "hypervisor_vcpu"
-	RuleTypeConntrack      = "conntrack"
+	RuleTypePacketDrop     = "packet_drop"
 	RuleTypeIPBlock        = "ip_block"
 	RulesEnabled           = "/etc/prometheus/rules_enabled"
 	RulesGeneral           = "/etc/prometheus/general_rules"
@@ -1995,8 +1995,8 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"compute-core-resources.yml.j2", "compute-network-resources.yml.j2"}
 	case RuleTypeHypervisorVCPU:
 		templateFiles = []string{"compute-vcpu-resources.yml.j2"}
-	case RuleTypeConntrack:
-		templateFiles = []string{"node-conntrack-anomaly.yml.j2"}
+	case RuleTypePacketDrop:
+		templateFiles = []string{"packet-drop-monitor.yml.j2"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml.j2"}
 	default:
@@ -2010,6 +2010,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 			return nil, fmt.Errorf("failed to parse config JSON: %v", err)
 		}
+
 		if rule.RuleType == RuleTypeAvailable {
 			if nodeDownDuration, ok := configData["node_down_duration"].(string); ok {
 				duration, err := time.ParseDuration(nodeDownDuration)
@@ -2022,6 +2023,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 				configData["node_down_duration_minutes"] = 5
 			}
 		}
+
 		outputFile := strings.TrimSuffix(templateFile, ".j2")
 
 		err = ProcessTemplate(templateFile, outputFile, configData)
@@ -2229,15 +2231,17 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		}
 	case RuleTypeHypervisorVCPU:
 		templateFiles = []string{"compute-vcpu-resources.yml"}
-	case RuleTypeConntrack:
-		templateFiles = []string{"node-conntrack-anomaly.yml"}
+	case RuleTypePacketDrop:
+		templateFiles = []string{"packet-drop-monitor.yml"}
+	case RuleTypeIPBlock:
+		templateFiles = []string{"ip-block-monitor.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
 	}
 
 	deletedFiles := []string{}
 	for _, templateFile := range templateFiles {
-		outputPath := filepath.Join(RulesNode, templateFile)
+		outputPath := filepath.Join(RulesGeneral, templateFile)
 		enabledPath := filepath.Join(RulesEnabled, templateFile)
 
 		if err := RemoveFile(enabledPath); err != nil {

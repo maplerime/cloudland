@@ -71,6 +71,11 @@ var (
 	}
 )
 
+var (
+	SwitchAPIEndpoint string
+	SwitchAPIHouse    string
+)
+
 func init() {
 	viper.SetConfigFile("conf/config.toml")
 	if err := viper.ReadInConfig(); err != nil {
@@ -89,6 +94,10 @@ func init() {
 		volemonitorPasswd = viper.GetString("WDS.password")
 		logger.Info("volemonitorIP: %s,  volemonitorIPort: %d volemonitorUser: %s, volemonitorPasswd: %s",
 			volemonitorIP, volemonitorIPort, volemonitorUser, volemonitorPasswd)
+
+		SwitchAPIEndpoint = viper.GetString("switch_api.endpoint")
+		SwitchAPIHouse = viper.GetString("switch_api.house")
+		logger.Info("Switch API Endpoint: %s, House: %s", SwitchAPIEndpoint, SwitchAPIHouse)
 	}
 	if prometheusIP == "" {
 		prometheusIP = "localhost"

@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Packet Drop Exporter every {{ packet_drop_export_interval | default('1m') }}
+Requires=packet-drop-exporter.service
+
+[Timer]
+OnBootSec=30
+OnUnitActiveSec={{ packet_drop_export_interval | default('1m') }}
+Unit=packet-drop-exporter.service
+
+[Install]
+WantedBy=timers.target

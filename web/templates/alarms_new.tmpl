@@ -26,7 +26,7 @@
                                         <option value="control_node">{{.i18n.Tr "Control_Node"}}</option>
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
                                         <option value="hypervisor_vcpu">{{.i18n.Tr "Hypervisor_vCPU"}}</option>
-                                        <option value="conntrack">{{.i18n.Tr "Conntrack"}}</option>
+                                        <option value="packet_drop">{{.i18n.Tr "Packet_Drop"}}</option>
                                         <option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
 									</select>
 								</div>
@@ -100,10 +100,10 @@ document.addEventListener('DOMContentLoaded', function() {
             "vcpu_usage_threshold": 80,
             "for_duration": "5m"
         },
-        'conntrack': {
-            "threshold": 150,
-            "duration": "2m",
-            "severity": "warning"
+        'packet_drop': {
+            "for_duration": "1m",
+            "severity": "warning",
+            "packet_drop_threshold": 0
         },
         'ip_block': {
             "for_duration": "30s",
