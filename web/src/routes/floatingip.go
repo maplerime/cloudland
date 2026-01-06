@@ -629,6 +629,12 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 	}
 	db = db.Offset(0).Limit(-1)
 	for _, fip := range floatingIps {
+		err = a.EnsureSubnetID(ctx, fip)
+		if err != nil {
+			logger.Error("Failed to ensure subnet_id", err)
+			continue
+		}
+
 		if fip.InstanceID > 0 {
 			fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
 			err = db.Preload("Zone").Take(fip.Instance).Error
