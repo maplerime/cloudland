@@ -182,7 +182,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 			return
 		}
 	} else {
-		vrrpSubnet, err = subnetAdmin.Create(ctx, 0, name, "192.168.196.0/24", "", "", "", "vrrp", "", "", false, router, nil)
+		vrrpSubnet, err = subnetAdmin.Create(ctx, 0, name, "192.168.196.0/24", "", "", "", "vrrp", "", "", false, router, nil, 0)
 		if err != nil {
 			logger.Error("Failed to create vrrp subnet")
 			return
