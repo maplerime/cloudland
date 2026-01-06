@@ -305,16 +305,48 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	}
 	var ifaceSubnets []*model.Subnet
 	var publicIps []*model.FloatingIp
-	if len(payload.PublicAddresses) > 0 {
-		for _, pubAddr := range payload.PublicAddresses {
-			var floatingIp *model.FloatingIp
-			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
+	if iface.FloatingIp > 0 {
+		if payload.PublicAddresses == nil {
+			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d", iface.Instance))
 			if err != nil {
-				logger.Errorf("Failed to get public ip")
+				logger.Errorf("Failed to get public ips")
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 				return
 			}
-			publicIps = append(publicIps, floatingIp)
+		} else if len(payload.PublicAddresses) > 0 {
+			for _, pubAddr := range payload.PublicAddresses {
+				var floatingIp *model.FloatingIp
+				floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
+				if err != nil {
+					logger.Errorf("Failed to get public ip")
+					ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
+					return
+				}
+				publicIps = append(publicIps, floatingIp)
+			}
+		}
+		if payload.PrimaryAddress != nil {
+			var primaryFip *model.FloatingIp
+			primaryFip, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, payload.PrimaryAddress.ID)
+			if err != nil {
+				logger.Errorf("Failed to get primary public ip")
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
+				return
+			}
+			if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+				logger.Error("New primary ip is not allowed to be in different vlan")
+				ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
+				return
+			}
+			if primaryFip.ID != iface.FloatingIp {
+				for i, pubAddr := range publicIps {
+					if primaryFip.ID == pubAddr.ID {
+						publicIps = append(publicIps[:i], publicIps[i+1:]...)
+						break
+					}
+				}
+				publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
+			}
 		}
 	} else {
 		for _, subnet := range payload.Subnets {
@@ -348,34 +380,6 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			return
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
-	}
-	if payload.PrimaryAddress != nil {
-		if !iface.PrimaryIf || iface.FloatingIp == 0 {
-			logger.Errorf("It is not allowed to update interface ip address")
-			ErrorResponse(c, http.StatusBadRequest, "It is not allowed to update interface ip address", err)
-			return
-		}
-		var primaryFip *model.FloatingIp
-		primaryFip, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, payload.PrimaryAddress.ID)
-		if err != nil {
-			logger.Errorf("Failed to get primary public ip")
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
-			return
-		}
-		if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
-			logger.Error("New primary ip is not allowed to be in different vlan")
-			ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
-			return
-		}
-		if primaryFip.ID != iface.FloatingIp {
-			for i, pubAddr := range publicIps {
-				if primaryFip.ID == pubAddr.ID {
-					publicIps = append(publicIps[:i], publicIps[i+1:]...)
-					break
-				}
-			}
-			publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
-		}
 	}
 	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {
