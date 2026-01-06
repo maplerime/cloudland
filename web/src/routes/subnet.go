@@ -930,7 +930,7 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	// }
 	priority := c.QueryInt64("priority")
 	if priority < 0 || priority > 100000 {
-		c.Data["ErrorMsg"] = "Priority out of range"
+		c.Data["ErrorMsg"] = "Priority out of range(0~100000)"
 		c.HTML(400, "error")
 		return
 	}
@@ -994,7 +994,7 @@ func (v *SubnetView) Create(c *macaron.Context, store session.Store) {
 	}
 	priority := c.QueryInt64("priority")
 	if priority < 0 || priority > 100000 {
-		c.Data["ErrorMsg"] = "Priority out of range"
+		c.Data["ErrorMsg"] = "Priority out of range(0~100000)"
 		c.HTML(400, "error")
 		return
 	}
