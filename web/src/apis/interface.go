@@ -350,9 +350,9 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
 	if payload.PrimaryAddress != nil {
-		if !iface.PrimaryIf {
-			logger.Errorf("It is not allowed to update ip of secondary interface")
-			ErrorResponse(c, http.StatusBadRequest, "It is not allowed to update ip of secondary interface", err)
+		if !iface.PrimaryIf || iface.FloatingIp == 0 {
+			logger.Errorf("It is not allowed to update interface ip address")
+			ErrorResponse(c, http.StatusBadRequest, "It is not allowed to update interface ip address", err)
 			return
 		}
 		var primaryFip *model.FloatingIp
@@ -360,6 +360,11 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		if err != nil {
 			logger.Errorf("Failed to get primary public ip")
 			ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
+			return
+		}
+		if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+			logger.Error("New primary ip is not allowed to be in different vlan")
+			ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
 			return
 		}
 		if primaryFip.ID != iface.FloatingIp {

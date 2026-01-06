@@ -24,10 +24,13 @@
 			        <div class="item" data-value={{.Interface.FloatingIp }} data-text={{.Interface.Address.Address}}>
                                    {{.Interface.Address.Address}}
 			        </div>
+                                {{ $Vlan := .Interface.Address.Subnet.Vlan }}
                                 {{ range .PublicIps }}
+                                   {{ if eq .Subnet.Vlan $Vlan }}
 			           <div class="item" data-value={{.ID}} data-text={{.FipAddress}}>
                                      {{.FipAddress}}
 			           </div>
+                                   {{ end }}
                                 {{ end }}
 			        </div>
 			</div>

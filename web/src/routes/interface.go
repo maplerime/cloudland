@@ -1037,6 +1037,12 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
+		if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+			logger.Error("New primary ip is not allowed to be in different vlan")
+			c.Data["ErrorMsg"] = "New primary ip is not allowed to be in different vlan"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
 		for i, pubAddr := range publicAddresses {
 			if PrimaryFloating == pubAddr.ID {
 				publicAddresses = append(publicAddresses[:i], publicAddresses[i+1:]...)
