@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -143,7 +144,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	}()
 
 	if len(pubSubnets) == 0 {
-		err = db.Where("type = ?", "public").Find(&pubSubnets).Error
+		err = db.Where("type = ?", "public").Order("priority ASC, id ASC").Find(&pubSubnets).Error
 		if err != nil {
 			logger.Error("Failed to query public subnets ", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query public subnets", err)
@@ -171,6 +172,18 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 	if idleCountTotal < int64(activationCount) {
 		logger.Errorf("Not enough idle addresses for public subnets, idleCountTotal: %d, activationCount: %d, pubSubnets: %v", idleCountTotal, activationCount, pubSubnets)
 		return nil, NewCLError(ErrInsufficientAddress, "Not enough idle addresses for public subnets", nil)
+	}
+
+	// Sort public subnets by priority (lower value = higher priority)
+	// If priority is same, sort by ID for stability
+	if len(pubSubnets) > 0 {
+		sort.Slice(pubSubnets, func(i, j int) bool {
+			if pubSubnets[i].Priority == pubSubnets[j].Priority {
+				return pubSubnets[i].ID < pubSubnets[j].ID
+			}
+			return pubSubnets[i].Priority < pubSubnets[j].Priority
+		})
+		logger.Debugf("Sorted pubSubnets by priority: %v", pubSubnets)
 	}
 
 	if len(siteSubnets) > 0 {
@@ -825,7 +838,7 @@ func (v *FloatingIpView) New(c *macaron.Context, store session.Store) {
 	logger.Debugf("Load balancers count: %d", total)
 
 	subnets := []*model.Subnet{}
-	err = db.Where("type = ?", "public").Find(&subnets).Error
+	err = db.Where("type = ?", "public").Order("priority ASC, id ASC").Find(&subnets).Error
 	if err != nil {
 		logger.Error("Failed to query subnets %v", err)
 		return
@@ -1200,6 +1213,13 @@ func (v *FloatingIpView) Create(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
+		// Sort public subnets by priority before creating floating IPs
+		sort.Slice(pubSubnets, func(i, j int) bool {
+			if pubSubnets[i].Priority == pubSubnets[j].Priority {
+				return pubSubnets[i].ID < pubSubnets[j].ID
+			}
+			return pubSubnets[i].Priority < pubSubnets[j].Priority
+		})
 	}
 	logger.Debugf("pubSubnets: %v, publicIp: %s, instance: %v, activationCount: %d, inbound: %d, outbound: %d, siteSubnets: %v, group: %v", pubSubnets, publicIp, instance, count, inbound, outbound, siteSubnetList, group)
 	_, err = floatingIpAdmin.Create(c.Req.Context(), instance, pubSubnets, publicIp, name, int32(inbound), int32(outbound), int32(count), siteSubnetList, group, loadBalancer)
@@ -1218,7 +1238,7 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 	if len(pubSubnets) > 0 {
 		subnets = append(subnets, pubSubnets...)
 	} else {
-		err = db.Where("type = ?", "public").Find(&subnets).Error
+		err = db.Where("type = ?", "public").Order("priority ASC, id ASC").Find(&subnets).Error
 		if err != nil {
 			logger.Error("Failed to query public subnets ", err)
 			return nil, NewCLError(ErrSQLSyntaxError, "Failed to query public subnets", err)
