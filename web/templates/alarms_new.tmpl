@@ -27,6 +27,7 @@
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
                                         <option value="hypervisor_vcpu">{{.i18n.Tr "Hypervisor_vCPU"}}</option>
                                         <option value="conntrack">{{.i18n.Tr "Conntrack"}}</option>
+                                        <option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
 									</select>
 								</div>
 								<div class="inline field">
@@ -100,12 +101,13 @@ document.addEventListener('DOMContentLoaded', function() {
             "for_duration": "5m"
         },
         'conntrack': {
-            "source_threshold": 150,
-            "source_duration": "2m",
-            "source_severity": "warning",
-            "target_threshold": 150,
-            "target_duration": "2m",
-            "target_severity": "warning"
+            "threshold": 150,
+            "duration": "2m",
+            "severity": "warning"
+        },
+        'ip_block': {
+            "for_duration": "30s",
+            "severity": "warning"
         }
     };
 

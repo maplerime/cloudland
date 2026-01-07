@@ -83,29 +83,6 @@ type InstancesData struct {
 	IsAdmin   bool              `json:"is_admin"`
 }
 
-func (a *InstanceAdmin) GetHyperGroup(ctx context.Context, zoneID int64, skipHyper int32) (hyperGroup string, err error) {
-	ctx, db := GetContextDB(ctx)
-	hypers := []*model.Hyper{}
-	where := fmt.Sprintf("zone_id = %d and status = 1 and hostid <> %d", zoneID, skipHyper)
-	if err = db.Where(where).Find(&hypers).Error; err != nil {
-		logger.Error("Hypers query failed", err)
-		return "", NewCLError(ErrSQLSyntaxError, "Failed to query hypervisors", err)
-	}
-	if len(hypers) == 0 {
-		logger.Error("No qualified hypervisor")
-		return "", NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", nil)
-	}
-	hyperGroup = fmt.Sprintf("group-zone-%d", zoneID)
-	for i, h := range hypers {
-		if i == 0 {
-			hyperGroup = fmt.Sprintf("%s:%d", hyperGroup, h.Hostid)
-		} else {
-			hyperGroup = fmt.Sprintf("%s,%d", hyperGroup, h.Hostid)
-		}
-	}
-	return
-}
-
 func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata string, userdataType string, vendorData string, vendorDataType string, image *model.Image,
 	zone *model.Zone, routerID int64, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	keys []*model.Key, rootPasswd string, loginPort, hyperID int, cpu int32, memory int32, disk int32, diskIopsLimit int32, diskBpsLimit int32, nestedEnable bool, poolID string) (instances []*model.Instance, err error) {
@@ -153,7 +130,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			loginPort = 3389
 		}
 	}
-	hyperGroup, err := a.GetHyperGroup(ctx, zoneID, -1)
+	hyperGroup, err := GetHyperGroup(ctx, zoneID, -1)
 	if err != nil {
 		logger.Error("No valid hypervisor", err)
 		return
@@ -769,7 +746,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	memberShip := GetMemberShip(ctx)
 
 	if len(ifaceInfo.PublicIps) > 0 {
-		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps)
+		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "")
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
@@ -2165,6 +2142,7 @@ func (v *InstanceView) getSecurityGroups(ctx context.Context, routerID int64, sg
 				}
 				if secgroup.RouterID != routerID {
 					logger.Error("Security group is not the same router with subnet")
+					err = fmt.Errorf("Security group is not the same router with subnet")
 					return
 				}
 				securityGroups = append(securityGroups, secgroup)

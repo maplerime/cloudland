@@ -34,8 +34,8 @@ async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
 ./reapply_secgroup.sh "$ip" "$mac" "$allow_spoofing" "$nic_name" <<< $vlan_info
 ./set_subnet_gw.sh "$router" "$vlan" "$gateway" "$ext_vlan"
 ./set_host.sh "$router" "$vlan" "$mac" "$vm_name" "$ip"
-more_addresses=$(jq -r .more_addresses <<< $vlan_info)
-if [ -n "$more_addresses" ]; then
-    echo "$more_addresses" | ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta"
+if [ "$update_meta" = true ]; then
+    more_addresses=$(jq -r .more_addresses <<< $vlan_info)
+    ./apply_second_ips.sh "$ID" "$mac" "$os_code" "$update_meta" "$ip" "$gateway" <<<$more_addresses
 fi
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$mac' '$SCI_CLIENT_ID'"

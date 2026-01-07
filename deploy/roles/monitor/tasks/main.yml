@@ -424,7 +424,7 @@
             routes:
               # Route node alarms to node-webhook (one group per unique alert/host/IP/type/severity)
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu|syn-(inbound|outbound))
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'node-webhook'
@@ -432,10 +432,21 @@
 
               # Also send node alarms to slack-notifications with the same fine-grained grouping
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu|unreplied-syn-source|unreplied-syn-target)
+                  alert_type: node-(unavailable|cpu|disk|network|vcpu|syn-(inbound|outbound))
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'slack-notifications'
+                continue: true
+
+              # Route IP blocking alerts to slack-ip-block with alertname grouping (merge multiple IPs)
+              - match_re:
+                  alert_type: ip_blocked
+                  severity: warning|critical|info|error
+                group_by: ['alertname', 'hostname', 'ip']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 2h
+                receiver: 'slack-ip-block'
                 continue: true
 
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
@@ -492,6 +503,7 @@
               send_resolved: true
               username: 'alertmanager'
               icon_emoji: ':satellite:'
+              api_url: '{{ slack_webhook_url }}'
               title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}{% endraw %}'
               text: |-
                 {% raw %}
@@ -504,20 +516,30 @@
                 *[Labels]*: `{{ .CommonLabels }}`
                 *[Annotations]*: `{{ .CommonAnnotations }}`
                 {% endraw %}
+
+          - name: 'slack-ip-block'
+            slack_configs:
+            - channel: '{{ slack_channel }}'
+              send_resolved: true
+              username: 'alertmanager'
+              icon_emoji: ':shield:'
+              api_url: '{{ slack_webhook_url }}'
+              title: '{% raw %}IP {{ .CommonLabels.ip }} blocked on {{ .CommonLabels.hostname }}{% endraw %}'
+              text: |-
+                {% raw %}
+                *[Summary]*: {{ .CommonAnnotations.summary }}
+                *[Description]*: {{ .CommonAnnotations.description }}
+                *[Alert Type]*: {{ .CommonLabels.alert_type }}
+                *[Alert Name]*: {{ .CommonLabels.alertname }}
+                *[Severity]*: {{ .CommonLabels.severity }}
+                *[IP]*: {{ .CommonLabels.ip }}
+                *[Host]*: {{ .CommonLabels.hostname }}
+                {% endraw %}
+
         owner: prometheus
         group: prometheus
         mode: 0644
         force: yes
-      tags: [monitor]
-
-    - name: Add Slack API URL to Alertmanager config
-      delegate_to: "{{ prometheus_server_ip }}"
-      become: true
-      lineinfile:
-        path: /etc/alertmanager/alertmanager.yml
-        line: "    api_url: '{{ slack_webhook_url }}'"
-        state: present
-        backup: no
       tags: [monitor]
 
     - name: Run Alertmanager container
@@ -794,6 +816,89 @@
   when: not ansible_check_mode
   tags: [monitor]
 
+- name: Create vm-metadata-metrics directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/vm-metadata-anchor
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  tags: [monitor]
+
+- name: Write anchor metrics file for vm-metadata-anchor
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /etc/vm-metadata-anchor/response.http
+    content: |
+      HTTP/1.1 200 OK
+      Content-Type: text/plain; version=0.0.4
+      Connection: close
+
+      # HELP vm_metadata_anchor Anchor metric for VM rule join/gating
+      # TYPE vm_metadata_anchor gauge
+      vm_metadata_anchor 1
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  tags: [monitor]
+
+- name: Install socat on Prometheus server
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  apt:
+    name: socat
+    state: present
+    update_cache: yes
+  tags: [monitor]
+
+- name: Create vm-metadata-anchor systemd service
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /lib/systemd/system/vm-metadata-anchor.service
+    content: |
+      [Unit]
+      Description=VM metadata anchor metrics (IPv4 127.0.0.1:9109)
+      After=network.target
+
+      [Service]
+      Type=simple
+      User=prometheus
+      Group=prometheus
+      ExecStart=/usr/bin/socat -T 1 TCP-LISTEN:9109,bind=127.0.0.1,reuseaddr,fork SYSTEM:"cat /etc/vm-metadata-anchor/response.http"
+      Restart=always
+      RestartSec=1
+
+      [Install]
+      WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [monitor]
+
+- name: Reload systemd and start vm-metadata-anchor service
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  block:
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+    - name: Enable and restart vm-metadata-anchor
+      systemd:
+        name: vm-metadata-anchor
+        enabled: yes
+        state: restarted
+  tags: [monitor]
+
+- name: Reload Prometheus configuration (SIGHUP)
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  command: sudo systemctl kill -s SIGHUP prometheus.service
+  tags: [monitor]
+
 - name: Update apt cache and install Grafana
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -986,6 +1091,10 @@
           - files:
               - '/etc/prometheus/lists/matched_vms.json'
             refresh_interval: 30s
+        metric_relabel_configs:
+          - source_labels: [__name__]
+            regex: 'up|vm_metadata_anchor'
+            action: keep          # keep only up and vm_metadata_anchor metrics
         relabel_configs:
           # 1. Keep domain label
           - source_labels: [domain]

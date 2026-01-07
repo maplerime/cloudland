@@ -126,7 +126,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		control := fmt.Sprintf("inter=%d", tgtHyper)
 		if tgtHyper == -1 {
 			var hyperGroup string
-			hyperGroup, err = instanceAdmin.GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
+			hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
 			if err != nil {
 				task1.Summary = "No qualified target"
 				task1.Status = "not_doing"

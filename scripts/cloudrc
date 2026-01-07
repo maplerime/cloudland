@@ -9,6 +9,7 @@ cache_dir=/opt/cloudland/cache
 cache_tmp_dir=$cache_dir/tmp
 backup_dir=$cache_dir/backup
 volume_dir=/opt/cloudland/cache/volume
+router_dir=/opt/cloudland/cache/router
 image_dir=$cache_dir/instance
 image_cache=$cache_dir/image
 xml_dir=/opt/cloudland/cache/xml
@@ -25,6 +26,7 @@ debug_log_file=/opt/cloudland/log/script.log
 debug_flag_file=/opt/cloudland/run/debug
 uefi_boot_loader=/usr/share/OVMF/OVMF_CODE_4M.fd
 nvram_template=/usr/share/OVMF/OVMF_VARS_4M.fd
+wds_bps_factor=1048576 # 1024 * 1024 
 #export JAEGER_SERVICE_NAME="SCI-Backend"
 function die()
 {
@@ -63,7 +65,7 @@ function apply_fw()
     rule=$*
     if [ "$action" = '-I' -o "$action" = '-A' ]; then
         rule_no=""
-        [ "$chain" = "FORWARD" ] && rule_no=2
+        [ "$chain" = "FORWARD" ] && rule_no=3
         iptables -C $chain $rule 2>/dev/null || iptables $action $chain $rule_no $rule
         return
     elif [ "$action" = '-N' ]; then

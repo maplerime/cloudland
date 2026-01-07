@@ -177,3 +177,33 @@
     enabled: yes
     state: started
   tags: [monitor]
+
+- name: Deploy systemd service for IP block exporter
+  become: true
+  template:
+    src: ip-block-exporter.service.j2
+    dest: /etc/systemd/system/ip-block-exporter.service
+    mode: '0644'
+  tags: [monitor]
+
+- name: Deploy systemd timer for IP block exporter
+  become: true
+  template:
+    src: ip-block-exporter.timer.j2
+    dest: /etc/systemd/system/ip-block-exporter.timer
+    mode: '0644'
+  tags: [monitor]
+
+- name: Reload systemd for IP block exporter
+  become: true
+  systemd:
+    daemon_reload: yes
+  tags: [monitor]
+
+- name: Enable and start ip-block-exporter.timer
+  become: true
+  systemd:
+    name: ip-block-exporter.timer
+    enabled: yes
+    state: started
+  tags: [monitor]

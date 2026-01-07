@@ -1,0 +1,13 @@
+[Unit]
+Description=Export blocked IPs from ipset to Prometheus metrics
+After=network.target
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/opt/cloudland/scripts/monitor/export_blocked_ips.sh
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

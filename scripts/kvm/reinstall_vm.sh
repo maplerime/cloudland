@@ -114,6 +114,7 @@ else
     fi
     # if sysdisk_iops_limit > 0 or sysdisk_bps_limit > 0 update volume qos
     if [ "$sysdisk_iops_limit" -gt 0 -o "$sysdisk_bps_limit" -gt 0 ]; then
+        sysdisk_bps_limit=$(($sysdisk_bps_limit * $wds_bps_factor))
         update_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/qos" "{\"qos\": {\"iops_limit\": $sysdisk_iops_limit, \"bps_limit\": $sysdisk_bps_limit}}")
         log_debug $vol_ID "update volume qos: $update_ret"
     fi
@@ -214,6 +215,7 @@ if [ "$os_code" = "windows" ]; then
     rdp_port=$(jq -r '.login_port' <<< $metadata)
     if [ -n "$rdp_port" ] && [ "${rdp_port}" != "3389" ]  && [ ${rdp_port} -gt 0 ]; then
         # run the script to change the rdp port in background
-        async_exec ./async_job/win_rdp_port.sh $vm_ID $rdp_port
+        async_exec ./async_job/win_rdp_port.sh $ID $rdp_port
     fi
+    async_exec ./async_job/win_primary_ip.sh $ID <<< $metadata
 fi
