@@ -213,6 +213,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				floatingIp := &model.FloatingIp{Model: model.Model{ID: iface.FloatingIp}}
 				err = db.Model(floatingIp).Updates(map[string]interface{}{
 					"instance_id": 0,
+					"router_id":   0,
 					"int_address": "",
 					"type":        string(PublicFloating)}).Error
 				if err != nil {
@@ -250,7 +251,11 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			fip.IntAddress = primaryIface.Address.Address
 			fip.Type = string(PublicReserved)
 			fip.Instance = nil
-			err = db.Model(fip).Updates(fip).Error
+			err = db.Model(fip).Updates(map[string]interface{}{
+				"instance_id": instance.ID,
+				"router_id":   0,
+				"int_address": primaryIface.Address.Address,
+				"type":        string(PublicReserved)}).Error
 			if err != nil {
 				logger.Errorf("Failed to update public ip, %v", err)
 				return
@@ -274,6 +279,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			fip.Instance = nil
 			err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
 				"instance_id": instance.ID,
+				"router_id":   0,
 				"int_address": iface.Address.Address,
 				"type":        string(PublicReserved),
 			}).Error
