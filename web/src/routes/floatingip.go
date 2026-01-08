@@ -428,11 +428,13 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 		floatingIp.Interface = nil
 		floatingIp.Router = nil
 		floatingIp.InstanceID = 0
+		floatingIp.RouterID = 0
 		floatingIp.IntAddress = ""
 		floatingIp.Type = string(PublicFloating)
 
 		updateFields := make(map[string]interface{})
 		updateFields["instance_id"] = 0
+		updateFields["router_id"] = 0
 		updateFields["int_address"] = ""
 		updateFields["type"] = string(PublicFloating)
 
