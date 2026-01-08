@@ -19,7 +19,7 @@ if [ "$os_code" = "windows" ]; then
     wait_qemu_ping $ID 10
     if [ -n "$primary_ip" ]; then
         read -d'\n' -r ip netmask  < <(ipcalc -nb $primary_ip | awk '/Address/ {print $2} /Netmask/ {print $2}')
-        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","set","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
+        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","set","address","name=eth0","addr='"$ip"'","mask='"$netmask"'","gateway='"$gateway"'"],"capture-output":true}}'
     fi
     i=0
     while [ $i -lt $naddrs ]; do
