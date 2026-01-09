@@ -1397,7 +1397,7 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	var notification struct {
 		Status string `json:"status"`
 		Alerts []struct {
-			State       string            `json:"state"`
+			Status      string            `json:"status"`
 			ActiveAt    time.Time         `json:"activeAt"`
 			Labels      map[string]string `json:"labels"`
 			Annotations map[string]string `json:"annotations"`
@@ -1416,81 +1416,35 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 
 	status := notification.Status
 	log.Printf("Processing %d alert(s) with status: %s", len(notification.Alerts), status)
+	log.Printf("Notification Alerts: %+v", notification.Alerts)
 
 	for _, alert := range notification.Alerts {
-		alert_type := alert.Labels["alert_type"]
-		alertName := alert.Labels["alertname"]
-		severity := alert.Labels["severity"]
-		owner := alert.Labels["owner"]
-		rule_group_uuid := alert.Labels["rule_group"]
-		global_rule_id := alert.Labels["global_rule_id"]
-		region_id := alert.Labels["region_id"]
-		instance_id := alert.Labels["instance_id"]
-		description := alert.Annotations["description"]
-		summary := alert.Annotations["summary"]
-
-		target_device := ""
-		if alert_type == "bw" {
-			target_device = alert.Labels["target_device"]
+		if alert.Status != "firing" {
+			log.Printf("Alert status is %s, skipping Switch API request for IP: %s", alert.Status, alert.Labels["ip"])
+			continue
 		}
+		alert_type := alert.Labels["alert_type"]
 
-		log.Printf("Alert %s: %s (type=%s, severity=%s, owner=%s, rule_id=%s)",
-			status, alertName, alert_type, severity, owner, global_rule_id)
+		// Handle IP Block alerts - Send to Switch API
+		if alert_type == "ip_blocked" && SwitchAPIEndpoint != "" {
+			ip := alert.Labels["ip"]
+			summary := alert.Annotations["summary"]
 
-		// Send notification using notify_url from alert labels (same pattern as adjust rules)
-		notifyURL := alert.Labels["notify_url"]
-		if notifyURL != "" {
-			// Construct notification parameters
-			endsAt := alert.EndsAt
-			summaryText := summary
-			descriptionText := description
-
-			if status == "resolved" {
-				endsAt = time.Now()
-				summaryText = fmt.Sprintf("RESOLVED: %s", summary)
-				descriptionText = fmt.Sprintf("Alert resolved: %s", description)
+			// Construct request body for Switch API
+			reqBody := map[string]interface{}{
+				"mode":       "simple",
+				"ip_address": ip,
+				"house":      SwitchAPIHouse,
+				"reason":     "Block IP for detect attack",
+				"comments":   summary,
 			}
 
-			notifyParams := routes.NotifyParams{
-				Alerts: []struct {
-					State       string            `json:"state"`
-					Labels      map[string]string `json:"labels"`
-					Annotations map[string]string `json:"annotations"`
-					StartsAt    time.Time         `json:"startsAt"`
-					EndsAt      time.Time         `json:"endsAt"`
-				}{
-					{
-						State: status,
-						Labels: map[string]string{
-							"alert_type":    alert_type,
-							"alertname":     alertName,
-							"rule_id":       global_rule_id,
-							"rule_group":    rule_group_uuid,
-							"region_id":     region_id,
-							"instance_id":   instance_id,
-							"severity":      severity,
-							"target_device": target_device,
-							"owner":         owner,
-						},
-						Annotations: map[string]string{
-							"description": descriptionText,
-							"summary":     summaryText,
-						},
-						StartsAt: alert.StartsAt,
-						EndsAt:   endsAt,
-					},
-				},
-			}
-
-			// Use AlarmOperator's SendNotification directly
-			if err := a.operator.SendNotification(c.Request.Context(), notifyURL, notifyParams); err != nil {
-				log.Printf("[ALARM-WARNING] Failed to send notification for alert %s: %v", alertName, err)
-			} else {
-				log.Printf("[ALARM-INFO] Successfully sent notification for alert: %s, rule_id: %s",
-					alertName, global_rule_id)
-			}
+			// Send request asynchronously
+			log.Printf("Switch API Request Body: %+v", reqBody)
+			go a.sendSwitchAPIRequest(reqBody)
+			log.Printf("Triggered Switch API request for IP Block: %s", ip)
 		} else {
-			log.Printf("[ALARM-WARNING] No notify_url found in alert labels for alert: %s", alertName)
+			log.Printf("Ignored alert (not ip_blocked or Switch API not configured): type=%s", alert_type)
 		}
 	}
 
@@ -2810,4 +2764,23 @@ func (a *AlarmAPI) getAdjustRuleDetails(ctx context.Context, groupUUID, ruleType
 	default:
 		return []gin.H{}, fmt.Errorf("unsupported adjust rule type: %s", ruleType)
 	}
+}
+
+func (a *AlarmAPI) sendSwitchAPIRequest(data map[string]interface{}) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		log.Printf("Failed to marshal switch api request: %v", err)
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(SwitchAPIEndpoint, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		log.Printf("Failed to send request to Switch API: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	log.Printf("Switch API response status: %s, body: %s", resp.Status, string(body))
 }
