@@ -381,13 +381,13 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
+	iface2, err := interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
 		return
 	}
-	interfaceResp, err := v.getInterfaceResponse(ctx, instance, iface)
+	interfaceResp, err := v.getInterfaceResponse(ctx, instance, iface2)
 	if err != nil {
 		logger.Errorf("Get interface responsefailed, %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)

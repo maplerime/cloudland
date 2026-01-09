@@ -19,6 +19,7 @@ import (
 	"web/src/model"
 
 	"github.com/go-macaron/session"
+	"github.com/google/uuid"
 	"github.com/jinzhu/gorm"
 	macaron "gopkg.in/macaron.v1"
 )
@@ -266,6 +267,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 
 	if len(publicIps) > 0 {
 		primaryMac := iface.MacAddr
+		primaryUUID := iface.UUID
 		if iface.FloatingIp != publicIps[0].ID {
 			var floatingIp *model.FloatingIp
 			floatingIp, err = floatingIpAdmin.Get(ctx, iface.FloatingIp)
@@ -288,27 +290,24 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				logger.Error("Failed to generate random Mac address, %v", err)
 				return
 			}
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
+			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
 				return
 			}
 			iface = nil
 		}
-		iface2, _, err = DerivePublicInterface(ctx, instance, iface, publicIps, primaryMac)
+		iface, _, err = DerivePublicInterface(ctx, instance, iface, publicIps, primaryMac, primaryUUID)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
 		}
-		if iface2 != iface {
-			iface = iface2
-			if len(secgroups) > 0 {
-				if err = db.Model(iface).Association("Security_Groups").Replace(secgroups).Error; err != nil {
-					logger.Debug("Failed to save interface", err)
-					return
-				}
-				iface.SecurityGroups = secgroups
+		if len(secgroups) > 0 {
+			if err = db.Model(iface).Association("Security_Groups").Replace(secgroups).Error; err != nil {
+				logger.Debug("Failed to save interface", err)
+				return
 			}
+			iface.SecurityGroups = secgroups
 		}
 	} else {
 		cnt := secondAddrsCount - len(iface.SecondAddresses)
@@ -482,7 +481,7 @@ func (a *InterfaceAdmin) Create(ctx context.Context, instance *model.Instance, a
 	return
 }
 
-func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (err error) {
+func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, iface *model.Interface, name string, inbound, outbound int32, allowSpoofing bool, secgroups []*model.SecurityGroup, ifaceSubnets []*model.Subnet, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp) (iface2 *model.Interface, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -584,6 +583,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			return
 		}
 	}
+	iface2 = iface
 	return
 }
 
@@ -1051,7 +1051,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 		}
 		publicAddresses = append([]*model.FloatingIp{primaryFip}, publicAddresses...)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, publicAddresses)
+	_, err = interfaceAdmin.Update(ctx, instance, iface, name, int32(inbound), int32(outbound), allowSpoofing, secgroups, ifaceSubnets, siteSubnets, ipCount, publicAddresses)
 	if err != nil {
 		logger.Debug("Failed to update interface", err)
 		c.Data["ErrorMsg"] = err.Error()
