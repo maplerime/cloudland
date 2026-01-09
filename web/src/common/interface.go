@@ -188,7 +188,7 @@ func GenerateMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp, primaryMac string) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
+func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp, primaryMac, primaryUUID string) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	primaryIface = iface
 	updatePrimary := false
@@ -233,6 +233,10 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 		if !updatePrimary && fip.InstanceID > 0 {
 			continue
 		}
+		if fip.InstanceID > 0 && fip.InstanceID != instance.ID {
+			err = fmt.Errorf("Public IP is already in use")
+			return
+		}
 		fip.Instance = instance
 		iface := fip.Interface
 		if i == 0 {
@@ -241,6 +245,9 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			primaryIface.PrimaryIf = true
 			if primaryMac != "" {
 				primaryIface.MacAddr = primaryMac
+			}
+			if primaryUUID != "" {
+				primaryIface.UUID = primaryUUID
 			}
 			err = db.Model(primaryIface).Updates(primaryIface).Error
 			if err != nil {

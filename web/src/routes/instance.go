@@ -741,7 +741,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	memberShip := GetMemberShip(ctx)
 
 	if len(ifaceInfo.PublicIps) > 0 {
-		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "")
+		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "", "")
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
