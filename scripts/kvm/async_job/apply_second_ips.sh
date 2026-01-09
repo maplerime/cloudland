@@ -28,7 +28,7 @@ if [ "$os_code" = "windows" ]; then
         virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","add","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
         let i=$i+1
     done
-elif [ "$os_code" = "linux" ]; then
+elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
     i=0
     while [ $i -lt $naddrs ]; do
         read -d'\n' -r address < <(jq -r ".[$i]" <<< "$more_addresses")
