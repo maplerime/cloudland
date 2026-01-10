@@ -236,7 +236,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	migration := &model.Migration{}
 	db := DB()
-	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
+	err = db.Preload("Phases", "name = 'Prepare_Source' and status == 'failed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			err = nil
