@@ -67,7 +67,7 @@ type Instance struct {
 	Userdata     string `gorm:"type:text"`
 	UserdataType string `gorm:"type:varchar(16);default:'plain'"`
 	LoginPort    int32
-	Hyper        int32 `gorm:"default:-1"`
+	Hyper        int32 `gorm:"index;default:-1"`
 	ZoneID       int64
 	Zone         *Zone `gorm:"foreignkey:ZoneID"`
 	RouterID     int64 `gorm:"unique_index:idx_router_instance"`

@@ -158,6 +158,16 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
+	// check storage pool
+	driver := GetVolumeDriver()
+	if driver != "local" && poolID != "" {
+		_, err = dictionaryAdmin.Find(ctx, "storage_pool", poolID)
+		if err != nil {
+			logger.Error("Storage pool not found", err)
+			return
+		}
+	}
+
 	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
 	if err != nil {
 		logger.Error("DB create volume failed", err)
