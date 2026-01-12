@@ -4,24 +4,21 @@ source tokenrc
 
 cat >tmp.json <<EOF
 {
-  "hostname": "cathy-perf4",
+  "hostname": "cathy-win",
   "primary_interface": {
-    "subnets": [{
-      "id": "a0e2514d-3964-4e23-a2ff-fb5e66003fae"
-    }],
+    "public_addresses": [
+      {"id": "d5df4f5a-1464-4322-a03c-7b4d1b85106c"},
+      {"id": "7b4f1fb8-7595-41f1-b9f4-edfce7e93a82"}
+    ],
     "inbound": 100,
     "outbound": 100
   },
   "flavor": "XLarge-8C16G",
+  "root_passwd": "Wish-Y0u-Happy",
   "image": {
-    "id": "67e5608a-4d4d-4ef3-af86-6953c13233a6"
+    "id": "10cc52a1-ca87-4815-86f8-d63784ae5924"
   },
   "hypervisor": 1,
-  "keys": [
-    {
-      "id": "689f82db-cd87-46b3-8808-1eec15a6d13c"
-    }
-  ],
   "zone": "zone0"
 }
 EOF
