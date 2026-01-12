@@ -136,6 +136,12 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to update instance status to unknown, %v", err)
 			return
 		}
+	} else if status == "rollback" {
+		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{"status": "reset"}).Error
+		if err != nil {
+			logger.Error("Failed to update instance status to reset, %v", err)
+			return
+		}
 	} else if status == "target_prepared" {
 		migration.TargetHyper = int32(hyperID)
 		targetHyper := &model.Hyper{}

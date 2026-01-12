@@ -140,7 +140,8 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				err = nil
 				continue
 			}
-			control = "select=" + hyperGroup
+			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, instance.Disk*1024*1024, 0)
+			control = "select=" + hyperGroup + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {

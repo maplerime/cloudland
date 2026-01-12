@@ -22,7 +22,7 @@
 			                        <th>{{.i18n.Tr "HyperID"}}</th>
 			                        <th>{{.i18n.Tr "Hostname"}}</th>
 			                        <th>{{.i18n.Tr "ParentID"}}</th>
-			                        <th>{{.i18n.Tr "Children"}}</th>
+			                        <th>{{.i18n.Tr "Cpu Model"}}</th>
 			                        <th>{{.i18n.Tr "HostIP"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
 			                        <th>{{.i18n.Tr "Zone"}}</th>
@@ -42,7 +42,7 @@
 			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostid}}</a></td>
 			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostname}}</a></td>
 			                        <td>{{.Parentid}}</td>
-			                        <td>{{.Children}}</td>
+			                        <td>{{.CpuModel}}</td>
 			                        <td>{{.HostIP}}</td>
 			                        <td>{{.GetStatus}}</td>
 			                        <td>{{ if .Zone}}{{.Zone.Name}}{{end}}</td>
