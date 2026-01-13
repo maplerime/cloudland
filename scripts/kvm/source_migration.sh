@@ -16,7 +16,6 @@ state=failed
 
 vm_xml=$(virsh dumpxml $vm_ID)
 if [ "$migration_type" = "warm" ]; then
-    state=rollback
     vm_state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2 | xargs)
     if [ "$vm_state" = "shut off" ]; then
         virsh migrate --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
@@ -37,7 +36,6 @@ if [ "$migration_type" = "warm" ]; then
         exit 0
     fi
 else
-    state=shutdown
     virsh shutdown $vm_ID
     for i in {1..60}; do
         vm_state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2- | xargs | sed 's/shut off/shut_off/g')
