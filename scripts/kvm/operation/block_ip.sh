@@ -66,5 +66,8 @@ log "ACTION: Added $ip to blacklist"
 if ! iptables -C "$CHAIN_NAME" -m set --match-set "$IPSET_NAME" src -j DROP &>/dev/null; then
     iptables -I "$CHAIN_NAME" 1 -m set --match-set "$IPSET_NAME" src -j DROP
 fi
+if ! iptables -C "$CHAIN_NAME" -m set --match-set "$IPSET_NAME" dst -j DROP &>/dev/null; then
+    iptables -I "$CHAIN_NAME" 1 -m set --match-set "$IPSET_NAME" dst -j DROP
+fi
 
 log "INFO: Blacklist update completed"
