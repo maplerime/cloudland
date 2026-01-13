@@ -24,11 +24,16 @@ if [ "$migration_type" = "warm" ]; then
     fi
     if [ $? -ne 0 ]; then
         ./clear_source_vhost.sh $ID
-        state=rollback
         virsh define $xml_dir/$vm_ID/$vm_ID.xml
         virsh start $vm_ID
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
-	exit 1
+        exit 1
+    fi
+    virsh dominfo $vm_ID
+    if [ $? -eq 0 ]; then
+        ./clear_source_vhost.sh $ID
+        echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+        exit 0
     fi
 else
     virsh shutdown $vm_ID
