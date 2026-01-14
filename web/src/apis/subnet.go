@@ -154,6 +154,7 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 			subnet.Group = nil
 		}
 	}
+	subnet.Priority = payload.Priority
 	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group, payload.Priority)
 	if err != nil {
 		logger.Errorf("Failed to update subnet %s, %+v", uuID, err)
