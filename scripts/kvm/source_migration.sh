@@ -29,9 +29,8 @@ if [ "$migration_type" = "warm" ]; then
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
         exit 1
     fi
-    virsh dominfo $vm_ID
-    if [ $? -eq 0 ]; then
-        ./clear_source_vhost.sh $ID
+    vm_state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2 | xargs)
+    if [ "$vm_state" = "running" ]; then
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
         exit 0
     fi
