@@ -1588,6 +1588,10 @@ definitions:
         maxLength: 64
         minLength: 2
         type: string
+      priority:
+        maximum: 100000
+        minimum: 0
+        type: integer
       type:
         allOf:
         - $ref: '#/definitions/common.SubnetType'
@@ -1616,6 +1620,10 @@ definitions:
         type: string
       network_cidr:
         type: string
+      priority:
+        maximum: 100000
+        minimum: 0
+        type: integer
       start_ip:
         type: string
       type:
@@ -1654,6 +1662,8 @@ definitions:
         type: string
       owner:
         type: string
+      priority:
+        type: integer
       start:
         type: string
       type:
