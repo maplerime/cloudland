@@ -39,6 +39,7 @@ type SubnetResponse struct {
 	Type       SubnetType         `json:"type"`
 	IdleCount  int64              `json:"idle_count"`
 	Vlan       int                `json:"vlan"`
+	Priority   int32              `json:"priority"`
 }
 
 type SiteSubnetInfo struct {
@@ -72,12 +73,14 @@ type SubnetPayload struct {
 	Group       *BaseReference `json:"group" binding:"omitempty"`
 	Vlan        int            `json:"vlan" binding:"omitempty,gte=1,lte=16777215"`
 	Type        SubnetType     `json:"type" binding:"omitempty"`
+	Priority    int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
 }
 
 type SubnetPatchPayload struct {
-	Name  string         `json:"name" binding:"omitempty,min=2,max=64"`
-	Group *BaseReference `json:"group" binding:"omitempty"`
-	Type  SubnetType     `json:"type" binding:"omitempty,oneof=public internal site"`
+	Name     string         `json:"name" binding:"omitempty,min=2,max=64"`
+	Group    *BaseReference `json:"group" binding:"omitempty"`
+	Type     SubnetType     `json:"type" binding:"omitempty,oneof=public internal site"`
+	Priority int32          `json:"priority" binding:"omitempty,gte=0,lte=100000"`
 }
 
 // @Summary get a subnet
@@ -151,7 +154,8 @@ func (v *SubnetAPI) Patch(c *gin.Context) {
 			subnet.Group = nil
 		}
 	}
-	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group)
+	subnet.Priority = payload.Priority
+	err = subnetAdmin.Update(ctx, subnet.ID, subnet.Name, subnet.Type, subnet.Group, payload.Priority)
 	if err != nil {
 		logger.Errorf("Failed to update subnet %s, %+v", uuID, err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update subnet", err)
@@ -244,7 +248,7 @@ func (v *SubnetAPI) Create(c *gin.Context) {
 			}
 		}
 	}
-	subnet, err := subnetAdmin.Create(ctx, payload.Vlan, payload.Name, payload.NetworkCIDR, payload.Gateway, payload.StartIP, payload.EndIP, string(payload.Type), payload.NameServer, payload.BaseDomain, payload.Dhcp, router, ipGroup)
+	subnet, err := subnetAdmin.Create(ctx, payload.Vlan, payload.Name, payload.NetworkCIDR, payload.Gateway, payload.StartIP, payload.EndIP, string(payload.Type), payload.NameServer, payload.BaseDomain, payload.Dhcp, router, ipGroup, payload.Priority)
 	if err != nil {
 		logger.Errorf("Failed to create subnet, err=%v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create subnet", err)
@@ -278,6 +282,7 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		NameServer: subnet.NameServer,
 		Type:       SubnetType(subnet.Type),
 		Vlan:       int(subnet.Vlan),
+		Priority:   subnet.Priority,
 	}
 	if subnet.Router != nil {
 		router := subnet.Router

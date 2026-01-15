@@ -1,0 +1,21 @@
+groups:
+- name: packet-drop-monitor
+  rules:
+    - alert: PacketDropDetected
+      # Unified rule for all packet drop indicators
+      expr: packet_drop_indicators{type!="healthy"} > {{ packet_drop_threshold | default(0) }}
+      for: {{ for_duration | default("1m") }}
+      labels:
+        severity: {{ severity | default("warning") }}
+        component: network
+        alert_type: packet_drop
+        metric_type: "{{ $labels.type }}"
+        hostname: "{{ $labels.hostname }}"
+      annotations:
+        summary: "Packet drops detected ({{ $labels.type }}) on {{ $labels.hostname }}"
+        description: |
+          Packet drop or processing failure indicators detected in recent dmesg logs on host {{ $labels.hostname }}.
+          Type: {{ $labels.type }}
+          Description: {{ $labels.description }}
+          Count: {{ $value }}
+          This may indicate network congestion, conntrack table exhaustion, or other network processing issues.

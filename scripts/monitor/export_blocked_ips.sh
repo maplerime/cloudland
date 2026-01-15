@@ -22,20 +22,30 @@ cat > "$TMP_FILE" << EOF
 # TYPE ipset_blocked_ips gauge
 EOF
 
-# Check if blacklist set exists and extract blocked IPs
-if ipset list blacklist >/dev/null 2>&1; then
-    ipset list blacklist | awk -v hostname="$HOSTNAME_VAL" '
-    /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {
-        # Extract IP address from ipset output
-        # Format: "1.2.3.4 timeout 3600" or just "1.2.3.4"
-        ip = $1
-        printf "ipset_blocked_ips{ip=\"%s\",hostname=\"%s\"} 1\n", ip, hostname
-    }
-    ' >> "$TMP_FILE"
-else
-    # No blacklist set exists, just add a comment
-    echo "# No blacklist ipset found - no IPs currently blocked" >> "$TMP_FILE"
-fi
+# Export function: append members from a given ipset set
+# Args: $1 = set name, $2 = block_type label (dst/src)
+export_set() {
+    local SET_NAME="$1"
+    local BLOCK_TYPE="$2"
+
+    if ipset list "$SET_NAME" >/dev/null 2>&1; then
+        ipset list "$SET_NAME" | awk -v hostname="$HOSTNAME_VAL" -v block_type="$BLOCK_TYPE" '
+        /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/ {
+            # Extract IP address from ipset output
+            # Format: "1.2.3.4 timeout 3600" or just "1.2.3.4"
+            ip = $1
+            printf "ipset_blocked_ips{ip=\"%s\",hostname=\"%s\",block_type=\"%s\"} 1\n", ip, hostname, block_type
+        }
+        ' >> "$TMP_FILE"
+    else
+        echo "# No ${SET_NAME} ipset found - no IPs currently blocked for ${BLOCK_TYPE}" >> "$TMP_FILE"
+    fi
+}
+
+# Export both sets into the same metric file
+export_set "block_dst" "dst"
+export_set "block_src" "src"
+
 
 # Write to output file atomically - always overwrite to ensure fresh data
 mv "$TMP_FILE" "$OUTPUT_FILE"

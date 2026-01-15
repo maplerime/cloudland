@@ -6035,6 +6035,12 @@
                 "userdata_type": {
                     "type": "string"
                 },
+                "vendordata": {
+                    "type": "string"
+                },
+                "vendordatatype": {
+                    "type": "string"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -7228,6 +7234,11 @@
                     "maxLength": 64,
                     "minLength": 2
                 },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 0
+                },
                 "type": {
                     "enum": [
                         "public",
@@ -7274,6 +7285,11 @@
                 },
                 "network_cidr": {
                     "type": "string"
+                },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 0
                 },
                 "start_ip": {
                     "type": "string"
@@ -7326,6 +7342,9 @@
                 },
                 "owner": {
                     "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
                 },
                 "start": {
                     "type": "string"

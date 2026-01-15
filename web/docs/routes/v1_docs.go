@@ -6042,6 +6042,12 @@ const docTemplatev1 = `{
                 "userdata_type": {
                     "type": "string"
                 },
+                "vendordata": {
+                    "type": "string"
+                },
+                "vendordatatype": {
+                    "type": "string"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
@@ -7235,6 +7241,11 @@ const docTemplatev1 = `{
                     "maxLength": 64,
                     "minLength": 2
                 },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 0
+                },
                 "type": {
                     "enum": [
                         "public",
@@ -7281,6 +7292,11 @@ const docTemplatev1 = `{
                 },
                 "network_cidr": {
                     "type": "string"
+                },
+                "priority": {
+                    "type": "integer",
+                    "maximum": 100000,
+                    "minimum": 0
                 },
                 "start_ip": {
                     "type": "string"
@@ -7333,6 +7349,9 @@ const docTemplatev1 = `{
                 },
                 "owner": {
                     "type": "string"
+                },
+                "priority": {
+                    "type": "integer"
                 },
                 "start": {
                     "type": "string"

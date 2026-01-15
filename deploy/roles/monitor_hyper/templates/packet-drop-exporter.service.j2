@@ -1,14 +1,13 @@
 [Unit]
-Description=Collect Conntrack Unreplied SYN Flows
+Description=Export packet drop indicators from dmesg to Prometheus metrics
 After=network.target
 
 [Service]
 Type=oneshot
 User=root
-ExecStart=/opt/cloudland/scripts/monitor/conntrack_unreplied_syn.sh
+ExecStart=/opt/cloudland/scripts/monitor/export_packet_drops.sh
 StandardOutput=journal
 StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
-
