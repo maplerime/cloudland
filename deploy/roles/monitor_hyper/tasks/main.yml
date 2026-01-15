@@ -140,40 +140,123 @@
     state: present
   tags: [monitor]
 
-- name: Stop conntrack-collection.timer before update
+- name: Check if conntrack-collection systemd units exist
+  become: true
+  command: systemctl list-units --all --no-pager --no-legend {{ item }}
+  register: systemd_unit_check
+  failed_when: false
+  changed_when: false
+  with_items:
+    - conntrack-collection.timer
+    - conntrack-collection.service
+  tags: [monitor]
+
+- name: Stop and disable existing conntrack-collection systemd units
   become: true
   systemd:
-    name: conntrack-collection.timer
+    name: "{{ item.item }}"
     state: stopped
-  ignore_errors: true
+    enabled: no
+  when: item.rc == 0 and item.stdout | length > 0
+  with_items: "{{ systemd_unit_check.results }}"
   tags: [monitor]
 
-- name: Deploy systemd service for conntrack collection
+- name: Check if conntrack-collection systemd unit files exist
   become: true
-  template:
-    src: conntrack-collection.service.j2
-    dest: /etc/systemd/system/conntrack-collection.service
-    mode: '0644'
+  stat:
+    path: "{{ item }}"
+  register: systemd_file_check
+  with_items:
+    - /etc/systemd/system/conntrack-collection.service
+    - /etc/systemd/system/conntrack-collection.timer
   tags: [monitor]
 
-- name: Deploy systemd timer for conntrack collection
+- name: Remove conntrack-collection systemd unit files
   become: true
-  template:
-    src: conntrack-collection.timer.j2
-    dest: /etc/systemd/system/conntrack-collection.timer
-    mode: '0644'
+  file:
+    path: "{{ item.item }}"
+    state: absent
+  when: item.stat.exists
+  with_items: "{{ systemd_file_check.results }}"
   tags: [monitor]
 
-- name: Reload systemd daemon
+- name: Check if conntrack_unreplied_syn.sh script exists
+  become: true
+  stat:
+    path: /opt/cloudland/scripts/monitor/conntrack_unreplied_syn.sh
+  register: script_check
+  tags: [monitor]
+
+- name: Remove conntrack_unreplied_syn.sh script
+  become: true
+  file:
+    path: /opt/cloudland/scripts/monitor/conntrack_unreplied_syn.sh
+    state: absent
+  when: script_check.stat.exists
+  tags: [monitor]
+
+- name: Reload systemd daemon after cleanup
   become: true
   systemd:
     daemon_reload: yes
   tags: [monitor]
 
-- name: Enable and start conntrack-collection.timer
+- name: Deploy systemd service for IP block exporter
+  become: true
+  template:
+    src: ip-block-exporter.service.j2
+    dest: /etc/systemd/system/ip-block-exporter.service
+    mode: '0644'
+  tags: [monitor]
+
+- name: Deploy systemd timer for IP block exporter
+  become: true
+  template:
+    src: ip-block-exporter.timer.j2
+    dest: /etc/systemd/system/ip-block-exporter.timer
+    mode: '0644'
+  tags: [monitor]
+
+- name: Reload systemd for IP block exporter
   become: true
   systemd:
-    name: conntrack-collection.timer
+    daemon_reload: yes
+  tags: [monitor]
+
+- name: Enable and start ip-block-exporter.timer
+  become: true
+  systemd:
+    name: ip-block-exporter.timer
+    enabled: yes
+    state: started
+  tags: [monitor]
+
+- name: Deploy systemd service for packet drop exporter
+  become: true
+  template:
+    src: packet-drop-exporter.service.j2
+    dest: /etc/systemd/system/packet-drop-exporter.service
+    mode: '0644'
+  tags: [monitor]
+
+- name: Deploy systemd timer for packet drop exporter
+  become: true
+  template:
+    src: packet-drop-exporter.timer.j2
+    dest: /etc/systemd/system/packet-drop-exporter.timer
+    mode: '0644'
+  tags: [monitor]
+
+- name: Reload systemd for packet drop exporter
+  become: true
+  systemd:
+    daemon_reload: yes
+  tags: [monitor]
+
+- name: Enable and start packet-drop-exporter.timer
+  become: true
+  systemd:
+    name: packet-drop-exporter.timer
     enabled: yes
     state: started
   tags: [monitor]

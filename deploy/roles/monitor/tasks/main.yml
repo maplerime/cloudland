@@ -438,6 +438,38 @@
                 receiver: 'slack-notifications'
                 continue: true
 
+              # Route IP blocking alerts to slack-ip-block with alertname grouping (merge multiple IPs)
+              - match_re:
+                  alert_type: ip_blocked
+                  severity: warning|critical|info|error
+                group_by: ['alertname', 'hostname', 'ip', 'block_type']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 2h
+                receiver: 'slack-ip-block'
+                continue: true
+
+              - match:
+                  alert_type: ip_blocked
+                  block_type: dst
+                group_by: ['alertname', 'hostname', 'ip', 'block_type']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 2h
+                receiver: 'ip-block-webhook'
+                continue: true
+
+              # Route packet drop alerts to slack-drop-package with fine-grained grouping
+              - match:
+                  alert_type: packet_drop
+                # Group by description so we can show the specific kernel symbol in the title/text
+                group_by: ['alertname', 'hostname', 'description', 'alert_type', 'severity']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 2h
+                receiver: 'slack-drop-package'
+                continue: true
+
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
               - match_re:
                   alert_type: (cpu|memory|bw)
@@ -470,6 +502,14 @@
                 {% endraw %}
 
 
+          - name: 'ip-block-webhook'
+            webhook_configs:
+            - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
+              send_resolved: false
+              http_config:
+                tls_config:
+                  insecure_skip_verify: true
+
           - name: 'vm-alerts-webhook'
             webhook_configs:
             - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/process'
@@ -492,6 +532,7 @@
               send_resolved: true
               username: 'alertmanager'
               icon_emoji: ':satellite:'
+              api_url: '{{ slack_webhook_url }}'
               title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}{% endraw %}'
               text: |-
                 {% raw %}
@@ -504,20 +545,50 @@
                 *[Labels]*: `{{ .CommonLabels }}`
                 *[Annotations]*: `{{ .CommonAnnotations }}`
                 {% endraw %}
+
+          - name: 'slack-ip-block'
+            slack_configs:
+            - channel: '{{ slack_channel }}'
+              send_resolved: true
+              username: 'alertmanager'
+              icon_emoji: ':shield:'
+              api_url: '{{ slack_webhook_url }}'
+              title: '{% raw %}IP {{ .CommonLabels.ip }} blocked on {{ .CommonLabels.hostname }}{% endraw %}'
+              text: |-
+                {% raw %}
+                *[Summary]*: {{ .CommonAnnotations.summary }}
+                *[Description]*: {{ .CommonAnnotations.description }}
+                *[Alert Type]*: {{ .CommonLabels.alert_type }}
+                *[Alert Name]*: {{ .CommonLabels.alertname }}
+                *[Severity]*: {{ .CommonLabels.severity }}
+                *[Block Type]*: {{ .CommonLabels.block_type }}
+                *[IP]*: {{ .CommonLabels.ip }}
+                *[Host]*: {{ .CommonLabels.hostname }}
+                {% endraw %}
+
+          - name: 'slack-drop-package'
+            slack_configs:
+            - channel: '{{ slack_channel }}'
+              send_resolved: true
+              username: 'alertmanager'
+              icon_emoji: ':shield:'
+              api_url: '{{ slack_webhook_url }}'
+              # Title: Use CommonLabels since we group by description and hostname
+              title: '{% raw %}PacketDropDetected on {{ .CommonLabels.hostname }} by: {{ .CommonLabels.description }}{% endraw %}'
+              text: |-
+                {% raw %}
+                *[Summary]*: {{ .CommonAnnotations.summary }}
+                *[Detailed Description]*: {{ .CommonLabels.description }}
+                *[Alert Details]*: {{ .CommonAnnotations.description }}
+                *[Alert Type]*: {{ .CommonLabels.alert_type }}
+                *[Severity]*: {{ .CommonLabels.severity }}
+                *[Host]*: {{ .CommonLabels.hostname }}
+                {% endraw %}
+
         owner: prometheus
         group: prometheus
         mode: 0644
         force: yes
-      tags: [monitor]
-
-    - name: Add Slack API URL to Alertmanager config
-      delegate_to: "{{ prometheus_server_ip }}"
-      become: true
-      lineinfile:
-        path: /etc/alertmanager/alertmanager.yml
-        line: "    api_url: '{{ slack_webhook_url }}'"
-        state: present
-        backup: no
       tags: [monitor]
 
     - name: Run Alertmanager container

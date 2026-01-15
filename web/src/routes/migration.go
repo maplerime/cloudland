@@ -126,7 +126,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		control := fmt.Sprintf("inter=%d", tgtHyper)
 		if tgtHyper == -1 {
 			var hyperGroup string
-			hyperGroup, err = instanceAdmin.GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
+			hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
 			if err != nil {
 				task1.Summary = "No qualified target"
 				task1.Status = "not_doing"
@@ -140,7 +140,8 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				err = nil
 				continue
 			}
-			control = "select=" + hyperGroup
+			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, instance.Disk*1024*1024, 0)
+			control = "select=" + hyperGroup + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {

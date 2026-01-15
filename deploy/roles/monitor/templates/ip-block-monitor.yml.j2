@@ -1,0 +1,19 @@
+groups:
+- name: ip-blocking-monitor
+  rules:
+    - alert: IPBlocked
+      # Monitor blocked IPs from ipset (block_dst / block_src)
+      expr: ipset_blocked_ips == 1
+      for: {{ for_duration | default("30s") }}
+      labels:
+        # Dynamic labels from metrics
+        severity: {{ severity | default("warning") }}
+        component: network
+        alert_type: ip_blocked
+        ip: "{{ $labels.ip }}"
+        hostname: "{{ $labels.hostname }}"
+        block_type: "{{ $labels.block_type }}"
+      annotations:
+        summary: "IP {{ $labels.ip }} is currently blocked ({{ $labels.block_type }}) on {{ $labels.hostname }}"
+        description: |
+          IP address {{ $labels.ip }} is currently in the ipset {{ $labels.block_type }} block list on host {{ $labels.hostname }} due to suspicious network activity detected by conntrack monitoring.

@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -ne 1 ] && echo "Usage: $0 <ip_address>" && exit 1
+[ $# -lt 1 ] && echo "Usage: $0 <ip_address> [info_ipset_name]" && exit 1
 
 LOG_DIR="/opt/cloudland/log"
 LOG_FILE="$LOG_DIR/black_list.log"
@@ -18,12 +18,19 @@ log() {
 }
 
 ip=$1
+info_ipset=$2
 IPSET_NAME="blacklist"
 CHAIN_NAME="BLACKLIST"
 
 # Create ipset if not exists
 if ! ipset list "$IPSET_NAME" &>/dev/null; then
     ipset create "$IPSET_NAME" hash:ip timeout 0
+fi
+
+if [ -n "$info_ipset" ]; then
+    if ! ipset list "$info_ipset" &>/dev/null; then
+        ipset create "$info_ipset" hash:ip timeout 0
+    fi
 fi
 
 # Create iptables chain if not exists
@@ -49,25 +56,18 @@ else
     fi
 fi
 
-# Validate IP format
-if [[ ! "$ip" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]] && \
-   [[ ! "$ip" =~ ^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$ ]]; then
-    log "ERROR: Invalid IP address: $ip"
-    exit 1
-fi
-
-# Check if IP already in set
-if ipset test "$IPSET_NAME" "$ip" &>/dev/null; then
-    log "INFO: IP $ip already in blacklist"
-    exit 0
-fi
-
-ipset add "$IPSET_NAME" "$ip" timeout 7200
+[ -z "$blocking_timeout" ] && blocking_timeout=7200
+ipset add "$IPSET_NAME" "$ip" timeout $blocking_timeout
+[ -z "$info_timeout" ] && info_timeout=300
+[ -n "$info_ipset" ] && ipset add "$info_ipset" "$ip" timeout "$info_timeout"
 log "ACTION: Added $ip to blacklist"
 
 # Ensure iptables rule exists
 if ! iptables -C "$CHAIN_NAME" -m set --match-set "$IPSET_NAME" src -j DROP &>/dev/null; then
     iptables -I "$CHAIN_NAME" 1 -m set --match-set "$IPSET_NAME" src -j DROP
+fi
+if ! iptables -C "$CHAIN_NAME" -m set --match-set "$IPSET_NAME" dst -j DROP &>/dev/null; then
+    iptables -I "$CHAIN_NAME" 1 -m set --match-set "$IPSET_NAME" dst -j DROP
 fi
 
 log "INFO: Blacklist update completed"

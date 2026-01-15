@@ -228,7 +228,7 @@ func (a *SubnetAdmin) GetSubnet(ctx context.Context, reference *BaseReference) (
 	return
 }
 
-func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup) (err error) {
+func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType string, ipGroup *model.IpGroup, priority int32) (err error) {
 	logger.Debugf("Updating subnet with ID: %d, name: %s, subnetType: %s, ipGroup: %+v", id, name, subnetType, ipGroup)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -239,8 +239,9 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 	}()
 
 	updates := map[string]interface{}{
-		"name": name,
-		"type": subnetType,
+		"name":     name,
+		"type":     subnetType,
+		"priority": priority,
 	}
 
 	if ipGroup != nil {
@@ -319,7 +320,7 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 	return
 }
 
-func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup) (subnet *model.Subnet, err error) {
+func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup, priority int32) (subnet *model.Subnet, err error) {
 	logger.Debugf("Creating subnet with vlan: %d, name: %s, network: %s, gateway: %s, start: %s, end: %s, rtype: %s, dns: %s, domain: %s, dhcp: %t, router: %+v, ipGroup: %+v", vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -420,6 +421,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		Type:         rtype,
 		RouterID:     routerID,
 		GroupID:      groupID,
+		Priority:     priority,
 	}
 	err = db.Create(subnet).Error
 	if err != nil {
@@ -521,6 +523,14 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		err = NewCLError(ErrAddressDeleteFailed, "Database delete ip address failed", err)
 		return
 	}
+	if subnet.Type == "vrrp" && subnet.RouterID > 0 {
+		err = db.Model(&model.Router{Model: model.Model{ID: subnet.RouterID}}).Updates(map[string]interface{}{"vrrp_subnet_id": 0}).Error
+		if err != nil {
+			logger.Error("DB failed to update router vrrp subnet", err)
+			err = NewCLError(ErrDatabaseError, "Database failed to update router vrrp subnet", err)
+			return
+		}
+	}
 	// delete floatingip
 	var floatingIps []*model.FloatingIp
 	err = db.Where("subnet_id = ?", subnet.ID).Find(&floatingIps).Error
@@ -560,6 +570,7 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	err := db.Model(&model.Address{}).
 		Where("subnet_id = ?", subnet.ID).
 		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
 		Where("address != ?", subnet.Gateway).
 		Count(&idleCount).Error
 
@@ -917,7 +928,13 @@ func (v *SubnetView) Patch(c *macaron.Context, store session.Store) {
 	// 	c.HTML(http.StatusBadRequest, "error")
 	// 	return
 	// }
-	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, ipGroup)
+	priority := c.QueryInt64("priority")
+	if priority < 0 || priority > 100000 {
+		c.Data["ErrorMsg"] = "Priority out of range(0~100000)"
+		c.HTML(400, "error")
+		return
+	}
+	err = subnetAdmin.Update(c.Req.Context(), id, name, subnet.Type, ipGroup, int32(priority))
 	if err != nil {
 		logger.Error("Create subnet failed", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -975,7 +992,13 @@ func (v *SubnetView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
-	_, err = subnetAdmin.Create(ctx, vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
+	priority := c.QueryInt64("priority")
+	if priority < 0 || priority > 100000 {
+		c.Data["ErrorMsg"] = "Priority out of range(0~100000)"
+		c.HTML(400, "error")
+		return
+	}
+	_, err = subnetAdmin.Create(ctx, vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup, int32(priority))
 	if err != nil {
 		logger.Error("Create subnet failed ", err)
 		c.Data["ErrorMsg"] = err.Error()

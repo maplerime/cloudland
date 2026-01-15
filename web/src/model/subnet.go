@@ -29,6 +29,7 @@ type Subnet struct {
 	RouterID     int64    `gorm:"unique_index:idx_router_subnet"`
 	Router       *Router  `gorm:"foreignkey:RouterID"`
 	Routes       string   `gorm:"type:varchar(256)"`
+	Priority     int32    `gorm:"default:0"` /* Priority for subnet selection, lower value means higher priority */
 	GroupID      int64    `gorm:"index"`
 	Group        *IpGroup `gorm:"foreignkey:GroupID" json:"-" gorm:"-"`
 	IdleCount    int64    `gorm:"-"`

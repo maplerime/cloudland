@@ -34,6 +34,7 @@ type Hyper struct {
 	HostIP       string
 	RouteIP      string
 	VirtType     string
+	CpuModel     string
 	CpuOverRate  float32 `gorm:"default:1.0"`
 	MemOverRate  float32 `gorm:"default:1.0"`
 	DiskOverRate float32 `gorm:"default:1.0"`

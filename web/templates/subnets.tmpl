@@ -31,6 +31,7 @@
 			                        <th>{{.i18n.Tr "Group"}}</th>
 			                        <th>{{.i18n.Tr "Network"}}</th>
 			                        <th>{{.i18n.Tr "Netmask"}}</th>
+			                        <th>{{.i18n.Tr "Priority"}}</th>
 			                        <th>{{.i18n.Tr "VPC"}}</th>
 						{{ if $.IsAdmin }}
 			                        <th>{{.i18n.Tr "Vlan"}}</th>
@@ -61,6 +62,7 @@
                                             </td>
 			                        <td>{{.Network}}</td>
 			                        <td>{{.Netmask}}</td>
+			                        <td>{{.Priority}}</td>
 			                        <td>
 						{{ if .Router }}
 						{{ .Router.Name }}

@@ -70,6 +70,7 @@ type InterfacePatchPayload struct {
 	Name            string           `json:"name" binding:"omitempty,min=2,max=32"`
 	Inbound         *int32           `json:"inbound" binding:"omitempty,min=0,max=20000"`
 	Outbound        *int32           `json:"outbound" binding:"omitempty,min=0,max=20000"`
+	PrimaryAddress  *BaseReference   `json:"primary_address,omitempty"`
 	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
 	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=32"`
 	Count           *int             `json:"count" binding:"omitempty,gte=1,lte=512"`
@@ -138,6 +139,7 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 				err = floatingIpAdmin.EnsureSubnetID(ctx, floatingip)
 				if err != nil {
 					logger.Error("Failed to ensure subnet_id", err)
+					err = nil
 					continue
 				}
 
@@ -303,14 +305,48 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	}
 	var ifaceSubnets []*model.Subnet
 	var publicIps []*model.FloatingIp
-	if len(payload.PublicAddresses) > 0 {
-		for _, pubAddr := range payload.PublicAddresses {
-			var floatingIp *model.FloatingIp
-			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
+	if iface.FloatingIp > 0 {
+		if payload.PublicAddresses == nil {
+			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d", iface.Instance))
 			if err != nil {
+				logger.Errorf("Failed to get public ips")
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 				return
 			}
-			publicIps = append(publicIps, floatingIp)
+		} else if len(payload.PublicAddresses) > 0 {
+			for _, pubAddr := range payload.PublicAddresses {
+				var floatingIp *model.FloatingIp
+				floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
+				if err != nil {
+					logger.Errorf("Failed to get public ip")
+					ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
+					return
+				}
+				publicIps = append(publicIps, floatingIp)
+			}
+		}
+		if payload.PrimaryAddress != nil {
+			var primaryFip *model.FloatingIp
+			primaryFip, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, payload.PrimaryAddress.ID)
+			if err != nil {
+				logger.Errorf("Failed to get primary public ip")
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
+				return
+			}
+			if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+				logger.Error("New primary ip is not allowed to be in different vlan")
+				ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
+				return
+			}
+			if primaryFip.ID != iface.FloatingIp {
+				for i, pubAddr := range publicIps {
+					if primaryFip.ID == pubAddr.ID {
+						publicIps = append(publicIps[:i], publicIps[i+1:]...)
+						break
+					}
+				}
+				publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
+			}
 		}
 	} else {
 		for _, subnet := range payload.Subnets {
@@ -345,13 +381,13 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 		siteSubnets = append(siteSubnets, siteSubnet)
 	}
-	err = interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
+	iface2, err := interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {
 		logger.Errorf("Patch instance failed, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Patch instance failed", err)
 		return
 	}
-	interfaceResp, err := v.getInterfaceResponse(ctx, instance, iface)
+	interfaceResp, err := v.getInterfaceResponse(ctx, instance, iface2)
 	if err != nil {
 		logger.Errorf("Get interface responsefailed, %+v", err)
 		ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)

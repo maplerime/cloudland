@@ -60,7 +60,7 @@ type Organization struct {
 	Name      string    `gorm:"size:255;unique_index" json:"name,omitempty"`
 	Members   []*Member `gorm:"foreignkey:OrgID"`
 	OwnerUser *User     `gorm:"foreignkey:ID";AssociationForeignKey:Owner`
-	DefaultSG  int64
+	DefaultSG int64
 }
 
 func (Organization) TableName() string {

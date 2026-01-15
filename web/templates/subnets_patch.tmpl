@@ -69,6 +69,10 @@
                         <label for="routes">{{.i18n.Tr "Routes"}} ({{.i18n.Tr "admin only"}})</label>
                         <input id="routes" name="routes" value="{{ .Subnet.Routes }}">
                     </div>
+                    <div class="inline field">
+                        <label for="priority">{{.i18n.Tr "Priority"}} ({{.i18n.Tr "admin only"}})</label>
+                        <input id="priority" name="priority" value="{{ .Subnet.Priority }}">
+                    </div>
 			        {{end}}
                     <div class="inline field">
                         <label></label>

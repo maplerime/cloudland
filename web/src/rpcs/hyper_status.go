@@ -20,10 +20,10 @@ func init() {
 }
 
 func HyperStatus(ctx context.Context, args []string) (status string, err error) {
-	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate'"
+	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model'"
 	db := DB()
 	argn := len(args)
-	if argn < 14 {
+	if argn < 15 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -109,10 +109,12 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	} else {
 		hyper.DiskOverRate = float32(diskOverRate)
 	}
+	cpuModel := args[15]
 	// end PET-769
 	hyper.Hostname = hyperName
 	hyper.Status = int32(hyperStatus)
 	hyper.VirtType = "kvm-x86_64"
+	hyper.CpuModel = cpuModel
 	hyper.Zone = zone
 	hyper.HostIP = hostIP
 	err = db.Save(hyper).Error
@@ -136,9 +138,9 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	}
 	if availCpu == 0 || availMem == 0 || availDisk == 0 {
 		err = db.Model(&model.Resource{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
-			"cpu": availCpu,
+			"cpu":    availCpu,
 			"memory": availMem,
-			"disk": availDisk}).Error
+			"disk":   availDisk}).Error
 		if err != nil {
 			logger.Error("Failed to update hypervisor resource", err)
 		}

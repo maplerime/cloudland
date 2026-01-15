@@ -14,7 +14,7 @@ ext_vlan=$4
 int_addr=$5
 int_ip=${int_addr%/*}
 int_vlan=$6
-mark_id=$(($7 % 4294967295))
+mark_id=$(($7 % 2147483647))
 inbound=$8
 outbound=$9
 
@@ -48,8 +48,6 @@ ip netns exec $router ip rule add from $int_ip lookup $table
 ip netns exec $router ip rule add to $int_ip lookup $table
 ip netns exec $router iptables -t nat -C PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 [ $? -ne 0 ] && ip netns exec $router iptables -t nat -I PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
-ip netns exec $router iptables -t nat -C POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
-[ $? -ne 0 ] && ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -j SNAT --to-source $ext_ip
 ip netns exec $router iptables -t nat -C POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
 [ $? -ne 0 ] && ip netns exec $router iptables -t nat -I POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
 async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
@@ -65,6 +63,7 @@ else
     ip netns exec $router tc filter del dev ns-$int_vlan protocol ip parent 1:0 prio $mark_id handle $mark_id fw flowid 1:$mark_id
     ip netns exec $router tc class del dev ns-$int_vlan parent 1: classid 1:$mark_id
 fi
+let mark_id=$mark_id+2147483647
 if [ "$outbound" -gt 0 ]; then
     ip netns exec $router tc qdisc add dev $ext_dev root handle 1: htb default 10
     ip netns exec $router tc class add dev $ext_dev parent 1: classid 1:$mark_id htb rate ${outbound}mbit burst ${outbound}kbit
