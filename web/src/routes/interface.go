@@ -653,7 +653,7 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "updated_at", "", fmt.Sprintf("instance_id = 0 or (instance_id = %d and type = '%s')", iface.Instance, PublicReserved))
+	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "updated_at", "", fmt.Sprintf("(instance_id = 0 and type = '%s') or (instance_id = %d and type = '%s')", iface.Instance, PublicFloating, PublicReserved))
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
