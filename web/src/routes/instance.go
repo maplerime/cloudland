@@ -475,7 +475,14 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	if instance.Disk == 0 {
 		instance.Disk = bootVolume.Size
 	}
-	if err = db.Save(&instance).Error; err != nil {
+
+	updateFields := make(map[string]interface{})
+	updateFields["status"] = instance.Status
+	updateFields["cpu"] = instance.Cpu
+	updateFields["memory"] = instance.Memory
+	updateFields["disk"] = instance.Disk
+
+	if err = db.Model(&instance).Updates(updateFields).Error; err != nil {
 		logger.Error("Failed to save instance", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
@@ -616,7 +623,17 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	instance.Memory = memory
 	instance.Disk = disk
 	instance.Keys = keys
-	if err = db.Save(&instance).Error; err != nil {
+
+	updateFields := make(map[string]interface{})
+	updateFields["status"] = instance.Status
+	updateFields["login_port"] = instance.LoginPort
+	updateFields["passwd_login"] = instance.PasswdLogin
+	updateFields["image_id"] = instance.ImageID
+	updateFields["cpu"] = instance.Cpu
+	updateFields["memory"] = instance.Memory
+	updateFields["disk"] = instance.Disk
+
+	if err = db.Model(&instance).Updates(updateFields).Error; err != nil {
 		logger.Error("Failed to save instance", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
@@ -635,7 +652,12 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	// change volume status to reinstalling
 	bootVolume.Status = "reinstalling"
 	bootVolume.Size = disk
-	if err = db.Save(&bootVolume).Error; err != nil {
+
+	updateFields = make(map[string]interface{})
+	updateFields["status"] = bootVolume.Status
+	updateFields["size"] = bootVolume.Size
+
+	if err = db.Model(&bootVolume).Updates(updateFields).Error; err != nil {
 		logger.Error("Failed to save volume", err)
 		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to save volume", err)
 	}

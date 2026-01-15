@@ -167,7 +167,14 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	instance.Status = model.InstanceStatusDeleted
 	instance.Reason = reason
 	instance.Interfaces = nil
-	err = db.Save(instance).Error
+
+	updateFields := make(map[string]interface{})
+	updateFields["hostname"] = instance.Hostname
+	updateFields["status"] = instance.Status
+	updateFields["reason"] = instance.Reason
+	updateFields["interfaces"] = nil
+
+	err = db.Model(instance).Updates(updateFields).Error
 	if err != nil {
 		return
 	}

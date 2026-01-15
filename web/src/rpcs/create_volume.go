@@ -30,7 +30,12 @@ func updateInstance(volume *model.Volume, status string, reason string) (err err
 
 		instance.Status = model.InstanceStatus(status)
 		instance.Reason = reason
-		if err = db.Save(&instance).Error; err != nil {
+
+		updateFields := make(map[string]interface{})
+		updateFields["status"] = instance.Status
+		updateFields["reason"] = instance.Reason
+
+		if err = db.Model(&instance).Updates(updateFields).Error; err != nil {
 			logger.Error("Update instance status failed", err)
 			return err
 		}

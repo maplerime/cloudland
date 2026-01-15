@@ -218,7 +218,11 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Errorf("Migration status: %s, new status: %s", migration.Status, status)
 		migration.Status = status
 	}
-	err = db.Model(migration).Save(migration).Error
+
+	updateFields := make(map[string]interface{})
+	updateFields["status"] = migration.Status
+
+	err = db.Model(migration).Updates(updateFields).Error
 	if err != nil {
 		logger.Error("Failed to update migration", err)
 		return

@@ -43,7 +43,18 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", err)
 	}
 
-	if err = db.Model(addr).Save(addr).Error; err != nil {
+	updateFields := make(map[string]interface{})
+	updateFields["address"] = addr.Address
+	updateFields["netmask"] = addr.Netmask
+	updateFields["type"] = addr.Type
+	updateFields["allocated"] = addr.Allocated
+	updateFields["reserved"] = addr.Reserved
+	updateFields["subnet_id"] = addr.SubnetID
+	updateFields["interface"] = addr.Interface
+	updateFields["second_interface"] = addr.SecondInterface
+	updateFields["remark"] = addr.Remark
+
+	if err = db.Model(addr).Updates(updateFields).Error; err != nil {
 		logger.Error("Failed to update address, %v", err)
 		return NewCLError(ErrAddressUpdateFailed, "Failed to update address", err)
 	}

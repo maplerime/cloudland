@@ -117,7 +117,18 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	hyper.CpuModel = cpuModel
 	hyper.Zone = zone
 	hyper.HostIP = hostIP
-	err = db.Save(hyper).Error
+
+	updateFields := make(map[string]interface{})
+	updateFields["cpu_over_rate"] = hyper.CpuOverRate
+	updateFields["mem_over_rate"] = hyper.MemOverRate
+	updateFields["disk_over_rate"] = hyper.DiskOverRate
+	updateFields["hostname"] = hyper.Hostname
+	updateFields["status"] = hyper.Status
+	updateFields["virt_type"] = hyper.VirtType
+	updateFields["zone_id"] = hyper.ZoneID
+	updateFields["host_ip"] = hyper.HostIP
+
+	err = db.Model(hyper).Updates(updateFields).Error
 	if err != nil {
 		logger.Error("Failed to save hypervisor", err)
 		return
