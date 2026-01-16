@@ -114,6 +114,24 @@ const (
 	ErrCannotRestoreFromBackup             ErrCode = 125106
 	ErrBackupInvalidState                  ErrCode = 125107
 
+	// Consistency Group related errors (1252xx)
+	ErrCGNotFound                     ErrCode = 125200
+	ErrCGCreationFailed               ErrCode = 125201
+	ErrCGUpdateFailed                 ErrCode = 125202
+	ErrCGDeleteFailed                 ErrCode = 125203
+	ErrCGInvalidState                 ErrCode = 125204
+	ErrCGIsBusy                       ErrCode = 125205
+	ErrCGSnapshotExists               ErrCode = 125206
+	ErrCGVolumeNotInSamePool          ErrCode = 125207
+	ErrCGVolumeIsBusy                 ErrCode = 125208
+	ErrCGVolumeInvalidState           ErrCode = 125209
+	ErrCGSnapshotNotFound             ErrCode = 125210
+	ErrCGSnapshotCreationFailed       ErrCode = 125211
+	ErrCGSnapshotDeleteFailed         ErrCode = 125212
+	ErrCGSnapshotRestoreFailed        ErrCode = 125213
+	ErrCGSnapshotIsBusy               ErrCode = 125214
+	ErrCGCannotModifyWithSnapshots    ErrCode = 125215
+
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
 	ErrAddressNotFound     ErrCode = 131001

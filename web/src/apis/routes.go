@@ -178,6 +178,12 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/backups/:id", volBackupAPI.Delete)
 		authGroup.POST("/api/v1/backups/:id/restore", volBackupAPI.Restore)
 
+		authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
+		authGroup.POST("/api/v1/consistency_groups", consistencyGroupAPI.Create)
+		authGroup.GET("/api/v1/consistency_groups/:id", consistencyGroupAPI.Get)
+		authGroup.PATCH("/api/v1/consistency_groups/:id", consistencyGroupAPI.Patch)
+		authGroup.DELETE("/api/v1/consistency_groups/:id", consistencyGroupAPI.Delete)
+
 		authGroup.GET("/api/v1/instances", instanceAPI.List)
 		authGroup.POST("/api/v1/instances", instanceAPI.Create)
 		authGroup.GET("/api/v1/instances/:id", instanceAPI.Get)
