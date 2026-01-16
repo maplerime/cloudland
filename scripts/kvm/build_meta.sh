@@ -63,44 +63,33 @@ if [ -n "${root_passwd}" ] && [ "${os_code}" != "windows" ]; then
     ssh_pwauth="true"
 fi
 
-# vendor_data.json header
-vendor_data_header=$( 
-    echo \
-'"Content-Type: multipart/mixed; boundary=\"//\"\n'\
-'MIME-Version: 1.0\n'\
-'\n'\
-'--//\n'
-)
-
-# cloud-config.txt header
 cloud_config_txt=$(
-    echo \
-'Content-Type: text/cloud-config; charset=\"us-ascii\"\n'\
-'MIME-Version: 1.0\n'\
-'Content-Transfer-Encoding: 7bit\n'\
-'Content-Disposition: attachment; filename=\"cloud-config.txt\"\n'\
-'\n'\
-'#cloud-config\n'\
-'ssh_pwauth: '${ssh_pwauth}'\n'\
-'disable_root: false\n'
+    cat <<EOF
+#cloud-config
+ssh_pwauth: '${ssh_pwauth}'
+
+disable_root: false\n
+
+EOF
 )
 
-# cloud-config.txt body
 if [ -n "${root_passwd}" ] && [ "${os_code}" != "windows" ]; then
     cloud_config_txt+=$(
-        echo \
-'chpasswd:\n'\
-'  expire: false\n'\
-'  users:\n'\
-'    - name: root\n'\
-'      password: '${root_passwd}'\n'\
-'  list: |\n'\
-'    root:'${root_passwd}'\n'\
-'write_files:\n'
-'  - path: /etc/ssh/sshd_config.d/allow_root.conf\n'\
-'    content: |\n'\
-'      PermitRootLogin yes\n'\
-'      PasswordAuthentication yes\n'
+        cat <<EOF
+
+chpasswd:
+  expire: false
+  users:
+    - name: root
+      password: '${root_passwd}'
+  list: |
+    root:${root_passwd}
+write_files:
+  - path: /etc/ssh/sshd_config.d/allow_root.conf
+    content: |
+      PermitRootLogin yes
+      PasswordAuthentication yes\n
+EOF
     )
 fi
 
@@ -112,8 +101,8 @@ runcmd:
     if [ -f /etc/sysconfig/qemu-ga ]; then
       sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
     elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
-      sed -i \"s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
-      sed -i \"s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+      sed -i "s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
+      sed -i "s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
       systemctl daemon-reload
     fi
     systemctl restart qemu-guest-agent.service
@@ -125,8 +114,8 @@ EOF
     if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
         cloud_config_txt+=$(cat <<EOF
 
-    sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
-    sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    sed -i 's/^#Port .*/Port ${login_port}/' /etc/ssh/sshd_config
+    sed -i 's/^Port .*/Port ${login_port}/' /etc/ssh/sshd_config
     systemctl daemon-reload
     systemctl restart ssh.socket
     systemctl restart sshd || systemctl restart ssh
@@ -135,16 +124,34 @@ EOF
     fi
 fi
 
-vendor_data_end='\n--//--"'
-
+write_mime_multipart_args=""
 # write to vendor_data.json
 if [ "${os_code}" != "windows" ]; then
-    echo -e "$vendor_data_header""$cloud_config_txt""$vendor_data_end" > $latest_dir/vendor_data.json
-    sed -i -n '1h; 1!H; ${ x; s/\n/\\n/g; p; }' $latest_dir/vendor_data.json
+    echo -e "$cloud_config_txt" > $latest_dir/cloud_config.txt
+    write_mime_multipart_args+="cloud_config.txt:text/cloud-config "
+
+    # insert customized vendor data from api
+    custom_vendordata=""
+    vendordata_type=$(jq -r .vendordata_type <<<$vm_meta)
+    vendordata=$(jq -r .vendordata <<<$vm_meta)
+    if [ -n "$vendordata" ]; then
+        if [ "$vendordata_type" = "base64" ]; then
+            custom_vendordata+=$(echo "$vendordata" | base64 -d)
+        else
+            custom_vendordata+="$vendordata"
+        fi
+        echo -e "$custom_vendordata" > $latest_dir/custom_vendor_script.sh
+        write_mime_multipart_args+="custom_vendor_script.sh:text/x-shellscript "
+    fi
+    cd $latest_dir
+    write-mime-multipart -o vendor_data.txt $write_mime_multipart_args
+    jq -n --arg data "$(cat vendor_data.txt)" '{"cloud-init": $data}' > vendor_data.json
+    cd -
+    rm -f $latest_dir/cloud_config.txt $latest_dir/custom_vendor_script.sh $latest_dir/vendor_data.txt
 fi
 
 [ -z "$dns" ] && dns=$dns_server
-net_json=$(jq 'del(.userdata) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns)' <<< $vm_meta | jq --arg dns $dns '.services[0].type = "dns" | .services[0].address |= .+$dns')
+net_json=$(jq 'del(.userdata) | del(.userdata_type) | del(.vendordata) | del(.vendordata_type) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns)' <<< $vm_meta | jq --arg dns $dns '.services[0].type = "dns" | .services[0].address |= .+$dns')
 let mtu=$(cat /sys/class/net/$vxlan_interface/mtu)-50
 if [ "$mtu" -lt 1450 ]; then
     net_json=$(sed "s/\"mtu\": 1450/\"mtu\": $mtu/g" <<<$net_json)

@@ -6042,6 +6042,12 @@ const docTemplatev1 = `{
                 "userdata_type": {
                     "type": "string"
                 },
+                "vendordata": {
+                    "type": "string"
+                },
+                "vendordatatype": {
+                    "type": "string"
+                },
                 "vpc": {
                     "$ref": "#/definitions/common.BaseReference"
                 },
