@@ -1,17 +1,25 @@
 groups:
 - name: compute-vcpu-resources
   rules:
-  - alert: Hypervisor_HighVCPUUsage
+  # vcpu alert by Zone
+  - alert: Zone_HighVCPUUsage
     expr: |
       (
-        (cloudland_hypervisor_cpu_total - cloudland_hypervisor_cpu) 
-        / cloudland_hypervisor_cpu_total * 100
+        (
+          sum by (zone, region, hostname) (cloudland_hypervisor_cpu_total)
+          - sum by (zone, region, hostname) (cloudland_hypervisor_cpu)
+        )
+        / sum by (zone, region, hostname) (cloudland_hypervisor_cpu_total) * 100
       ) > {{ vcpu_usage_threshold }}
     for: {{ for_duration }}
     labels:
       severity: warning
       node_type: compute
       alert_type: "node-vcpu"
+      hostname: "{{ $labels.hostname }}"
+      zone: "{{ $labels.zone }}"
+      region: "{{ $labels.region }}"
     annotations:
-      summary: "Hypervisor {{ $labels.hostname }} high vCPU usage"
-      description: "Hypervisor {{ $labels.hostname }} ({{ $labels.host_ip }}) in region {{ $labels.region }} zone {{ $labels.zone }} vCPU usage exceeds threshold {{ vcpu_usage_threshold }} percent"
+      summary: "Zone {{ $labels.zone }} high vCPU usage on {{ $labels.hostname }}"
+      description: "Zone {{ $labels.zone }} in region {{ $labels.region }} on host {{ $labels.hostname }} vCPU usage is {{ $value | humanize }}%, exceeds threshold {{ vcpu_usage_threshold }}%"
+
