@@ -7,11 +7,18 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
-  apis.AddressPatchPayload:
+  apis.AddressRemarkPayload:
     properties:
+      addresses:
+        items:
+          $ref: '#/definitions/common.BaseID'
+        minItems: 1
+        type: array
       remark:
         maxLength: 512
         type: string
+    required:
+    - addresses
     type: object
   apis.AddressResponse:
     properties:
@@ -42,8 +49,15 @@ definitions:
     type: object
   apis.AddressUpdateLockPayload:
     properties:
+      addresses:
+        items:
+          $ref: '#/definitions/common.BaseID'
+        minItems: 1
+        type: array
       lock:
         type: boolean
+    required:
+    - addresses
     type: object
   apis.BackendListResponse:
     properties:
@@ -2154,6 +2168,70 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /addresses/remark:
+    patch:
+      consumes:
+      - application/json
+      description: batch patch addresses with unified remark
+      parameters:
+      - description: Address patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressRemarkPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.AddressResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: batch patch addresses
+      tags:
+      - Network
+  /addresses/update-lock:
+    patch:
+      consumes:
+      - application/json
+      description: batch lock or unlock addresses
+      parameters:
+      - description: batch lock or unlock payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressUpdateLockPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.AddressResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: batch update address lock
+      tags:
+      - Network
   /api/v1/metrics/alarm/sync-mappings:
     post:
       consumes:
@@ -4684,66 +4762,6 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a subnet
-      tags:
-      - Network
-  /subnets/{id}/addresses/{address_id}:
-    patch:
-      consumes:
-      - application/json
-      description: patch an address
-      parameters:
-      - description: Address patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.AddressPatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.AddressResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch an address
-      tags:
-      - Network
-  /subnets/{id}/addresses/{address_id}/update-lock:
-    patch:
-      consumes:
-      - application/json
-      description: lock or unlock an address
-      parameters:
-      - description: Address lock or unlock payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.AddressUpdateLockPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.AddressResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: update address lock
       tags:
       - Network
   /tasks:
