@@ -1,6 +1,7 @@
 - name: install common packages
   apt:
-    name: ['jq', 'wget', 'mkisofs', 'network-manager', 'net-tools', 'python3-pip']
+    name:
+      ["jq", "wget", "mkisofs", "network-manager", "net-tools", "python3-pip"]
     update_cache: yes
     state: present
   ignore_errors: yes
@@ -8,7 +9,24 @@
 
 - name: install packages for kvm
   apt:
-    name: ['qemu-system-x86', 'qemu-utils', 'bridge-utils', 'ipcalc', 'ipset', 'keepalived', 'iputils-arping', 'libvirt-daemon', 'libvirt-daemon-system', 'libvirt-daemon-system-systemd', 'libvirt-clients', 'dnsmasq', 'dnsmasq-utils', 'conntrack']
+    name:
+      [
+        "qemu-system-x86",
+        "qemu-utils",
+        "bridge-utils",
+        "ipcalc",
+        "ipset",
+        "keepalived",
+        "iputils-arping",
+        "libvirt-daemon",
+        "libvirt-daemon-system",
+        "libvirt-daemon-system-systemd",
+        "libvirt-clients",
+        "dnsmasq",
+        "dnsmasq-utils",
+        "conntrack",
+        "cloud-utils",
+      ]
     state: present
   ignore_errors: yes
   tags: [be_pkg]
@@ -50,19 +68,19 @@
   tags: [be_srv, cloudlet]
 
 - name: copy sci binaries
-  copy: 
+  copy:
     src: /opt/sci
     dest: /opt
     mode: preserve
   tags: [sci]
 
 - name: copy sci service file
-  copy: 
+  copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     mode: preserve
   with_items:
-    - {src: 'scid.service', dest: '/lib/systemd/system', owner: 'root'}
+    - { src: "scid.service", dest: "/lib/systemd/system", owner: "root" }
   tags: [be_srv, sci]
 
 - name: copy scripts
@@ -70,13 +88,18 @@
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
   with_items:
-    - { src: "/opt/cloudland/scripts", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
+    - {
+        src: "/opt/cloudland/scripts",
+        dest: "/opt/cloudland",
+        owner: "cland",
+        group: "cland",
+      }
   tags: [sync, scripts, scripts_only]
 
 - name: set executable permissions for all kvm scripts
   file:
     path: /opt/cloudland/scripts/kvm
-    mode: '0755'
+    mode: "0755"
     recurse: yes
     state: directory
   tags: [scripts, scripts_only]
@@ -87,8 +110,8 @@
     dest: /opt/cloudland/scripts/backend
     state: link
     force: yes
-    owner: 'cland'
-    group: 'cland'
+    owner: "cland"
+    group: "cland"
   tags: [be_conf, scripts, scripts_only]
 
 - name: register network_device
@@ -105,7 +128,12 @@
     owner: "{{ item.owner }}"
     group: "{{ item.owner }}"
   with_items:
-    - {src: 'cloudrc.local.kvm-x86_64.j2', dest: '/opt/cloudland/scripts/cloudrc.local', owner: 'cland', group: 'cland'}
+    - {
+        src: "cloudrc.local.kvm-x86_64.j2",
+        dest: "/opt/cloudland/scripts/cloudrc.local",
+        owner: "cland",
+        group: "cland",
+      }
   when: virt_type == 'kvm-x86_64'
   tags: [be_conf, scripts]
 
@@ -114,7 +142,12 @@
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
   with_items:
-    - { src: "/opt/cloudland/bin", dest: "/opt/cloudland", owner: 'cland', group: 'cland' }
+    - {
+        src: "/opt/cloudland/bin",
+        dest: "/opt/cloudland",
+        owner: "cland",
+        group: "cland",
+      }
   tags: [sync, cloudlet]
 
 - name: create cloudlet environment file
@@ -123,69 +156,69 @@
     dest: "{{ item.dest }}"
     owner: "{{ item.owner }}"
   with_items:
-    - {src: 'cloudlet.j2', dest: '/etc/sysconfig/cloudlet', owner: 'root'}
+    - { src: "cloudlet.j2", dest: "/etc/sysconfig/cloudlet", owner: "root" }
   tags: [be_srv, cloudlet]
 
 - name: copy cloudlet service file
-  copy: 
+  copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     mode: preserve
   with_items:
-    - {src: 'cloudlet.service', dest: '/lib/systemd/system', owner: 'root'}
+    - { src: "cloudlet.service", dest: "/lib/systemd/system", owner: "root" }
   tags: [be_srv, cloudlet]
- 
+
 - name: copy compute service file
-  copy: 
+  copy:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
     mode: preserve
   with_items:
-    - {src: 'kvm-nested.conf', dest: '/etc/modprobe.d', owner: 'root'}
+    - { src: "kvm-nested.conf", dest: "/etc/modprobe.d", owner: "root" }
   tags: [be_srv]
 
 - name: start scid services
-  systemd: 
+  systemd:
     name: "{{ item }}"
     enabled: yes
     daemon_reload: yes
     state: restarted
   with_items:
-    - 'scid'
+    - "scid"
   tags: [be_srv, sci, start_sci]
 
 - name: start cloudlet services
-  systemd: 
+  systemd:
     name: "{{ item }}"
     enabled: yes
     daemon_reload: yes
     state: restarted
   with_items:
-    - 'cloudlet'
+    - "cloudlet"
   tags: [be_srv, cloudlet]
 
 - name: set compute libvirt service
-  systemd: 
+  systemd:
     name: "{{ item }}"
     enabled: yes
     daemon_reload: yes
     state: restarted
   with_items:
-    - 'libvirtd'
+    - "libvirtd"
   tags: [be_srv]
 
 - name: undefine default libvirt network
-  command: bash -c "virsh net-destroy default; virsh net-undefine default" 
+  command: bash -c "virsh net-destroy default; virsh net-undefine default"
   ignore_errors: yes
   tags: [be_srv]
 
 - name: set compute services NetworkManager
-  systemd: 
+  systemd:
     name: "{{ item }}"
     enabled: true
     state: started
   with_items:
-    - 'NetworkManager'
+    - "NetworkManager"
   tags: [be_srv, netplan]
 
 - name: change netplan renderer
@@ -197,7 +230,7 @@
   vars:
     need_reboot: "{{ need_to_reboot.stdout_lines[0] }}"
   ansible.builtin.reboot:
-  when: 
+  when:
     - need_reboot == 'need_to_reboot'
     - inventory_hostname != ansible_hostname
   tags: [netplan]
@@ -209,14 +242,14 @@
     masked: yes
     state: stopped
   with_items:
-    - 'systemd-networkd'
+    - "systemd-networkd"
   tags: [be_srv, netplan]
 
 - name: Create .ssh directory if not exists
   file:
     path: ~/.ssh
     state: directory
-    mode: '0700'
+    mode: "0700"
   tags: [ssh_key]
 
 - name: Add SSH public key to authorized_keys
@@ -230,7 +263,7 @@
   copy:
     src: /tmp/.ssh/cland.key
     dest: ~/.ssh/id_rsa
-    mode: '0600'
+    mode: "0600"
   tags: [ssh_key]
 
 - name: Remove pub key if present
@@ -242,7 +275,7 @@
 - name: allow necessary ports for hypervisor
   script: firewall.sh
   tags: [firewall]
- 
+
 - name: Load nr_bridge kernel module
   modprobe:
     name: br_netfilter
@@ -253,7 +286,7 @@
   sysctl:
     name: net.bridge.bridge-nf-call-iptables
     state: present
-    value: '1'
+    value: "1"
     reload: yes
   tags: [sysctl]
 
@@ -261,7 +294,7 @@
   sysctl:
     name: net.bridge.bridge-nf-call-arptables
     state: present
-    value: '1'
+    value: "1"
     reload: yes
   tags: [sysctl]
 
@@ -269,7 +302,7 @@
   sysctl:
     name: net.bridge.bridge-nf-call-ip6tables
     state: present
-    value: '1'
+    value: "1"
     reload: yes
   tags: [sysctl]
 
@@ -277,7 +310,7 @@
   sysctl:
     name: net.netfilter.nf_conntrack_max
     state: present
-    value: '6553600'
+    value: "6553600"
     reload: yes
   tags: [sysctl]
 
@@ -285,7 +318,7 @@
   sysctl:
     name: net.core.rmem_max
     state: present
-    value: '16777216'
+    value: "16777216"
     reload: yes
   tags: [sysctl]
 
@@ -293,6 +326,6 @@
   sysctl:
     name: net.core.wmem_max
     state: present
-    value: '16777216'
+    value: "16777216"
     reload: yes
   tags: [sysctl]
