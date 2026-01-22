@@ -1,12 +1,21 @@
 #!/bin/bash
 
-
 # 强制下次登录必须改密
 passwd -e root
 
 # 设置 90 天有效期策略
 # -M 90 (最大天数), -W 7 (过期前7天警告)
 chage -M 90 -W 7 root
+
+# --- 1. 识别发行版 ---
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    OS=$ID
+else
+    OS=$(uname -s)
+fi
+
+echo "Detected OS: $OS"
 
 # --- 2. 安装 pwquality 并在 PAM 中启用 ---
 case "$OS" in

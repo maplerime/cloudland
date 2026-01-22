@@ -145,10 +145,10 @@ if [ "${os_code}" != "windows" ]; then
     write_mime_multipart_args+="vendor_script.sh:text/x-shellscript "
 
     # insert fixed vendor scripts in /opt/cloudland/scripts/kvm/vendor_scripts
-    for i in $(cd ./vendor_scripts; ls *.sh); do 
-        cat $i > $latest_dir/$i
+    for i in $(cd ./vendor_scripts; ls *.sh); do
+        cat ./vendor_scripts/$i > $latest_dir/$i
         write_mime_multipart_args+="$i:text/x-shellscript "
-    end
+    done
 
     # insert customized vendor data from api
     custom_vendordata=""
