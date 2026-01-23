@@ -1,0 +1,33 @@
+# CloudLand Callback Configuration Example
+# 将此配置添加到 conf/config.toml 文件中
+
+[callback]
+# 是否启用资源变化回调功能
+enabled = true
+
+# 回调目标 URL
+# 对于本地测试，使用：
+url = "http://localhost:8080/api/v1/resource-changes"
+
+# 对于远程服务器，使用：
+# url = "http://monitoring-service.example.com/api/v1/resource-changes"
+
+# Worker 并发数量
+# 建议值：3-5，根据系统负载调整
+workers = 3
+
+# 事件队列大小
+# 建议值：10000，可以根据事件频率调整
+queue_size = 10000
+
+# HTTP 请求超时时间（秒）
+# 建议值：30 秒
+timeout = 30
+
+# 最大重试次数
+# 建议值：3 次
+retry_max = 3
+
+# 重试间隔（秒）
+# 建议值：5 秒
+retry_interval = 5
