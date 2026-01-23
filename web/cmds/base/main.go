@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"web/src/callback"
 	"web/src/routes"
 	"web/src/rpcs"
 	rlog "web/src/utils/log"
@@ -34,6 +35,19 @@ var (
 )
 
 func RunDaemon(cmd *cobra.Command, args []string) (err error) {
+	// 初始化并启动 callback 功能
+	if callback.IsEnabled() {
+		// 初始化事件队列
+		queueSize := callback.GetQueueSize()
+		callback.InitQueue(queueSize)
+
+		// 启动 callback worker
+		workerCount := callback.GetWorkerCount()
+		ctx := context.Background()
+		callback.StartWorkers(ctx, workerCount)
+	}
+
+	// 启动 Web UI 和 RPC 服务
 	g, _ := errgroup.WithContext(context.Background())
 	g.Go(routes.Run)
 	g.Go(rpcs.Run)
