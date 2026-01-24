@@ -263,6 +263,610 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/consistency_groups": {
+            "get": {
+                "description": "List consistency groups with pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "List consistency groups",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name filter",
+                        "name": "name",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a new consistency group with volumes",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Create a consistency group",
+                "parameters": [
+                    {
+                        "description": "Consistency Group Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}": {
+            "get": {
+                "description": "Get a consistency group by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Get a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Delete a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "Update a consistency group's name and description",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Update a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/snapshots": {
+            "get": {
+                "description": "List snapshots for a consistency group with pagination",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "List consistency group snapshots",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Create a snapshot for a consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Create a consistency group snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Snapshot Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/snapshots/{snap_id}": {
+            "get": {
+                "description": "Get a consistency group snapshot by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Get a consistency group snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot UUID",
+                        "name": "snap_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Delete a snapshot from a consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Delete a consistency group snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot UUID",
+                        "name": "snap_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/snapshots/{snap_id}/restore": {
+            "post": {
+                "description": "Restore all volumes in a consistency group from a snapshot",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Restore a consistency group from snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Snapshot UUID",
+                        "name": "snap_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupRestoreResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/volumes": {
+            "post": {
+                "description": "Add volumes to an existing consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Add volumes to a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Volumes Payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupVolumesPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/consistency_groups/{id}/volumes/{volume_id}": {
+            "delete": {
+                "description": "Remove a volume from an existing consistency group",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Storage"
+                ],
+                "summary": "Remove a volume from a consistency group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Consistency Group UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Volume UUID",
+                        "name": "volume_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/dictionaries": {
             "get": {
                 "description": "list dictionaries",
@@ -5129,6 +5733,197 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupListResponse": {
+            "type": "object",
+            "properties": {
+                "consistency_groups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ConsistencyGroupResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.ConsistencyGroupPatchPayload": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "volumes"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "volumes": {
+                    "description": "Volume UUIDs",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "apis.ConsistencyGroupResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "pool_id": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "volumes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "wds_cg_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupRestoreResponse": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string"
+                },
+                "task_id": {
+                    "type": "string"
+                },
+                "task_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupSnapshotListResponse": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "snapshots": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ConsistencyGroupSnapshotResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.ConsistencyGroupSnapshotPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupSnapshotResponse": {
+            "type": "object",
+            "properties": {
+                "cg_id": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "wds_snap_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ConsistencyGroupVolumesPayload": {
+            "type": "object",
+            "required": [
+                "volumes"
+            ],
+            "properties": {
+                "volumes": {
+                    "description": "Volume UUIDs",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

@@ -183,6 +183,15 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/consistency_groups/:id", consistencyGroupAPI.Get)
 		authGroup.PATCH("/api/v1/consistency_groups/:id", consistencyGroupAPI.Patch)
 		authGroup.DELETE("/api/v1/consistency_groups/:id", consistencyGroupAPI.Delete)
+		authGroup.POST("/api/v1/consistency_groups/:id/volumes", consistencyGroupAPI.AddVolumes)
+		authGroup.DELETE("/api/v1/consistency_groups/:id/volumes/:volume_id", consistencyGroupAPI.RemoveVolume)
+
+		// CG Snapshots
+		authGroup.GET("/api/v1/consistency_groups/:id/snapshots", consistencyGroupAPI.ListSnapshots)
+		authGroup.POST("/api/v1/consistency_groups/:id/snapshots", consistencyGroupAPI.CreateSnapshot)
+		authGroup.GET("/api/v1/consistency_groups/:id/snapshots/:snap_id", consistencyGroupAPI.GetSnapshot)
+		authGroup.DELETE("/api/v1/consistency_groups/:id/snapshots/:snap_id", consistencyGroupAPI.DeleteSnapshot)
+		authGroup.POST("/api/v1/consistency_groups/:id/snapshots/:snap_id/restore", consistencyGroupAPI.RestoreSnapshot)
 
 		authGroup.GET("/api/v1/instances", instanceAPI.List)
 		authGroup.POST("/api/v1/instances", instanceAPI.Create)

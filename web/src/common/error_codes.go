@@ -115,22 +115,26 @@ const (
 	ErrBackupInvalidState                  ErrCode = 125107
 
 	// Consistency Group related errors (1252xx)
-	ErrCGNotFound                     ErrCode = 125200
-	ErrCGCreationFailed               ErrCode = 125201
-	ErrCGUpdateFailed                 ErrCode = 125202
-	ErrCGDeleteFailed                 ErrCode = 125203
-	ErrCGInvalidState                 ErrCode = 125204
-	ErrCGIsBusy                       ErrCode = 125205
-	ErrCGSnapshotExists               ErrCode = 125206
-	ErrCGVolumeNotInSamePool          ErrCode = 125207
-	ErrCGVolumeIsBusy                 ErrCode = 125208
-	ErrCGVolumeInvalidState           ErrCode = 125209
-	ErrCGSnapshotNotFound             ErrCode = 125210
-	ErrCGSnapshotCreationFailed       ErrCode = 125211
-	ErrCGSnapshotDeleteFailed         ErrCode = 125212
-	ErrCGSnapshotRestoreFailed        ErrCode = 125213
-	ErrCGSnapshotIsBusy               ErrCode = 125214
-	ErrCGCannotModifyWithSnapshots    ErrCode = 125215
+	ErrCGNotFound                  ErrCode = 125200
+	ErrCGCreationFailed            ErrCode = 125201
+	ErrCGUpdateFailed              ErrCode = 125202
+	ErrCGDeleteFailed              ErrCode = 125203
+	ErrCGInvalidState              ErrCode = 125204
+	ErrCGIsBusy                    ErrCode = 125205
+	ErrCGSnapshotExists            ErrCode = 125206
+	ErrCGVolumeNotInSamePool       ErrCode = 125207
+	ErrCGVolumeIsBusy              ErrCode = 125208
+	ErrCGVolumeInvalidState        ErrCode = 125209
+	ErrCGSnapshotNotFound          ErrCode = 125210
+	ErrCGSnapshotCreationFailed    ErrCode = 125211
+	ErrCGSnapshotDeleteFailed      ErrCode = 125212
+	ErrCGSnapshotRestoreFailed     ErrCode = 125213
+	ErrCGSnapshotIsBusy            ErrCode = 125214
+	ErrCGCannotModifyWithSnapshots ErrCode = 125215
+	ErrCGInstanceNotShutoff        ErrCode = 125216 // instance must be shutoff before restoring CG snapshot
+	ErrCGNoVolumes                 ErrCode = 125217 // consistency group has no volumes
+	ErrCGVolumeAttachedNoInstance  ErrCode = 125218 // volume status is attached but has no instance ID
+	ErrCGSnapshotCannotRestore     ErrCode = 125219 // snapshot cannot be restored (invalid state)
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
