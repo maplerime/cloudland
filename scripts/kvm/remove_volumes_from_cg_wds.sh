@@ -12,6 +12,16 @@ volume_UUIDs_JSON=$3
 
 state='error'
 
+if [ -z "$wds_address" ]; then
+    echo "|:-COMMAND-:| $(basename $0) '$cg_ID' '$state' 'wds_address is not set'"
+    exit -1
+fi
+
+if [ -z "$wds_cg_id" ]; then
+    echo "|:-COMMAND-:| $(basename $0) '$cg_ID' '$state' 'wds_cg_id is not set'"
+    exit -1
+fi
+
 # Get WDS token
 # 获取 WDS 令牌
 get_wds_token

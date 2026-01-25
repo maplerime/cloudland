@@ -336,12 +336,14 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 			"status":      model.CGSnapshotStatusAvailable,
 			"wds_snap_id": wdsSnapID,
 			"size":        size,
+			"task_id":     int64(0),
 		}).Error
 	} else {
 		// Update to error status
 		// 更新为错误状态
 		err = db.Model(snapshot).Updates(map[string]interface{}{
-			"status": model.CGSnapshotStatusError,
+			"status":  model.CGSnapshotStatusError,
+			"task_id": int64(0),
 		}).Error
 		logger.Errorf("CG snapshot creation failed: %s", message)
 	}
@@ -484,13 +486,15 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 		// Update snapshot status to available
 		// 更新快照状态为可用
 		err = db.Model(snapshot).Updates(map[string]interface{}{
-			"status": model.CGSnapshotStatusAvailable,
+			"status":  model.CGSnapshotStatusAvailable,
+			"task_id": int64(0),
 		}).Error
 	} else {
 		// Update status to error
 		// 更新状态为错误
 		err = db.Model(snapshot).Updates(map[string]interface{}{
-			"status": model.CGSnapshotStatusError,
+			"status":  model.CGSnapshotStatusError,
+			"task_id": int64(0),
 		}).Error
 		logger.Errorf("CG snapshot restore failed: %s", message)
 	}
