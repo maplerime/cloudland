@@ -62,8 +62,8 @@ go build -o callback_test_server callback_test_server.go
 curl -X POST http://localhost:8080/api/v1/resource-changes \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "instance",
-    "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
+    "type": "instance",
+    "id": "550e8400-e29b-41d4-a716-446655440000",
     "timestamp": "2025-10-30T10:30:00Z",
     "data": {
       "hostname": "test-vm-001",
@@ -147,9 +147,12 @@ retry_interval = 5
 ================================================================================
 Event #1 received at 2025-10-30 10:35:12.345
 ================================================================================
-  Resource Type : instance
-  Resource UUID : 550e8400-e29b-41d4-a716-446655440000
-  Timestamp     : 2025-10-30 10:35:12.345
+  EventType       : instance.create
+  Source          : Cloudland
+  Resource Type   : instance
+  Resource UUID   : 550e8400-e29b-41d4-a716-446655440000
+  Tenant ID       : 111
+  OccurredAt      : 2025-10-30 10:35:12.345
   data      :
     - hostname    : test-vm-001
     - status      : running
@@ -174,9 +177,14 @@ echo "Testing instance event..."
 curl -X POST http://localhost:8080/api/v1/resource-changes \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "instance",
-    "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "timestamp": "2025-10-30T10:30:00Z",
+    "event_type": "launch_vm",
+    "source": "CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:30:00Z",
+    "resource": {
+      "type": "instance",
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+    }
     "data": {
       "hostname": "test-vm-001",
       "status": "running",
@@ -189,9 +197,14 @@ echo -e "\n\nTesting volume event..."
 curl -X POST http://localhost:8080/api/v1/resource-changes \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "volume",
-    "resource_uuid": "660e8400-e29b-41d4-a716-446655440001",
-    "timestamp": "2025-10-30T10:31:00Z",
+    "event_type":"volume.create",
+    "source":"CloudLand",
+    "tenant_id": 111,
+    "resource": {
+      "type": "volume"
+      "id": "660e8400-e29b-41d4-a716-446655440001"
+    },
+    "OccurredAt": "2025-10-30T10:31:00Z",
     "data": {
       "name": "test-volume-001",
       "status": "available",
