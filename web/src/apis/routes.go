@@ -145,6 +145,7 @@ func Register() (r *gin.Engine) {
 		// Addresses
 		authGroup.PATCH("/api/v1/addresses/remark", addressAPI.Remark)
 		authGroup.PATCH("/api/v1/addresses/update-lock", addressAPI.UpdateLock)
+		authGroup.GET("/api/v1/addresses/:uuid", addressAPI.ListIpBySubnetUUID)
 
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)
