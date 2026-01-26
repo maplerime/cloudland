@@ -64,7 +64,7 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
   -d '{
     "event_type": "launch_vm",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:30:00Z",
     "resource": {
       "type": "instance",
@@ -184,7 +184,7 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
   -d '{
     "event_type": "launch_vm",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:30:00Z",
     "resource": {
       "type": "instance",
@@ -204,7 +204,7 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
   -d '{
     "event_type": "volume.create",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "resource": {
       "type": "volume"
       "id": "660e8400-e29b-41d4-a716-446655440001"

@@ -33,7 +33,7 @@ type Event struct {
 	EventType  string                 `json:"event_type"`  // Event type (e.g., "instance.created")
 	Source     string                 `json:"source"`      // Source system (e.g., "cloudland", "monitoring")
 	OccurredAt time.Time              `json:"occurred_at"` // When the event occurred
-	TenantID   int64                  `json:"tenant_id"`   // The tenantID in Cloudland
+	TenantID   string                 `json:"tenant_id"`   // The tenantID in Cloudland
 	Resource   Resource               `json:"resource"`
 	Data       map[string]interface{} `json:"data"`               // Event data payload as JSON
 	Metadata   map[string]interface{} `json:"metadata,omitempty"` // Additional metadata
@@ -105,7 +105,7 @@ func printEvent(count uint64, event *Event) {
 	fmt.Printf("  Source        : %s\n", event.Source)
 	fmt.Printf("  Resource Type : %s\n", event.Resource.Type)
 	fmt.Printf("  Resource UUID : %s\n", event.Resource.ID)
-	fmt.Printf("  Tenant ID     : %d\n", event.TenantID)
+	fmt.Printf("  Tenant ID     : %s\n", event.TenantID)
 	fmt.Println()
 	fmt.Printf("  OccurredAt     : %s\n", event.OccurredAt.Format("2006-01-02 15:04:05.000"))
 

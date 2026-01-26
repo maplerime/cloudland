@@ -18,7 +18,7 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "event_type": "instance.launch",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:30:00Z",
     "resource": {
       "type": "instance",
@@ -45,7 +45,7 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "event_type": "volume.create",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:31:00Z",
     "resource": {
       "type": "volume",
@@ -71,7 +71,7 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "event_type": "volume.attach",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:32:00Z",
     "resource": {
       "type": "volume",
@@ -96,7 +96,7 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "event_type": "image.create",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:33:00Z",
     "resource": {
       "type": "image",
@@ -121,7 +121,7 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "event_type": "interface.attach",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:34:00Z",
     "resource": {
       "type": "interface",
@@ -146,7 +146,7 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "event_type": "instance.shutdown",
     "source": "CloudLand",
-    "tenant_id": 111,
+    "tenant_id": "111",
     "previous_status": "running",
     "OccurredAt": "2025-10-30T10:35:00Z",
     "resource": {
