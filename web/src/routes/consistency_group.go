@@ -10,17 +10,27 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"strconv"
 
 	. "web/src/common"
 	"web/src/model"
+
+	"github.com/go-macaron/session"
+	"gopkg.in/macaron.v1"
 )
 
 var (
 	consistencyGroupAdmin = &ConsistencyGroupAdmin{}
+	consistencyGroupView  = &ConsistencyGroupView{}
 )
 
 // ConsistencyGroupAdmin handles consistency group operations
 type ConsistencyGroupAdmin struct{}
+
+// ConsistencyGroupView handles consistency group web console views
+// 一致性组 Web 控制台视图处理
+type ConsistencyGroupView struct{}
 
 // Get retrieves a consistency group by ID
 // 通过 ID 获取一致性组
@@ -1124,4 +1134,786 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 
 	logger.Debugf("Successfully initiated CG snapshot restore for CG %s from snapshot %s", cg.UUID, snapshot.UUID)
 	return task, nil
+}
+
+// ========== ConsistencyGroupView Methods ==========
+
+// List displays the consistency group list page
+// 显示一致性组列表页面
+func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	offset := c.QueryInt64("offset")
+	limit := c.QueryInt64("limit")
+	if limit == 0 {
+		limit = 16
+	}
+	order := c.QueryTrim("order")
+	if order == "" {
+		order = "-created_at"
+	}
+	query := c.QueryTrim("q")
+
+	total, cgs, err := consistencyGroupAdmin.List(c.Req.Context(), offset, limit, order, query)
+	if err != nil {
+		logger.Error("Failed to list consistency groups", err)
+		c.Data["ErrorMsg"] = "Failed to list consistency groups"
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+
+	// Get volume counts and snapshot counts for each CG
+	// 获取每个一致性组的卷数量和快照数量
+	type CGWithCounts struct {
+		*model.ConsistencyGroup
+		VolumeCount   int64
+		SnapshotCount int64
+		OwnerInfo     *model.Organization
+	}
+	cgsWithCounts := make([]*CGWithCounts, 0, len(cgs))
+	for _, cg := range cgs {
+		var volumeCount, snapshotCount int64
+		db.Model(&model.ConsistencyGroupVolume{}).Where("cg_id = ?", cg.ID).Count(&volumeCount)
+		db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount)
+
+		cgwc := &CGWithCounts{
+			ConsistencyGroup: cg,
+			VolumeCount:      volumeCount,
+			SnapshotCount:    snapshotCount,
+		}
+
+		// Get owner info for admin
+		// 为管理员获取所有者信息
+		if memberShip.CheckPermission(model.Admin) {
+			cgwc.OwnerInfo = &model.Organization{Model: model.Model{ID: cg.Owner}}
+			db.Take(cgwc.OwnerInfo)
+		}
+
+		cgsWithCounts = append(cgsWithCounts, cgwc)
+	}
+
+	pages := GetPages(total, limit)
+	c.Data["ConsistencyGroups"] = cgsWithCounts
+	c.Data["Total"] = total
+	c.Data["Pages"] = pages
+	c.Data["Query"] = query
+	c.HTML(200, "consistency_groups")
+}
+
+// New displays the create consistency group page
+// 显示创建一致性组页面
+func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+
+	// Get available volumes (not in any CG)
+	// 获取可用的卷（未加入任何一致性组）
+	var volumes []*model.Volume
+	where := memberShip.GetWhere()
+	// Get volumes that are not in any CG
+	// 获取未加入任何一致性组的卷
+	subQuery := db.Table("consistency_group_volumes").Select("volume_id")
+	if err := db.Where(where).Where("id NOT IN (?)", subQuery).Where("status IN ?", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
+		logger.Error("Failed to query volumes", err)
+		c.Data["ErrorMsg"] = "Failed to query volumes"
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	// Get storage pools
+	// 获取存储池
+	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, 50, "name", "category='storage_pool'")
+	if err != nil {
+		logger.Error("Failed to query storage pools", err)
+	}
+
+	c.Data["Volumes"] = volumes
+	c.Data["Pools"] = pools
+	c.HTML(200, "consistency_group_new")
+}
+
+// Create handles creating a new consistency group
+// 处理创建新一致性组
+func (v *ConsistencyGroupView) Create(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	redirectTo := "../consistency_groups"
+	name := c.QueryTrim("name")
+	description := c.QueryTrim("description")
+	volumeUUIDs := c.Req.Form["volumes"]
+
+	if name == "" {
+		logger.Error("Consistency group name is empty")
+		c.Data["ErrorMsg"] = "Consistency group name is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	if len(volumeUUIDs) == 0 {
+		logger.Error("No volumes selected")
+		c.Data["ErrorMsg"] = "At least one volume must be selected"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	_, err := consistencyGroupAdmin.Create(c.Req.Context(), name, description, volumeUUIDs)
+	if err != nil {
+		logger.Error("Failed to create consistency group", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	c.Redirect(redirectTo)
+}
+
+// Get displays the consistency group detail page
+// 显示一致性组详情页面
+func (v *ConsistencyGroupView) Get(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "ID is empty"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	// Permission check
+	// 权限检查
+	permit = memberShip.ValidateOwner(model.Reader, cg.Owner)
+	if !permit {
+		logger.Error("Not authorized to view this consistency group")
+		c.Data["ErrorMsg"] = "Not authorized to view this consistency group"
+		c.HTML(http.StatusForbidden, "error")
+		return
+	}
+
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+
+	// Get volumes in the CG
+	// 获取一致性组中的卷
+	var cgVolumes []*model.ConsistencyGroupVolume
+	db.Preload("Volume").Where("cg_id = ?", cg.ID).Find(&cgVolumes)
+	volumes := make([]*model.Volume, 0, len(cgVolumes))
+	for _, cgv := range cgVolumes {
+		volumes = append(volumes, cgv.Volume)
+	}
+
+	// Get snapshot count
+	// 获取快照数量
+	var snapshotCount int64
+	db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount)
+
+	// Get recent snapshots (limit 5)
+	// 获取最近的快照（限制5个）
+	var recentSnapshots []*model.ConsistencyGroupSnapshot
+	db.Where("cg_id = ?", cg.ID).Order("created_at DESC").Limit(5).Find(&recentSnapshots)
+
+	c.Data["CG"] = cg
+	c.Data["Volumes"] = volumes
+	c.Data["SnapshotCount"] = snapshotCount
+	c.Data["RecentSnapshots"] = recentSnapshots
+	c.HTML(200, "consistency_group")
+}
+
+// Edit displays the edit consistency group page
+// 显示编辑一致性组页面
+func (v *ConsistencyGroupView) Edit(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	// Permission check
+	// 权限检查
+	permit = memberShip.ValidateOwner(model.Writer, cg.Owner)
+	if !permit {
+		logger.Error("Not authorized to edit this consistency group")
+		c.Data["ErrorMsg"] = "Not authorized to edit this consistency group"
+		c.HTML(http.StatusForbidden, "error")
+		return
+	}
+
+	c.Data["CG"] = cg
+	c.HTML(200, "consistency_group_edit")
+}
+
+// Patch handles updating a consistency group
+// 处理更新一致性组
+func (v *ConsistencyGroupView) Patch(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	name := c.QueryTrim("name")
+	description := c.QueryTrim("description")
+
+	_, err = consistencyGroupAdmin.Update(c.Req.Context(), cgID, name, description)
+	if err != nil {
+		logger.Error("Failed to update consistency group", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	c.Redirect(fmt.Sprintf("../consistency_groups/%d", cgID))
+}
+
+// Delete handles deleting a consistency group
+// 处理删除一致性组
+func (v *ConsistencyGroupView) Delete(c *macaron.Context, store session.Store) error {
+	id := c.Params("id")
+	if id == "" {
+		c.Data["ErrorMsg"] = "ID is empty"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	err = consistencyGroupAdmin.Delete(c.Req.Context(), cgID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"redirect": "consistency_groups",
+	})
+	return nil
+}
+
+// Volumes displays the volume management page for a consistency group
+// 显示一致性组的卷管理页面
+func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	// Permission check
+	// 权限检查
+	permit = memberShip.ValidateOwner(model.Reader, cg.Owner)
+	if !permit {
+		logger.Error("Not authorized to view this consistency group")
+		c.Data["ErrorMsg"] = "Not authorized to view this consistency group"
+		c.HTML(http.StatusForbidden, "error")
+		return
+	}
+
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+
+	// Get volumes in the CG
+	// 获取一致性组中的卷
+	var cgVolumes []*model.ConsistencyGroupVolume
+	db.Preload("Volume").Where("cg_id = ?", cg.ID).Find(&cgVolumes)
+	volumes := make([]*model.Volume, 0, len(cgVolumes))
+	for _, cgv := range cgVolumes {
+		volumes = append(volumes, cgv.Volume)
+	}
+
+	// Get snapshot count (to check if volumes can be modified)
+	// 获取快照数量（用于检查是否可以修改卷）
+	var snapshotCount int64
+	db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount)
+
+	// Get available volumes that can be added (same pool, not in any CG)
+	// 获取可添加的卷（同一存储池，未加入任何一致性组）
+	var availableVolumes []*model.Volume
+	where := memberShip.GetWhere()
+	subQuery := db.Table("consistency_group_volumes").Select("volume_id")
+	db.Where(where).Where("id NOT IN (?)", subQuery).
+		Where("pool_id = ?", cg.PoolID).
+		Where("status IN ?", []string{"available", "attached"}).
+		Find(&availableVolumes)
+
+	c.Data["CG"] = cg
+	c.Data["Volumes"] = volumes
+	c.Data["AvailableVolumes"] = availableVolumes
+	c.Data["SnapshotCount"] = snapshotCount
+	c.Data["CanModify"] = snapshotCount == 0 && cg.IsAvailable()
+	c.HTML(200, "consistency_group_volumes")
+}
+
+// AddVolumes handles adding volumes to a consistency group
+// 处理向一致性组添加卷
+func (v *ConsistencyGroupView) AddVolumes(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	volumeUUIDs := c.Req.Form["volumes"]
+	if len(volumeUUIDs) == 0 {
+		c.Data["ErrorMsg"] = "No volumes selected"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	_, err = consistencyGroupAdmin.AddVolumes(c.Req.Context(), cgID, volumeUUIDs)
+	if err != nil {
+		logger.Error("Failed to add volumes to consistency group", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	c.Redirect(fmt.Sprintf("../consistency_groups/%d/volumes", cgID))
+}
+
+// RemoveVolume handles removing a volume from a consistency group
+// 处理从一致性组删除卷
+func (v *ConsistencyGroupView) RemoveVolume(c *macaron.Context, store session.Store) error {
+	id := c.Params("id")
+	volumeID := c.Params("volume_id")
+
+	if id == "" || volumeID == "" {
+		c.Data["ErrorMsg"] = "ID is empty"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid CG ID"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	// Get volume UUID from ID
+	// 从 ID 获取卷 UUID
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+	volumeIDInt, err := strconv.ParseInt(volumeID, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid volume ID"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+	volume := &model.Volume{Model: model.Model{ID: volumeIDInt}}
+	if err = db.Take(volume).Error; err != nil {
+		c.Data["ErrorMsg"] = "Volume not found"
+		c.Error(http.StatusNotFound)
+		return nil
+	}
+
+	_, err = consistencyGroupAdmin.RemoveVolume(c.Req.Context(), cgID, volume.UUID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"redirect": fmt.Sprintf("consistency_groups/%d/volumes", cgID),
+	})
+	return nil
+}
+
+// ListSnapshots displays the snapshot list page for a consistency group
+// 显示一致性组的快照列表页面
+func (v *ConsistencyGroupView) ListSnapshots(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	// Permission check
+	// 权限检查
+	permit = memberShip.ValidateOwner(model.Reader, cg.Owner)
+	if !permit {
+		logger.Error("Not authorized to view this consistency group")
+		c.Data["ErrorMsg"] = "Not authorized to view this consistency group"
+		c.HTML(http.StatusForbidden, "error")
+		return
+	}
+
+	offset := c.QueryInt64("offset")
+	limit := c.QueryInt64("limit")
+	if limit == 0 {
+		limit = 16
+	}
+	order := c.QueryTrim("order")
+	if order == "" {
+		order = "created_at DESC"
+	}
+
+	total, snapshots, err := consistencyGroupAdmin.ListSnapshots(c.Req.Context(), cgID, offset, limit, order)
+	if err != nil {
+		logger.Error("Failed to list snapshots", err)
+		c.Data["ErrorMsg"] = "Failed to list snapshots"
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	// Preload tasks for each snapshot
+	// 为每个快照预加载任务
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+	for _, snap := range snapshots {
+		if snap.TaskID > 0 {
+			snap.Task = &model.Task{Model: model.Model{ID: snap.TaskID}}
+			db.Take(snap.Task)
+		}
+	}
+
+	pages := GetPages(total, limit)
+	c.Data["CG"] = cg
+	c.Data["Snapshots"] = snapshots
+	c.Data["Total"] = total
+	c.Data["Pages"] = pages
+	c.Data["CGLink"] = fmt.Sprintf("/consistency_groups/%d", cgID)
+	c.HTML(200, "cg_snapshots")
+}
+
+// NewSnapshot displays the create snapshot page
+// 显示创建快照页面
+func (v *ConsistencyGroupView) NewSnapshot(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	// Permission check
+	// 权限检查
+	permit = memberShip.ValidateOwner(model.Writer, cg.Owner)
+	if !permit {
+		logger.Error("Not authorized to create snapshot for this consistency group")
+		c.Data["ErrorMsg"] = "Not authorized to create snapshot for this consistency group"
+		c.HTML(http.StatusForbidden, "error")
+		return
+	}
+
+	c.Data["CG"] = cg
+	c.HTML(200, "cg_snapshot_new")
+}
+
+// CreateSnapshot handles creating a snapshot for a consistency group
+// 处理为一致性组创建快照
+func (v *ConsistencyGroupView) CreateSnapshot(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	name := c.QueryTrim("name")
+	description := c.QueryTrim("description")
+
+	if name == "" {
+		c.Data["ErrorMsg"] = "Snapshot name is required"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	_, err = consistencyGroupAdmin.CreateSnapshot(c.Req.Context(), cg.UUID, name, description)
+	if err != nil {
+		logger.Error("Failed to create snapshot", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	c.Redirect(fmt.Sprintf("../consistency_groups/%d/snapshots", cgID))
+}
+
+// DeleteSnapshot handles deleting a snapshot
+// 处理删除快照
+func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.Store) error {
+	id := c.Params("id")
+	snapID := c.Params("snap_id")
+
+	if id == "" || snapID == "" {
+		c.Data["ErrorMsg"] = "ID is empty"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid CG ID"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.Error(http.StatusNotFound)
+		return nil
+	}
+
+	// Get snapshot UUID from ID
+	// 从 ID 获取快照 UUID
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+	snapIDInt, err := strconv.ParseInt(snapID, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid snapshot ID"
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+	snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapIDInt}}
+	if err = db.Take(snapshot).Error; err != nil {
+		c.Data["ErrorMsg"] = "Snapshot not found"
+		c.Error(http.StatusNotFound)
+		return nil
+	}
+
+	err = consistencyGroupAdmin.DeleteSnapshot(c.Req.Context(), cg.UUID, snapshot.UUID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return nil
+	}
+
+	c.JSON(200, map[string]interface{}{
+		"redirect": fmt.Sprintf("consistency_groups/%d/snapshots", cgID),
+	})
+	return nil
+}
+
+// Restore handles restoring a consistency group from a snapshot
+// 处理从快照恢复一致性组
+func (v *ConsistencyGroupView) Restore(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	id := c.Params("id")
+	cgID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		logger.Error("Failed to get consistency group", err)
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	// Get snapshot ID from form
+	// 从表单获取快照 ID
+	snapshotIDStr := c.QueryTrim("snapshot_id")
+	if snapshotIDStr == "" {
+		c.Data["ErrorMsg"] = "Snapshot ID is required"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	snapshotID, err := strconv.ParseInt(snapshotIDStr, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid snapshot ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+
+	// Get snapshot UUID
+	// 获取快照 UUID
+	snapshot, err := consistencyGroupAdmin.GetSnapshot(c.Req.Context(), snapshotID)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Snapshot not found"
+		c.HTML(http.StatusNotFound, "error")
+		return
+	}
+
+	_, err = consistencyGroupAdmin.RestoreSnapshot(c.Req.Context(), cg.UUID, snapshot.UUID)
+	if err != nil {
+		logger.Error("Failed to restore snapshot", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+
+	c.Redirect("/tasks")
 }

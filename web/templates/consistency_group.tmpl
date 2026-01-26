@@ -1,0 +1,126 @@
+{{template "_head" .}}
+    <div class="admin user">
+        <div class="ui container">
+            <div class="ui grid">
+                {{template "_left" .}}
+                <div class="twelve wide column content">
+                    <h4 class="ui top attached header">
+                        {{.i18n.Tr "Consistency_Group"}}: {{.CG.Name}}
+                        <div class="ui right">
+                            <a class="ui blue tiny button" href="{{.Link}}/edit">{{.i18n.Tr "Edit"}}</a>
+                            <a class="ui green tiny button" href="{{.Link}}/snapshots/new">{{.i18n.Tr "Create_Snapshot"}}</a>
+                        </div>
+                    </h4>
+                    <!-- Basic Information -->
+                    <div class="ui attached segment">
+                        <table class="ui very basic table">
+                            <tr><td width="150"><strong>{{.i18n.Tr "UUID"}}</strong></td><td>{{.CG.UUID}}</td></tr>
+                            <tr><td><strong>{{.i18n.Tr "Name"}}</strong></td><td>{{.CG.Name}}</td></tr>
+                            <tr><td><strong>{{.i18n.Tr "Description"}}</strong></td><td>{{.CG.Description}}</td></tr>
+                            <tr><td><strong>{{.i18n.Tr "Status"}}</strong></td><td>{{.CG.Status}}</td></tr>
+                            <tr><td><strong>{{.i18n.Tr "Pool"}}</strong></td><td>{{.CG.PoolID}}</td></tr>
+                            <tr><td><strong>{{.i18n.Tr "Created"}}</strong></td><td>{{.CG.CreatedAt}}</td></tr>
+                        </table>
+                    </div>
+                    <!-- Volumes List -->
+                    <h4 class="ui attached header">
+                        {{.i18n.Tr "Volumes"}} ({{len .Volumes}})
+                        <div class="ui right">
+                            <a class="ui tiny button" href="{{.Link}}/volumes">{{.i18n.Tr "Manage"}}</a>
+                        </div>
+                    </h4>
+                    <div class="ui attached segment">
+                        <table class="ui very basic striped table">
+                            <thead>
+                                <tr>
+                                    <th>{{.i18n.Tr "Name"}}</th>
+                                    <th>{{.i18n.Tr "UUID"}}</th>
+                                    <th>{{.i18n.Tr "Size"}} (G)</th>
+                                    <th>{{.i18n.Tr "Status"}}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{ range .Volumes }}
+                                <tr>
+                                    <td><a href="/volumes/{{.ID}}">{{.Name}}</a></td>
+                                    <td>{{.UUID}}</td>
+                                    <td>{{.Size}}</td>
+                                    <td>{{.Status}}</td>
+                                </tr>
+                                {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+                    <!-- Recent Snapshots -->
+                    <h4 class="ui attached header">
+                        {{.i18n.Tr "Recent_Snapshots"}} ({{.SnapshotCount}})
+                        <div class="ui right">
+                            <a class="ui tiny button" href="{{.Link}}/snapshots">{{.i18n.Tr "View_All"}}</a>
+                        </div>
+                    </h4>
+                    <div class="ui attached segment">
+                        {{ if .RecentSnapshots }}
+                        <table class="ui very basic striped table">
+                            <thead>
+                                <tr>
+                                    <th>{{.i18n.Tr "Name"}}</th>
+                                    <th>{{.i18n.Tr "Status"}}</th>
+                                    <th>{{.i18n.Tr "Size"}} (G)</th>
+                                    <th>{{.i18n.Tr "Created"}}</th>
+                                    <th>{{.i18n.Tr "Actions"}}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{ $Link := .Link }}
+                                {{ range .RecentSnapshots }}
+                                <tr>
+                                    <td>{{.Name}}</td>
+                                    <td>{{.Status}}</td>
+                                    <td>{{.Size}}</td>
+                                    <td>{{.CreatedAt}}</td>
+                                    <td>
+                                        <div class="restore-button" data-id="{{.ID}}" data-name="{{.Name}}"
+                                             {{if ne .Status "available"}}style="opacity: 0.3; pointer-events: none;"{{end}}>
+                                            <i class="blue undo alternate icon"></i>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {{ end }}
+                            </tbody>
+                        </table>
+                        {{ else }}
+                        <p>{{.i18n.Tr "No_Snapshots"}}</p>
+                        {{ end }}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Restore Modal -->
+    <div class="ui small basic restore modal">
+        <div class="ui icon header">
+            <i class="undo alternate icon"></i>
+            {{.i18n.Tr "CG_Snapshot_Restore"}}
+        </div>
+        <div class="content">
+            <p>{{.i18n.Tr "CG_Snapshot_Restore_Confirm"}} <span id="restore-snapshot-name"></span>?</p>
+            <form class="ui form" id="restore-form" method="post" action="{{.Link}}/restore">
+                <input type="hidden" name="snapshot_id" id="restore-snapshot-id">
+            </form>
+        </div>
+        <div class="actions">
+            <div class="ui negative button">{{.i18n.Tr "Cancel"}}</div>
+            <div class="ui positive button">{{.i18n.Tr "OK"}}</div>
+        </div>
+    </div>
+{{template "_footer" .}}
+<script>
+$('.restore-button').on('click', function() {
+    $('#restore-snapshot-id').val($(this).data('id'));
+    $('#restore-snapshot-name').text($(this).data('name'));
+    $('.ui.small.basic.restore.modal').modal('show');
+});
+$('.ui.positive.button').on('click', function() {
+    $('#restore-form').submit();
+});
+</script>

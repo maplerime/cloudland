@@ -22,7 +22,10 @@
         </a>
         <a {{ if eq .Link "/backups" }} class="active item" {{ else }} class="item" {{ end }} href="/backups">
             {{.i18n.Tr "Backups"}}
-        </a>   
+        </a>
+        <a {{ if eq .Link "/consistency_groups" }} class="active item" {{ else }} class="item" {{ end }} href="/consistency_groups">
+            {{.i18n.Tr "Consistency_Groups"}}
+        </a>
         <a {{ if eq .Link "/flavors" }} class="active item" {{ else }} class="item" {{ end }} href="/flavors">
             {{.i18n.Tr "Flavors"}}
         </a>

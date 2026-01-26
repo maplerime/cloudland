@@ -1,0 +1,134 @@
+{{template "_head" .}}
+    <div class="admin user">
+        <div class="ui container">
+            <div class="ui grid">
+                {{template "_left" .}}
+                <div class="twelve wide column content">
+                    <h4 class="ui top attached header">
+                        {{.i18n.Tr "CG_Volume_Manage"}}: {{.CG.Name}}
+                        <div class="ui right">
+                            <a class="ui button" href="/consistency_groups/{{.CG.ID}}">{{.i18n.Tr "Back"}}</a>
+                        </div>
+                    </h4>
+
+                    <!-- Current Volumes -->
+                    <h4 class="ui attached header">
+                        {{.i18n.Tr "Current_Volumes"}} ({{len .Volumes}})
+                    </h4>
+                    <div class="ui attached segment">
+                        <table class="ui very basic striped table">
+                            <thead>
+                                <tr>
+                                    <th>{{.i18n.Tr "Name"}}</th>
+                                    <th>{{.i18n.Tr "UUID"}}</th>
+                                    <th>{{.i18n.Tr "Size"}} (G)</th>
+                                    <th>{{.i18n.Tr "Status"}}</th>
+                                    {{ if $.CanModify }}
+                                    <th>{{.i18n.Tr "Remove"}}</th>
+                                    {{ end }}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{ $Link := .Link }}
+                                {{ $CGID := .CG.ID }}
+                                {{ $CanModify := .CanModify }}
+                                {{ $VolumeCount := len .Volumes }}
+                                {{ range .Volumes }}
+                                <tr>
+                                    <td><a href="/volumes/{{.ID}}">{{.Name}}</a></td>
+                                    <td>{{.UUID}}</td>
+                                    <td>{{.Size}}</td>
+                                    <td>{{.Status}}</td>
+                                    {{ if $CanModify }}
+                                    <td>
+                                        {{ if gt $VolumeCount 1 }}
+                                        <div class="remove-button" data-url="/consistency_groups/{{$CGID}}/volumes/{{.ID}}" data-id="{{.ID}}" data-name="{{.Name}}">
+                                            <i class="dark red minus circle icon"></i>
+                                        </div>
+                                        {{ else }}
+                                        <span title="{{$.i18n.Tr "Cannot_Remove_Last_Volume"}}">
+                                            <i class="grey minus circle icon"></i>
+                                        </span>
+                                        {{ end }}
+                                    </td>
+                                    {{ end }}
+                                </tr>
+                                {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Add Volumes Section -->
+                    {{ if .CanModify }}
+                    <h4 class="ui attached header">
+                        {{.i18n.Tr "CG_Volume_Add"}}
+                    </h4>
+                    <div class="ui attached segment">
+                        {{ if .AvailableVolumes }}
+                        <form class="ui form" action="/consistency_groups/{{.CG.ID}}/volumes" method="post">
+                            <div class="inline field">
+                                <label for="volumes">{{.i18n.Tr "Available_Volumes"}}</label>
+                                <select name="volumes" id="volumes" class="ui fluid search dropdown" multiple>
+                                    {{ range .AvailableVolumes }}
+                                    <option value="{{.UUID}}">{{.Name}} ({{.Size}}G)</option>
+                                    {{ end }}
+                                </select>
+                            </div>
+                            <div class="inline field">
+                                <label></label>
+                                <button class="ui green button">{{.i18n.Tr "Add_Volumes"}}</button>
+                            </div>
+                        </form>
+                        {{ else }}
+                        <p>{{.i18n.Tr "No_Available_Volumes"}}</p>
+                        {{ end }}
+                    </div>
+                    {{ else }}
+                    <div class="ui attached warning message">
+                        <i class="warning icon"></i>
+                        {{ if gt .SnapshotCount 0 }}
+                        {{.i18n.Tr "CG_Has_Snapshots_Cannot_Modify"}}
+                        {{ else }}
+                        {{.i18n.Tr "CG_Not_Available_Cannot_Modify"}}
+                        {{ end }}
+                    </div>
+                    {{ end }}
+                </div>
+            </div>
+        </div>
+    </div>
+    <!-- Remove Volume Modal -->
+    <div class="ui small basic remove modal">
+        <div class="ui icon header">
+            <i class="minus circle icon"></i>
+            {{.i18n.Tr "CG_Volume_Remove"}}
+        </div>
+        <div class="content">
+            <p>{{.i18n.Tr "CG_Volume_Remove_Confirm"}} <span id="remove-volume-name"></span>?</p>
+        </div>
+        <div class="actions">
+            <div class="ui negative button">{{.i18n.Tr "Cancel"}}</div>
+            <div class="ui positive red button" id="confirm-remove">{{.i18n.Tr "Remove"}}</div>
+        </div>
+    </div>
+{{template "_footer" .}}
+<script>
+var removeUrl = '';
+$('.remove-button').on('click', function() {
+    removeUrl = $(this).data('url');
+    $('#remove-volume-name').text($(this).data('name'));
+    $('.ui.small.basic.remove.modal').modal('show');
+});
+$('#confirm-remove').on('click', function() {
+    $.ajax({
+        url: removeUrl,
+        type: 'DELETE',
+        success: function(result) {
+            window.location.reload();
+        },
+        error: function(xhr) {
+            alert('Failed to remove volume');
+        }
+    });
+});
+</script>

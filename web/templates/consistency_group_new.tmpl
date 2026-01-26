@@ -1,0 +1,69 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+            {{template "_left" .}}
+            <div class="user signup">
+                <div class="ui middle very relaxed page grid">
+                    <div class="">
+                        <form class="ui form" action="{{.Link}}" method="post">
+                            <h3 class="ui top attached header">
+                                {{.i18n.Tr "Create_New_CG"}}
+                            </h3>
+                            <div class="ui attached segment">
+                                <div class="required inline field">
+                                    <label for="name">{{.i18n.Tr "Name"}}</label>
+                                    <input id="name" name="name" autofocus required>
+                                </div>
+                                <div class="inline field">
+                                    <label for="description">{{.i18n.Tr "Description"}}</label>
+                                    <input id="description" name="description">
+                                </div>
+                                <div class="required inline field">
+                                    <label for="pool">{{.i18n.Tr "Storage_Pool"}}</label>
+                                    <select name="pool" id="pool" class="ui selection dropdown" onchange="filterVolumes()">
+                                        <option value="">{{.i18n.Tr "Select_Pool"}}</option>
+                                        {{ range .Pools }}
+                                        <option value="{{.Value}}">{{.Name}}</option>
+                                        {{ end }}
+                                    </select>
+                                </div>
+                                <div class="required inline field">
+                                    <label for="volumes">{{.i18n.Tr "Volumes"}}</label>
+                                    <select name="volumes" id="volumes" class="ui fluid search dropdown" multiple>
+                                        {{ range .Volumes }}
+                                        <option value="{{.UUID}}" data-pool="{{.PoolID}}">{{.Name}} ({{.Size}}G)</option>
+                                        {{ end }}
+                                    </select>
+                                </div>
+                                <div class="inline field">
+                                    <label></label>
+                                    <button class="ui green button">{{.i18n.Tr "Create"}}</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{template "_footer" .}}
+<script>
+function filterVolumes() {
+    var pool = $('#pool').val();
+    $('#volumes option').each(function() {
+        if (pool === '' || $(this).data('pool') === pool) {
+            $(this).show();
+        } else {
+            $(this).hide();
+            $(this).prop('selected', false);
+        }
+    });
+    $('#volumes').dropdown('refresh');
+}
+$(document).ready(function() {
+    // Hide all volumes initially until a pool is selected
+    filterVolumes();
+});
+</script>
