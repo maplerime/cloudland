@@ -202,7 +202,7 @@ echo -e "\n\nTesting volume event..."
 curl -X POST http://localhost:8080/api/v1/resource-changes \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "volume.create",
+    "event_type": "volume_create",
     "source": "CloudLand",
     "tenant_id": "111",
     "resource": {

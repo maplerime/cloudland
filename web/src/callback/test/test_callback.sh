@@ -16,7 +16,7 @@ echo "[Test 1] Sending instance launch event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "instance.launch",
+    "event_type": "instance_launch",
     "source": "CloudLand",
     "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:30:00Z",
@@ -43,7 +43,7 @@ echo "[Test 2] Sending volume create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "volume.create",
+    "event_type": "volume_create",
     "source": "CloudLand",
     "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:31:00Z",
@@ -69,7 +69,7 @@ echo "[Test 3] Sending volume attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "volume.attach",
+    "event_type": "volume_attach",
     "source": "CloudLand",
     "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:32:00Z",
@@ -94,7 +94,7 @@ echo "[Test 4] Sending image create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "image.create",
+    "event_type": "image_create",
     "source": "CloudLand",
     "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:33:00Z",
@@ -119,7 +119,7 @@ echo "[Test 5] Sending interface attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "interface.attach",
+    "event_type": "interface_attach",
     "source": "CloudLand",
     "tenant_id": "111",
     "OccurredAt": "2025-10-30T10:34:00Z",
@@ -144,7 +144,7 @@ echo "[Test 6] Sending instance shutdown event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type": "instance.shutdown",
+    "event_type": "instance_shutdown",
     "source": "CloudLand",
     "tenant_id": "111",
     "previous_status": "running",
