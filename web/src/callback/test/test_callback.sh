@@ -16,8 +16,8 @@ echo "[Test 1] Sending instance launch event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"instance.launch",
-    "source":"CloudLand",
+    "event_type": "instance.launch",
+    "source": "CloudLand",
     "tenant_id": 111,
     "OccurredAt": "2025-10-30T10:30:00Z",
     "resource": {
@@ -43,12 +43,12 @@ echo "[Test 2] Sending volume create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"volume.create",
-    "source":"CloudLand",
+    "event_type": "volume.create",
+    "source": "CloudLand",
     "tenant_id": 111,
     "OccurredAt": "2025-10-30T10:31:00Z",
     "resource": {
-      "type": "volume"
+      "type": "volume",
       "id": "660e8400-e29b-41d4-a716-446655440001"
     },
     "data": {
@@ -69,12 +69,12 @@ echo "[Test 3] Sending volume attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"volume.attach",
-    "source":"CloudLand",
+    "event_type": "volume.attach",
+    "source": "CloudLand",
     "tenant_id": 111,
     "OccurredAt": "2025-10-30T10:32:00Z",
     "resource": {
-      "type": "volume"
+      "type": "volume",
       "id": "660e8400-e29b-41d4-a716-446655440001"
     },
     "data": {
@@ -94,12 +94,12 @@ echo "[Test 4] Sending image create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"image.create",
-    "source":"CloudLand",
+    "event_type": "image.create",
+    "source": "CloudLand",
     "tenant_id": 111,
     "OccurredAt": "2025-10-30T10:33:00Z",
     "resource": {
-      "type": "image"
+      "type": "image",
       "id": "770e8400-e29b-41d4-a716-446655440002"
     },
     "data": {
@@ -119,12 +119,12 @@ echo "[Test 5] Sending interface attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"interface.attach",
-    "source":"CloudLand",
+    "event_type": "interface.attach",
+    "source": "CloudLand",
     "tenant_id": 111,
     "OccurredAt": "2025-10-30T10:34:00Z",
     "resource": {
-      "type": "interface"
+      "type": "interface",
       "id": "880e8400-e29b-41d4-a716-446655440003"
     },
     "data": {
@@ -144,8 +144,8 @@ echo "[Test 6] Sending instance shutdown event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"instance.shutdown",
-    "source":"CloudLand",
+    "event_type": "instance.shutdown",
+    "source": "CloudLand",
     "tenant_id": 111,
     "previous_status": "running",
     "OccurredAt": "2025-10-30T10:35:00Z",

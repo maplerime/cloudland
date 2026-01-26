@@ -62,9 +62,14 @@ go build -o callback_test_server callback_test_server.go
 curl -X POST http://localhost:8080/api/v1/resource-changes \
   -H "Content-Type: application/json" \
   -d '{
-    "type": "instance",
-    "id": "550e8400-e29b-41d4-a716-446655440000",
-    "timestamp": "2025-10-30T10:30:00Z",
+    "event_type": "launch_vm",
+    "source": "CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:30:00Z",
+    "resource": {
+      "type": "instance",
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+    }
     "data": {
       "hostname": "test-vm-001",
       "status": "running",
@@ -197,8 +202,8 @@ echo -e "\n\nTesting volume event..."
 curl -X POST http://localhost:8080/api/v1/resource-changes \
   -H "Content-Type: application/json" \
   -d '{
-    "event_type":"volume.create",
-    "source":"CloudLand",
+    "event_type": "volume.create",
+    "source": "CloudLand",
     "tenant_id": 111,
     "resource": {
       "type": "volume"
