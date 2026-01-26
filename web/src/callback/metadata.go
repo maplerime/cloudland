@@ -7,6 +7,7 @@ package callback
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -158,7 +159,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 			EventType:  cmd,
 			Source:     source,
 			OccurredAt: time.Now(),
-			TenantID:   rcEvent.TenantID,
+			TenantID:   fmt.Sprintf("%d", rcEvent.TenantID),
 			Resource:   *resource,
 			Data:       rcEvent.Data,
 			Metadata:   rcEvent.Metadata,

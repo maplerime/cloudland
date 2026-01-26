@@ -65,7 +65,7 @@ type Event struct {
 	EventType  string                 `json:"event_type"`  // Event type (e.g., "instance.created")
 	Source     string                 `json:"source"`      // Source system (e.g., "cloudland", "monitoring")
 	OccurredAt time.Time              `json:"occurred_at"` // When the event occurred
-	TenantID   int64                  `json:"tenant_id"`   // The tenantID in Cloudland
+	TenantID   string                 `json:"tenant_id"`   // The tenantID in Cloudland
 	Resource   Resource               `json:"resource"`
 	Data       map[string]interface{} `json:"data"`               // Event data payload as JSON
 	Metadata   map[string]interface{} `json:"metadata,omitempty"` // Additional metadata
