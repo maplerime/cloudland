@@ -152,7 +152,7 @@ retry_interval = 5
 ================================================================================
 Event #1 received at 2025-10-30 10:35:12.345
 ================================================================================
-  EventType       : instance.create
+  EventType       : instance_create
   Source          : Cloudland
   Resource Type   : instance
   Resource UUID   : 550e8400-e29b-41d4-a716-446655440000
@@ -233,9 +233,13 @@ curl http://localhost:8080/stats | jq .
 ### 问题：事件解析失败
 
 检查发送的 JSON 格式是否正确，确保包含必需字段：
-- `resource_type`
-- `resource_uuid`
-- `timestamp`
+- `event_type`
+- `source`
+- `tenant_id`
+- `OccurredAt`
+- `resource.type`
+- `resource.id`
+- `data.status`
 
 ## 许可证
 
