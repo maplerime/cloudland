@@ -16,6 +16,8 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
+var source string = "Cloudland" // 事件来源系统名称
+
 // ResourceMetadata 定义资源元数据
 type ResourceMetadata struct {
 	// ResourceType 资源类型
@@ -131,14 +133,14 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		return
 	}
 
-	var event *ResourceChangeEvent
+	var rcEvent *ResourceChangeEvent
 	var err error
 
 	// 使用自定义提取器或默认提取器
 	if metadata.Extractor != nil {
-		event, err = metadata.Extractor(ctx, args)
+		rcEvent, err = metadata.Extractor(ctx, args)
 	} else {
-		event, err = defaultExtractor(ctx, metadata, args)
+		rcEvent, err = defaultExtractor(ctx, metadata, args)
 	}
 
 	if err != nil {
@@ -146,8 +148,21 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		return
 	}
 
-	if event != nil {
+	if rcEvent != nil {
+		resource := &Resource{
+			Type: rcEvent.ResourceType.String(),
+			ID:   rcEvent.ResourceUUID,
+		}
 		// 推送事件到队列
+		event := &Event{
+			EventType:  cmd,
+			Source:     source,
+			OccurredAt: time.Now(),
+			TenantID:   rcEvent.TenantID,
+			Resource:   *resource,
+			Data:       rcEvent.Data,
+			Metadata:   rcEvent.Metadata,
+		}
 		success := PushEvent(event)
 		if !success {
 			logger.Warningf("Failed to push event for command %s: queue full", cmd)
@@ -204,11 +219,11 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeInstance,
 		ResourceUUID: instance.UUID,
-		ResourceID:   instance.ID,
-		Status:       instance.Status.String(),
+		TenantID:     instance.Owner,
 		Timestamp:    time.Now(),
-		Metadata: map[string]interface{}{
+		Data: map[string]interface{}{
 			"hostname": instance.Hostname,
+			"status":   instance.Status.String(),
 			"hyper_id": instance.Hyper,
 			"zone_id":  instance.ZoneID,
 			"cpu":      instance.Cpu,
@@ -229,11 +244,11 @@ func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, err
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeVolume,
 		ResourceUUID: volume.UUID,
-		ResourceID:   volume.ID,
-		Status:       volume.Status.String(),
+		TenantID:     volume.Owner,
 		Timestamp:    time.Now(),
-		Metadata: map[string]interface{}{
+		Data: map[string]interface{}{
 			"name":        volume.Name,
+			"status":      volume.Status.String(),
 			"size":        volume.Size,
 			"instance_id": volume.InstanceID,
 			"target":      volume.Target,
@@ -254,11 +269,11 @@ func extractImageInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, erro
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeImage,
 		ResourceUUID: image.UUID,
-		ResourceID:   image.ID,
-		Status:       image.Status,
+		TenantID:     image.Owner,
 		Timestamp:    time.Now(),
-		Metadata: map[string]interface{}{
+		Data: map[string]interface{}{
 			"name":         image.Name,
+			"status":       image.Status,
 			"format":       image.Format,
 			"os_code":      image.OSCode,
 			"size":         image.Size,
@@ -284,11 +299,11 @@ func extractInterfaceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, 
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeInterface,
 		ResourceUUID: iface.UUID,
-		ResourceID:   iface.ID,
-		Status:       status,
+		TenantID:     iface.Owner,
 		Timestamp:    time.Now(),
-		Metadata: map[string]interface{}{
+		Data: map[string]interface{}{
 			"name":        iface.Name,
+			"status":      status,
 			"mac_addr":    iface.MacAddr,
 			"instance_id": iface.Instance,
 			"hyper_id":    iface.Hyper,

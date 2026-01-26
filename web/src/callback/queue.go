@@ -10,21 +10,21 @@ import (
 )
 
 var (
-	eventQueue chan *ResourceChangeEvent
+	eventQueue chan *Event
 	once       sync.Once
 )
 
 // InitQueue 初始化队列
 func InitQueue(size int) {
 	once.Do(func() {
-		eventQueue = make(chan *ResourceChangeEvent, size)
+		eventQueue = make(chan *Event, size)
 		logger.Infof("Initialized callback event queue with size: %d", size)
 	})
 }
 
 // PushEvent 推送事件到队列 (非阻塞)
 // 返回 true 表示成功推送，false 表示队列已满
-func PushEvent(event *ResourceChangeEvent) bool {
+func PushEvent(event *Event) bool {
 	// 队列未初始化
 	if eventQueue == nil {
 		logger.Warning("Event queue not initialized, skipping event push")
@@ -35,18 +35,18 @@ func PushEvent(event *ResourceChangeEvent) bool {
 	select {
 	case eventQueue <- event:
 		logger.Debugf("Event pushed to queue: %s/%s -> %s",
-			event.ResourceType, event.ResourceUUID, event.Status)
+			event.Resource.Type, event.Resource.ID, event.Data["status"])
 		return true
 	default:
 		// 队列满了，记录警告并丢弃事件
 		logger.Warningf("Event queue is full, dropping event: %s/%s",
-			event.ResourceType, event.ResourceUUID)
+			event.Resource.Type, event.Resource.ID)
 		return false
 	}
 }
 
 // GetEventQueue 获取队列 (供 worker 使用)
-func GetEventQueue() <-chan *ResourceChangeEvent {
+func GetEventQueue() <-chan *Event {
 	return eventQueue
 }
 

@@ -12,7 +12,7 @@
 ## 构建
 
 ```bash
-cd web/src/test
+cd web/src/callback/test
 go build -o callback_test_server callback_test_server.go
 ```
 
@@ -64,11 +64,10 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
   -d '{
     "resource_type": "instance",
     "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "resource_id": 123,
-    "status": "running",
     "timestamp": "2025-10-30T10:30:00Z",
-    "metadata": {
+    "data": {
       "hostname": "test-vm-001",
+      "status": "running",
       "hyper_id": 5,
       "zone_id": 1
     }
@@ -150,11 +149,10 @@ Event #1 received at 2025-10-30 10:35:12.345
 ================================================================================
   Resource Type : instance
   Resource UUID : 550e8400-e29b-41d4-a716-446655440000
-  Resource ID   : 123
-  Status        : running
   Timestamp     : 2025-10-30 10:35:12.345
-  Metadata      :
+  data      :
     - hostname    : test-vm-001
+    - status      : running
     - hyper_id    : 5
     - zone_id     : 1
     - cpu         : 4
@@ -178,11 +176,10 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
   -d '{
     "resource_type": "instance",
     "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "resource_id": 1,
-    "status": "running",
     "timestamp": "2025-10-30T10:30:00Z",
-    "metadata": {
+    "data": {
       "hostname": "test-vm-001",
+      "status": "running",
       "cpu": 4,
       "memory": 8192
     }
@@ -194,12 +191,11 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
   -d '{
     "resource_type": "volume",
     "resource_uuid": "660e8400-e29b-41d4-a716-446655440001",
-    "resource_id": 2,
-    "status": "available",
-    "previous_status": "creating",
     "timestamp": "2025-10-30T10:31:00Z",
-    "metadata": {
+    "data": {
       "name": "test-volume-001",
+      "status": "available",
+      "previous_status": "creating",
       "size": 100
     }
   }'
@@ -221,8 +217,6 @@ curl http://localhost:8080/stats | jq .
 检查发送的 JSON 格式是否正确，确保包含必需字段：
 - `resource_type`
 - `resource_uuid`
-- `resource_id`
-- `status`
 - `timestamp`
 
 ## 许可证

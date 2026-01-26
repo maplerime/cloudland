@@ -18,12 +18,11 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "resource_type": "instance",
     "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "resource_id": 1,
-    "status": "running",
-    "previous_status": "pending",
     "timestamp": "2025-10-30T10:30:00Z",
-    "metadata": {
+    "data": {
       "hostname": "test-vm-001",
+      "status": "running",
+      "previous_status": "pending",
       "hyper_id": 5,
       "zone_id": 1,
       "cpu": 4,
@@ -41,12 +40,11 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "resource_type": "volume",
     "resource_uuid": "660e8400-e29b-41d4-a716-446655440001",
-    "resource_id": 2,
-    "status": "available",
-    "previous_status": "creating",
     "timestamp": "2025-10-30T10:31:00Z",
-    "metadata": {
+    "data": {
       "name": "test-volume-001",
+      "status": "available",
+      "previous_status": "creating",
       "size": 100,
       "instance_id": 0,
       "target": "",
@@ -64,12 +62,11 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "resource_type": "volume",
     "resource_uuid": "660e8400-e29b-41d4-a716-446655440001",
-    "resource_id": 2,
-    "status": "attached",
     "previous_status": "available",
     "timestamp": "2025-10-30T10:32:00Z",
-    "metadata": {
+    "data": {
       "name": "test-volume-001",
+      "status": "attached",
       "size": 100,
       "instance_id": 1,
       "target": "vdb",
@@ -85,13 +82,12 @@ curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
     "resource_type": "image",
-    "resource_uuid": "770e8400-e29b-41d4-a716-446655440002",
-    "resource_id": 3,
-    "status": "active",
+    "resource_uuid": "770e8400-e29b-41d4-a716-446655440002",  
     "previous_status": "saving",
     "timestamp": "2025-10-30T10:33:00Z",
-    "metadata": {
+    "data": {
       "name": "ubuntu-22.04",
+      "status": "active",
       "format": "qcow2",
       "os_code": "linux",
       "size": 2147483648,
@@ -108,11 +104,10 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "resource_type": "interface",
     "resource_uuid": "880e8400-e29b-41d4-a716-446655440003",
-    "resource_id": 4,
-    "status": "active",
     "timestamp": "2025-10-30T10:34:00Z",
-    "metadata": {
+    "data": {
       "name": "eth0",
+      "status": "active",
       "mac_addr": "52:54:00:12:34:56",
       "instance_id": 1,
       "hyper_id": 5,
@@ -129,12 +124,11 @@ curl -s -X POST "$SERVER_URL" \
   -d '{
     "resource_type": "instance",
     "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "resource_id": 1,
-    "status": "shut_off",
     "previous_status": "running",
     "timestamp": "2025-10-30T10:35:00Z",
-    "metadata": {
+    "data": {
       "hostname": "test-vm-001",
+      "status": "shut_off",
       "hyper_id": 5,
       "zone_id": 1
     }

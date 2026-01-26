@@ -20,14 +20,25 @@ import (
 )
 
 // ResourceChangeEvent 接收的资源变化事件结构
-type ResourceChangeEvent struct {
-	ResourceType   string                 `json:"resource_type"`
-	ResourceUUID   string                 `json:"resource_uuid"`
-	ResourceID     int64                  `json:"resource_id"`
-	Status         string                 `json:"status"`
-	PreviousStatus string                 `json:"previous_status,omitempty"`
-	Timestamp      time.Time              `json:"timestamp"`
-	Metadata       map[string]interface{} `json:"metadata,omitempty"`
+type Resource struct {
+	Type   string            `json:"type"`             // 资源类型
+	ID     string            `json:"id"`               // 资源 UUID
+	Name   string            `json:"name,omitempty"`   // 资源名称
+	Region string            `json:"region,omitempty"` // 资源所属区域
+	Tags   map[string]string `json:"tags,omitempty"`   // 资源标签
+}
+
+// Cloudland event structure to be sent to callback URL
+type Event struct {
+	EventType  string                 `json:"event_type"`  // Event type (e.g., "instance.created")
+	Source     string                 `json:"source"`      // Source system (e.g., "cloudland", "monitoring")
+	OccurredAt time.Time              `json:"occurred_at"` // When the event occurred
+	TenantID   int64                  `json:"tenant_id"`   // The tenantID in Cloudland
+	Resource   Resource               `json:"resource"`
+	Data       map[string]interface{} `json:"data"`               // Event data payload as JSON
+	Metadata   map[string]interface{} `json:"metadata,omitempty"` // Additional metadata
+	// RetryCount 重试次数 (内部使用，不序列化)
+	RetryCount int `json:"-"`
 }
 
 var (
@@ -57,7 +68,7 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	// 解析 JSON
-	var event ResourceChangeEvent
+	var event Event
 	if err := json.Unmarshal(body, &event); err != nil {
 		log.Printf("ERROR: Failed to parse JSON: %v\n", err)
 		log.Printf("       Raw body: %s\n", string(body))
@@ -86,23 +97,18 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 // printEvent 打印事件详细信息
-func printEvent(count uint64, event *ResourceChangeEvent) {
+func printEvent(count uint64, event *Event) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Printf("Event #%d received at %s\n", count, time.Now().Format("2006-01-02 15:04:05.000"))
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Printf("  Resource Type : %s\n", event.ResourceType)
-	fmt.Printf("  Resource UUID : %s\n", event.ResourceUUID)
-	fmt.Printf("  Resource ID   : %d\n", event.ResourceID)
-	fmt.Printf("  Status        : %s", event.Status)
-	if event.PreviousStatus != "" {
-		fmt.Printf(" (previous: %s)", event.PreviousStatus)
-	}
+	fmt.Printf("  Resource Type : %s\n", event.Resource.Type)
+	fmt.Printf("  Resource UUID : %s\n", event.Resource.ID)
 	fmt.Println()
-	fmt.Printf("  Timestamp     : %s\n", event.Timestamp.Format("2006-01-02 15:04:05.000"))
+	fmt.Printf("  Timestamp     : %s\n", event.OccurredAt.Format("2006-01-02 15:04:05.000"))
 
-	if len(event.Metadata) > 0 {
-		fmt.Println("  Metadata      :")
-		for key, value := range event.Metadata {
+	if len(event.Data) > 0 {
+		fmt.Println("  Data          :")
+		for key, value := range event.Data {
 			fmt.Printf("    - %-12s: %v\n", key, value)
 		}
 	}
