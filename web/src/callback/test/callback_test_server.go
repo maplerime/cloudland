@@ -178,7 +178,7 @@ func main() {
 	fmt.Println()
 	fmt.Printf("Verbose mode:       %v\n", *verbose)
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Println("\nWaiting for events...\n")
+	fmt.Printf("\nWaiting for events...\n")
 
 	// 启动定时统计输出
 	go func() {
