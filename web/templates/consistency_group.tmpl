@@ -120,7 +120,7 @@ $('.restore-button').on('click', function() {
     $('#restore-snapshot-name').text($(this).data('name'));
     $('.ui.small.basic.restore.modal').modal('show');
 });
-$('.ui.positive.button').on('click', function() {
+$('.ui.restore.modal .ui.positive.button').on('click', function() {
     $('#restore-form').submit();
 });
 </script>

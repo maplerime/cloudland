@@ -1746,7 +1746,14 @@ func (v *ConsistencyGroupView) NewSnapshot(c *macaron.Context, store session.Sto
 		return
 	}
 
+	// Get volume count for display
+	// 获取卷数量用于显示
+	_, db := GetContextDB(c.Req.Context())
+	var volumeCount int64
+	db.Model(&model.ConsistencyGroupVolume{}).Where("cg_id = ?", cgID).Count(&volumeCount)
+
 	c.Data["CG"] = cg
+	c.Data["VolumeCount"] = volumeCount
 	c.HTML(200, "cg_snapshot_new")
 }
 

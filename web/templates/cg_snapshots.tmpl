@@ -66,9 +66,7 @@
                         {{ if .Pages}}
                         <div class="ui pagination menu">
                             {{ range $index, $element := .Pages }}
-                            <a class="active item">
-                                <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                            </a>
+                            <a class="item" href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
                             {{ end }}
                         </div>
                         {{ end }}
