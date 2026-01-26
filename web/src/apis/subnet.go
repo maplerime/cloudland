@@ -28,18 +28,22 @@ type SubnetAPI struct{}
 
 type SubnetResponse struct {
 	*ResourceReference
-	Network    string             `json:"network"`
-	Netmask    string             `json:"netmask"`
-	Gateway    string             `json:"gateway"`
-	Start      string             `json:"start"`
-	End        string             `json:"end"`
-	NameServer string             `json:"dns,omitempty"`
-	VPC        *ResourceReference `json:"vpc,omitempty"`
-	Group      *ResourceReference `json:"group,omitempty"`
-	Type       SubnetType         `json:"type"`
-	IdleCount  int64              `json:"idle_count"`
-	Vlan       int                `json:"vlan"`
-	Priority   int32              `json:"priority"`
+	Network        string             `json:"network"`
+	Netmask        string             `json:"netmask"`
+	Gateway        string             `json:"gateway"`
+	Start          string             `json:"start"`
+	End            string             `json:"end"`
+	NameServer     string             `json:"dns,omitempty"`
+	VPC            *ResourceReference `json:"vpc,omitempty"`
+	Group          *ResourceReference `json:"group,omitempty"`
+	Type           SubnetType         `json:"type"`
+	IdleCount      int64              `json:"idle_count"`
+	TotalCount     int64              `json:"total_count"`
+	AllocatedCount int64              `json:"allocated_count"`
+	ReservedCount  int64              `json:"reserved_count"`
+	AvailableCount int64              `json:"available_count"`
+	Vlan           int                `json:"vlan"`
+	Priority       int32              `json:"priority"`
 }
 
 type SiteSubnetInfo struct {
@@ -65,7 +69,7 @@ type SubnetPayload struct {
 	NetworkCIDR string         `json:"network_cidr" binding:"required,cidrv4"`
 	Gateway     string         `json:"gateway" binding:"omitempty,ipv4"`
 	StartIP     string         `json:"start_ip" binding:"omitempty,ipv4"`
-	EndIP       string         `json:"end_ip" binding:"omitempty",ipv4`
+	EndIP       string         `json:"end_ip" binding:"omitempty,ipv4"`
 	NameServer  string         `json:"dns" binding:"omitempty"`
 	BaseDomain  string         `json:"base_domain" binding:"omitempty"`
 	Dhcp        bool           `json:"dhcp" binding:"omitempty"`
@@ -305,6 +309,19 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		return
 	}
 	subnetResp.IdleCount = idleCount
+
+	// Get comprehensive address statistics
+	var total, allocated, reserved, available int64
+	total, allocated, reserved, available, err = subnetAdmin.CountAddressStatistics(ctx, subnet)
+	if err != nil {
+		logger.Errorf("Failed to count address statistics for subnet, err=%v", err)
+		return
+	}
+	subnetResp.TotalCount = total
+	subnetResp.AllocatedCount = allocated
+	subnetResp.ReservedCount = reserved
+	subnetResp.AvailableCount = available
+
 	return
 }
 

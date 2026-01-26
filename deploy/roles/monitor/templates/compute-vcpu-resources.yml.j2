@@ -6,20 +6,19 @@ groups:
     expr: |
       (
         (
-          sum by (zone, region, hostname) (cloudland_hypervisor_cpu_total)
-          - sum by (zone, region, hostname) (cloudland_hypervisor_cpu)
+          sum by (zone, region) (cloudland_hypervisor_cpu_total)
+          - sum by (zone, region) (cloudland_hypervisor_cpu)
         )
-        / sum by (zone, region, hostname) (cloudland_hypervisor_cpu_total) * 100
+        / sum by (zone, region) (cloudland_hypervisor_cpu_total) * 100
       ) > {{ vcpu_usage_threshold }}
     for: {{ for_duration }}
     labels:
       severity: warning
       node_type: compute
       alert_type: "node-vcpu"
-      hostname: "{{ $labels.hostname }}"
       zone: "{{ $labels.zone }}"
       region: "{{ $labels.region }}"
     annotations:
-      summary: "Zone {{ $labels.zone }} high vCPU usage on {{ $labels.hostname }}"
-      description: "Zone {{ $labels.zone }} in region {{ $labels.region }} on host {{ $labels.hostname }} vCPU usage is {{ $value | humanize }}%, exceeds threshold {{ vcpu_usage_threshold }}%"
+      summary: "Zone {{ $labels.zone }} high vCPU usage"
+      description: "Zone {{ $labels.zone }} in region {{ $labels.region }} vCPU usage is {{ $value | humanize }}%, exceeds threshold {{ vcpu_usage_threshold }}%"
 

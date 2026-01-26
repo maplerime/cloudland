@@ -584,6 +584,51 @@ func (a *SubnetAdmin) CountIdleAddressesForSubnet(ctx context.Context, subnet *m
 	return idleCount, nil
 }
 
+func (a *SubnetAdmin) CountAddressStatistics(ctx context.Context, subnet *model.Subnet) (total, allocated, reserved, available int64, err error) {
+	ctx, db := GetContextDB(ctx)
+
+	// 统计总数
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ?", subnet.ID).
+		Count(&total).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count total addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	// 统计已分配数量
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ? AND allocated = ?", subnet.ID, "t").
+		Count(&allocated).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count allocated addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	// 统计已预留数量
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ? AND reserved = ?", subnet.ID, "t").
+		Count(&reserved).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count reserved addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	// 统计可用数量 (既未分配也未预留)
+	err = db.Model(&model.Address{}).
+		Where("subnet_id = ?", subnet.ID).
+		Where("allocated = ?", "f").
+		Where("reserved = ?", "f").
+		Where("address != ?", subnet.Gateway).
+		Count(&available).Error
+	if err != nil {
+		err = NewCLError(ErrDatabaseError, fmt.Sprintf("Failed to count available addresses for subnet %s", subnet.UUID), err)
+		return
+	}
+
+	return
+}
+
 func (a *SubnetAdmin) List(ctx context.Context, offset, limit int64, order, query, intQuery string) (total int64, subnets []*model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
