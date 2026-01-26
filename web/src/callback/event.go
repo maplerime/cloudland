@@ -42,16 +42,33 @@ type ResourceChangeEvent struct {
 	ResourceType ResourceType `json:"resource_type"`
 	// ResourceUUID 资源的 UUID
 	ResourceUUID string `json:"resource_uuid"`
-	// ResourceID 资源的数据库 ID
-	ResourceID int64 `json:"resource_id"`
-	// Status 新状态
-	Status string `json:"status"`
-	// PreviousStatus 旧状态 (可选)
-	PreviousStatus string `json:"previous_status,omitempty"`
+	// TenantID 所属租户 ID
+	TenantID int64 `json:"tenant_id"`
 	// Timestamp 事件时间戳
 	Timestamp time.Time `json:"timestamp"`
-	// Metadata 额外的元数据
+	// Data 事件数据负载
+	Data map[string]interface{} `json:"data"`
+	// Metadata 额外的元数据 (可选)
 	Metadata map[string]interface{} `json:"metadata,omitempty"`
+}
+
+type Resource struct {
+	Type   string            `json:"type"`             // 资源类型
+	ID     string            `json:"id"`               // 资源 UUID
+	Name   string            `json:"name,omitempty"`   // 资源名称
+	Region string            `json:"region,omitempty"` // 资源所属区域
+	Tags   map[string]string `json:"tags,omitempty"`   // 资源标签
+}
+
+// Cloudland event structure to be sent to callback URL
+type Event struct {
+	EventType  string                 `json:"event_type"`  // Event type (e.g., "instance.created")
+	Source     string                 `json:"source"`      // Source system (e.g., "cloudland", "monitoring")
+	OccurredAt time.Time              `json:"occurred_at"` // When the event occurred
+	TenantID   int64                  `json:"tenant_id"`   // The tenantID in Cloudland
+	Resource   Resource               `json:"resource"`
+	Data       map[string]interface{} `json:"data"`               // Event data payload as JSON
+	Metadata   map[string]interface{} `json:"metadata,omitempty"` // Additional metadata
 	// RetryCount 重试次数 (内部使用，不序列化)
 	RetryCount int `json:"-"`
 }
