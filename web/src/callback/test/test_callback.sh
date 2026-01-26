@@ -16,9 +16,14 @@ echo "[Test 1] Sending instance launch event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "instance",
-    "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-    "timestamp": "2025-10-30T10:30:00Z",
+    "event_type":"instance.launch",
+    "source":"CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:30:00Z",
+    "resource": {
+      "type": "instance",
+      "id": "550e8400-e29b-41d4-a716-446655440000"
+    },
     "data": {
       "hostname": "test-vm-001",
       "status": "running",
@@ -38,13 +43,17 @@ echo "[Test 2] Sending volume create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "volume",
-    "resource_uuid": "660e8400-e29b-41d4-a716-446655440001",
-    "timestamp": "2025-10-30T10:31:00Z",
+    "event_type":"volume.create",
+    "source":"CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:31:00Z",
+    "resource": {
+      "type": "volume"
+      "id": "660e8400-e29b-41d4-a716-446655440001"
+    },
     "data": {
       "name": "test-volume-001",
       "status": "available",
-      "previous_status": "creating",
       "size": 100,
       "instance_id": 0,
       "target": "",
@@ -60,10 +69,14 @@ echo "[Test 3] Sending volume attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "volume",
-    "resource_uuid": "660e8400-e29b-41d4-a716-446655440001",
-    "previous_status": "available",
-    "timestamp": "2025-10-30T10:32:00Z",
+    "event_type":"volume.attach",
+    "source":"CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:32:00Z",
+    "resource": {
+      "type": "volume"
+      "id": "660e8400-e29b-41d4-a716-446655440001"
+    },
     "data": {
       "name": "test-volume-001",
       "status": "attached",
@@ -81,10 +94,14 @@ echo "[Test 4] Sending image create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "image",
-    "resource_uuid": "770e8400-e29b-41d4-a716-446655440002",  
-    "previous_status": "saving",
-    "timestamp": "2025-10-30T10:33:00Z",
+    "event_type":"image.create",
+    "source":"CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:33:00Z",
+    "resource": {
+      "type": "image"
+      "id": "770e8400-e29b-41d4-a716-446655440002"
+    },
     "data": {
       "name": "ubuntu-22.04",
       "status": "active",
@@ -102,9 +119,14 @@ echo "[Test 5] Sending interface attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "interface",
-    "resource_uuid": "880e8400-e29b-41d4-a716-446655440003",
-    "timestamp": "2025-10-30T10:34:00Z",
+    "event_type":"interface.attach",
+    "source":"CloudLand",
+    "tenant_id": 111,
+    "OccurredAt": "2025-10-30T10:34:00Z",
+    "resource": {
+      "type": "interface"
+      "id": "880e8400-e29b-41d4-a716-446655440003"
+    },
     "data": {
       "name": "eth0",
       "status": "active",
@@ -122,10 +144,15 @@ echo "[Test 6] Sending instance shutdown event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
   -d '{
-    "resource_type": "instance",
-    "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
+    "event_type":"instance.shutdown",
+    "source":"CloudLand",
+    "tenant_id": 111,
     "previous_status": "running",
-    "timestamp": "2025-10-30T10:35:00Z",
+    "OccurredAt": "2025-10-30T10:35:00Z",
+    "resource": {
+      "type": "instance",
+      "id": "550e8400-e29b-41d4-a716-446655440000"
+    },
     "data": {
       "hostname": "test-vm-001",
       "status": "shut_off",

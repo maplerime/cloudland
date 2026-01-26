@@ -101,10 +101,13 @@ func printEvent(count uint64, event *Event) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Printf("Event #%d received at %s\n", count, time.Now().Format("2006-01-02 15:04:05.000"))
 	fmt.Println(strings.Repeat("=", 80))
+	fmt.Printf("  Event Type    : %s\n", event.EventType)
+	fmt.Printf("  Source        : %s\n", event.Source)
 	fmt.Printf("  Resource Type : %s\n", event.Resource.Type)
 	fmt.Printf("  Resource UUID : %s\n", event.Resource.ID)
+	fmt.Printf("  Tenant ID     : %d\n", event.TenantID)
 	fmt.Println()
-	fmt.Printf("  Timestamp     : %s\n", event.OccurredAt.Format("2006-01-02 15:04:05.000"))
+	fmt.Printf("  OccurredAt     : %s\n", event.OccurredAt.Format("2006-01-02 15:04:05.000"))
 
 	if len(event.Data) > 0 {
 		fmt.Println("  Data          :")
