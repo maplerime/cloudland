@@ -41,6 +41,15 @@ house = "{{ switch_api_house }}"
 [admin]
 password = "{{ admin_passwd }}"
 
+[callback]
+enabled = true
+url = "http://api.rakcloud.ps.com:30646/mercury/ingestion/v1/events"
+workers = 3
+queue_size = 10000
+timeout = 30
+retry_max = 3
+retry_interval = 5
+
 [key]
 private = """-----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEAv2TkunvS/lUZm7oH4cpHvy/QyT72kwoVdEzBwfBNZoXWmC2h
