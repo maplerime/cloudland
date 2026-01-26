@@ -37,7 +37,7 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 		size = 0
 	}
 	if size > 0 {
-		size = size / 1024 / 1024 / 1024 // convert to GB
+		size = size / 1024 / 1024 // convert to MB
 	}
 	status = args[3]
 	path := args[4]
