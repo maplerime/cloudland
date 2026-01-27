@@ -69,7 +69,7 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
     "resource": {
       "type": "instance",
       "id": "550e8400-e29b-41d4-a716-446655440000",
-    }
+    },
     "data": {
       "hostname": "test-vm-001",
       "status": "running",
@@ -189,7 +189,7 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
     "resource": {
       "type": "instance",
       "id": "550e8400-e29b-41d4-a716-446655440000",
-    }
+    },
     "data": {
       "hostname": "test-vm-001",
       "status": "running",
