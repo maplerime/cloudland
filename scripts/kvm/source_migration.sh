@@ -29,11 +29,6 @@ if [ "$migration_type" = "warm" ]; then
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
         exit 1
     fi
-    vm_state=$(virsh dominfo $vm_ID | grep State | cut -d: -f2 | xargs)
-    if [ "$vm_state" = "running" ]; then
-        echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
-        exit 0
-    fi
 else
     virsh shutdown $vm_ID
     for i in {1..60}; do
@@ -45,6 +40,7 @@ else
         virsh destroy $vm_ID
     fi
 fi
+virsh destroy $vm_ID
 virsh undefine $vm_ID
 if [ $? -ne 0 ]; then
     virsh undefine --nvram $vm_ID
