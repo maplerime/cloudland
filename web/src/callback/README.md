@@ -88,20 +88,20 @@ retry_interval = 5
 
 ```json
 {
-  "resource_type": "instance",
-  "resource_uuid": "550e8400-e29b-41d4-a716-446655440000",
-  "resource_id": 123,
-  "status": "running",
-  "previous_status": "pending",
-  "timestamp": "2025-10-30T10:30:00Z",
-  "metadata": {
-    "hostname": "test-vm-001",
-    "hyper_id": 5,
-    "zone_id": 1,
-    "cpu": 4,
-    "memory": 8192,
-    "disk": 100
-  }
+    "event_type": "launch_vm",
+    "source": "CloudLand",
+    "tenant_id": "123",
+    "OccurredAt": "2025-10-30T10:30:00Z",
+    "resource": {
+      "type": "instance",
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+    },
+    "data": {
+      "hostname": "test-vm-001",
+      "status": "running",
+      "cpu": 4,
+      "memory": 8192
+    }
 }
 ```
 
