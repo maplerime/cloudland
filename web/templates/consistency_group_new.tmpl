@@ -20,19 +20,10 @@
                                     <input id="description" name="description">
                                 </div>
                                 <div class="required inline field">
-                                    <label for="pool">{{.i18n.Tr "Storage_Pool"}}</label>
-                                    <select name="pool" id="pool" class="ui selection dropdown" onchange="filterVolumes()">
-                                        <option value="">{{.i18n.Tr "Select_Pool"}}</option>
-                                        {{ range .Pools }}
-                                        <option value="{{.Value}}">{{.Name}}</option>
-                                        {{ end }}
-                                    </select>
-                                </div>
-                                <div class="required inline field">
                                     <label for="volumes">{{.i18n.Tr "Volumes"}}</label>
-                                    <select name="volumes" id="volumes" class="ui fluid search dropdown" multiple>
+                                    <select name="volumes" id="volumes" class="ui fluid search dropdown" multiple required>
                                         {{ range .Volumes }}
-                                        <option value="{{.UUID}}" data-pool="{{.PoolID}}">{{.Name}} ({{.Size}}G)</option>
+                                        <option value="{{.UUID}}">{{.Name}} ({{.Size}}G)</option>
                                         {{ end }}
                                     </select>
                                 </div>
@@ -49,21 +40,3 @@
     </div>
 </div>
 {{template "_footer" .}}
-<script>
-function filterVolumes() {
-    var pool = $('#pool').val();
-    $('#volumes option').each(function() {
-        if (pool === '' || $(this).data('pool') === pool) {
-            $(this).show();
-        } else {
-            $(this).hide();
-            $(this).prop('selected', false);
-        }
-    });
-    $('#volumes').dropdown('refresh');
-}
-$(document).ready(function() {
-    // Hide all volumes initially until a pool is selected
-    filterVolumes();
-});
-</script>

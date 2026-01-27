@@ -193,8 +193,6 @@ definitions:
         type: string
       owner:
         type: string
-      pool_id:
-        type: string
       status:
         type: string
       updated_at:

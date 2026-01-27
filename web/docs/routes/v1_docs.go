@@ -5808,9 +5808,6 @@ const docTemplatev1 = `{
                 "owner": {
                     "type": "string"
                 },
-                "pool_id": {
-                    "type": "string"
-                },
                 "status": {
                     "type": "string"
                 },

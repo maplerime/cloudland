@@ -47,7 +47,6 @@ type ConsistencyGroupResponse struct {
 	*ResourceReference
 	Description string              `json:"description"`
 	Status      string              `json:"status"`
-	PoolID      string              `json:"pool_id"`
 	WdsCgID     string              `json:"wds_cg_id,omitempty"`
 	Volumes     []*BaseReference    `json:"volumes,omitempty"`
 }
@@ -95,7 +94,6 @@ func (a *ConsistencyGroupAPI) Get(c *gin.Context) {
 		},
 		Description: cg.Description,
 		Status:      cg.Status.String(),
-		PoolID:      cg.PoolID,
 		WdsCgID:     cg.WdsCgID,
 	}
 
@@ -179,7 +177,6 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 			},
 			Description: cg.Description,
 			Status:      cg.Status.String(),
-			PoolID:      cg.PoolID,
 			WdsCgID:     cg.WdsCgID,
 		}
 		responses = append(responses, response)
@@ -241,7 +238,6 @@ func (a *ConsistencyGroupAPI) Create(c *gin.Context) {
 		},
 		Description: cg.Description,
 		Status:      cg.Status.String(),
-		PoolID:      cg.PoolID,
 		WdsCgID:     cg.WdsCgID,
 	}
 
@@ -303,7 +299,6 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 		},
 		Description: cg.Description,
 		Status:      cg.Status.String(),
-		PoolID:      cg.PoolID,
 		WdsCgID:     cg.WdsCgID,
 	}
 
@@ -402,7 +397,6 @@ func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 		},
 		Description: cg.Description,
 		Status:      cg.Status.String(),
-		PoolID:      cg.PoolID,
 		WdsCgID:     cg.WdsCgID,
 	}
 
@@ -456,7 +450,6 @@ func (a *ConsistencyGroupAPI) RemoveVolume(c *gin.Context) {
 		},
 		Description: cg.Description,
 		Status:      cg.Status.String(),
-		PoolID:      cg.PoolID,
 		WdsCgID:     cg.WdsCgID,
 	}
 

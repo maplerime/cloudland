@@ -30,7 +30,6 @@
                                     <th>{{.i18n.Tr "Status"}}</th>
                                     <th>{{.i18n.Tr "Volumes"}}</th>
                                     <th>{{.i18n.Tr "Snapshots"}}</th>
-                                    <th>{{.i18n.Tr "Pool"}}</th>
                                     {{ if $.IsAdmin }}
                                     <th>{{.i18n.Tr "Owner"}}</th>
                                     {{ end }}
@@ -49,7 +48,6 @@
                                     <td>{{.Status}}</td>
                                     <td>{{.VolumeCount}}</td>
                                     <td><a href="{{$Link}}/{{.ID}}/snapshots">{{.SnapshotCount}}</a></td>
-                                    <td>{{.PoolID}}</td>
                                     {{ if $.IsAdmin }}
                                     <td>{{ if .OwnerInfo }}{{.OwnerInfo.Name}}{{ end }}</td>
                                     {{ end }}

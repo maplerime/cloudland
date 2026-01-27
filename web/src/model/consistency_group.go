@@ -35,7 +35,6 @@ type ConsistencyGroup struct {
 	Name        string   `gorm:"type:varchar(128)"`
 	Description string   `gorm:"type:varchar(512)"`
 	Status      CGStatus `gorm:"type:varchar(32)"`
-	PoolID      string   `gorm:"type:varchar(128)"` // 存储池 ID，组内所有 volume 必须在同一个池
 	WdsCgID     string   `gorm:"type:varchar(128)"` // WDS 一致性组 ID
 }
 

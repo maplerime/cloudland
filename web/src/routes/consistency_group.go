@@ -14,6 +14,7 @@ import (
 	"strconv"
 
 	. "web/src/common"
+	"web/src/dbs"
 	"web/src/model"
 
 	"github.com/go-macaron/session"
@@ -91,7 +92,8 @@ func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, o
 
 	// Get paginated results
 	cgs = []*model.ConsistencyGroup{}
-	if err = query.Offset(int(offset)).Limit(int(limit)).Order(order).Find(&cgs).Error; err != nil {
+	query = dbs.Sortby(query.Offset(int(offset)).Limit(int(limit)), order)
+	if err = query.Find(&cgs).Error; err != nil {
 		logger.Errorf("Failed to list consistency groups: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to list consistency groups", err)
 		return
@@ -136,16 +138,6 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 		volumes = append(volumes, volume)
 	}
 
-	// Validate all volumes are in the same pool
-	poolID := volumes[0].PoolID
-	for _, vol := range volumes {
-		if vol.PoolID != poolID {
-			logger.Errorf("Volumes are not in the same pool: %s vs %s", vol.PoolID, poolID)
-			err = NewCLError(ErrCGVolumeNotInSamePool, "All volumes must be in the same storage pool", nil)
-			return
-		}
-	}
-
 	// Validate volume states
 	for _, vol := range volumes {
 		if vol.IsError() {
@@ -178,7 +170,6 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 		Name:        name,
 		Description: description,
 		Status:      model.CGStatusProcessing,
-		PoolID:      poolID,
 	}
 	if err = db.Create(cg).Error; err != nil {
 		logger.Errorf("Failed to create consistency group: %+v", err)
@@ -215,8 +206,8 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	// 执行 WDS 脚本创建一致性组
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh %d %s '%s' '%s'",
-		cg.ID, cgName, poolID, volumeUUIDsJSON)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh %d %s '%s'",
+		cg.ID, cgName, volumeUUIDsJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute create CG script: %+v", err)
@@ -464,16 +455,6 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 			return
 		}
 		volumes = append(volumes, volume)
-	}
-
-	// Validate all volumes are in the same pool as CG
-	// 验证所有卷都在一致性组的同一个存储池中
-	for _, vol := range volumes {
-		if vol.PoolID != cg.PoolID {
-			logger.Errorf("Volume %s is not in the same pool as CG: %s vs %s", vol.UUID, vol.PoolID, cg.PoolID)
-			err = NewCLError(ErrCGVolumeNotInSamePool, fmt.Sprintf("Volume %s is not in the same storage pool", vol.UUID), nil)
-			return
-		}
 	}
 
 	// Validate volume states
@@ -761,9 +742,10 @@ func (a *ConsistencyGroupAdmin) ListSnapshots(ctx context.Context, cgID int64, o
 	// 获取分页结果
 	snapshots = []*model.ConsistencyGroupSnapshot{}
 	if order == "" {
-		order = "created_at DESC"
+		order = "-created_at"
 	}
-	if err = query.Offset(int(offset)).Limit(int(limit)).Order(order).Find(&snapshots).Error; err != nil {
+	query = dbs.Sortby(query.Offset(int(offset)).Limit(int(limit)), order)
+	if err = query.Find(&snapshots).Error; err != nil {
 		logger.Errorf("Failed to list snapshots: %+v", err)
 		err = NewCLError(ErrDatabaseError, "Failed to list snapshots", err)
 		return
@@ -1239,15 +1221,7 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get storage pools
-	// 获取存储池
-	_, pools, err := dictionaryAdmin.List(c.Req.Context(), 0, 50, "name", "category='storage_pool'")
-	if err != nil {
-		logger.Error("Failed to query storage pools", err)
-	}
-
 	c.Data["Volumes"] = volumes
-	c.Data["Pools"] = pools
 	c.HTML(200, "consistency_group_new")
 }
 
@@ -1527,13 +1501,12 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 	var snapshotCount int64
 	db.Model(&model.ConsistencyGroupSnapshot{}).Where("cg_id = ?", cg.ID).Count(&snapshotCount)
 
-	// Get available volumes that can be added (same pool, not in any CG)
-	// 获取可添加的卷（同一存储池，未加入任何一致性组）
+	// Get available volumes that can be added (not in any CG)
+	// 获取可添加的卷（未加入任何一致性组）
 	var availableVolumes []*model.Volume
 	where := memberShip.GetWhere()
 	subQuery := db.Table("consistency_group_volumes").Select("volume_id")
 	db.Where(where).Where("id NOT IN (?)", subQuery).
-		Where("pool_id = ?", cg.PoolID).
 		Where("status IN ?", []string{"available", "attached"}).
 		Find(&availableVolumes)
 
@@ -1677,7 +1650,7 @@ func (v *ConsistencyGroupView) ListSnapshots(c *macaron.Context, store session.S
 	}
 	order := c.QueryTrim("order")
 	if order == "" {
-		order = "created_at DESC"
+		order = "-created_at"
 	}
 
 	total, snapshots, err := consistencyGroupAdmin.ListSnapshots(c.Req.Context(), cgID, offset, limit, order)

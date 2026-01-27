@@ -3,13 +3,12 @@
 cd $(dirname $0)
 source ../cloudrc
 
-# cg_ID, cg_name, pool_ID, volume_UUIDs_JSON
-[ $# -lt 4 ] && echo "$0 <cg_ID> <cg_name> <pool_ID> <volume_UUIDs_JSON>" && exit -1
+# cg_ID, cg_name, volume_UUIDs_JSON
+[ $# -lt 3 ] && echo "$0 <cg_ID> <cg_name> <volume_UUIDs_JSON>" && exit -1
 
 cg_ID=$1
 cg_name=$2
-pool_ID=$3
-volume_UUIDs_JSON=$4  # JSON array string like: [uuid1,uuid2,uuid3]
+volume_UUIDs_JSON=$3  # JSON array string like: ["uuid1","uuid2","uuid3"]
 
 state='error'
 wds_cg_id=''
@@ -19,18 +18,13 @@ if [ -z "$wds_address" ]; then
     exit -1
 fi
 
-if [ -z "$pool_ID" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$cg_ID' '$state' '' 'pool_ID is not set'"
-    exit -1
-fi
-
 get_wds_token
 
 # Get WDS volume IDs from volume UUIDs
 # 从卷 UUID 获取 WDS 卷 ID
 volume_ids="["
 first=true
-for vol_uuid in $(echo $volume_UUIDs_JSON | tr -d '[]' | tr ',' ' '); do
+for vol_uuid in $(echo $volume_UUIDs_JSON | tr -d '[]"' | tr ',' ' '); do
     # Query volume by name pattern "vol-<id>-<uuid>"
     wds_vol_id=$(wds_curl GET "api/v2/sync/block/volumes?name=vol-$vol_uuid" | jq -r '.volumes[0].id')
     if [ -z "$wds_vol_id" ] || [ "$wds_vol_id" == "null" ]; then
