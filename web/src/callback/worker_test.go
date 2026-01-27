@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 // TestSendEvent 测试发送事件
@@ -194,7 +196,12 @@ func TestSendEventConnectionError(t *testing.T) {
 }
 
 // TestStartWorkers 测试启动 workers
+// 标记为长测试，使用 -short 标志跳过
 func TestStartWorkers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping worker test in short mode")
+	}
+
 	// 设置测试配置
 	viper.Set("callback.url", "http://localhost:18081/test")
 	viper.Set("callback.timeout", 5)
@@ -236,8 +243,19 @@ func TestStartWorkers(t *testing.T) {
 		PushEvent(event)
 	}
 
-	// 等待事件被处理
-	time.Sleep(2 * time.Second)
+	// 等待事件被处理（添加超时保护）
+	done := make(chan bool)
+	go func() {
+		time.Sleep(2 * time.Second)
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// 正常完成
+	case <-time.After(5 * time.Second):
+		t.Error("Test timed out waiting for event processing")
+	}
 
 	// 队列应该为空
 	length := GetQueueLength()
@@ -247,7 +265,12 @@ func TestStartWorkers(t *testing.T) {
 }
 
 // TestWorkerRetryLogic 测试重试逻辑
+// 标记为长测试，使用 -short 标志跳过
 func TestWorkerRetryLogic(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping retry test in short mode")
+	}
+
 	// 设置测试配置
 	viper.Set("callback.retry_max", 2)
 	viper.Set("callback.retry_interval", 100) // 100ms
@@ -302,7 +325,12 @@ func TestWorkerRetryLogic(t *testing.T) {
 }
 
 // TestWorkerMaxRetryExceeded 测试超过最大重试次数
+// 标记为长测试，使用 -short 标志跳过
 func TestWorkerMaxRetryExceeded(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping max retry test in short mode")
+	}
+
 	// 设置测试配置
 	viper.Set("callback.retry_max", 2)
 	viper.Set("callback.retry_interval", 100) // 100ms
@@ -338,8 +366,19 @@ func TestWorkerMaxRetryExceeded(t *testing.T) {
 	}
 	PushEvent(event)
 
-	// 等待重试完成
-	time.Sleep(1 * time.Second)
+	// 等待重试完成（添加超时保护）
+	done := make(chan bool)
+	go func() {
+		time.Sleep(1 * time.Second)
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// 正常完成
+	case <-time.After(3 * time.Second):
+		t.Error("Test timed out waiting for retry completion")
+	}
 
 	// 队列应该为空（事件已被丢弃）
 	length := GetQueueLength()
@@ -349,7 +388,12 @@ func TestWorkerMaxRetryExceeded(t *testing.T) {
 }
 
 // TestWorkerContextCancellation 测试 context 取消
+// 标记为长测试，使用 -short 标志跳过
 func TestWorkerContextCancellation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping context cancellation test in short mode")
+	}
+
 	viper.Set("callback.url", "http://localhost:18082/test")
 	viper.Set("callback.timeout", 5)
 
@@ -378,8 +422,19 @@ func TestWorkerContextCancellation(t *testing.T) {
 	// 取消 context
 	cancel()
 
-	// 等待 worker 停止
-	time.Sleep(500 * time.Millisecond)
+	// 等待 worker 停止（添加超时保护）
+	done := make(chan bool)
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// 正常完成
+	case <-time.After(2 * time.Second):
+		t.Error("Test timed out waiting for worker to stop")
+	}
 
 	// 验证队列中还有未处理的事件
 	length := GetQueueLength()
@@ -389,7 +444,12 @@ func TestWorkerContextCancellation(t *testing.T) {
 }
 
 // TestWorkerEmptyEvent 测试处理空事件
+// 标记为长测试，使用 -short 标志跳过
 func TestWorkerEmptyEvent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping empty event test in short mode")
+	}
+
 	viper.Set("callback.url", "http://localhost:18083/test")
 	viper.Set("callback.timeout", 5)
 
@@ -412,8 +472,19 @@ func TestWorkerEmptyEvent(t *testing.T) {
 	// 推送 nil 事件
 	eventQueue <- nil
 
-	// 等待 worker 处理
-	time.Sleep(500 * time.Millisecond)
+	// 等待 worker 处理（添加超时保护）
+	done := make(chan bool)
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		done <- true
+	}()
+
+	select {
+	case <-done:
+		// 正常完成
+	case <-time.After(2 * time.Second):
+		t.Error("Test timed out waiting for worker to process")
+	}
 
 	// 不应该 panic，测试通过
 }

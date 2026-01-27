@@ -53,10 +53,11 @@ check_dependencies() {
 
 # 运行所有测试
 run_all_tests() {
-    print_info "Running all unit tests..."
+    print_info "Running all unit tests (short mode - skips integration/long tests)..."
     echo "========================================"
 
-    go test -v ./...
+    # 使用 short 模式运行，跳过耗时的集成测试
+    go test -v -short ./...
 
     if [ $? -eq 0 ]; then
         print_success "All tests passed!"

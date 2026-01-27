@@ -23,11 +23,17 @@ func InitQueue(size int) {
 }
 
 // PushEvent 推送事件到队列 (非阻塞)
-// 返回 true 表示成功推送，false 表示队列已满
+// 返回 true 表示成功推送，false 表示队列已满或事件无效
 func PushEvent(event *Event) bool {
 	// 队列未初始化
 	if eventQueue == nil {
 		logger.Warning("Event queue not initialized, skipping event push")
+		return false
+	}
+
+	// 事件为 nil
+	if event == nil {
+		logger.Warning("Nil event provided, skipping event push")
 		return false
 	}
 
