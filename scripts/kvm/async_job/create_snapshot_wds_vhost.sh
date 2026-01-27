@@ -37,7 +37,7 @@ if [ "$ret_code" != "0" ]; then
     echo "|:-COMMAND-:| $(basename $0) '$task_ID' '$backup_ID' 'error' ' ' '0' ' ' 'failed to create snapshot: $message'"
     exit -1
 fi
-snapshot_size=$(wds_curl GET "api/v2/sync/block/snaps/$snapshot_id" | jq -r .snap_size)
+snapshot_size=$(wds_curl GET "api/v2/sync/block/snaps/$snapshot_id" | jq -r .data_size)
 log_debug $task_ID "BACKUP($backup_ID) snapshot $snapshot_id created for volume $volume_ID in pool $wdsOriginPoolID; size: $snapshot_size"
 
 if [ -z "$wdsPoolID" ] || [ "$wdsPoolID" == "$wdsOriginPoolID" ]; then
