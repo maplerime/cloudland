@@ -56,7 +56,7 @@ else
     fi
 fi
 
-[ -z "$blocking_timeout" ] && blocking_timeout=7200
+[ -z "$blocking_timeout" ] && blocking_timeout=3600
 ipset add "$IPSET_NAME" "$ip" timeout $blocking_timeout
 [ -z "$info_timeout" ] && info_timeout=300
 [ -n "$info_ipset" ] && ipset add "$info_ipset" "$ip" timeout "$info_timeout"
