@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -41,6 +42,11 @@ func worker(ctx context.Context, id int) {
 	// 创建 HTTP 客户端
 	client := &http.Client{
 		Timeout: timeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     90 * time.Second,
+		},
 	}
 
 	// 事件处理循环
@@ -108,7 +114,8 @@ func sendEvent(client *http.Client, url string, event *Event) error {
 
 	// 检查响应状态码
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("callback returned status %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("callback returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	return nil
