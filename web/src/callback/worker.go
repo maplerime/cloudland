@@ -104,6 +104,7 @@ func sendEvent(client *http.Client, url string, event *Event) error {
 	// 设置请求头
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "CloudLand-Callback/1.0")
+	req.Header.Set("X-PS-API-Key", "default_ps_api_key_123456")
 
 	// 发送请求
 	resp, err := client.Do(req)
