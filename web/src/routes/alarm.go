@@ -1999,6 +1999,8 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"packet-drop-monitor.yml.j2"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml.j2"}
+	case "ipgroup_available_ip":
+		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
@@ -2235,6 +2237,8 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		templateFiles = []string{"packet-drop-monitor.yml"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml"}
+	case "ipgroup_available_ip":
+		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
 	}

@@ -1,0 +1,24 @@
+groups:
+- name: ipgroup-available-ip-monitor
+  rules:
+    - alert: IPGroupLowAvailableIPs
+      # Monitor available IP count in subnets
+      expr: cloudland_subnet_ip_available < {{ threshold | default(100) }}
+      for: {{ for_duration | default("5m") }}
+      labels:
+        severity: {{ severity | default("warning") }}
+        component: network
+        alert_type: ipgroup_low_ips
+        ipgroup_id: "{{ $labels.ipgroup_id }}"
+        ipgroup_name: "{{ $labels.ipgroup_name }}"
+        region: "{{ $labels.region }}"
+        subnet_id: "{{ $labels.subnet_id }}"
+        subnet_name: "{{ $labels.subnet_name }}"
+      annotations:
+        summary: "IP Group {{ $labels.ipgroup_name }} ({{ $labels.subnet_name }}) has low available IPs"
+        description: |
+          IP Group: {{ $labels.ipgroup_name }} ({{ $labels.ipgroup_id }})
+          Subnet: {{ $labels.subnet_name }} ({{ $labels.subnet_id }})
+          Region: {{ $labels.region }}
+          Available IPs: {{ $value }}
+          This subnet has fallen below the configured threshold of {{ threshold | default(100) }} available IP addresses.
