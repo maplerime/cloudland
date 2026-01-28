@@ -1213,8 +1213,7 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 	where := memberShip.GetWhere()
 	// Get volumes that are not in any CG
 	// 获取未加入任何一致性组的卷
-	subQuery := db.Table("consistency_group_volumes").Select("volume_id")
-	if err := db.Where(where).Where("id NOT IN (?)", subQuery).Where("status IN ?", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
+	if err := db.Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes)").Where("status IN ?", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
 		logger.Error("Failed to query volumes", err)
 		c.Data["ErrorMsg"] = "Failed to query volumes"
 		c.HTML(http.StatusInternalServerError, "error")
@@ -1505,8 +1504,7 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 	// 获取可添加的卷（未加入任何一致性组）
 	var availableVolumes []*model.Volume
 	where := memberShip.GetWhere()
-	subQuery := db.Table("consistency_group_volumes").Select("volume_id")
-	db.Where(where).Where("id NOT IN (?)", subQuery).
+	db.Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes)").
 		Where("status IN ?", []string{"available", "attached"}).
 		Find(&availableVolumes)
 
