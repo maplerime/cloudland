@@ -16,7 +16,7 @@ groups:
         component: network
         alert_type: ipgroup_low_ips
       annotations:
-        summary: "IP Group {{ $labels.ipgroup_name }} ({{ $labels.subnet_name }}) has low available IPs"
+        summary: "IP Group {{ $labels.ipgroup_name }} - Low Available IPs in subnets:({{ $labels.subnet_name }})"
         description: |
           IP Group: {{ $labels.ipgroup_name }} ({{ $labels.ipgroup_id }})
           Subnet: {{ $labels.subnet_name }} ({{ $labels.subnet_id }})
