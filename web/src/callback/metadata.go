@@ -35,22 +35,25 @@ type ResourceExtractor func(ctx context.Context, args []string) (*ResourceChange
 // commandMetadataRegistry Command 到资源的映射注册表
 var commandMetadataRegistry = map[string]*ResourceMetadata{
 	// ==================== 虚拟机相关 ====================
-	"launch_vm": {
+	"launch_vm": { // ✅️
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1, // args[1] 是 instance ID
 	},
-	"inst_status": {
+	"inst_status": { // 暂时不用处理
 		ResourceType: ResourceTypeInstance,
 		Extractor:    extractInstanceStatusBatch, // 批量处理，需要自定义
 	},
-	"action_vm": {
+	"action_vm": { // ✅️
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1,
 	},
-	"clear_vm": {
-		ResourceType: ResourceTypeInstance,
-		IDArgIndex:   1,
-	},
+	/*
+		// 资源已经被删除，不需要推送事件
+		"clear_vm": {
+			ResourceType: ResourceTypeInstance,
+			IDArgIndex:   1,
+		},
+	*/
 	"migrate_vm": {
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1,
@@ -61,7 +64,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1, // args[1] 是 volume ID
 	},
-	"create_volume_wds_vhost": {
+	"create_volume_wds_vhost": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
 	},
@@ -69,7 +72,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2, // args[2] 是 volume ID
 	},
-	"attach_volume_wds_vhost": {
+	"attach_volume_wds_vhost": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
 	},
@@ -77,15 +80,18 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
 	},
-	"detach_volume_wds_vhost": {
+	"detach_volume_wds_vhost": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
 	},
-	"delete_volume": {
-		ResourceType: ResourceTypeVolume,
-		IDArgIndex:   1,
-	},
-	"resize_volume": {
+	/*
+		// 资源已经被删除，不需要推送事件
+		"delete_volume": {
+			ResourceType: ResourceTypeVolume,
+			IDArgIndex:   1,
+		},
+	*/
+	"resize_volume": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
 	},
@@ -101,13 +107,13 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	},
 
 	// ==================== 网络接口相关 ====================
-	"attach_vm_nic": {
+	"attach_vm_nic": { // ✅️
 		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   1, // 需要确认参数位置
+		IDArgIndex:   3, // 需要确认参数位置
 	},
 	"detach_vm_nic": {
 		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   1, // 需要确认参数位置
+		IDArgIndex:   3, // 需要确认参数位置
 	},
 }
 
