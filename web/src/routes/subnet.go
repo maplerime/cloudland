@@ -443,6 +443,7 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		err = db.Create(address).Error
 		if err != nil {
 			logger.Error("Database create address failed, %v", err)
+			return
 		}
 		if ip.String() == end {
 			break
