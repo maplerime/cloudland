@@ -61,6 +61,18 @@ func (a *ConsistencyGroupAdmin) GetByUUID(ctx context.Context, uuid string) (cg 
 	return
 }
 
+// IsVolumeInCG checks if a volume is in any consistency group
+// 检查卷是否在任何一致性组中
+func (a *ConsistencyGroupAdmin) IsVolumeInCG(ctx context.Context, volumeID int64) (bool, error) {
+	ctx, db := GetContextDB(ctx)
+	var count int64
+	if err := db.Model(&model.ConsistencyGroupVolume{}).Where("volume_id = ?", volumeID).Count(&count).Error; err != nil {
+		logger.Errorf("Failed to check if volume %d is in consistency group: %+v", volumeID, err)
+		return false, NewCLError(ErrDatabaseError, "Failed to check if volume is in consistency group", err)
+	}
+	return count > 0, nil
+}
+
 // List retrieves a list of consistency groups with pagination
 // 获取一致性组列表（分页）
 func (a *ConsistencyGroupAdmin) List(ctx context.Context, offset, limit int64, order, name string) (total int64, cgs []*model.ConsistencyGroup, err error) {
@@ -194,20 +206,20 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	logger.Debugf("Created %d volume associations", len(volumes))
 
 	// Collect volume UUIDs for WDS API call
-	// 收集卷 UUID 用于 WDS API 调用
-	var volumeUUIDList []string
+	// 收集卷 WDS ID 用于 WDS API 调用
+	var volumeWDSIDList []string
 	for _, vol := range volumes {
-		volumeUUIDList = append(volumeUUIDList, vol.UUID)
+		volumeWDSIDList = append(volumeWDSIDList, vol.GetOriginVolumeID())
 	}
-	volumeUUIDsJSONBytes, _ := json.Marshal(volumeUUIDList)
-	volumeUUIDsJSON := string(volumeUUIDsJSONBytes)
+	volumeWDSIDJSONBytes, _ := json.Marshal(volumeWDSIDList)
+	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
 
 	// Execute WDS script to create consistency group
 	// 执行 WDS 脚本创建一致性组
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
 	control := fmt.Sprintf("inter=")
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh %d %s '%s'",
-		cg.ID, cgName, volumeUUIDsJSON)
+		cg.ID, cgName, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute create CG script: %+v", err)
@@ -538,20 +550,20 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	}
 	logger.Debugf("Created %d volume associations", len(volumes))
 
-	// Collect volume UUIDs for WDS API call
-	// 收集卷 UUID 用于 WDS API 调用
-	var volumeUUIDList []string
+	// Collect volume WDS IDs for WDS API call
+	// 收集卷 WDS ID 用于 WDS API 调用
+	var volumeWDSIDList []string
 	for _, vol := range volumes {
-		volumeUUIDList = append(volumeUUIDList, vol.UUID)
+		volumeWDSIDList = append(volumeWDSIDList, vol.GetOriginVolumeID())
 	}
-	volumeUUIDsJSONBytes, _ := json.Marshal(volumeUUIDList)
-	volumeUUIDsJSON := string(volumeUUIDsJSONBytes)
+	volumeWDSIDJSONBytes, _ := json.Marshal(volumeWDSIDList)
+	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
 
 	// Execute WDS script to add volumes to consistency group
 	// 执行 WDS 脚本向一致性组添加卷
 	control := fmt.Sprintf("inter=")
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_volumes_to_cg_wds.sh %d %s '%s'",
-		cg.ID, cg.WdsCgID, volumeUUIDsJSON)
+		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute add volumes to CG script: %+v", err)
@@ -676,11 +688,11 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 
 	// Execute WDS script to remove volume from consistency group
 	// 执行 WDS 脚本从一致性组删除卷
-	volumeUUIDsJSONBytes, _ := json.Marshal([]string{volumeUUID})
-	volumeUUIDsJSON := string(volumeUUIDsJSONBytes)
+	volumeWDSIDJSONBytes, _ := json.Marshal([]string{volume.GetOriginVolumeID()})
+	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
 	control := fmt.Sprintf("inter=")
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/remove_volumes_from_cg_wds.sh %d %s '%s'",
-		cg.ID, cg.WdsCgID, volumeUUIDsJSON)
+		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute remove volume from CG script: %+v", err)

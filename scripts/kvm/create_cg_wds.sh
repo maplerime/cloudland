@@ -3,12 +3,12 @@
 cd $(dirname $0)
 source ../cloudrc
 
-# cg_ID, cg_name, volume_UUIDs_JSON
-[ $# -lt 3 ] && echo "$0 <cg_ID> <cg_name> <volume_UUIDs_JSON>" && exit -1
+# cg_ID, cg_name, volume_WDSIDs_JSON
+[ $# -lt 3 ] && echo "$0 <cg_ID> <cg_name> <volume_WDSIDs_JSON>" && exit -1
 
 cg_ID=$1
 cg_name=$2
-volume_UUIDs_JSON=$3  # JSON array string like: ["uuid1","uuid2","uuid3"]
+volume_WDSIDs_JSON=$3  # JSON array string like: ["wds_id1","wds_id2","wds_id3"]
 
 state='error'
 wds_cg_id=''
@@ -20,28 +20,14 @@ fi
 
 get_wds_token
 
-# Get WDS volume IDs from volume UUIDs
-# 从卷 UUID 获取 WDS 卷 ID
 volume_ids="["
 first=true
-for vol_uuid in $(echo $volume_UUIDs_JSON | tr -d '[]"' | tr ',' ' '); do
-    # Query volume by name pattern "vol-<id>-<uuid>"
-    wds_vol_id=$(wds_curl GET "api/v2/sync/block/volumes?name=vol-$vol_uuid" | jq -r '.volumes[0].id')
-    if [ -z "$wds_vol_id" ] || [ "$wds_vol_id" == "null" ]; then
-        # Try searching with just the UUID
-        wds_vol_id=$(wds_curl GET "api/v2/sync/block/volumes" | jq -r ".volumes[] | select(.name | contains(\"$vol_uuid\")) | .id" | head -1)
-    fi
-
-    if [ -z "$wds_vol_id" ] || [ "$wds_vol_id" == "null" ]; then
-        echo "|:-COMMAND-:| $(basename $0) '$cg_ID' 'error' '' 'failed to find WDS volume ID for UUID $vol_uuid'"
-        exit -1
-    fi
-
+for vol_wds_id in $(echo $volume_WDSIDs_JSON | tr -d '[]"' | tr ',' ' '); do
     if [ "$first" = true ]; then
-        volume_ids="$volume_ids\"$wds_vol_id\""
+        volume_ids="$volume_ids\"$vol_wds_id\""
         first=false
     else
-        volume_ids="$volume_ids,\"$wds_vol_id\""
+        volume_ids="$volume_ids,\"$vol_wds_id\""
     fi
 done
 volume_ids="$volume_ids]"

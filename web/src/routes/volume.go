@@ -381,6 +381,20 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		err = NewCLError(ErrVolumeIsBusy, fmt.Sprintf("Volume[%s](%s) is busy, cannot be deleted", volume.Name, volume.UUID), nil)
 		return
 	}
+
+	// Check if volume is in a consistency group
+	// 检查卷是否在一致性组中
+	inCG, cgErr := consistencyGroupAdmin.IsVolumeInCG(ctx, volume.ID)
+	if cgErr != nil {
+		err = cgErr
+		return
+	}
+	if inCG {
+		logger.Errorf("Volume %s is in a consistency group, cannot be deleted", volume.UUID)
+		err = NewCLError(ErrVolumeInConsistencyGroup, fmt.Sprintf("Volume %s is in a consistency group, please remove it from the CG first", volume.UUID), nil)
+		return
+	}
+
 	if err = db.Model(volume).Delete(volume).Error; err != nil {
 		logger.Error("DB: delete volume failed", err)
 		err = NewCLError(ErrVolumeDeleteFailed, "Failed to delete volume", err)

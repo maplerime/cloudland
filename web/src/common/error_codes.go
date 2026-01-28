@@ -88,21 +88,22 @@ const (
 	ErrMigrationInProgress   ErrCode = 111805
 
 	// Volume related errors (121xxx)
-	ErrVolumeNotFound         ErrCode = 121001
-	ErrVolumeCreationFailed   ErrCode = 121002
-	ErrVolumeUpdateFailed     ErrCode = 121003
-	ErrVolumeDeleteFailed     ErrCode = 121004
-	ErrVolumeAttachFailed     ErrCode = 121005
-	ErrVolumeDetachFailed     ErrCode = 121006
-	ErrVolumeInvalidState     ErrCode = 121007
-	ErrVolumeInvalidSize      ErrCode = 121008
-	ErrBootVolumeNotFound     ErrCode = 121009
-	ErrBootVolumeUpdateFailed ErrCode = 121010
-	ErrBootVolumeDeleteFailed ErrCode = 121011
-	ErrVolumeIsInUse          ErrCode = 121012
-	ErrBootVolumeCannotDetach ErrCode = 121013
-	ErrVolumeIsBusy           ErrCode = 121014
-	ErrVolumeIsRestoring      ErrCode = 121015
+	ErrVolumeNotFound           ErrCode = 121001
+	ErrVolumeCreationFailed     ErrCode = 121002
+	ErrVolumeUpdateFailed       ErrCode = 121003
+	ErrVolumeDeleteFailed       ErrCode = 121004
+	ErrVolumeAttachFailed       ErrCode = 121005
+	ErrVolumeDetachFailed       ErrCode = 121006
+	ErrVolumeInvalidState       ErrCode = 121007
+	ErrVolumeInvalidSize        ErrCode = 121008
+	ErrBootVolumeNotFound       ErrCode = 121009
+	ErrBootVolumeUpdateFailed   ErrCode = 121010
+	ErrBootVolumeDeleteFailed   ErrCode = 121011
+	ErrVolumeIsInUse            ErrCode = 121012
+	ErrBootVolumeCannotDetach   ErrCode = 121013
+	ErrVolumeIsBusy             ErrCode = 121014
+	ErrVolumeIsRestoring        ErrCode = 121015
+	ErrVolumeInConsistencyGroup ErrCode = 121016 // volume is in a consistency group, cannot be deleted
 
 	// Snapshot/Backup related errors (1251xx)
 	ErrBackupNotFound                      ErrCode = 125100

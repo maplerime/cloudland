@@ -104,16 +104,16 @@ func (s CGSnapshotStatus) String() string {
 // 一致性组快照模型
 type ConsistencyGroupSnapshot struct {
 	Model
-	Owner       int64                `gorm:"default:1;index"` // 组织 ID
-	Name        string               `gorm:"type:varchar(128)"`
-	Description string               `gorm:"type:varchar(512)"`
-	Status      CGSnapshotStatus     `gorm:"type:varchar(32)"`
-	CGID        int64                `gorm:"index"` // 一致性组 ID
-	CG          *ConsistencyGroup    `gorm:"foreignkey:CGID"`
-	Size        int64                // 快照总大小（所有卷快照大小之和）
-	WdsSnapID   string               `gorm:"type:varchar(128)"` // WDS 一致性组快照 ID
-	TaskID      int64                `gorm:"index"`             // 关联的任务 ID
-	Task        *Task                `gorm:"foreignkey:TaskID"`
+	Owner       int64             `gorm:"default:1;index"` // 组织 ID
+	Name        string            `gorm:"type:varchar(128)"`
+	Description string            `gorm:"type:varchar(512)"`
+	Status      CGSnapshotStatus  `gorm:"type:varchar(32)"`
+	CGID        int64             `gorm:"index"` // 一致性组 ID
+	CG          *ConsistencyGroup `gorm:"foreignkey:CGID"`
+	Size        int64             // 快照总大小（所有卷快照大小之和）
+	WdsSnapID   string            `gorm:"type:varchar(128)"` // WDS 一致性组快照 ID
+	TaskID      int64             `gorm:"index"`             // 关联的任务 ID
+	Task        *Task             `gorm:"foreignkey:TaskID"`
 }
 
 // CanDelete checks if the consistency group snapshot can be deleted
