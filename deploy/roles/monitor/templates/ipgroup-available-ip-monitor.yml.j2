@@ -3,17 +3,18 @@ groups:
   rules:
     - alert: IPGroupLowAvailableIPs
       # Monitor available IP count in subnets
-      expr: cloudland_subnet_ip_available < {{ threshold | default(100) }}
+      expr: |
+        (
+          cloudland_subnet_ip_available < {{ threshold | default(100) }}
+        )
+        * on (ipgroup_id, subnet_id, region)
+          group_left(ipgroup_name)
+          cloudland_subnet_info
       for: {{ for_duration | default("5m") }}
       labels:
         severity: {{ severity | default("warning") }}
         component: network
         alert_type: ipgroup_low_ips
-        ipgroup_id: "{{ $labels.ipgroup_id }}"
-        ipgroup_name: "{{ $labels.ipgroup_name }}"
-        region: "{{ $labels.region }}"
-        subnet_id: "{{ $labels.subnet_id }}"
-        subnet_name: "{{ $labels.subnet_name }}"
       annotations:
         summary: "IP Group {{ $labels.ipgroup_name }} ({{ $labels.subnet_name }}) has low available IPs"
         description: |
