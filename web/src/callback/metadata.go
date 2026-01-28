@@ -7,8 +7,10 @@ package callback
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	. "web/src/common"
@@ -109,11 +111,11 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	// ==================== 网络接口相关 ====================
 	"attach_vm_nic": { // ✅️
 		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   3, // 需要确认参数位置
+		IDArgIndex:   1, // instance id, 通过instance id获取interface id 和mac address 然后拿到interface
 	},
-	"detach_vm_nic": {
+	"detach_vm_nic": { // ✅️
 		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   3, // 需要确认参数位置
+		IDArgIndex:   1, // instance id, 通过instance id获取interface id 和mac address 然后拿到interface
 	},
 }
 
@@ -216,7 +218,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 		return extractImageInfo(db, resourceID)
 
 	case ResourceTypeInterface:
-		return extractInterfaceInfo(db, resourceID)
+		return extractInterfaceInfo(db, resourceID, args)
 
 	default:
 		logger.Warningf("Unknown resource type: %s", metadata.ResourceType)
@@ -299,13 +301,47 @@ func extractImageInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, erro
 }
 
 // extractInterfaceInfo 提取网络接口信息
-func extractInterfaceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
-	iface := &model.Interface{}
-	if err := db.Where("id = ?", resourceID).First(iface).Error; err != nil {
-		logger.Errorf("Failed to query interface %d: %v", resourceID, err)
+func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string) (*ResourceChangeEvent, error) {
+	// 参数检查, 不依赖上层保证
+	if len(args) < 3 {
+		err := fmt.Errorf("invalid args length: expected >=3, got %d, args: %v", len(args), args)
+		logger.Error("Invalid args", "error", err)
 		return nil, err
 	}
-
+	// 检查MAC地址格式
+	macAddr := strings.TrimSpace(args[2])
+	if macAddr == "" {
+		err := fmt.Errorf("empty mac address")
+		logger.Error("Invalid mac address", "error", err)
+		return nil, err
+	}
+	// 查询实例
+	instance := &model.Instance{}
+	err := db.Where("id = ?", resourceID).Take(instance).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Error("Instance not found", "resourceID", resourceID)
+			return nil, fmt.Errorf("instance %d not found", resourceID)
+		}
+		logger.Error("Failed to query instance", "resourceID", resourceID, "error", err)
+		return nil, err
+	}
+	// 查询接口信息
+	iface := &model.Interface{}
+	err = db.Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address").Preload("Address.Subnet").Where("instance = ? and mac_addr = ?", resourceID, macAddr).Take(iface).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Error("Interface not found",
+				"resourceID", resourceID,
+				"macAddr", macAddr)
+			return nil, fmt.Errorf("interface with mac %s not found", macAddr)
+		}
+		logger.Error("Failed to query interface",
+			"resourceID", resourceID,
+			"macAddr", macAddr,
+			"error", err)
+		return nil, err
+	}
 	// Interface 没有明确的 status 字段，使用 "active" 作为默认状态
 	status := "active"
 	if iface.Hyper == -1 {

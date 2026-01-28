@@ -43,7 +43,7 @@ password = "{{ admin_passwd }}"
 
 [callback]
 enabled = true
-url = "http://api.rakcloud.ps.com:30646/mercury/ingestion/v1/events"
+url = "{{ ps_api_endpoint }}"
 workers = 3
 queue_size = 10000
 timeout = 30
