@@ -12,14 +12,13 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
 	. "web/src/common"
 	"web/src/model"
 
 	"github.com/jinzhu/gorm"
 )
 
-var source string = "Cloudland" // 事件来源系统名称
+const source = "Cloudland" // 事件来源系统名称
 
 // ResourceMetadata 定义资源元数据
 type ResourceMetadata struct {
@@ -32,7 +31,7 @@ type ResourceMetadata struct {
 }
 
 // ResourceExtractor 自定义资源信息提取函数
-type ResourceExtractor func(ctx context.Context, args []string, cmd string) (*ResourceChangeEvent, error)
+type ResourceExtractor func(ctx context.Context, args []string) (*ResourceChangeEvent, error)
 
 // commandMetadataRegistry Command 到资源的映射注册表
 var commandMetadataRegistry = map[string]*ResourceMetadata{
@@ -113,10 +112,12 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ResourceType: ResourceTypeInterface,
 		IDArgIndex:   1, // instance id, 通过instance id获取interface id 和mac address 然后拿到interface
 	},
-	"detach_vm_nic": { // ✅️
-		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   1, // instance id, 通过instance id获取interface id 和mac address 然后拿到interface
-	},
+	/*
+		"detach_vm_nic": { // 资源已经被删除了，不需要推送事件
+			ResourceType: ResourceTypeInterface,
+			IDArgIndex:   1, // instance id, 通过instance id获取interface id 和mac address 然后拿到interface
+		},
+	*/
 }
 
 // 这些命令即是是debug mode 下的频繁上报命令，不做事件推送处理
@@ -156,9 +157,9 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 
 	// 使用自定义提取器或默认提取器
 	if metadata.Extractor != nil {
-		rcEvent, err = metadata.Extractor(ctx, args, cmd)
+		rcEvent, err = metadata.Extractor(ctx, args)
 	} else {
-		rcEvent, err = defaultExtractor(ctx, metadata, args, cmd)
+		rcEvent, err = defaultExtractor(ctx, metadata, args)
 	}
 
 	if err != nil {
@@ -189,7 +190,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 }
 
 // defaultExtractor 默认的资源信息提取器
-func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []string, cmd string) (*ResourceChangeEvent, error) {
+func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []string) (*ResourceChangeEvent, error) {
 	// 检查参数索引是否有效
 	if metadata.IDArgIndex >= len(args) {
 		logger.Debugf("IDArgIndex %d out of range for args length %d", metadata.IDArgIndex, len(args))
@@ -218,7 +219,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 		return extractImageInfo(db, resourceID)
 
 	case ResourceTypeInterface:
-		return extractInterfaceInfo(db, resourceID, args, cmd)
+		return extractInterfaceInfo(db, resourceID, args)
 
 	default:
 		logger.Warningf("Unknown resource type: %s", metadata.ResourceType)
@@ -229,7 +230,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 // extractInstanceInfo 提取虚拟机实例信息
 func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	instance := &model.Instance{}
-	if err := db.Where("id = ?", resourceID).First(instance).Error; err != nil {
+	if err := db.Where("id = ?", resourceID).Take(instance).Error; err != nil {
 		logger.Errorf("Failed to query instance %d: %v", resourceID, err)
 		return nil, err
 	}
@@ -254,7 +255,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 // extractVolumeInfo 提取存储卷信息
 func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	volume := &model.Volume{}
-	if err := db.Where("id = ?", resourceID).First(volume).Error; err != nil {
+	if err := db.Where("id = ?", resourceID).Take(volume).Error; err != nil {
 		logger.Errorf("Failed to query volume %d: %v", resourceID, err)
 		return nil, err
 	}
@@ -279,7 +280,7 @@ func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, err
 // extractImageInfo 提取镜像信息
 func extractImageInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	image := &model.Image{}
-	if err := db.Where("id = ?", resourceID).First(image).Error; err != nil {
+	if err := db.Where("id = ?", resourceID).Take(image).Error; err != nil {
 		logger.Errorf("Failed to query image %d: %v", resourceID, err)
 		return nil, err
 	}
@@ -299,26 +300,15 @@ func extractImageInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, erro
 		},
 	}, nil
 }
-func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string, cmd string) (*ResourceChangeEvent, error) {
+
+// extractInterfaceInfo 提取网络接口信息
+func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string) (*ResourceChangeEvent, error) {
 	// 参数检查, 不依赖上层保证
 	if len(args) < 3 {
 		err := fmt.Errorf("invalid args length: expected >=3, got %d, args: %v", len(args), args)
 		logger.Error("Invalid args", "error", err)
 		return nil, err
 	}
-	// 检查具体网络命令
-	switch cmd {
-	case "attach_vm_nic":
-		return extractInterfaceInfoForAttach(db, resourceID, args)
-	case "detach_vm_nic":
-		return extractInterfaceInfoForDetach(db, resourceID, args)
-	}
-	// 缺少默认返回值 - 需要添加
-	return nil, fmt.Errorf("unsupported command: %s", cmd)
-}
-
-// extractInterfaceInfoForAttach 提取网络接口信息 (attach_vm_nic)
-func extractInterfaceInfoForAttach(db *gorm.DB, resourceID int64, args []string) (*ResourceChangeEvent, error) {
 	// 检查MAC地址格式
 	macAddr := strings.TrimSpace(args[2])
 	if macAddr == "" {
@@ -375,57 +365,9 @@ func extractInterfaceInfoForAttach(db *gorm.DB, resourceID int64, args []string)
 	}, nil
 }
 
-// extractInterfaceInfoForDetach 提取网络接口信息 (detach_vm_nic)
-func extractInterfaceInfoForDetach(db *gorm.DB, resourceID int64, args []string) (*ResourceChangeEvent, error) {
-	instance := &model.Instance{Model: model.Model{ID: resourceID}}
-	err := db.Take(instance).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			logger.Error("Instance not found", "resourceID", resourceID)
-			return nil, fmt.Errorf("instance %d not found", resourceID)
-		}
-		logger.Error("Failed to query instance", "resourceID", resourceID, "error", err)
-		return nil, err
-	}
-	ifaceID, err := strconv.Atoi(args[2])
-	if err != nil {
-		logger.Error("Invalid interface ID", err)
-		return nil, err
-	}
-	// 查询网络数据信息
-	iface := &model.Interface{}
-	err = db.Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address").Preload("Address.Subnet").Where("id = ? AND instance = ?", ifaceID, resourceID).Take(iface).Error
-	if err != nil {
-		logger.Error("Failed to query interface",
-			"resourceID", resourceID,
-			"error", err)
-		return nil, err
-	}
-	// Interface 没有明确的 status 字段，使用 "active" 作为默认状态
-	status := "active"
-	if iface.Hyper == -1 {
-		status = "unattached"
-	}
-
-	return &ResourceChangeEvent{
-		ResourceType: ResourceTypeInterface,
-		ResourceUUID: iface.UUID,
-		TenantID:     iface.Owner,
-		Timestamp:    time.Now(),
-		Data: map[string]interface{}{
-			"name":        iface.Name,
-			"status":      status,
-			"mac_addr":    iface.MacAddr,
-			"instance_id": iface.Instance,
-			"hyper_id":    iface.Hyper,
-			"type":        iface.Type,
-		},
-	}, nil
-}
-
 // extractInstanceStatusBatch 处理 inst_status 的批量状态更新
 // inst_status 格式: launch_vm.sh '3' '5 running 7 running 9 shut_off'
-func extractInstanceStatusBatch(ctx context.Context, args []string, cmd string) (*ResourceChangeEvent, error) {
+func extractInstanceStatusBatch(ctx context.Context, args []string) (*ResourceChangeEvent, error) {
 	// inst_status 是批量更新多个实例的状态
 	// 这里可以选择不处理，或者拆分成多个事件
 	// 为了简化，这里返回 nil，不推送批量状态更新事件
