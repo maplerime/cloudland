@@ -103,12 +103,19 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	// ==================== 网络接口相关 ====================
 	"attach_vm_nic": {
 		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   2, // 需要确认参数位置
+		IDArgIndex:   1, // 需要确认参数位置
 	},
 	"detach_vm_nic": {
 		ResourceType: ResourceTypeInterface,
-		IDArgIndex:   2, // 需要确认参数位置
+		IDArgIndex:   1, // 需要确认参数位置
 	},
+}
+
+// 这些命令即是是debug mode 下的频繁上报命令，不做事件推送处理
+var notTrackedCommands = map[string]bool{
+	"report_rc":     true,
+	"hyper_status":  true,
+	"system_router": true,
 }
 
 // ExtractAndPushEvent 提取资源信息并推送事件 (核心函数)
@@ -129,8 +136,10 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 	// 查找元数据
 	metadata, exists := commandMetadataRegistry[cmd]
 	if !exists {
-		// 该命令没有注册元数据，不处理
-		logger.Debugf("Command %s not registered in metadata registry", cmd)
+		if !notTrackedCommands[cmd] {
+			// 该命令没有注册元数据，不处理
+			logger.Debugf("Command %s not registered in metadata registry", cmd)
+		}
 		return
 	}
 
@@ -183,7 +192,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 	resourceIDStr := args[metadata.IDArgIndex]
 	resourceID, err := strconv.ParseInt(resourceIDStr, 10, 64)
 	if err != nil {
-		logger.Errorf("Failed to parse resource ID '%s': %v", resourceIDStr, err)
+		logger.Errorf("Failed to parse resource ID '%s': %v from command %s", resourceIDStr, err, args)
 		return nil, err
 	}
 
