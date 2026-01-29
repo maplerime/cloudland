@@ -145,6 +145,61 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 	c.JSON(http.StatusOK, responses)
 }
 
+type AddressListResponse struct {
+	Offset    int                `json:"offset"`
+	Total     int                `json:"total"`
+	Limit     int                `json:"limit"`
+	Addresses []*AddressResponse `json:"addresses"`
+}
+
+// @Summary list IP addresses by subnet UUID
+// @Description list all IP addresses for a subnet identified by UUID
+// @tags Network
+// @Accept  json
+// @Produce json
+// @Success 200 {object} AddressListResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /addresses/{uuid} [get]
+func (v *AddressAPI) ListIpBySubnetUUID(c *gin.Context) {
+	ctx := c.Request.Context()
+	subnetUUID := c.Param("uuid")
+
+	// Validate subnet exists
+	subnet, err := subnetAdmin.GetSubnetByUUID(ctx, subnetUUID)
+	if err != nil {
+		logger.Errorf("Failed to query subnet %s, %v", subnetUUID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid subnet", err)
+		return
+	}
+
+	// Get addresses for the subnet
+	addresses, err := addressAdmin.ListBySubnetID(ctx, subnet.ID)
+	if err != nil {
+		logger.Errorf("Failed to list addresses for subnet %s, %v", subnetUUID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to list addresses", err)
+		return
+	}
+
+	// Build response
+	addressListResp := &AddressListResponse{
+		Total:  len(addresses),
+		Offset: 0,
+		Limit:  len(addresses),
+	}
+	addressListResp.Addresses = make([]*AddressResponse, len(addresses))
+	for i, addr := range addresses {
+		addressListResp.Addresses[i], err = v.getAddressResponse(ctx, addr)
+		if err != nil {
+			logger.Errorf("Failed to get address response, %v", err)
+			ErrorResponse(c, http.StatusInternalServerError, "Internal error", err)
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, addressListResp)
+}
+
 func (v *AddressAPI) getAddressResponse(ctx context.Context, addr *model.Address) (addrResp *AddressResponse, err error) {
 	addrResp = &AddressResponse{
 		ResourceReference: &ResourceReference{
