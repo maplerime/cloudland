@@ -60,7 +60,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	*/
 	"migrate_vm": {
 		ResourceType: ResourceTypeInstance,
-		IDArgIndex:   1,
+		IDArgIndex:   3,
 	},
 
 	// ==================== 存储卷相关 ====================
