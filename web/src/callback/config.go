@@ -7,12 +7,19 @@ package callback
 
 import (
 	"strings"
+	"sync"
 	"web/src/utils/log"
 
 	"github.com/spf13/viper"
 )
 
 var logger = log.MustGetLogger("callback")
+
+// 只缓存 region
+var (
+	regionCache string
+	regionOnce  sync.Once
+)
 
 // IsEnabled 检查 callback 功能是否启用
 func IsEnabled() bool {
@@ -24,34 +31,39 @@ func GetCallbackURL() string {
 	return viper.GetString("callback.url")
 }
 
-// GetRegion 获取事件源的 region
+// GetRegion 获取事件源的 region（带缓存）
 func GetRegion() string {
-	region := viper.GetString("callback.region")
-	if region == "" {
-		region = "_" // 默认 region
-		logger.Warning("callback.region not configured, using default region '_'")
-		return region
-	}
-	region = strings.TrimSpace(region)
-	// 如果配置的是类似"peta-my01.raksmart.com"的格式，提取第一个部分
-	// 否则直接使用配置的值
-	if strings.Contains(region, ".") {
-		// 分割字符串
-		parts := strings.SplitN(region, ".", 2)
-		if len(parts) > 0 && parts[0] != "" {
-			region = parts[0]
-			logger.Debugf("Extracted region name: %s (from: %s)", region, viper.GetString("callback.region"))
-		} else {
-			// 无效格式，使用默认值
-			logger.Warningf("Invalid region format '%s', using default region '_'", region)
-			region = "_"
+	regionOnce.Do(func() {
+		region := viper.GetString("callback.region")
+		if region == "" {
+			region = "_" // 默认 region
+			logger.Warning("callback.region not configured, using default region '_'")
+			regionCache = region
+			return
 		}
-	} else {
-		// 直接使用配置的值
-		logger.Debugf("Using configured region: %s", region)
-	}
 
-	return region
+		region = strings.TrimSpace(region)
+		// 如果配置的是类似"peta-my01.raksmart.com"的格式，提取第一个部分
+		// 否则直接使用配置的值
+		if strings.Contains(region, ".") {
+			// 分割字符串
+			parts := strings.SplitN(region, ".", 2)
+			if len(parts) > 0 && parts[0] != "" {
+				regionCache = parts[0]
+				logger.Debugf("Extracted region name: %s (from: %s)", regionCache, viper.GetString("callback.region"))
+			} else {
+				// 无效格式，使用默认值
+				logger.Warningf("Invalid region format '%s', using default region '_'", region)
+				regionCache = "_"
+			}
+		} else {
+			// 直接使用配置的值
+			regionCache = region
+			logger.Debugf("Using configured region: %s", regionCache)
+		}
+	})
+
+	return regionCache
 }
 
 // GetWorkerCount 获取 worker 数量

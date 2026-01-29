@@ -66,22 +66,22 @@ func worker(ctx context.Context, id int) {
 			// 发送事件
 			if err := sendEvent(client, callbackURL, event); err != nil {
 				logger.Errorf("Worker %d: Failed to send event: %s/%s, error: %v",
-					id, event.Resource.Type, event.Resource.ID, err)
+					id, event.EventType, event.Resource.ID, err)
 
 				// 重试逻辑
 				if event.RetryCount < retryMax {
 					event.RetryCount++
 					logger.Infof("Worker %d: Retrying event (%d/%d): %s/%s",
-						id, event.RetryCount, retryMax, event.Resource.Type, event.Resource.ID)
+						id, event.RetryCount, retryMax, event.EventType, event.Resource.ID)
 					time.Sleep(retryInterval)
 					PushEvent(event) // 重新入队
 				} else {
 					logger.Errorf("Worker %d: Event dropped after %d retries: %s/%s",
-						id, retryMax, event.Resource.Type, event.Resource.ID)
+						id, retryMax, event.EventType, event.Resource.ID)
 				}
 			} else {
 				logger.Infof("Worker %d: Event sent successfully: %s/%s -> %s",
-					id, event.Resource.Type, event.Resource.ID, event.Data["status"])
+					id, event.EventType, event.Resource.ID, event.Data["status"])
 			}
 		}
 	}
