@@ -433,7 +433,7 @@
               # Also send node alarms to slack with fine-grained grouping
               # Node status alerts (unavailable, cpu, disk, network) → slack-node-status
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network)
+                  alert_type: node-(unavailable|cpu|memory|disk|network)
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'slack-node-status'
