@@ -27,7 +27,7 @@ func Run() (err error) {
 	listen := viper.GetString("rest.listen")
 	logger.Infof("cert: %s, key: %s\n", cert, key)
 	if cert != "" && key != "" {
-		logger.Infof("Running https service isten on %s\n", listen)
+		logger.Infof("Running https service listening on %s\n", listen)
 		r.RunTLS(listen, cert, key)
 	} else {
 		logger.Infof("Running http service on %s\n", listen)
