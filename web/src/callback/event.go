@@ -53,11 +53,11 @@ type ResourceChangeEvent struct {
 }
 
 type Resource struct {
-	Type   string            `json:"type"`             // 资源类型
-	ID     string            `json:"id"`               // 资源 UUID
-	Name   string            `json:"name,omitempty"`   // 资源名称
-	Region string            `json:"region,omitempty"` // 资源所属区域
-	Tags   map[string]string `json:"tags,omitempty"`   // 资源标签
+	Type   string            `json:"type"`           // 资源类型
+	ID     string            `json:"id"`             // 资源 UUID
+	Region string            `json:"region"`         // 资源所属区域
+	Name   string            `json:"name,omitempty"` // 资源名称
+	Tags   map[string]string `json:"tags,omitempty"` // 资源标签
 }
 
 // Cloudland event structure to be sent to callback URL

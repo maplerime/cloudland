@@ -41,12 +41,12 @@ func PushEvent(event *Event) bool {
 	select {
 	case eventQueue <- event:
 		logger.Debugf("Event pushed to queue: %s/%s -> %s",
-			event.Resource.Type, event.Resource.ID, event.Data["status"])
+			event.EventType, event.Resource.ID, event.Data["status"])
 		return true
 	default:
 		// 队列满了，记录警告并丢弃事件
 		logger.Warningf("Event queue is full, dropping event: %s/%s",
-			event.Resource.Type, event.Resource.ID)
+			event.EventType, event.Resource.ID)
 		return false
 	}
 }

@@ -40,10 +40,13 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1, // args[1] 是 instance ID
 	},
-	"inst_status": { // 暂时不用处理
-		ResourceType: ResourceTypeInstance,
-		Extractor:    extractInstanceStatusBatch, // 批量处理，需要自定义
-	},
+	/*
+		//虚机状态查询，不做事件推送
+		"inst_status": {
+			ResourceType: ResourceTypeInstance,
+			Extractor:    extractInstanceStatusBatch, // 批量处理，需要自定义
+		},
+	*/
 	"action_vm": { // ✅️
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1,
@@ -125,6 +128,7 @@ var notTrackedCommands = map[string]bool{
 	"report_rc":     true,
 	"hyper_status":  true,
 	"system_router": true,
+	"inst_status":   true,
 }
 
 // ExtractAndPushEvent 提取资源信息并推送事件 (核心函数)
@@ -169,8 +173,9 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 
 	if rcEvent != nil {
 		resource := &Resource{
-			Type: rcEvent.ResourceType.String(),
-			ID:   rcEvent.ResourceUUID,
+			Type:   rcEvent.ResourceType.String(),
+			ID:     rcEvent.ResourceUUID,
+			Region: GetRegion(),
 		}
 		// 推送事件到队列
 		event := &Event{
@@ -363,16 +368,4 @@ func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string) (*Resour
 			"type":        iface.Type,
 		},
 	}, nil
-}
-
-// extractInstanceStatusBatch 处理 inst_status 的批量状态更新
-// inst_status 格式: launch_vm.sh '3' '5 running 7 running 9 shut_off'
-func extractInstanceStatusBatch(ctx context.Context, args []string) (*ResourceChangeEvent, error) {
-	// inst_status 是批量更新多个实例的状态
-	// 这里可以选择不处理，或者拆分成多个事件
-	// 为了简化，这里返回 nil，不推送批量状态更新事件
-	// 如果需要处理，可以解析 args[2] 并为每个实例生成事件
-
-	logger.Debug("inst_status is batch operation, skipping event push")
-	return nil, nil
 }
