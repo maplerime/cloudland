@@ -34,7 +34,7 @@ volume_ids="$volume_ids]"
 
 # Create consistency group
 # 创建一致性组
-result=$(wds_curl "POST" "api/v2/sync/block/consistency-groups" "{\"name\": \"$cg_name\", \"volume_ids\": $volume_ids}")
+result=$(wds_curl "POST" "api/v2/sync/block/consistency_groups" "{\"name\": \"$cg_name\", \"volumes\": $volume_ids}")
 ret_code=$(echo $result | jq -r .ret_code)
 message=$(echo $result | jq -r .message)
 

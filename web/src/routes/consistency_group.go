@@ -644,20 +644,6 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 		return
 	}
 
-	// Check if this is the last volume in the CG
-	// 检查是否是一致性组中的最后一个卷
-	var volumeCount int64
-	if err = db.Model(&model.ConsistencyGroupVolume{}).Where("cg_id = ?", cg.ID).Count(&volumeCount).Error; err != nil {
-		logger.Errorf("Failed to count volumes in CG: %+v", err)
-		err = NewCLError(ErrDatabaseError, "Failed to count volumes in CG", err)
-		return
-	}
-	if volumeCount <= 1 {
-		logger.Errorf("Cannot remove the last volume from consistency group")
-		err = NewCLError(ErrInvalidParameter, "Cannot remove the last volume from consistency group", nil)
-		return
-	}
-
 	logger.Debugf("Volume validated successfully")
 
 	// Start transaction
@@ -1201,7 +1187,7 @@ func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
 	c.Data["Total"] = total
 	c.Data["Pages"] = pages
 	c.Data["Query"] = query
-	c.HTML(200, "consistency_groups")
+	c.HTML(200, "cgroups")
 }
 
 // New displays the create consistency group page
@@ -1225,7 +1211,7 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 	where := memberShip.GetWhere()
 	// Get volumes that are not in any CG
 	// 获取未加入任何一致性组的卷
-	if err := db.Model(&model.Volume{}).Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes)").Where("status IN (?)", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
+	if err := db.Model(&model.Volume{}).Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes WHERE deleted_at IS NULL)").Where("status IN (?)", []string{"available", "attached"}).Find(&volumes).Error; err != nil {
 		logger.Error("Failed to query volumes", err)
 		c.Data["ErrorMsg"] = "Failed to query volumes"
 		c.HTML(http.StatusInternalServerError, "error")
@@ -1233,7 +1219,7 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Volumes"] = volumes
-	c.HTML(200, "consistency_group_new")
+	c.HTML(200, "cgroups_new")
 }
 
 // Create handles creating a new consistency group
@@ -1248,7 +1234,7 @@ func (v *ConsistencyGroupView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	redirectTo := "../consistency_groups"
+	redirectTo := "../cgroups"
 	name := c.QueryTrim("name")
 	description := c.QueryTrim("description")
 	volumeUUIDs := c.Req.Form["volumes"]
@@ -1348,7 +1334,7 @@ func (v *ConsistencyGroupView) Get(c *macaron.Context, store session.Store) {
 	c.Data["Volumes"] = volumes
 	c.Data["SnapshotCount"] = snapshotCount
 	c.Data["RecentSnapshots"] = recentSnapshots
-	c.HTML(200, "consistency_group")
+	c.HTML(200, "cgroup")
 }
 
 // Edit displays the edit consistency group page
@@ -1390,7 +1376,7 @@ func (v *ConsistencyGroupView) Edit(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["CG"] = cg
-	c.HTML(200, "consistency_group_edit")
+	c.HTML(200, "cgroups_edit")
 }
 
 // Patch handles updating a consistency group
@@ -1424,7 +1410,7 @@ func (v *ConsistencyGroupView) Patch(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	c.Redirect(fmt.Sprintf("../consistency_groups/%d", cgID))
+	c.Redirect(fmt.Sprintf("../cgroups/%d", cgID))
 }
 
 // Delete handles deleting a consistency group
@@ -1452,7 +1438,7 @@ func (v *ConsistencyGroupView) Delete(c *macaron.Context, store session.Store) e
 	}
 
 	c.JSON(200, map[string]interface{}{
-		"redirect": "consistency_groups",
+		"redirect": "/cgroups",
 	})
 	return nil
 }
@@ -1516,7 +1502,7 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 	// 获取可添加的卷（未加入任何一致性组）
 	var availableVolumes []*model.Volume
 	where := memberShip.GetWhere()
-	db.Model(&model.Volume{}).Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes)").
+	db.Model(&model.Volume{}).Where(where).Where("id NOT IN (SELECT volume_id FROM consistency_group_volumes WHERE deleted_at IS NULL)").
 		Where("status IN (?)", []string{"available", "attached"}).
 		Find(&availableVolumes)
 
@@ -1525,7 +1511,7 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 	c.Data["AvailableVolumes"] = availableVolumes
 	c.Data["SnapshotCount"] = snapshotCount
 	c.Data["CanModify"] = snapshotCount == 0 && cg.IsAvailable()
-	c.HTML(200, "consistency_group_volumes")
+	c.HTML(200, "cgroups_volumes")
 }
 
 // AddVolumes handles adding volumes to a consistency group
@@ -1563,14 +1549,15 @@ func (v *ConsistencyGroupView) AddVolumes(c *macaron.Context, store session.Stor
 		return
 	}
 
-	c.Redirect(fmt.Sprintf("../consistency_groups/%d/volumes", cgID))
+	c.Redirect(fmt.Sprintf("/cgroups/%d/volumes", cgID))
 }
 
 // RemoveVolume handles removing a volume from a consistency group
 // 处理从一致性组删除卷
 func (v *ConsistencyGroupView) RemoveVolume(c *macaron.Context, store session.Store) error {
 	id := c.Params("id")
-	volumeID := c.Params("volume_id")
+	volumeID := c.Params("volumeid")
+	logger.Debugf("RemoveVolume handler called with id=%s, volume_id=%s", id, volumeID)
 
 	if id == "" || volumeID == "" {
 		c.Data["ErrorMsg"] = "ID is empty"
@@ -1610,7 +1597,7 @@ func (v *ConsistencyGroupView) RemoveVolume(c *macaron.Context, store session.St
 	}
 
 	c.JSON(200, map[string]interface{}{
-		"redirect": fmt.Sprintf("consistency_groups/%d/volumes", cgID),
+		"redirect": fmt.Sprintf("/cgroups/%d/volumes", cgID),
 	})
 	return nil
 }
@@ -1687,7 +1674,7 @@ func (v *ConsistencyGroupView) ListSnapshots(c *macaron.Context, store session.S
 	c.Data["Snapshots"] = snapshots
 	c.Data["Total"] = total
 	c.Data["Pages"] = pages
-	c.Data["CGLink"] = fmt.Sprintf("/consistency_groups/%d", cgID)
+	c.Data["CGLink"] = fmt.Sprintf("/cgroups/%d", cgID)
 	c.HTML(200, "cg_snapshots")
 }
 
@@ -1785,7 +1772,7 @@ func (v *ConsistencyGroupView) CreateSnapshot(c *macaron.Context, store session.
 		return
 	}
 
-	c.Redirect(fmt.Sprintf("../consistency_groups/%d/snapshots", cgID))
+	c.Redirect(fmt.Sprintf("../cgroups/%d/snapshots", cgID))
 }
 
 // DeleteSnapshot handles deleting a snapshot
@@ -1839,7 +1826,7 @@ func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.
 	}
 
 	c.JSON(200, map[string]interface{}{
-		"redirect": fmt.Sprintf("consistency_groups/%d/snapshots", cgID),
+		"redirect": fmt.Sprintf("cgroups/%d/snapshots", cgID),
 	})
 	return nil
 }

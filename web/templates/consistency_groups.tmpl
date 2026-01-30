@@ -7,7 +7,7 @@
                     <h4 class="ui top attached header">
                         {{.i18n.Tr "CG_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
                         <div class="ui right">
-                            <a class="ui green tiny button" href="consistency_groups/new">{{.i18n.Tr "Create"}}</a>
+                            <a class="ui green tiny button" href="/cgroups/new">{{.i18n.Tr "Create"}}</a>
                         </div>
                     </h4>
                     <div class="ui attached segment">
@@ -43,24 +43,36 @@
                                     {{ if $.IsAdmin }}
                                     <td>{{.ID}}</td>
                                     {{ end }}
-                                    <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
+                                    <td><a href="/cgroups/{{.ID}}">{{.Name}}</a></td>
                                     <td>{{.Description}}</td>
                                     <td>{{.Status}}</td>
                                     <td>{{.VolumeCount}}</td>
-                                    <td><a href="{{$Link}}/{{.ID}}/snapshots">{{.SnapshotCount}}</a></td>
+                                    <td><a href="/cgroups/{{.ID}}/snapshots">{{.SnapshotCount}}</a></td>
                                     {{ if $.IsAdmin }}
                                     <td>{{ if .OwnerInfo }}{{.OwnerInfo.Name}}{{ end }}</td>
                                     {{ end }}
                                     <td>
-                                        <a href="{{$Link}}/{{.ID}}/volumes" title="{{$.i18n.Tr "Manage_Volumes"}}">
-                                            <i class="blue hdd outline icon"></i>
-                                        </a>
-                                        <a href="{{$Link}}/{{.ID}}/snapshots" title="{{$.i18n.Tr "Snapshots"}}">
-                                            <i class="blue camera icon"></i>
-                                        </a>
-                                        <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"
-                                             {{if or (ne .Status "available") (gt .SnapshotCount 0)}}style="opacity: 0.3; pointer-events: none;"{{end}}>
-                                            <i class="dark purple trash alternate outline icon"></i>
+                                        <div class="ui selection dropdown">
+                                            <input id="action" name="action" type="hidden">
+                                            <i class="dropdown icon"></i>
+                                            <div class="default text">Action</div>
+                                            <div class="menu">
+                                                <div class="item" data-value="1" data-text="ViewDetails        ">
+                                                    <a href="/cgroups/{{.ID}}/edit">{{$.i18n.Tr "View Details"}}        </a>
+                                                </div>
+                                                <div class="item" data-value="2" data-text="ManageVolumes        ">
+                                                    <a href="/cgroups/{{.ID}}/volumes">{{$.i18n.Tr "Manage_Volumes"}}        </a>
+                                                </div>
+                                                <div class="item" data-value="3" data-text="Snapshots        ">
+                                                    <a href="/cgroups/{{.ID}}/snapshots">{{$.i18n.Tr "Snapshots"}}        </a>
+                                                </div>
+                                                {{/* Allow delete when status is available or error, and has no snapshots */}}
+                                                {{ if and (or (eq .Status.String "available") (eq .Status.String "error")) (eq .SnapshotCount 0) }}
+                                                <div class="item" data-value="4" data-text="Delete        ">
+                                                    <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete"}}        </a>
+                                                </div>
+                                                {{ end }}
+                                            </div>
                                         </div>
                                     </td>
                                 </tr>

@@ -7,7 +7,7 @@
                     <h4 class="ui top attached header">
                         {{.i18n.Tr "CG_Volume_Manage"}}: {{.CG.Name}}
                         <div class="ui right">
-                            <a class="ui button" href="/consistency_groups/{{.CG.ID}}">{{.i18n.Tr "Back"}}</a>
+                            <a class="ui button" href="/cgroups/{{.CG.ID}}">{{.i18n.Tr "Back"}}</a>
                         </div>
                     </h4>
 
@@ -41,15 +41,9 @@
                                     <td>{{.Status}}</td>
                                     {{ if $CanModify }}
                                     <td>
-                                        {{ if gt $VolumeCount 1 }}
-                                        <div class="remove-button" data-url="/consistency_groups/{{$CGID}}/volumes/{{.ID}}" data-id="{{.ID}}" data-name="{{.Name}}">
+                                        <div class="remove-button" data-url="/cgroups/{{$CGID}}/volumes/{{.ID}}" data-id="{{.ID}}" data-name="{{.Name}}">
                                             <i class="dark red minus circle icon"></i>
                                         </div>
-                                        {{ else }}
-                                        <span title="{{$.i18n.Tr "Cannot_Remove_Last_Volume"}}">
-                                            <i class="grey minus circle icon"></i>
-                                        </span>
-                                        {{ end }}
                                     </td>
                                     {{ end }}
                                 </tr>
@@ -65,7 +59,7 @@
                     </h4>
                     <div class="ui attached segment">
                         {{ if .AvailableVolumes }}
-                        <form class="ui form" action="/consistency_groups/{{.CG.ID}}/volumes" method="post">
+                        <form class="ui form" action="/cgroups/{{.CG.ID}}/volumes" method="post">
                             <div class="inline field">
                                 <label for="volumes">{{.i18n.Tr "Available_Volumes"}}</label>
                                 <select name="volumes" id="volumes" class="ui fluid search dropdown" multiple>
@@ -115,7 +109,9 @@
 <script>
 var removeUrl = '';
 $('.remove-button').on('click', function() {
-    removeUrl = $(this).data('url');
+    var cgID = '{{.CG.ID}}';
+    var volumeID = $(this).data('id');
+    removeUrl = '/cgroups/' + cgID + '/volumes/' + volumeID;
     $('#remove-volume-name').text($(this).data('name'));
     $('.ui.small.basic.remove.modal').modal('show');
 });
@@ -124,10 +120,14 @@ $('#confirm-remove').on('click', function() {
         url: removeUrl,
         type: 'DELETE',
         success: function(result) {
-            window.location.reload();
+            if (result.redirect) {
+                window.location.href = result.redirect;
+            } else {
+                window.location.reload();
+            }
         },
         error: function(xhr) {
-            alert('Failed to remove volume');
+            alert('{{.i18n.Tr "CG_Volume_Remove_Failed"}}');
         }
     });
 });

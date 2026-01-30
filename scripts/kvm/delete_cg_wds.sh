@@ -25,7 +25,7 @@ get_wds_token
 
 # Delete consistency group
 # 删除一致性组
-result=$(wds_curl "DELETE" "api/v2/sync/block/consistency-groups/$wds_cg_id")
+result=$(wds_curl "DELETE" "api/v2/sync/block/consistency_groups/$wds_cg_id")
 ret_code=$(echo $result | jq -r .ret_code)
 message=$(echo $result | jq -r .message)
 
