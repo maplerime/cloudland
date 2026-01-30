@@ -143,6 +143,13 @@ if [ "${os_code}" != "windows" ]; then
 
     echo -e "$vendor_scripts" > $latest_dir/vendor_script.sh
     write_mime_multipart_args+="vendor_script.sh:text/x-shellscript "
+
+    # insert fixed vendor scripts in /opt/cloudland/scripts/kvm/vendor_scripts
+    for i in $(cd ./vendor_scripts; ls *.sh); do
+        cat ./vendor_scripts/$i > $latest_dir/$i
+        write_mime_multipart_args+="$i:text/x-shellscript "
+    done
+
     # insert customized vendor data from api
     custom_vendordata=""
     vendordata_type=$(jq -r .vendordata_type <<<$vm_meta)
@@ -160,7 +167,7 @@ if [ "${os_code}" != "windows" ]; then
     write-mime-multipart -o vendor_data.txt $write_mime_multipart_args
     jq -n --arg data "$(cat vendor_data.txt)" '{"cloud-init": $data}' > vendor_data.json
     cd -
-    rm -f $latest_dir/cloud_config.txt $latest_dir/custom_vendor_script.sh $latest_dir/vendor_data.txt $latest_dir/vendor_script.sh
+    rm -f $latest_dir/cloud_config.txt $latest_dir/custom_vendor_script.sh $latest_dir/vendor_data.txt $latest_dir/*.sh
 fi
 
 [ -z "$dns" ] && dns=$dns_server
