@@ -29,6 +29,17 @@ const (
 	ResourceTypeSecurityGroup ResourceType = "security_group"
 	// ResourceTypeHyper 计算节点
 	ResourceTypeHyper ResourceType = "hyper"
+
+	// ResourceState 资源状态变更
+	ActionStateChanged string = "state_changed"    // 状态变更
+	ActionCreated      string = "created"          // 资源创建
+	ActionAttached     string = "attached"         // 附加操作
+	ActionDetached     string = "detached"         // 分离操作
+	ActionResized      string = "resized"          // 调整大小
+	ActionDeleted      string = "deleted"          // 资源删除
+	ActionUpdated      string = "updated"          // 资源更新
+	ActionMigrated     string = "migrated"         // 实例迁移
+	ActionCaptured     string = "snapshot_created" // 资源捕获
 )
 
 // String 返回资源类型的字符串表示
