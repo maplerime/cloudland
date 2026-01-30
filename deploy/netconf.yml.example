@@ -28,3 +28,4 @@ switch_api_endpoint: "localhost"
 switch_api_house: "test"
 
 ps_api_endpoint: "http://api.rakcloud.ps.com:30646/mercury/ingestion/v1/events"
+region_name: "prestaging2"

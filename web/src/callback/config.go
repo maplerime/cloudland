@@ -41,26 +41,8 @@ func GetRegion() string {
 			regionCache = region
 			return
 		}
-
-		region = strings.TrimSpace(region)
-		// 如果配置的是类似"peta-my01.raksmart.com"的格式，提取第一个部分
-		// 否则直接使用配置的值
-		if strings.Contains(region, ".") {
-			// 分割字符串
-			parts := strings.SplitN(region, ".", 2)
-			if len(parts) > 0 && parts[0] != "" {
-				regionCache = parts[0]
-				logger.Debugf("Extracted region name: %s (from: %s)", regionCache, viper.GetString("callback.region"))
-			} else {
-				// 无效格式，使用默认值
-				logger.Warningf("Invalid region format '%s', using default region '_'", region)
-				regionCache = "_"
-			}
-		} else {
-			// 直接使用配置的值
-			regionCache = region
-			logger.Debugf("Using configured region: %s", regionCache)
-		}
+		regionCache = strings.TrimSpace(region)
+		logger.Debugf("Using configured region: %s", regionCache)
 	})
 
 	return regionCache
