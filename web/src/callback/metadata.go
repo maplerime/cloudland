@@ -26,6 +26,8 @@ type ResourceMetadata struct {
 	ResourceType ResourceType
 	// IDArgIndex 资源 ID 在 args 中的位置 (args[0] 是命令本身)
 	IDArgIndex int
+	// 资源操作类型
+	ActionType string
 	// Extractor 自定义提取器 (可选，优先级高于 IDArgIndex)
 	Extractor ResourceExtractor
 }
@@ -39,6 +41,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	"launch_vm": { // ✅️
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1, // args[1] 是 instance ID
+		ActionType:   ActionCreated,
 	},
 	/*
 		//虚机状态查询，不做事件推送
@@ -50,6 +53,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	"action_vm": { // ✅️
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1,
+		ActionType:   ActionStateChanged,
 	},
 	/*
 		// 资源已经被删除，不需要推送事件
@@ -61,32 +65,39 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	"migrate_vm": {
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   3,
+		ActionType:   ActionMigrated,
 	},
 
 	// ==================== 存储卷相关 ====================
 	"create_volume_local": {
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1, // args[1] 是 volume ID
+		ActionType:   ActionCreated,
 	},
 	"create_volume_wds_vhost": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
+		ActionType:   ActionCreated,
 	},
 	"attach_volume_local": {
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2, // args[2] 是 volume ID
+		ActionType:   ActionAttached,
 	},
 	"attach_volume_wds_vhost": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
+		ActionType:   ActionAttached,
 	},
 	"detach_volume": {
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
+		ActionType:   ActionDetached,
 	},
 	"detach_volume_wds_vhost": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   2,
+		ActionType:   ActionDetached,
 	},
 	/*
 		// 资源已经被删除，不需要推送事件
@@ -98,22 +109,26 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	"resize_volume": { // ✅️
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
+		ActionType:   ActionResized,
 	},
 
 	// ==================== 镜像相关 ====================
 	"create_image": {
 		ResourceType: ResourceTypeImage,
 		IDArgIndex:   1,
+		ActionType:   ActionCreated,
 	},
 	"capture_image": {
 		ResourceType: ResourceTypeImage,
 		IDArgIndex:   1,
+		ActionType:   ActionCaptured,
 	},
 
 	// ==================== 网络接口相关 ====================
 	"attach_vm_nic": { // ✅️
 		ResourceType: ResourceTypeInterface,
 		IDArgIndex:   1, // instance id, 通过instance id获取interface id 和mac address 然后拿到interface
+		ActionType:   ActionAttached,
 	},
 	/*
 		"detach_vm_nic": { // 资源已经被删除了，不需要推送事件
@@ -179,7 +194,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		}
 		// 推送事件到队列
 		event := &Event{
-			EventType:  cmd,
+			EventType:  rcEvent.ResourceType.String() + "_" + metadata.ActionType,
 			Source:     source,
 			OccurredAt: time.Now(),
 			TenantID:   fmt.Sprintf("%d", rcEvent.TenantID),
