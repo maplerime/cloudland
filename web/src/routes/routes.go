@@ -275,7 +275,7 @@ func New() (m *macaron.Macaron) {
 	m.Get("/cgroups/:id/snapshots/new", consistencyGroupView.NewSnapshot)
 	m.Post("/cgroups/:id/snapshots/new", consistencyGroupView.CreateSnapshot)
 	m.Delete("/cgroups/:id/snapshots/:snapid", consistencyGroupView.DeleteSnapshot)
-	m.Post("/cgroups/:id/restore", consistencyGroupView.Restore)
+	m.Post("/cgroups/:id/snapshots/:snapid/restore", consistencyGroupView.Restore)
 	m.Get("/tasks", taskView.List)
 	m.Get("/tasks/:id", taskView.Get)
 

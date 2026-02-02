@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
+
 	. "web/src/common"
 	"web/src/model"
 )
@@ -21,12 +23,31 @@ func init() {
 	Add("restore_cg_snapshot_wds", RestoreCGSnapshotWDS)
 }
 
+// getArgSafe returns the arg at the given index, or the default value if the index is out of range
+// 安全地获取参数，超出范围时返回默认值
+func getArgSafe(args []string, index int, defaultVal string) string {
+	if index < len(args) {
+		return args[index]
+	}
+	return defaultVal
+}
+
+// joinRemainingArgs joins the remaining args from the given index as the message
+// 将指定索引之后的参数合并为消息
+func joinRemainingArgs(args []string, index int) string {
+	if index < len(args) {
+		return strings.Join(args[index:], " ")
+	}
+	return ""
+}
+
 // CreateCGWDS handles the callback from create_cg_wds.sh script
 // 处理创建一致性组脚本的回调
-// |:-COMMAND-:| create_cg_wds.sh '<cg_id>' '<status>' '<wds_cg_id>' 'message'
+// |:-COMMAND-:| create_cg_wds.sh '<task_id>' '<cg_id>' '<status>' '<wds_cg_id>' 'message'
 func CreateCGWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("CreateCGWDS", args)
-	if len(args) < 5 {
+	// Minimum: basename + task_id + cg_id + status
+	if len(args) < 4 {
 		logger.Errorf("Invalid args for create_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -34,14 +55,19 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 
 	// Parse arguments
 	// 解析参数
-	cgID, err := strconv.ParseInt(args[1], 10, 64)
+	taskID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid CG ID: %v", args[1])
+		logger.Errorf("Invalid task ID: %v", args[1])
 		return
 	}
-	status = args[2]
-	wdsCgID := args[3]
-	message := args[4]
+	cgID, err := strconv.ParseInt(args[2], 10, 64)
+	if err != nil {
+		logger.Errorf("Invalid CG ID: %v", args[2])
+		return
+	}
+	status = getArgSafe(args, 3, "error")
+	wdsCgID := getArgSafe(args, 4, "")
+	message := joinRemainingArgs(args, 5)
 
 	// Start transaction
 	// 开始事务
@@ -76,10 +102,24 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 		}).Error
 		logger.Errorf("CG creation failed: %s", message)
 	}
-
 	if err != nil {
 		logger.Errorf("Failed to update consistency group %d: %v", cgID, err)
 		return
+	}
+
+	// Update task status and message
+	// 更新任务状态和消息
+	if taskID > 0 {
+		if status == "available" {
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusSuccess}).Error
+		} else {
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error
+		}
+		if err != nil {
+			logger.Errorf("Failed to update task %d: %v", taskID, err)
+		}
 	}
 
 	logger.Debugf("Successfully updated consistency group %d to status %s", cgID, status)
@@ -91,7 +131,8 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 // |:-COMMAND-:| delete_cg_wds.sh '<cg_id>' '<status>' 'message'
 func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("DeleteCGWDS", args)
-	if len(args) < 4 {
+	// Minimum: basename + cg_id + status
+	if len(args) < 3 {
 		logger.Errorf("Invalid args for delete_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -104,8 +145,8 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 		logger.Errorf("Invalid CG ID: %v", args[1])
 		return
 	}
-	status = args[2]
-	message := args[3]
+	status = getArgSafe(args, 2, "error")
+	message := joinRemainingArgs(args, 3)
 
 	// Start transaction
 	// 开始事务
@@ -156,7 +197,8 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 // |:-COMMAND-:| add_volumes_to_cg_wds.sh '<cg_id>' '<status>' 'message'
 func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("AddVolumesToCGWDS", args)
-	if len(args) < 4 {
+	// Minimum: basename + cg_id + status
+	if len(args) < 3 {
 		logger.Errorf("Invalid args for add_volumes_to_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -169,8 +211,8 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 		logger.Errorf("Invalid CG ID: %v", args[1])
 		return
 	}
-	status = args[2]
-	message := args[3]
+	status = getArgSafe(args, 2, "error")
+	message := joinRemainingArgs(args, 3)
 
 	// Start transaction
 	// 开始事务
@@ -219,7 +261,8 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 // |:-COMMAND-:| remove_volumes_from_cg_wds.sh '<cg_id>' '<status>' 'message'
 func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("RemoveVolumesFromCGWDS", args)
-	if len(args) < 4 {
+	// Minimum: basename + cg_id + status
+	if len(args) < 3 {
 		logger.Errorf("Invalid args for remove_volumes_from_cg_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -232,8 +275,8 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 		logger.Errorf("Invalid CG ID: %v", args[1])
 		return
 	}
-	status = args[2]
-	message := args[3]
+	status = getArgSafe(args, 2, "error")
+	message := joinRemainingArgs(args, 3)
 
 	// Start transaction
 	// 开始事务
@@ -282,7 +325,8 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 // |:-COMMAND-:| create_cg_snapshot_wds.sh '<snapshot_ID>' '<status>' '<wds_snap_id>' '<size>' 'message'
 func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("CreateCGSnapshotWDS", args)
-	if len(args) < 6 {
+	// Minimum: basename + snapshot_ID + status
+	if len(args) < 3 {
 		logger.Errorf("Invalid args for create_cg_snapshot_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -295,12 +339,14 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		logger.Errorf("Invalid snapshot ID: %v", args[1])
 		return
 	}
-	status = args[2]
-	wdsSnapID := args[3]
+	status = getArgSafe(args, 2, "error")
+	wdsSnapID := getArgSafe(args, 3, "")
 
-	size, err := strconv.ParseInt(args[4], 10, 64)
+	var size int64
+	sizeStr := getArgSafe(args, 4, "0")
+	size, err = strconv.ParseInt(sizeStr, 10, 64)
 	if err != nil {
-		logger.Errorf("Invalid snapshot size: %v, defaulting to 0", args[4])
+		logger.Errorf("Invalid snapshot size: %v, defaulting to 0", sizeStr)
 		size = 0
 		err = nil
 	}
@@ -309,7 +355,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		size = size / 1024 / 1024 / 1024
 	}
 
-	message := args[5]
+	message := joinRemainingArgs(args, 5)
 
 	// Start transaction
 	// 开始事务
@@ -336,14 +382,12 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 			"status":      model.CGSnapshotStatusAvailable,
 			"wds_snap_id": wdsSnapID,
 			"size":        size,
-			"task_id":     int64(0),
 		}).Error
 	} else {
 		// Update to error status
 		// 更新为错误状态
 		err = db.Model(snapshot).Updates(map[string]interface{}{
-			"status":  model.CGSnapshotStatusError,
-			"task_id": int64(0),
+			"status": model.CGSnapshotStatusError,
 		}).Error
 		logger.Errorf("CG snapshot creation failed: %s", message)
 	}
@@ -351,6 +395,21 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	if err != nil {
 		logger.Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
 		return
+	}
+
+	// Update task status and message
+	// 更新任务状态和消息
+	if snapshot.TaskID > 0 {
+		if status == "available" {
+			err = db.Model(&model.Task{}).Where("id = ?", snapshot.TaskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusSuccess}).Error
+		} else {
+			err = db.Model(&model.Task{}).Where("id = ?", snapshot.TaskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error
+		}
+		if err != nil {
+			logger.Errorf("Failed to update task %d: %v", snapshot.TaskID, err)
+		}
 	}
 
 	// Restore all volumes' status to available (or attached)
@@ -384,7 +443,8 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 // |:-COMMAND-:| delete_cg_snapshot_wds.sh '<snapshot_ID>' '<status>' 'message'
 func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("DeleteCGSnapshotWDS", args)
-	if len(args) < 4 {
+	// Minimum: basename + snapshot_ID + status
+	if len(args) < 3 {
 		logger.Errorf("Invalid args for delete_cg_snapshot_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -397,8 +457,8 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		logger.Errorf("Invalid snapshot ID: %v", args[1])
 		return
 	}
-	status = args[2]
-	message := args[3]
+	status = getArgSafe(args, 2, "error")
+	message := joinRemainingArgs(args, 3)
 
 	// Start transaction
 	// 开始事务
@@ -410,6 +470,14 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	}()
 
 	if status == "deleted" {
+		// Get snapshot to retrieve task ID before deletion
+		// 删除前获取快照记录以获取任务 ID
+		snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapshotID}}
+		if dbErr := db.Take(snapshot).Error; dbErr != nil {
+			logger.Errorf("Failed to get CG snapshot %d before deletion: %v", snapshotID, dbErr)
+		}
+		taskID := snapshot.TaskID
+
 		// Delete the snapshot record from database
 		// 从数据库删除快照记录
 		err = db.Delete(&model.ConsistencyGroupSnapshot{}, snapshotID).Error
@@ -417,8 +485,25 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 			logger.Errorf("Failed to delete CG snapshot %d: %v", snapshotID, err)
 			return
 		}
+
+		// Update task status to success
+		// 更新任务状态为成功
+		if taskID > 0 {
+			if taskErr := db.Model(&model.Task{}).Where("id = ?", taskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusSuccess}).Error; taskErr != nil {
+				logger.Errorf("Failed to update task %d: %v", taskID, taskErr)
+			}
+		}
 		logger.Debugf("Successfully deleted CG snapshot %d", snapshotID)
 	} else {
+		// Get snapshot to retrieve task ID
+		// 获取快照记录以获取任务 ID
+		snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapshotID}}
+		if dbErr := db.Take(snapshot).Error; dbErr != nil {
+			logger.Errorf("Failed to get CG snapshot %d: %v", snapshotID, dbErr)
+		}
+		taskID := snapshot.TaskID
+
 		// Update status to error
 		// 更新状态为错误
 		err = db.Model(&model.ConsistencyGroupSnapshot{}).
@@ -429,6 +514,15 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 		if err != nil {
 			logger.Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
 			return
+		}
+
+		// Update task status to failed
+		// 更新任务状态为失败
+		if taskID > 0 {
+			if taskErr := db.Model(&model.Task{}).Where("id = ?", taskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error; taskErr != nil {
+				logger.Errorf("Failed to update task %d: %v", taskID, taskErr)
+			}
 		}
 		logger.Errorf("CG snapshot deletion failed: %s", message)
 	}
@@ -441,7 +535,8 @@ func DeleteCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 // |:-COMMAND-:| restore_cg_snapshot_wds.sh '<snapshot_ID>' '<cg_ID>' '<status>' 'message'
 func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, err error) {
 	logger.Debug("RestoreCGSnapshotWDS", args)
-	if len(args) < 5 {
+	// Minimum: basename + snapshot_ID + cg_ID + status
+	if len(args) < 4 {
 		logger.Errorf("Invalid args for restore_cg_snapshot_wds: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -461,8 +556,8 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 		return
 	}
 
-	status = args[3]
-	message := args[4]
+	status = getArgSafe(args, 3, "error")
+	message := joinRemainingArgs(args, 4)
 
 	// Start transaction
 	// 开始事务
@@ -482,26 +577,37 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 		return
 	}
 
-	if status == "available" {
-		// Update snapshot status to available
-		// 更新快照状态为可用
-		err = db.Model(snapshot).Updates(map[string]interface{}{
-			"status":  model.CGSnapshotStatusAvailable,
-			"task_id": int64(0),
-		}).Error
-	} else {
-		// Update status to error
-		// 更新状态为错误
-		err = db.Model(snapshot).Updates(map[string]interface{}{
-			"status":  model.CGSnapshotStatusError,
-			"task_id": int64(0),
-		}).Error
+	// Save task ID before updating snapshot (GORM may reflect changes to struct)
+	// 更新快照前先保存 task_id（GORM 可能将变更反映到 struct）
+	taskID := snapshot.TaskID
+
+	// Always restore snapshot status to available (restore failure doesn't mean snapshot is broken)
+	// 无论恢复成功或失败，快照状态都恢复为 available（恢复失败不代表快照本身有问题）
+	err = db.Model(snapshot).Updates(map[string]interface{}{
+		"status": model.CGSnapshotStatusAvailable,
+	}).Error
+	if status != "available" {
 		logger.Errorf("CG snapshot restore failed: %s", message)
 	}
 
 	if err != nil {
 		logger.Errorf("Failed to update CG snapshot %d: %v", snapshotID, err)
 		return
+	}
+
+	// Update task status and message
+	// 更新任务状态和消息
+	if taskID > 0 {
+		if status == "available" {
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusSuccess}).Error
+		} else {
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).
+				Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": message}).Error
+		}
+		if err != nil {
+			logger.Errorf("Failed to update task %d: %v", taskID, err)
+		}
 	}
 
 	// Restore all volumes' status to available (or attached)

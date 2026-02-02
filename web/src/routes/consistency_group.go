@@ -190,6 +190,22 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	}
 	logger.Debugf("Created consistency group with ID: %d", cg.ID)
 
+	// Create task record for tracking
+	// 创建任务记录用于跟踪
+	task := &model.Task{
+		Owner:   memberShip.OrgID,
+		Name:    fmt.Sprintf("create_cg_%s", cg.UUID),
+		Summary: fmt.Sprintf("Creating consistency group %s", name),
+		Status:  model.TaskStatusRunning,
+		Source:  model.TaskSourceManual,
+	}
+	if err = db.Create(task).Error; err != nil {
+		logger.Errorf("Failed to create task: %+v", err)
+		err = NewCLError(ErrDatabaseError, "Failed to create task record", err)
+		return
+	}
+	logger.Debugf("Created task with ID: %d", task.ID)
+
 	// Create volume associations
 	// 创建卷关联记录
 	for _, vol := range volumes {
@@ -218,11 +234,12 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	// 执行 WDS 脚本创建一致性组
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh %d %s '%s'",
-		cg.ID, cgName, volumeWDSIDJSON)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh %d %d %s '%s'",
+		task.ID, cg.ID, cgName, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute create CG script: %+v", err)
+		db.Model(task).Update("status", model.TaskStatusFailed)
 		err = NewCLError(ErrCGCreationFailed, "Failed to execute create CG script", err)
 		return
 	}
@@ -976,6 +993,13 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	}
 
 	// 4. 检查快照状态
+	// 4.1 检查是否有恢复任务正在执行中
+	// Check if a restore operation is already in progress
+	if snapshot.Status == model.CGSnapshotStatusRestoring {
+		logger.Errorf("Snapshot %s has a restore operation already in progress", snapshot.UUID)
+		return nil, NewCLError(ErrCGSnapshotRestoreInProgress, fmt.Sprintf("Snapshot %s has a restore operation already in progress", snapshot.UUID), nil)
+	}
+	// 4.2 检查快照是否可以恢复
 	if !snapshot.CanRestore() {
 		logger.Errorf("Snapshot %s cannot be restored (status: %s)", snapshot.UUID, snapshot.Status)
 		return nil, NewCLError(ErrCGSnapshotCannotRestore, fmt.Sprintf("Snapshot %s cannot be restored (status: %s)", snapshot.UUID, snapshot.Status), nil)
@@ -1219,7 +1243,7 @@ func (v *ConsistencyGroupView) New(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Volumes"] = volumes
-	c.HTML(200, "cgroups_new")
+	c.HTML(200, "cgroup_new")
 }
 
 // Create handles creating a new consistency group
@@ -1376,7 +1400,7 @@ func (v *ConsistencyGroupView) Edit(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["CG"] = cg
-	c.HTML(200, "cgroups_edit")
+	c.HTML(200, "cgroup_edit")
 }
 
 // Patch handles updating a consistency group
@@ -1511,7 +1535,7 @@ func (v *ConsistencyGroupView) Volumes(c *macaron.Context, store session.Store) 
 	c.Data["AvailableVolumes"] = availableVolumes
 	c.Data["SnapshotCount"] = snapshotCount
 	c.Data["CanModify"] = snapshotCount == 0 && cg.IsAvailable()
-	c.HTML(200, "cgroups_volumes")
+	c.HTML(200, "cgroup_volumes")
 }
 
 // AddVolumes handles adding volumes to a consistency group
@@ -1772,15 +1796,15 @@ func (v *ConsistencyGroupView) CreateSnapshot(c *macaron.Context, store session.
 		return
 	}
 
-	c.Redirect(fmt.Sprintf("../cgroups/%d/snapshots", cgID))
+	c.Redirect(fmt.Sprintf("/cgroups/%d/snapshots", cgID))
 }
 
 // DeleteSnapshot handles deleting a snapshot
 // 处理删除快照
 func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.Store) error {
 	id := c.Params("id")
-	snapID := c.Params("snap_id")
-
+	snapID := c.Params("snapid")
+	logger.Info("Delete CG snapshot", id, snapID)
 	if id == "" || snapID == "" {
 		c.Data["ErrorMsg"] = "ID is empty"
 		c.Error(http.StatusBadRequest)
@@ -1794,23 +1818,24 @@ func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.
 		return nil
 	}
 
-	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
-	if err != nil {
-		c.Data["ErrorMsg"] = "Consistency group not found"
-		c.Error(http.StatusNotFound)
-		return nil
-	}
-
-	// Get snapshot UUID from ID
-	// 从 ID 获取快照 UUID
-	ctx, db := GetContextDB(c.Req.Context())
-	_ = ctx
 	snapIDInt, err := strconv.ParseInt(snapID, 10, 64)
 	if err != nil {
 		c.Data["ErrorMsg"] = "Invalid snapshot ID"
 		c.Error(http.StatusBadRequest)
 		return nil
 	}
+
+	cg, err := consistencyGroupAdmin.Get(c.Req.Context(), cgID)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Consistency group not found"
+		c.Error(http.StatusNotFound)
+		return nil
+	}
+	// Get snapshot UUID from ID
+	// 从 ID 获取快照 UUID
+	ctx, db := GetContextDB(c.Req.Context())
+	_ = ctx
+
 	snapshot := &model.ConsistencyGroupSnapshot{Model: model.Model{ID: snapIDInt}}
 	if err = db.Take(snapshot).Error; err != nil {
 		c.Data["ErrorMsg"] = "Snapshot not found"
@@ -1826,7 +1851,7 @@ func (v *ConsistencyGroupView) DeleteSnapshot(c *macaron.Context, store session.
 	}
 
 	c.JSON(200, map[string]interface{}{
-		"redirect": fmt.Sprintf("cgroups/%d/snapshots", cgID),
+		"redirect": fmt.Sprintf("/cgroups/%d/snapshots", cgID),
 	})
 	return nil
 }
@@ -1844,9 +1869,16 @@ func (v *ConsistencyGroupView) Restore(c *macaron.Context, store session.Store) 
 	}
 
 	id := c.Params("id")
+	snapIDstr := c.Params("snapid")
 	cgID, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		c.Data["ErrorMsg"] = "Invalid ID"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	snapshotID, err := strconv.ParseInt(snapIDstr, 10, 64)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid snapshot ID"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -1856,22 +1888,6 @@ func (v *ConsistencyGroupView) Restore(c *macaron.Context, store session.Store) 
 		logger.Error("Failed to get consistency group", err)
 		c.Data["ErrorMsg"] = "Consistency group not found"
 		c.HTML(http.StatusNotFound, "error")
-		return
-	}
-
-	// Get snapshot ID from form
-	// 从表单获取快照 ID
-	snapshotIDStr := c.QueryTrim("snapshot_id")
-	if snapshotIDStr == "" {
-		c.Data["ErrorMsg"] = "Snapshot ID is required"
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-
-	snapshotID, err := strconv.ParseInt(snapshotIDStr, 10, 64)
-	if err != nil {
-		c.Data["ErrorMsg"] = "Invalid snapshot ID"
-		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
 

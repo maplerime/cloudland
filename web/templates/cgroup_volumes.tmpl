@@ -6,10 +6,20 @@
                 <div class="twelve wide column content">
                     <h4 class="ui top attached header">
                         {{.i18n.Tr "CG_Volume_Manage"}}: {{.CG.Name}}
+                        <span class="ui label {{ if eq .CG.Status.String "available" }}green{{ else if eq .CG.Status.String "error" }}red{{ else }}yellow{{ end }}">
+                            {{.CG.Status}}
+                        </span>
                         <div class="ui right">
                             <a class="ui button" href="/cgroups/{{.CG.ID}}">{{.i18n.Tr "Back"}}</a>
                         </div>
                     </h4>
+                    {{ if not (eq .CG.Status.String "available") }}
+                    <div class="ui attached warning message" id="cg-updating-message">
+                        <i class="spinner loading icon"></i>
+                        {{.i18n.Tr "CG_Updating_Please_Wait"}}
+                        <span id="refresh-countdown"></span>
+                    </div>
+                    {{ end }}
 
                     <!-- Current Volumes -->
                     <h4 class="ui attached header">
@@ -82,8 +92,6 @@
                         <i class="warning icon"></i>
                         {{ if gt .SnapshotCount 0 }}
                         {{.i18n.Tr "CG_Has_Snapshots_Cannot_Modify"}}
-                        {{ else }}
-                        {{.i18n.Tr "CG_Not_Available_Cannot_Modify"}}
                         {{ end }}
                     </div>
                     {{ end }}
@@ -131,4 +139,24 @@ $('#confirm-remove').on('click', function() {
         }
     });
 });
+// Auto-refresh when CG is not available
+// 当一致性组状态不是 available 时自动刷新
+{{ if not (eq .CG.Status.String "available") }}
+(function() {
+    var countdown = 5;
+    var countdownEl = document.getElementById('refresh-countdown');
+    function updateCountdown() {
+        if (countdownEl) {
+            countdownEl.textContent = '(' + countdown + 's)';
+        }
+        if (countdown <= 0) {
+            window.location.reload();
+        } else {
+            countdown--;
+            setTimeout(updateCountdown, 1000);
+        }
+    }
+    updateCountdown();
+})();
+{{ end }}
 </script>

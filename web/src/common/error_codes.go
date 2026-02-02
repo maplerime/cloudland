@@ -136,6 +136,7 @@ const (
 	ErrCGNoVolumes                 ErrCode = 125217 // consistency group has no volumes
 	ErrCGVolumeAttachedNoInstance  ErrCode = 125218 // volume status is attached but has no instance ID
 	ErrCGSnapshotCannotRestore     ErrCode = 125219 // snapshot cannot be restored (invalid state)
+	ErrCGSnapshotRestoreInProgress ErrCode = 125220 // a restore operation is already in progress for this snapshot
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
