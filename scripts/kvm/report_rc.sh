@@ -167,6 +167,7 @@ function sync_instance()
             [ $? -eq 0 ] && break
             sleep 2
         done
+	sleep 5
         sudo virsh start inst-$inst_id
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
