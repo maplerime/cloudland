@@ -27,7 +27,8 @@
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
                                         <option value="hypervisor_vcpu">{{.i18n.Tr "Hypervisor_vCPU"}}</option>
                                         <option value="packet_drop">{{.i18n.Tr "Packet_Drop"}}</option>
-                                        <option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
+										<option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
+										<option value="ipgroup_available_ip">{{.i18n.Tr "IP_Group_Available_IP"}}</option>
 									</select>
 								</div>
 								<div class="inline field">
@@ -105,10 +106,15 @@ document.addEventListener('DOMContentLoaded', function() {
             "severity": "warning",
             "packet_drop_threshold": 0
         },
-        'ip_block': {
-            "for_duration": "30s",
-            "severity": "warning"
-        }
+		'ip_block': {
+			"for_duration": "30s",
+			"severity": "warning"
+		},
+		'ipgroup_available_ip': {
+			"threshold": 100,
+			"for_duration": "5m",
+			"severity": "warning"
+		}
     };
 
     ruleTypeSelect.addEventListener('change', function() {
