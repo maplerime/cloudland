@@ -3,13 +3,14 @@ groups:
   rules:
     - alert: IPGroupLowAvailableIPs
       # Monitor available IP count in subnets
+      # Fix many-to-many matching by deduplicating both sides (HA deployment has 2 exporters)
       expr: |
-        (
+        max by (ipgroup_id, subnet_id, region) (
           cloudland_subnet_ip_available < {{ threshold | default(100) }}
         )
         * on (ipgroup_id, subnet_id, region)
-          group_left(ipgroup_name)
-          cloudland_subnet_info
+          group_left(ipgroup_name, subnet_name)
+          max by (ipgroup_id, subnet_id, region, ipgroup_name, subnet_name) (cloudland_subnet_info)
       for: {{ for_duration | default("5m") }}
       labels:
         severity: {{ severity | default("warning") }}
