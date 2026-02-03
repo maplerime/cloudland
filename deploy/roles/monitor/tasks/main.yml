@@ -442,7 +442,7 @@
               # Node vCPU alerts → slack-resource-alerts
               - match:
                   alert_type: node-vcpu
-                group_by: ['alertname', 'instance', 'hostname', 'alert_type', 'severity', 'node_type']
+                group_by: ['alertname', 'zone', 'region', 'alert_type', 'severity', 'node_type']
                 receiver: 'slack-resource-alerts'
                 continue: true
 
