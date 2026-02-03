@@ -402,7 +402,8 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 	offset, err := strconv.Atoi(offsetStr)
 	queryStr := c.DefaultQuery("query", "")
 	dicID := strings.TrimSpace(c.DefaultQuery("dic_id", ""))
-	logger.Debugf("IpGroupAPI.List: offset=%s, limit=%s, query=%s, dic_id=%s", offsetStr, limitStr, queryStr, dicID)
+	typeFilter := strings.TrimSpace(c.DefaultQuery("type", ""))
+	logger.Debugf("IpGroupAPI.List: offset=%s, limit=%s, query=%s, dic_id=%s, type=%s", offsetStr, limitStr, queryStr, dicID, typeFilter)
 	if err != nil {
 		logger.Errorf("IpGroupAPI.List: invalid offset, offsetStr=%s, err=%v", offsetStr, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -435,6 +436,21 @@ func (v *IpGroupAPI) List(c *gin.Context) {
 		logger.Debugf("IpGroupAPI.List: dictionary found, %+v", dictionary)
 		logger.Debugf("IpGroupAPI.List: dic_id in dictionary is %d", dictionary.ID)
 		queryStr = fmt.Sprintf("type_id = %d AND type = '%s'", dictionary.ID, SystemIpGroupType)
+	}
+	// Add type filter if provided (compatible: no type param means query all)
+	if typeFilter != "" {
+		if typeFilter == "system" || typeFilter == "resource" {
+			if queryStr != "" {
+				queryStr = fmt.Sprintf("%s AND type = '%s'", queryStr, typeFilter)
+			} else {
+				queryStr = fmt.Sprintf("type = '%s'", typeFilter)
+			}
+			logger.Debugf("IpGroupAPI.List: filter by type=%s", typeFilter)
+		} else {
+			logger.Errorf("IpGroupAPI.List: invalid type filter, type=%s", typeFilter)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid type filter, must be 'system' or 'resource'", nil)
+			return
+		}
 	}
 	total, ipGroups, err := ipGroupAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr)
 	if err != nil {
