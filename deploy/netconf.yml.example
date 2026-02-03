@@ -33,5 +33,5 @@ metering_api_port: "8480"
 switch_api_endpoint: "localhost"
 switch_api_house: "test"
 
-ps_api_endpoint: "http://api.rakcloud.ps.com:30646/mercury/ingestion/v1/events"
+ps_api_endpoint: "https://ps-test.petacloud.ai/mercury/ingestion/v1/events"
 region_name: "prestaging2"
