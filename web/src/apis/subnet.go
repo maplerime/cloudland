@@ -339,6 +339,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
+	ipGroupType := strings.TrimSpace(c.DefaultQuery("ipgroup_type", "")) // Filter by ipgroup type
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -370,6 +371,21 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		logger.Debugf("The ipGroup with group_id: %+v\n", ipGroup)
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
 		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+	}
+	// Filter by ipgroup type (system or resource)
+	if ipGroupType != "" {
+		if ipGroupType == "system" || ipGroupType == "resource" {
+			if queryStr != "" {
+				queryStr = fmt.Sprintf("%s AND group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", queryStr, ipGroupType)
+			} else {
+				queryStr = fmt.Sprintf("group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", ipGroupType)
+			}
+			logger.Debugf("Filtering subnets by ipgroup_type: %s", ipGroupType)
+		} else {
+			logger.Errorf("Invalid ipgroup_type: %s", ipGroupType)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid ipgroup_type filter, must be 'system' or 'resource'", nil)
+			return
+		}
 	}
 	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
 	if err != nil {
