@@ -234,7 +234,7 @@ func (a *ConsistencyGroupAdmin) Create(ctx context.Context, name, description st
 	// 执行 WDS 脚本创建一致性组
 	cgName := fmt.Sprintf("cg_%s", cg.UUID)
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh %d %d %s '%s'",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_wds.sh '%d' '%d' '%s' '%s'",
 		task.ID, cg.ID, cgName, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -401,7 +401,7 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	// Execute WDS script to delete consistency group
 	// 执行 WDS 脚本删除一致性组
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_wds.sh %d %s",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_wds.sh '%d' '%s'",
 		cg.ID, cg.WdsCgID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -579,7 +579,7 @@ func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volume
 	// Execute WDS script to add volumes to consistency group
 	// 执行 WDS 脚本向一致性组添加卷
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_volumes_to_cg_wds.sh %d %s '%s'",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_volumes_to_cg_wds.sh '%d' '%s' '%s'",
 		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -694,7 +694,7 @@ func (a *ConsistencyGroupAdmin) RemoveVolume(ctx context.Context, id int64, volu
 	volumeWDSIDJSONBytes, _ := json.Marshal([]string{volume.GetOriginVolumeID()})
 	volumeWDSIDJSON := string(volumeWDSIDJSONBytes)
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/remove_volumes_from_cg_wds.sh %d %s '%s'",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/remove_volumes_from_cg_wds.sh '%d' '%s' '%s'",
 		cg.ID, cg.WdsCgID, volumeWDSIDJSON)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -866,7 +866,7 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 	// 10. 调用 shell 脚本创建 WDS 快照
 	// Parameters: cg_ID, cg_snapshot_ID, cg_snapshot_Name, wds_cg_id
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh %d %d '%s' '%s'",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh '%d' '%d' '%s' '%s'",
 		cg.ID, snapshot.ID, snapshot.Name, cg.WdsCgID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -949,7 +949,7 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 	// 8. 调用 shell 脚本删除 WDS 快照
 	// Parameters: cg_snapshot_ID, wds_snap_id
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_snapshot_wds.sh %d '%s'",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_cg_snapshot_wds.sh '%d' '%s'",
 		snapshot.ID, snapshot.WdsSnapID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
@@ -1125,7 +1125,7 @@ func (a *ConsistencyGroupAdmin) RestoreSnapshot(ctx context.Context, cgUUID, sna
 	// 14. 调用 shell 脚本恢复快照
 	// Parameters: cg_snapshot_ID, cg_ID, wds_cg_id, wds_snap_id, volumes_json
 	control := fmt.Sprintf("inter=")
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_cg_snapshot_wds.sh %d %d '%s' '%s' '%s'",
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/restore_cg_snapshot_wds.sh '%d' '%d' '%s' '%s' '%s'",
 		snapshot.ID, cg.ID, cg.WdsCgID, snapshot.WdsSnapID, string(volumesJSON))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
