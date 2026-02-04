@@ -197,7 +197,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 			EventType:  rcEvent.ResourceType.String() + "_" + metadata.ActionType,
 			Source:     source,
 			OccurredAt: time.Now(),
-			TenantID:   fmt.Sprintf("%d", rcEvent.TenantID),
+			TenantID:   rcEvent.TenantID,
 			Resource:   *resource,
 			Data:       rcEvent.Data,
 			Metadata:   rcEvent.Metadata,
@@ -258,7 +258,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeInstance,
 		ResourceUUID: instance.UUID,
-		TenantID:     instance.Owner,
+		TenantID:     instance.OwnerInfo.UUID,
 		Timestamp:    time.Now(),
 		Data: map[string]interface{}{
 			"hostname": instance.Hostname,
@@ -283,7 +283,7 @@ func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, err
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeVolume,
 		ResourceUUID: volume.UUID,
-		TenantID:     volume.Owner,
+		TenantID:     volume.OwnerInfo.UUID,
 		Timestamp:    time.Now(),
 		Data: map[string]interface{}{
 			"name":        volume.Name,
@@ -308,7 +308,7 @@ func extractImageInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, erro
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeImage,
 		ResourceUUID: image.UUID,
-		TenantID:     image.Owner,
+		TenantID:     image.OwnerInfo.UUID,
 		Timestamp:    time.Now(),
 		Data: map[string]interface{}{
 			"name":         image.Name,
@@ -372,7 +372,7 @@ func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string) (*Resour
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeInterface,
 		ResourceUUID: iface.UUID,
-		TenantID:     iface.Owner,
+		TenantID:     iface.OwnerInfo.UUID,
 		Timestamp:    time.Now(),
 		Data: map[string]interface{}{
 			"name":        iface.Name,

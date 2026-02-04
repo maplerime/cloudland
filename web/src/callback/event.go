@@ -54,7 +54,7 @@ type ResourceChangeEvent struct {
 	// ResourceUUID 资源的 UUID
 	ResourceUUID string `json:"resource_uuid"`
 	// TenantID 所属租户 ID
-	TenantID int64 `json:"tenant_id"`
+	TenantID string `json:"tenant_id"`
 	// Timestamp 事件时间戳
 	Timestamp time.Time `json:"timestamp"`
 	// Data 事件数据负载
