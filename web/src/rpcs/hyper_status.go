@@ -111,15 +111,17 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	}
 	cpuModel := args[15]
 	// end PET-769
-	hyper.Hostname = hyperName
-	hyper.Status = int32(hyperStatus)
-	hyper.VirtType = "kvm-x86_64"
-	hyper.CpuModel = cpuModel
-	hyper.Zone = zone
-	hyper.HostIP = hostIP
-	err = db.Save(hyper).Error
+	// PET-1218 fix hyper status
+	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Update(map[string]interface{}{
+		"hostname":  hyperName,
+		"status":    hyperStatus,
+		"cpu_model": cpuModel,
+		"virt_type": "kvm-x86_64",
+		"zone":      zone,
+		"hostip":    hostIP,
+	}).Error
 	if err != nil {
-		logger.Error("Failed to save hypervisor", err)
+		logger.Error("Failed to update hyper", err)
 		return
 	}
 	resource := &model.Resource{
