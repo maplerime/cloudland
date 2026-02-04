@@ -37,13 +37,9 @@ process_packet_drops() {
             # Remove timestamp from line for cleaner processing
             sub(/^\[[0-9.]+\] /, "", line);
 
-            # Check for different types of packet drop indicators
-            if (line ~ /drop|dropped|packet loss/i) {
-                print "packet_drop " line;
-            } else if (line ~ /nf_conntrack.*(full|table full)|conntrack.*(full|dropp)/i) {
+            # Check ONLY for nf_conntrack table full errors
+            if (line ~ /nf_conntrack.*table full/) {
                 print "conntrack_full " line;
-            } else if (line ~ /overrun|overflow|backlog|no buffer|out of memory|ring.*full/i) {
-                print "network_error " line;
             }
         }
     }' | sort | uniq -c | sort -nr | head -20
@@ -56,12 +52,8 @@ process_packet_drops | while read -r line; do
         type_and_message=$(echo "$line" | cut -d' ' -f2-)
 
         # Determine metric type based on content
-        if echo "$type_and_message" | grep -q "^packet_drop"; then
-            metric_type="packet_drop"
-        elif echo "$type_and_message" | grep -q "^conntrack_full"; then
+        if echo "$type_and_message" | grep -q "^conntrack_full"; then
             metric_type="conntrack_full"
-        elif echo "$type_and_message" | grep -q "^network_error"; then
-            metric_type="network_error"
         else
             metric_type="unknown"
         fi

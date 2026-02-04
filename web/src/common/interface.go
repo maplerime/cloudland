@@ -472,6 +472,14 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 			ID:      fmt.Sprintf("network%d", netID),
 		}
 		if iface.PrimaryIf {
+			if iface.Name != "eth0" {
+				iface.Name = "eth0"
+				err = db.Model(iface).Updates(map[string]interface{}{"name": iface.Name}).Error
+				if err != nil {
+					logger.Error("Update interface name ", err)
+					return
+				}
+			}
 			gateway := strings.Split(subnet.Gateway, "/")[0]
 			instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
 			instNetwork.Routes = append(instNetwork.Routes, instRoute)

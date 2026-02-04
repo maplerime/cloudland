@@ -27,7 +27,7 @@ func Run() (err error) {
 	listen := viper.GetString("rest.listen")
 	logger.Infof("cert: %s, key: %s\n", cert, key)
 	if cert != "" && key != "" {
-		logger.Infof("Running https service isten on %s\n", listen)
+		logger.Infof("Running https service listening on %s\n", listen)
 		r.RunTLS(listen, cert, key)
 	} else {
 		logger.Infof("Running http service on %s\n", listen)
@@ -145,6 +145,7 @@ func Register() (r *gin.Engine) {
 		// Addresses
 		authGroup.PATCH("/api/v1/addresses/remark", addressAPI.Remark)
 		authGroup.PATCH("/api/v1/addresses/update-lock", addressAPI.UpdateLock)
+		authGroup.GET("/api/v1/addresses/:uuid", addressAPI.ListIpBySubnetUUID)
 
 		authGroup.GET("/api/v1/keys", keyAPI.List)
 		authGroup.POST("/api/v1/keys", keyAPI.Create)

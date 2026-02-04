@@ -25,6 +25,7 @@
     <pae/>
   </features>
   <cpu mode='host-model' check='none'>
+    <topology sockets='1' cores='VM_CPU' threads='1'/>
     <feature policy='VM_NESTED' name='VM_VIRT_FEATURE'/>
   </cpu>
   <clock offset='utc'/>

@@ -53,3 +53,14 @@ func (a *AddressAdmin) Update(ctx context.Context, addr *model.Address) (err err
 
 	return
 }
+
+func (a *AddressAdmin) ListBySubnetID(ctx context.Context, subnetID int64) (addresses []*model.Address, err error) {
+	ctx, db := GetContextDB(ctx)
+	addresses = []*model.Address{}
+	err = db.Preload("Subnet").Where("subnet_id = ?", subnetID).Order("id").Find(&addresses).Error
+	if err != nil {
+		logger.Error("Failed to query addresses for subnet, %v", err)
+		return nil, NewCLError(ErrDatabaseError, "Failed to list addresses", err)
+	}
+	return
+}
