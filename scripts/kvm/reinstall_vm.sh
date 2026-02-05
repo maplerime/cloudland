@@ -30,14 +30,9 @@ vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
 
-# Try to undefine the domain, handle NVRAM case
-virsh undefine $vm_ID 2>/dev/null
+virsh undefine --nvram $vm_ID
 if [ $? -ne 0 ]; then
-    # If normal undefine fails, try with --nvram (for UEFI VMs)
-    virsh undefine --nvram $vm_ID
-    if [ $? -ne 0 ]; then
-        echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
-    fi
+    echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
 fi
 virsh destroy $vm_ID
 let fsize=$disk_size*1024*1024*1024
@@ -196,7 +191,7 @@ if [ "$is_uefi_current" != "$should_be_uefi" ]; then
 fi
 
 # Update basic parameters (memory, CPU, instance UUID, and vhost name for WDS)
-sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g"
+sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g; s#\(<topology[^>]*\)cores='[0-9]*'#\1cores='$vm_cpu'#g"
 if [ -n "$wds_address" ]; then
   sed_cmd="$sed_cmd; s#$old_vhost_name#$vhost_name#g"
 fi
