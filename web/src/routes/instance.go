@@ -1137,6 +1137,22 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Errorf("Failed to query volumes, %v", err)
 		return NewCLError(ErrSQLSyntaxError, "Failed to query volumes for instance", err)
 	}
+
+	// Check if any attached volume is in a consistency group
+	// 检查是否有任何已挂载的卷在一致性组中
+	if instance.Volumes != nil {
+		for _, volume := range instance.Volumes {
+			inCG, cgErr := consistencyGroupAdmin.IsVolumeInCG(ctx, volume.ID)
+			if cgErr != nil {
+				return cgErr
+			}
+			if inCG {
+				logger.Errorf("Volume %s is in a consistency group, cannot delete instance", volume.UUID)
+				return NewCLError(ErrVolumeInConsistencyGroup, fmt.Sprintf("Volume %s is in a consistency group, please remove it from the CG first before deleting the instance", volume.UUID), nil)
+			}
+		}
+	}
+
 	bootVolumeUUID := ""
 	if instance.Volumes != nil {
 		for _, volume := range instance.Volumes {

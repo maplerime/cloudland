@@ -88,21 +88,22 @@ const (
 	ErrMigrationInProgress   ErrCode = 111805
 
 	// Volume related errors (121xxx)
-	ErrVolumeNotFound         ErrCode = 121001
-	ErrVolumeCreationFailed   ErrCode = 121002
-	ErrVolumeUpdateFailed     ErrCode = 121003
-	ErrVolumeDeleteFailed     ErrCode = 121004
-	ErrVolumeAttachFailed     ErrCode = 121005
-	ErrVolumeDetachFailed     ErrCode = 121006
-	ErrVolumeInvalidState     ErrCode = 121007
-	ErrVolumeInvalidSize      ErrCode = 121008
-	ErrBootVolumeNotFound     ErrCode = 121009
-	ErrBootVolumeUpdateFailed ErrCode = 121010
-	ErrBootVolumeDeleteFailed ErrCode = 121011
-	ErrVolumeIsInUse          ErrCode = 121012
-	ErrBootVolumeCannotDetach ErrCode = 121013
-	ErrVolumeIsBusy           ErrCode = 121014
-	ErrVolumeIsRestoring      ErrCode = 121015
+	ErrVolumeNotFound           ErrCode = 121001
+	ErrVolumeCreationFailed     ErrCode = 121002
+	ErrVolumeUpdateFailed       ErrCode = 121003
+	ErrVolumeDeleteFailed       ErrCode = 121004
+	ErrVolumeAttachFailed       ErrCode = 121005
+	ErrVolumeDetachFailed       ErrCode = 121006
+	ErrVolumeInvalidState       ErrCode = 121007
+	ErrVolumeInvalidSize        ErrCode = 121008
+	ErrBootVolumeNotFound       ErrCode = 121009
+	ErrBootVolumeUpdateFailed   ErrCode = 121010
+	ErrBootVolumeDeleteFailed   ErrCode = 121011
+	ErrVolumeIsInUse            ErrCode = 121012
+	ErrBootVolumeCannotDetach   ErrCode = 121013
+	ErrVolumeIsBusy             ErrCode = 121014
+	ErrVolumeIsRestoring        ErrCode = 121015
+	ErrVolumeInConsistencyGroup ErrCode = 121016 // volume is in a consistency group, cannot be deleted
 
 	// Snapshot/Backup related errors (1251xx)
 	ErrBackupNotFound                      ErrCode = 125100
@@ -113,6 +114,29 @@ const (
 	ErrCannotRestoreWhileInstanceIsRunning ErrCode = 125105
 	ErrCannotRestoreFromBackup             ErrCode = 125106
 	ErrBackupInvalidState                  ErrCode = 125107
+
+	// Consistency Group related errors (1252xx)
+	ErrCGNotFound                  ErrCode = 125200
+	ErrCGCreationFailed            ErrCode = 125201
+	ErrCGUpdateFailed              ErrCode = 125202
+	ErrCGDeleteFailed              ErrCode = 125203
+	ErrCGInvalidState              ErrCode = 125204
+	ErrCGIsBusy                    ErrCode = 125205
+	ErrCGSnapshotExists            ErrCode = 125206
+	ErrCGVolumeNotInSamePool       ErrCode = 125207
+	ErrCGVolumeIsBusy              ErrCode = 125208
+	ErrCGVolumeInvalidState        ErrCode = 125209
+	ErrCGSnapshotNotFound          ErrCode = 125210
+	ErrCGSnapshotCreationFailed    ErrCode = 125211
+	ErrCGSnapshotDeleteFailed      ErrCode = 125212
+	ErrCGSnapshotRestoreFailed     ErrCode = 125213
+	ErrCGSnapshotIsBusy            ErrCode = 125214
+	ErrCGCannotModifyWithSnapshots ErrCode = 125215
+	ErrCGInstanceNotShutoff        ErrCode = 125216 // instance must be shutoff before restoring CG snapshot
+	ErrCGNoVolumes                 ErrCode = 125217 // consistency group has no volumes
+	ErrCGVolumeAttachedNoInstance  ErrCode = 125218 // volume status is attached but has no instance ID
+	ErrCGSnapshotCannotRestore     ErrCode = 125219 // snapshot cannot be restored (invalid state)
+	ErrCGSnapshotRestoreInProgress ErrCode = 125220 // a restore operation is already in progress for this snapshot
 
 	// Network related errors (131xxx)
 	// IP Address related errors (1310xx)
