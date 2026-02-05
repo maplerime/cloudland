@@ -1,0 +1,12 @@
+[
+{% for node in vmagent_hyper_nodes %}
+  {
+    "targets": ["{{ node.ip }}:9177"],
+    "labels": {
+      "exporter_type": "libvirt",
+      "hypervisor": "{{ node.hostname }}"
+    }
+  }{% if not loop.last %},{% endif %}
+
+{% endfor %}
+]

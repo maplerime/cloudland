@@ -1,0 +1,31 @@
+global:
+  scrape_interval: {{ vmagent_scrape_interval }}
+  scrape_timeout: {{ vmagent_scrape_timeout }}
+
+scrape_configs:
+  # 1. CloudLand Exporter (Control/Management nodes)
+  - job_name: 'cloudland_exporter'
+    scrape_interval: 60s
+    file_sd_configs:
+      - files: ['{{ vmagent_base_dir }}/sd_configs/cloudland_nodes.json']
+
+  # 2. Libvirt Exporters (Compute/Hyper nodes)
+  - job_name: 'prometheus_libvirt_exporter'
+    file_sd_configs:
+      - files: ['{{ vmagent_base_dir }}/sd_configs/libvirt_nodes.json']
+    relabel_configs:
+      # Extract region from hypervisor label (e.g., fr2-peta-compute-1 -> fr2)
+      - source_labels: [hypervisor]
+        regex: '^([^-]+)-.*'
+        target_label: region
+        replacement: '$1'
+
+  # 3. Node Exporters (All nodes)
+  - job_name: 'prometheus_node_exporter'
+    file_sd_configs:
+      - files: ['{{ vmagent_base_dir }}/sd_configs/system_nodes.json']
+
+  # 4. vmagent Self Monitoring
+  - job_name: 'vmagent'
+    static_configs:
+      - targets: ['localhost:{{ vmagent_port }}']

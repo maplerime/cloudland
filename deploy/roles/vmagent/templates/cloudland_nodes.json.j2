@@ -1,0 +1,14 @@
+[
+  {
+    "targets": [
+{% for ip in vmagent_cland_ips %}
+      "{{ ip }}:9102"{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    ],
+    "labels": {
+      "node_type": "control",
+      "exporter_type": "cloudland"
+    }
+  }
+]

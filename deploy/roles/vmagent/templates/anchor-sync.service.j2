@@ -1,0 +1,13 @@
+[Unit]
+Description=Anchor threshold sync to VictoriaMetrics
+Documentation=https://github.com/cloudland/cloudland
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/vmagent/anchor_sync.sh
+StandardOutput=journal
+StandardError=journal
+# Allow up to 30 minutes for large deployments (many anchors with batching)
+TimeoutStartSec=1800

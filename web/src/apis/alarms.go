@@ -6,10 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -21,16 +23,129 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/gorm"
+	"github.com/spf13/viper"
 )
 
+// ============================================================================
+// Operator constants for alert rule comparison direction
+// Use these symbolic names in API requests instead of raw PromQL symbols
+// to avoid shell escaping issues with '>' and '<'.
+// ============================================================================
+const (
+	OperatorGT  = "gt"  // greater than         → >
+	OperatorLT  = "lt"  // less than            → <
+	OperatorGTE = "gte" // greater than or equal → >=
+	OperatorLTE = "lte" // less than or equal   → <=
+	OperatorEQ  = "eq"  // equal                → ==
+)
+
+// resolveOperator converts a symbolic operator name (gt/lt/gte/lte/eq) to the
+// actual PromQL comparison operator string used in templates and stored in DB.
+// Defaults to ">" when the input is empty or unrecognized.
+func resolveOperator(op string) string {
+	switch strings.ToLower(op) {
+	case OperatorGT, ">":
+		return ">"
+	case OperatorLT, "<":
+		return "<"
+	case OperatorGTE, ">=":
+		return ">="
+	case OperatorLTE, "<=":
+		return "<="
+	case OperatorEQ, "==":
+		return "=="
+	default:
+		return ">"
+	}
+}
+
 type AlarmAPI struct {
-	operator   *routes.AlarmOperator
-	alarmAdmin *routes.AlarmAdmin
+	operator         *routes.AlarmOperator
+	alarmAdmin       *routes.AlarmAdmin
+	n9eOperator      *routes.N9EOperator
+	n9eClient        *routes.N9EClient
+	anchorManager    *routes.AnchorManager
+	templateRenderer *routes.N9ETemplateRenderer
 }
 
 var alarmAPI = &AlarmAPI{
-	operator:   &routes.AlarmOperator{},
-	alarmAdmin: &routes.AlarmAdmin{},
+	operator:    &routes.AlarmOperator{},
+	alarmAdmin:  &routes.AlarmAdmin{},
+	n9eOperator: &routes.N9EOperator{},
+}
+
+// InitN9EComponents initializes N9E client and anchor manager
+func (a *AlarmAPI) InitN9EComponents() {
+	if a.n9eClient == nil {
+		n9eURL := viper.GetString("n9e.cluster_url")
+		n9eUsername := viper.GetString("n9e.api_username")
+		n9ePassword := viper.GetString("n9e.api_password")
+		n9eUserGroupID := viper.GetInt64("n9e.user_group_id")
+		templatePath := viper.GetString("n9e.template_path")
+		datasourceName := viper.GetString("n9e.n9e_data_source")
+		notifyRuleName := viper.GetString("n9e.n9e_alarm_notify_group_name")
+
+		if n9eURL != "" {
+			a.n9eClient = routes.NewN9EClient(n9eURL, n9eUsername, n9ePassword, n9eUserGroupID, templatePath, datasourceName, notifyRuleName)
+			log.Printf("N9E client initialized with URL: %s", n9eURL)
+		}
+	}
+
+	if a.anchorManager == nil {
+		vmAPIURL := viper.GetString("victoriametrics.api_url")
+		vmTimeout, _ := time.ParseDuration(viper.GetString("victoriametrics.api_timeout"))
+		if vmTimeout == 0 {
+			vmTimeout = 30 * time.Second
+		}
+
+		if vmAPIURL != "" {
+			a.anchorManager = routes.NewAnchorManager(vmAPIURL, vmTimeout)
+			log.Printf("Anchor manager initialized with VM API URL: %s", vmAPIURL)
+		}
+	}
+
+	if a.templateRenderer == nil {
+		templatePath := viper.GetString("n9e.template_path")
+		if templatePath == "" {
+			templatePath = "/opt/n9etemplate"
+		}
+		a.templateRenderer = routes.NewN9ETemplateRenderer(templatePath)
+		log.Printf("N9E template renderer initialized with path: %s", templatePath)
+	}
+}
+
+// getSeverityLevel converts CloudLand level string to N9E severity integer
+// Returns: 1=Critical, 2=Warning, 3=Info
+func getSeverityLevel(level string) int {
+	switch strings.ToLower(level) {
+	case "critical":
+		return 1
+	case "warning":
+		return 2
+	case "info":
+		return 3
+	default:
+		return 2 // Default to warning
+	}
+}
+
+// getWebhookURL returns the CloudLand webhook URL for N9E alerts
+func getWebhookURL() string {
+	// Get from config or use default
+	webhookURL := viper.GetString("n9e.webhook_url")
+	if webhookURL == "" {
+		// Default to CloudLand's alert processing endpoint
+		webhookURL = "http://cloudland:5443/api/v1/alerts/process"
+	}
+	return webhookURL
+}
+
+// isValidUUID validates if a string is in UUID format
+func isValidUUID(uuid string) bool {
+	// UUID regex: 8-4-4-4-12 hex characters
+	uuidRegex := `^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`
+	matched, _ := regexp.MatchString(uuidRegex, strings.ToLower(uuid))
+	return matched
 }
 
 // UpdateMatchedVMsJSON updates the matched_vms.json file, supporting one VM matching multiple rule groups
@@ -585,103 +700,166 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		LinkedVMs       []string         `json:"linkedvms"`
 		RegionID        string           `json:"region_id"`
 		Level           string           `json:"level"`
+		Operator        string           `json:"operator"` // gt/lt/gte/lte/eq (default: gt)
 		DurationMinutes int              `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	group := &model.RuleGroupV2{
-		RuleID:          req.RuleID,
-		Name:            req.Name,
-		Type:            routes.RuleTypeCPU,
-		Owner:           req.Owner,
-		Enabled:         true,
-		RegionID:        req.RegionID,
-		Level:           req.Level,
-		DurationMinutes: req.DurationMinutes,
-	}
-	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
+
+	// Validate RuleID is in UUID format (ensures uniqueness)
+	if req.RuleID == "" || !isValidUUID(req.RuleID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_id must be a valid UUID format"})
 		return
 	}
-	for _, rule := range req.Rules {
-		detail := &model.CPURuleDetail{
-			GroupUUID:    group.UUID,
-			Name:         rule.Name,
-			Limit:        rule.Limit,
-			Rule:         rule.Rule,
-			Duration:     rule.Duration,
-			Over:         rule.Over,
-			DownDuration: rule.DownDuration,
-			DownTo:       rule.DownTo,
-		}
-		if err := a.operator.CreateCPURuleDetail(c.Request.Context(), detail); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
-			return
-		}
-	}
-	if len(req.LinkedVMs) > 0 {
-		// Full overwrite of VMRuleLink
-		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
-		_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, "")
 
-		// Update matched_vms.json with VM information
-		_ = a.UpdateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-cpu")
-	}
-	// Validate: only one rule can be created at a time
+	// Validate: only one rule can be created at a time (BEFORE any database operations)
 	if len(req.Rules) != 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Only one rule can be created at a time."})
 		return
 	}
 
-	// Process only the first rule
-	rule := req.Rules[0]
-	// Convert gt/lt to >/< symbols for template
-	var ruleOperator string
-	switch rule.Rule {
-	case "gt":
-		ruleOperator = ">"
-	case "lt":
-		ruleOperator = "<"
-	default:
-		ruleOperator = ">"
-	}
-
-	ruleData := map[string]interface{}{
-		"owner":            req.Owner,
-		"rule_group":       group.UUID,
-		"name":             rule.Name,
-		"rule_operator":    ruleOperator,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-		"rule_id":          fmt.Sprintf("alarm-cpu-%s-%s", req.Owner, group.UUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        req.RegionID,
-		"level":            req.Level,
-		"over":             rule.Over,
-		"duration":         rule.Duration,
-		"down_to":          rule.DownTo,
-		"down_duration":    rule.DownDuration,
-	}
-
-	templateFile := "VM-cpu-rule.yml.j2"
-	outputFile := fmt.Sprintf("cpu-%s-%s.yml", req.Owner, group.UUID)
-	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		logger.Errorf("Failed to render cpu rule template: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render cpu rule template"})
+	// Step 1: Create N9E Business Group (or get existing one)
+	regionName := viper.GetString("console.host")
+	businessGroup, err := a.n9eOperator.GetBusinessGroupByName(c.Request.Context(), regionName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query business group: " + err.Error()})
 		return
 	}
 
-	routes.ReloadPrometheusViaHTTP()
+	// If business group doesn't exist, create it
+	if businessGroup == nil {
+		businessGroup = &model.N9EBusinessGroup{
+			Name:     regionName,
+			Owner:    req.Owner,
+			RegionID: req.RegionID,
+			Level:    req.Level,
+			Enabled:  true,
+		}
+		if err := a.n9eOperator.CreateBusinessGroup(c.Request.Context(), businessGroup); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create business group: " + err.Error()})
+			return
+		}
+	}
+
+	// Step 2: Create N9E CPU Rule
+	rule := req.Rules[0]
+	operator := resolveOperator(req.Operator)
+	cpuRule := &model.N9ECPURule{
+		RuleID:            req.RuleID,
+		BusinessGroupUUID: businessGroup.UUID,
+		Name:              rule.Name,
+		Owner:             req.Owner,
+		Duration:          rule.Duration,
+		DurationMinutes:   req.DurationMinutes,
+		Operator:          operator,
+		Enabled:           true,
+	}
+	if err := a.n9eOperator.CreateCPURule(c.Request.Context(), cpuRule); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create CPU rule: " + err.Error()})
+		return
+	}
+
+	// Step 3: Initialize N9E components and render PromQL template
+	a.InitN9EComponents()
+
+	// Render PromQL template
+	templateParams := map[string]interface{}{
+		"duration": cpuRule.Duration,
+		"operator": operator,
+	}
+	promql, templateErr := a.templateRenderer.RenderN9EPromQL("cpu", cpuRule.RuleID, templateParams)
+	if templateErr != nil {
+		log.Printf("Warning: Failed to render CPU PromQL template for rule %s: %v", cpuRule.RuleID, templateErr)
+	}
+
+	// Step 4: Create/get N9E business group and create alert rule (idempotent)
+	log.Printf("[DEBUG-CPURULE] Step 4: Starting N9E integration for rule %s", cpuRule.UUID)
+	if a.n9eClient != nil && promql != "" {
+		log.Printf("[DEBUG-CPURULE] Calling GetOrCreateBusinessGroup for region: %s", regionName)
+		n9eGroupID, bgErr := a.n9eClient.GetOrCreateBusinessGroup(c.Request.Context(), regionName)
+		if bgErr != nil {
+			log.Printf("[DEBUG-CPURULE] ERROR: Failed to get/create N9E business group for region %s: %v", regionName, bgErr)
+			log.Printf("Warning: Failed to get/create N9E business group for region %s: %v", regionName, bgErr)
+		} else {
+			log.Printf("[DEBUG-CPURULE] N9E Business Group ID: %d", n9eGroupID)
+			datasourceName := viper.GetString("n9e.n9e_data_source")
+			log.Printf("[DEBUG-CPURULE] Datasource name from config: %s", datasourceName)
+			datasourceID, dsErr := a.n9eClient.GetDataSourceByName(c.Request.Context(), datasourceName)
+			if dsErr != nil {
+				log.Printf("[DEBUG-CPURULE] ERROR: Failed to get N9E datasource %s: %v", datasourceName, dsErr)
+				log.Printf("Warning: Failed to get N9E datasource %s: %v", datasourceName, dsErr)
+			}
+			log.Printf("[DEBUG-CPURULE] Datasource ID: %d", datasourceID)
+			if n9eGroupID > 0 && datasourceID > 0 {
+				n9eRule := routes.N9EAlertRule{
+					GroupID:          n9eGroupID,
+					RuleName:         cpuRule.Name,
+					Severity:         getSeverityLevel(req.Level),
+					Disabled:         0,
+					DatasourceIDs:    []int64{datasourceID},
+					PromForDuration:  req.DurationMinutes * 60,
+					PromEvalInterval: 60,
+					NotifyRepeatStep: 60,
+					RuleConfig: routes.N9ERuleConfig{
+						Queries: []routes.N9EQuery{
+							{PromQL: promql, Severity: getSeverityLevel(req.Level)},
+						},
+					},
+				}
+				log.Printf("[DEBUG-CPURULE] Calling CreateAlertRule for rule name: %s, BG ID: %d", cpuRule.Name, n9eGroupID)
+				n9eAlertRuleID, ruleErr := a.n9eClient.CreateAlertRule(c.Request.Context(), n9eRule)
+				if ruleErr != nil {
+					log.Printf("[DEBUG-CPURULE] ERROR: CreateAlertRule failed: %v", ruleErr)
+					log.Printf("Warning: Failed to create N9E alert rule for CPU rule %s: %v", cpuRule.RuleID, ruleErr)
+				} else if n9eAlertRuleID > 0 {
+					log.Printf("[DEBUG-CPURULE] SUCCESS: N9E alert rule created with ID: %d", n9eAlertRuleID)
+					log.Printf("[DEBUG-CPURULE] Calling UpdateCPURuleN9EID to store alert rule ID %d for CPU rule %s", n9eAlertRuleID, cpuRule.RuleID)
+					if err := a.n9eOperator.UpdateCPURuleN9EID(c.Request.Context(), cpuRule.RuleID, n9eAlertRuleID); err != nil {
+						log.Printf("[DEBUG-CPURULE] ERROR: UpdateCPURuleN9EID failed: %v", err)
+						log.Printf("Warning: Failed to store N9E alert rule ID for CPU rule %s: %v", cpuRule.RuleID, err)
+					} else {
+						log.Printf("[DEBUG-CPURULE] SUCCESS: N9E alert rule ID %d stored in DB for rule %s", n9eAlertRuleID, cpuRule.RuleID)
+					}
+				} else {
+					log.Printf("[DEBUG-CPURULE] WARNING: CreateAlertRule returned 0 for alert rule ID")
+				}
+			} else {
+				log.Printf("[DEBUG-CPURULE] Skipping alert rule creation: n9eGroupID=%d, datasourceID=%d", n9eGroupID, datasourceID)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG-CPURULE] Skipping N9E integration: n9eClient=%v, promql_empty=%v", a.n9eClient == nil, promql == "")
+	}
+
+	// Step 5: Create VM rule links in database
+	// Note: anchor threshold metrics (vm_cpu_anchor) must be written via LinkVMsToRule,
+	// since region/domain info is required for correct label matching in PromQL join.
+	if len(req.LinkedVMs) > 0 {
+		for _, vmUUID := range req.LinkedVMs {
+			link := &model.N9EVMRuleLink{
+				RuleType:          "cpu",
+				RuleUUID:          cpuRule.RuleID,
+				BusinessGroupUUID: businessGroup.UUID,
+				VMUUID:            vmUUID,
+				Interface:         "",
+				Owner:             req.Owner,
+			}
+			if err := a.n9eOperator.CreateVMRuleLink(c.Request.Context(), link); err != nil {
+				log.Printf("Warning: Failed to create VM rule link: %v", err)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": group.UUID,
-			"rule_id":    group.RuleID,
-			"enabled":    true,
-			"linkedvms":  req.LinkedVMs,
-			"region_id":  req.RegionID,
+			"business_group_uuid": businessGroup.UUID,
+			"rule_id":             cpuRule.RuleID,
+			"enabled":             true,
+			"linkedvms":           req.LinkedVMs,
+			"region_id":           req.RegionID,
 		},
 	})
 }
@@ -695,6 +873,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		LinkedVMs       []string            `json:"linkedvms"`
 		RegionID        string              `json:"region_id"`
 		Level           string              `json:"level"`
+		Operator        string              `json:"operator"` // gt/lt/gte/lte/eq (default: gt)
 		DurationMinutes int                 `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -702,126 +881,138 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		return
 	}
 
-	// Validate: only one rule can be created at a time (BEFORE any database operations)
+	// Validate RuleID is in UUID format (ensures uniqueness)
+	if req.RuleID == "" || !isValidUUID(req.RuleID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_id must be a valid UUID format"})
+		return
+	}
+
+	// Validate: only one rule can be created at a time
 	if len(req.Rules) != 1 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Only one rule can be created at a time."})
 		return
 	}
 
-	// Validate: all linked VMs must exist in the database BEFORE creating any records
-	if len(req.LinkedVMs) > 0 {
-		var notFoundVMs []string
-		for _, vmUUID := range req.LinkedVMs {
-			_, err := routes.GetDomainByInstanceUUID(c.Request.Context(), vmUUID)
-			if err != nil {
-				notFoundVMs = append(notFoundVMs, vmUUID)
+	// Step 1: Create N9E Business Group (or get existing one)
+	regionName := viper.GetString("console.host")
+	businessGroup, err := a.n9eOperator.GetBusinessGroupByName(c.Request.Context(), regionName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query business group: " + err.Error()})
+		return
+	}
+
+	// If business group doesn't exist, create it
+	if businessGroup == nil {
+		businessGroup = &model.N9EBusinessGroup{
+			Name:     regionName,
+			Owner:    req.Owner,
+			RegionID: req.RegionID,
+			Level:    req.Level,
+			Enabled:  true,
+		}
+		if err := a.n9eOperator.CreateBusinessGroup(c.Request.Context(), businessGroup); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create business group: " + err.Error()})
+			return
+		}
+	}
+
+	// Step 2: Create N9E Memory Rule
+	rule := req.Rules[0]
+	memOperator := resolveOperator(req.Operator)
+	memoryRule := &model.N9EMemoryRule{
+		RuleID:            req.RuleID,
+		BusinessGroupUUID: businessGroup.UUID,
+		Name:              rule.Name,
+		Owner:             req.Owner,
+		Duration:          rule.Duration,
+		DurationMinutes:   req.DurationMinutes,
+		Operator:          memOperator,
+		Enabled:           true,
+	}
+	if err := a.n9eOperator.CreateMemoryRule(c.Request.Context(), memoryRule); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create memory rule: " + err.Error()})
+		return
+	}
+
+	// Step 3: Initialize N9E components and render PromQL template
+	a.InitN9EComponents()
+
+	// Render PromQL template
+	templateParams := map[string]interface{}{
+		"duration": memoryRule.Duration,
+		"operator": memOperator,
+	}
+	promql, templateErr := a.templateRenderer.RenderN9EPromQL("memory", memoryRule.RuleID, templateParams)
+	if templateErr != nil {
+		log.Printf("Warning: Failed to render memory PromQL template for rule %s: %v", memoryRule.RuleID, templateErr)
+	}
+
+	// Step 4: Create/get N9E business group and create alert rule (idempotent)
+	if a.n9eClient != nil && promql != "" {
+		n9eGroupID, bgErr := a.n9eClient.GetOrCreateBusinessGroup(c.Request.Context(), regionName)
+		if bgErr != nil {
+			log.Printf("Warning: Failed to get/create N9E business group for region %s: %v", regionName, bgErr)
+		} else {
+			datasourceName := viper.GetString("n9e.n9e_data_source")
+			datasourceID, dsErr := a.n9eClient.GetDataSourceByName(c.Request.Context(), datasourceName)
+			if dsErr != nil {
+				log.Printf("Warning: Failed to get N9E datasource %s: %v", datasourceName, dsErr)
+			}
+			if n9eGroupID > 0 && datasourceID > 0 {
+				n9eRule := routes.N9EAlertRule{
+					GroupID:          n9eGroupID,
+					RuleName:         memoryRule.Name,
+					Severity:         getSeverityLevel(req.Level),
+					Disabled:         0,
+					DatasourceIDs:    []int64{datasourceID},
+					PromForDuration:  req.DurationMinutes * 60,
+					PromEvalInterval: 60,
+					NotifyRepeatStep: 60,
+					RuleConfig: routes.N9ERuleConfig{
+						Queries: []routes.N9EQuery{
+							{PromQL: promql, Severity: getSeverityLevel(req.Level)},
+						},
+					},
+				}
+				n9eAlertRuleID, ruleErr := a.n9eClient.CreateAlertRule(c.Request.Context(), n9eRule)
+				if ruleErr != nil {
+					log.Printf("Warning: Failed to create N9E alert rule for memory rule %s: %v", memoryRule.RuleID, ruleErr)
+				} else if n9eAlertRuleID > 0 {
+					if err := a.n9eOperator.UpdateMemoryRuleN9EID(c.Request.Context(), memoryRule.RuleID, n9eAlertRuleID); err != nil {
+						log.Printf("Warning: Failed to store N9E alert rule ID for memory rule %s: %v", memoryRule.RuleID, err)
+					}
+				}
 			}
 		}
-		if len(notFoundVMs) > 0 {
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error":           "One or more VMs not found",
-				"not_found_vms":   notFoundVMs,
-				"total_not_found": len(notFoundVMs),
-			})
-			return
-		}
 	}
 
-	group := &model.RuleGroupV2{
-		RuleID:          req.RuleID,
-		Name:            req.Name,
-		Type:            routes.RuleTypeMemory,
-		Owner:           req.Owner,
-		Enabled:         true,
-		RegionID:        req.RegionID,
-		Level:           req.Level,
-		DurationMinutes: req.DurationMinutes,
-	}
-	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
-		return
-	}
-	for _, rule := range req.Rules {
-		detail := &model.MemoryRuleDetail{
-			GroupUUID:    group.UUID,
-			Name:         rule.Name,
-			Limit:        rule.Limit,
-			Rule:         rule.Rule,
-			Duration:     rule.Duration,
-			Over:         rule.Over,
-			DownDuration: rule.DownDuration,
-			DownTo:       rule.DownTo,
-		}
-		if err := a.operator.CreateMemoryRuleDetail(c.Request.Context(), detail); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
-			return
-		}
-	}
+	// Step 5: Create VM rule links in database
+	// Note: anchor threshold metrics (vm_mem_anchor) must be written via LinkVMsToRule,
+	// since region/domain info is required for correct label matching in PromQL join.
 	if len(req.LinkedVMs) > 0 {
-		// Full overwrite of VMRuleLink
-		if _, err := a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", ""); err != nil {
-			logger.Errorf("Failed to delete old VM links: %v", err)
-		}
-		if err := a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, ""); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to link VMs: " + err.Error()})
-			return
-		}
-
-		// Update matched_vms.json with VM information
-		if err := a.UpdateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-memory"); err != nil {
-			logger.Errorf("Failed to update matched_vms.json: %v", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update VM metadata: " + err.Error()})
-			return
+		for _, vmUUID := range req.LinkedVMs {
+			link := &model.N9EVMRuleLink{
+				RuleType:          "memory",
+				RuleUUID:          memoryRule.RuleID,
+				BusinessGroupUUID: businessGroup.UUID,
+				VMUUID:            vmUUID,
+				Interface:         "",
+				Owner:             req.Owner,
+			}
+			if err := a.n9eOperator.CreateVMRuleLink(c.Request.Context(), link); err != nil {
+				log.Printf("Warning: Failed to create VM rule link: %v", err)
+			}
 		}
 	}
 
-	// Process only the first rule
-	rule := req.Rules[0]
-	// Convert gt/lt to >/< symbols for template
-	var ruleOperator string
-	switch rule.Rule {
-	case "gt":
-		ruleOperator = ">"
-	case "lt":
-		ruleOperator = "<"
-	default:
-		ruleOperator = ">"
-	}
-
-	ruleData := map[string]interface{}{
-		"owner":            req.Owner,
-		"rule_group":       group.UUID,
-		"name":             rule.Name,
-		"rule_operator":    ruleOperator,
-		"limit_value":      rule.Limit,
-		"duration_minutes": rule.Duration,
-		"rule_id":          fmt.Sprintf("alarm-memory-%s-%s", req.Owner, group.UUID),
-		"global_rule_id":   group.RuleID,
-		"region_id":        req.RegionID,
-		"level":            req.Level,
-		"over":             rule.Over,
-		"duration":         rule.Duration,
-		"down_to":          rule.DownTo,
-		"down_duration":    rule.DownDuration,
-	}
-
-	templateFile := "VM-memory-rule.yml.j2"
-	outputFile := fmt.Sprintf("memory-%s-%s.yml", req.Owner, group.UUID)
-	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		logger.Errorf("Failed to render memory rule template: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render memory rule template"})
-		return
-	}
-
-	routes.ReloadPrometheusViaHTTP()
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": group.UUID,
-			"enabled":    true,
-			"linkedvms":  req.LinkedVMs,
-			"region_id":  req.RegionID,
-			"rule_id":    group.RuleID,
+			"business_group_uuid": businessGroup.UUID,
+			"rule_id":             memoryRule.RuleID,
+			"enabled":             true,
+			"linkedvms":           req.LinkedVMs,
+			"region_id":           req.RegionID,
 		},
 	})
 }
@@ -829,8 +1020,9 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	groupUUID := c.Param("uuid")
-	ruleID := c.Query("rule_id")
+	uuid := c.Param("uuid")
+	owner := c.Query("owner")
+
 	if page < 1 {
 		page = 1
 	}
@@ -838,60 +1030,110 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 		pageSize = 20
 	}
 
-	queryParams := routes.ListRuleGroupsParams{
-		RuleType: routes.RuleTypeCPU,
-		Page:     page,
-		PageSize: pageSize,
-	}
-
-	if groupUUID != "" {
-		queryParams.GroupUUID = groupUUID
-		queryParams.PageSize = 1
-	}
-	if ruleID != "" {
-		queryParams.RuleID = ruleID
-		queryParams.PageSize = 1
-	}
-
-	groups, total, err := a.operator.ListRuleGroups(c.Request.Context(), queryParams)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query rules group failed: " + err.Error()})
-		return
-	}
-	responseData := make([]gin.H, 0, len(groups))
-	for _, group := range groups {
-		details, err := a.operator.GetCPURuleDetails(c.Request.Context(), group.UUID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "function get cpu rule detailed failed: " + err.Error()})
+	// If uuid is provided, query single rule
+	if uuid != "" {
+		cpuRule, err := a.n9eOperator.GetCPURuleByUUID(c.Request.Context(), uuid)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "CPU rule not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query CPU rule: " + err.Error()})
 			return
 		}
+
+		// Get business group
+		businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), cpuRule.BusinessGroupUUID)
+		if err != nil {
+			log.Printf("Warning: Failed to get business group for CPU rule %s: %v", uuid, err)
+		}
+
+		// Get linked VMs
 		linkedVMs := make([]string, 0)
-		vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), group.UUID)
+		vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), cpuRule.RuleID)
 		if err == nil {
 			for _, link := range vmLinks {
-				linkedVMs = append(linkedVMs, link.VMUUID)
+				if link.RuleType == "cpu" {
+					linkedVMs = append(linkedVMs, link.VMUUID)
+				}
 			}
 		}
 
-		ruleDetails := make([]gin.H, 0, len(details))
-		for _, d := range details {
-			ruleDetails = append(ruleDetails, gin.H{
-				"name":     d.Name,
-				"rule":     d.Rule,
-				"limit":    d.Limit,
-				"duration": d.Duration,
-			})
+		responseData := gin.H{
+			"rule_id":           cpuRule.RuleID,
+			"n9e_alert_rule_id": cpuRule.N9EAlertRuleID,
+			"name":              cpuRule.Name,
+			"owner":             cpuRule.Owner,
+			"duration":          cpuRule.Duration,
+			"linkedvms":         linkedVMs,
+			"enabled":           cpuRule.Enabled,
+			"region_id":         businessGroup.RegionID,
+			"level":             businessGroup.Level,
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"data": []gin.H{responseData},
+			"meta": gin.H{
+				"total":        1,
+				"current_page": 1,
+				"per_page":     1,
+				"total_pages":  1,
+			},
+		})
+		return
+	}
+
+	// List rules with pagination
+	queryParams := routes.ListN9ERulesParams{
+		Page:     page,
+		PageSize: pageSize,
+		Owner:    owner,
+	}
+	queryParams.SetDefaults()
+
+	rules, total, err := a.n9eOperator.ListCPURules(c.Request.Context(), queryParams)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query CPU rules: " + err.Error()})
+		return
+	}
+
+	responseData := make([]gin.H, 0, len(rules))
+	for _, rule := range rules {
+		// Get business group
+		businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), rule.BusinessGroupUUID)
+		if err != nil {
+			log.Printf("Warning: Failed to get business group for CPU rule %s: %v", rule.UUID, err)
+		}
+
+		var regionID, level, businessGroupName string
+		if businessGroup != nil {
+			regionID = businessGroup.RegionID
+			level = businessGroup.Level
+			businessGroupName = businessGroup.Name
+		}
+
+		// Get linked VMs
+		linkedVMs := make([]string, 0)
+		vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), rule.RuleID)
+		if err == nil {
+			for _, link := range vmLinks {
+				if link.RuleType == "cpu" {
+					linkedVMs = append(linkedVMs, link.VMUUID)
+				}
+			}
 		}
 
 		responseData = append(responseData, gin.H{
-			"rule_id":   group.RuleID,
-			"name":      group.Name,
-			"owner":     group.Owner,
-			"rules":     ruleDetails,
-			"linkedvms": linkedVMs,
-			"region_id": group.RegionID,
-			"level":     group.Level,
-			"enable":    group.Enabled,
+			"rule_id":             rule.RuleID,
+			"n9e_alert_rule_id":   rule.N9EAlertRuleID,
+			"name":                rule.Name,
+			"owner":               rule.Owner,
+			"duration":            rule.Duration,
+			"linkedvms":           linkedVMs,
+			"enabled":             rule.Enabled,
+			"business_group_uuid": rule.BusinessGroupUUID,
+			"business_group_name": businessGroupName,
+			"region_id":           regionID,
+			"level":               level,
 		})
 	}
 
@@ -909,8 +1151,9 @@ func (a *AlarmAPI) GetCPURules(c *gin.Context) {
 func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	groupUUID := c.Param("uuid")
-	ruleID := c.Query("rule_id")
+	uuid := c.Param("uuid")
+	owner := c.Query("owner")
+
 	if page < 1 {
 		page = 1
 	}
@@ -918,57 +1161,110 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 		pageSize = 20
 	}
 
-	queryParams := routes.ListRuleGroupsParams{
-		RuleType: routes.RuleTypeMemory,
-		Page:     page,
-		PageSize: pageSize,
-		RuleID:   ruleID,
-	}
-
-	if groupUUID != "" {
-		queryParams.GroupUUID = groupUUID
-		queryParams.PageSize = 1
-	}
-
-	groups, total, err := a.operator.ListRuleGroups(c.Request.Context(), queryParams)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query rules group failed: " + err.Error()})
-		return
-	}
-	responseData := make([]gin.H, 0, len(groups))
-	for _, group := range groups {
-		details, err := a.operator.GetMemoryRuleDetails(c.Request.Context(), group.UUID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "function get memory rule detailed failed: " + err.Error()})
+	// If uuid is provided, query single rule
+	if uuid != "" {
+		memoryRule, err := a.n9eOperator.GetMemoryRuleByUUID(c.Request.Context(), uuid)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Memory rule not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query memory rule: " + err.Error()})
 			return
 		}
+
+		// Get business group
+		businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), memoryRule.BusinessGroupUUID)
+		if err != nil {
+			log.Printf("Warning: Failed to get business group for memory rule %s: %v", uuid, err)
+		}
+
+		// Get linked VMs
 		linkedVMs := make([]string, 0)
-		vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), group.UUID)
+		vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), memoryRule.RuleID)
 		if err == nil {
 			for _, link := range vmLinks {
-				linkedVMs = append(linkedVMs, link.VMUUID)
+				if link.RuleType == "memory" {
+					linkedVMs = append(linkedVMs, link.VMUUID)
+				}
 			}
 		}
 
-		ruleDetails := make([]gin.H, 0, len(details))
-		for _, d := range details {
-			ruleDetails = append(ruleDetails, gin.H{
-				"name":     d.Name,
-				"rule":     d.Rule,
-				"limit":    d.Limit,
-				"duration": d.Duration,
-			})
+		responseData := gin.H{
+			"rule_id":           memoryRule.RuleID,
+			"n9e_alert_rule_id": memoryRule.N9EAlertRuleID,
+			"name":              memoryRule.Name,
+			"owner":             memoryRule.Owner,
+			"duration":          memoryRule.Duration,
+			"linkedvms":         linkedVMs,
+			"enabled":           memoryRule.Enabled,
+			"region_id":         businessGroup.RegionID,
+			"level":             businessGroup.Level,
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"data": []gin.H{responseData},
+			"meta": gin.H{
+				"total":        1,
+				"current_page": 1,
+				"per_page":     1,
+				"total_pages":  1,
+			},
+		})
+		return
+	}
+
+	// List rules with pagination
+	queryParams := routes.ListN9ERulesParams{
+		Page:     page,
+		PageSize: pageSize,
+		Owner:    owner,
+	}
+	queryParams.SetDefaults()
+
+	rules, total, err := a.n9eOperator.ListMemoryRules(c.Request.Context(), queryParams)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query memory rules: " + err.Error()})
+		return
+	}
+
+	responseData := make([]gin.H, 0, len(rules))
+	for _, rule := range rules {
+		// Get business group
+		businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), rule.BusinessGroupUUID)
+		if err != nil {
+			log.Printf("Warning: Failed to get business group for memory rule %s: %v", rule.UUID, err)
+		}
+
+		var regionID, level, businessGroupName string
+		if businessGroup != nil {
+			regionID = businessGroup.RegionID
+			level = businessGroup.Level
+			businessGroupName = businessGroup.Name
+		}
+
+		// Get linked VMs
+		linkedVMs := make([]string, 0)
+		vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), rule.RuleID)
+		if err == nil {
+			for _, link := range vmLinks {
+				if link.RuleType == "memory" {
+					linkedVMs = append(linkedVMs, link.VMUUID)
+				}
+			}
 		}
 
 		responseData = append(responseData, gin.H{
-			"rule_id":   group.RuleID,
-			"name":      group.Name,
-			"owner":     group.Owner,
-			"rules":     ruleDetails,
-			"linkedvms": linkedVMs,
-			"region_id": group.RegionID,
-			"level":     group.Level,
-			"enable":    group.Enabled,
+			"rule_id":             rule.RuleID,
+			"n9e_alert_rule_id":   rule.N9EAlertRuleID,
+			"name":                rule.Name,
+			"owner":               rule.Owner,
+			"duration":            rule.Duration,
+			"linkedvms":           linkedVMs,
+			"enabled":             rule.Enabled,
+			"business_group_uuid": rule.BusinessGroupUUID,
+			"business_group_name": businessGroupName,
+			"region_id":           regionID,
+			"level":               level,
 		})
 	}
 
@@ -984,94 +1280,116 @@ func (a *AlarmAPI) GetMemoryRules(c *gin.Context) {
 }
 
 func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
-	identifier := c.Param("uuid")
-	if identifier == "" {
+	uuid := c.Param("uuid")
+	log.Printf("[DEBUG-CPURULE] ===== DeleteCPURule START for UUID: %s =====", uuid)
+	if uuid == "" {
+		log.Printf("[DEBUG-CPURULE] ERROR: Empty UUID")
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "empty identifier error.",
-			"code":  "INVALID_IDENTIFIER",
+			"error": "empty uuid error.",
+			"code":  "INVALID_UUID",
 		})
 		return
 	}
 
-	// Adaptive query: try RuleID first, fallback to UUID
-	var group *model.RuleGroupV2
-	params := routes.ListRuleGroupsParams{
-		RuleID:   identifier,
-		RuleType: routes.RuleTypeCPU,
-		PageSize: 1,
+	// Step 1: Get CPU rule
+	log.Printf("[DEBUG-CPURULE] Step 1: Getting CPU rule from DB")
+	cpuRule, err := a.n9eOperator.GetCPURuleByUUID(c.Request.Context(), uuid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		log.Printf("[DEBUG-CPURULE] ERROR: Rule not found in DB")
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Rule not found: The specified rule does not exist",
+			"code":  "NOT_FOUND",
+			"uuid":  uuid,
+		})
+		return
+	} else if err != nil {
+		log.Printf("[DEBUG-CPURULE] ERROR: DB query failed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve rule information",
+			"code":  "INTERNAL_ERROR",
+			"uuid":  uuid,
+		})
+		return
 	}
-	groups, _, err := a.operator.ListRuleGroups(c.Request.Context(), params)
-	if err == nil && len(groups) > 0 {
-		// RuleID query succeeded
-		group = &groups[0]
+	log.Printf("[DEBUG-CPURULE] Found CPU rule: name=%s, n9e_alert_rule_id=%d, bg_uuid=%s", cpuRule.Name, cpuRule.N9EAlertRuleID, cpuRule.BusinessGroupUUID)
+
+	// Step 2: Get business group
+	log.Printf("[DEBUG-CPURULE] Step 2: Getting business group %s", cpuRule.BusinessGroupUUID)
+	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), cpuRule.BusinessGroupUUID)
+	if err != nil {
+		log.Printf("[DEBUG-CPURULE] WARNING: Failed to get business group: %v", err)
+		log.Printf("Warning: Failed to get business group %s: %v", cpuRule.BusinessGroupUUID, err)
 	} else {
-		// RuleID query failed, try UUID query
-		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), identifier)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":      "Rule not found: The specified rule does not exist",
-				"code":       "NOT_FOUND",
-				"identifier": identifier,
-			})
-			return
-		} else if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":      "Failed to retrieve rule information",
-				"code":       "INTERNAL_ERROR",
-				"identifier": identifier,
-			})
-			return
-		}
+		log.Printf("[DEBUG-CPURULE] Found business group: name=%s, n9e_bg_id=%d", businessGroup.Name, businessGroup.N9EBusinessGroupID)
 	}
 
-	// Use actual GroupUUID for subsequent operations
-	groupUUID := group.UUID
+	// Step 3: Initialize components
+	a.InitN9EComponents()
 
-	// Verify rule type is correct
-	if group.Type != routes.RuleTypeCPU {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Rule type mismatch: Expected CPU rule but found " + group.Type,
-			"code":       "INVALID_RULE_TYPE",
-			"identifier": identifier,
-			"rule_id":    group.RuleID,
-		})
-		return
-	}
-	owner := group.Owner
-
-	// Delete all associated VMRuleLink
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+	// Step 4: Get linked VMs and clear anchor thresholds
+	vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid)
 	linkedVMs := []string{}
-	if err == nil {
+	instanceUUIDs := []string{}
+
+	if err == nil && len(vmLinks) > 0 {
 		for _, link := range vmLinks {
+			if link.RuleType != "cpu" {
+				continue
+			}
 			linkedVMs = append(linkedVMs, link.VMUUID)
+			instanceUUIDs = append(instanceUUIDs, link.VMUUID)
 		}
-		_, _ = a.operator.DeleteVMLink(c.Request.Context(), groupUUID, "", "")
 	}
 
-	// Remove related entries from matched_vms.json
-	_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-cpu")
-
-	// Delete symlink and rule file (paths consistent with creation)
-	fileName := fmt.Sprintf("cpu-%s-%s.yml", owner, groupUUID)
-	linkPath := filepath.Join(routes.RulesEnabled, fileName)
-	rulePath := filepath.Join(routes.RulesGeneral, fileName) // All rules now stored in general_rules
-
-	// Track deleted file paths
-	deletedFiles := []string{}
-
-	// Delete symlink
-	if err := routes.RemoveFile(linkPath); err == nil {
-		deletedFiles = append(deletedFiles, linkPath)
+	// Step 5: Clear anchor thresholds in VictoriaMetrics
+	// Note: Region/Domain not stored in DB link; partial clear uses just ruleUUID+instanceID.
+	// Remaining anchor data expires via last_over_time retention.
+	if len(instanceUUIDs) > 0 && a.anchorManager != nil {
+		anchorInstances := make([]routes.AnchorInstance, len(instanceUUIDs))
+		for i, vmUUID := range instanceUUIDs {
+			anchorInstances[i] = routes.AnchorInstance{
+				RuleUUID:   uuid,
+				InstanceID: vmUUID,
+				Owner:      cpuRule.Owner,
+			}
+		}
+		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), "cpu", anchorInstances); err != nil {
+			log.Printf("Warning: Failed to clear CPU anchor thresholds: %v", err)
+		}
 	}
 
-	// Delete rule file
-	if err := routes.RemoveFile(rulePath); err == nil {
-		deletedFiles = append(deletedFiles, rulePath)
+	// Step 6: Delete VM links from database
+	for _, link := range vmLinks {
+		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), uuid, link.VMUUID, link.Interface); err != nil {
+			log.Printf("Warning: Failed to delete VM rule link: %v", err)
+		}
 	}
 
-	// Delete rule-related table data
-	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeCPU); err != nil {
+	// Step 6.5: Delete N9E alert rule if exists
+	log.Printf("[DEBUG-CPURULE] Step 6.5: Checking N9E alert rule deletion for rule %s", uuid)
+	log.Printf("[DEBUG-CPURULE] cpuRule.N9EAlertRuleID=%d, n9eClient=%v, businessGroup=%v", cpuRule.N9EAlertRuleID, a.n9eClient != nil, businessGroup != nil)
+	if cpuRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
+		log.Printf("[DEBUG-CPURULE] Attempting to delete N9E alert rule ID %d from BG '%s'", cpuRule.N9EAlertRuleID, businessGroup.Name)
+		n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
+		if bgErr != nil {
+			log.Printf("[DEBUG-CPURULE] ERROR: Failed to find N9E business group '%s': %v", businessGroup.Name, bgErr)
+			log.Printf("Warning: Failed to find N9E business group '%s' for alert rule deletion: %v", businessGroup.Name, bgErr)
+		} else {
+			log.Printf("[DEBUG-CPURULE] Found N9E BG ID: %d, deleting alert rule %d", n9eBGID, cpuRule.N9EAlertRuleID)
+			if delErr := a.n9eClient.DeleteAlertRule(c.Request.Context(), n9eBGID, cpuRule.N9EAlertRuleID); delErr != nil {
+				log.Printf("[DEBUG-CPURULE] ERROR: DeleteAlertRule failed: %v", delErr)
+				log.Printf("Warning: Failed to delete N9E alert rule ID %d: %v", cpuRule.N9EAlertRuleID, delErr)
+			} else {
+				log.Printf("[DEBUG-CPURULE] SUCCESS: Deleted N9E alert rule ID %d from BG %d", cpuRule.N9EAlertRuleID, n9eBGID)
+				log.Printf("[N9E] Deleted alert rule ID %d from BG %d", cpuRule.N9EAlertRuleID, n9eBGID)
+			}
+		}
+	} else {
+		log.Printf("[DEBUG-CPURULE] SKIP: N9E alert rule deletion skipped (conditions not met)")
+	}
+
+	// Step 7: Delete CPU rule from local database
+	if err := a.n9eOperator.DeleteCPURule(c.Request.Context(), uuid); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "DB operation failed: " + err.Error(),
 			"code":  "DB_DELETE_FAILED",
@@ -1079,120 +1397,149 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		return
 	}
 
-	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		logger.Errorf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to reload Prometheus",
-			"code":  "PROMETHEUS_RELOAD_FAILED",
-		})
-		return
+	// Step 8: Check if business group should be auto-deleted
+	log.Printf("[DEBUG-CPURULE] Step 8: Checking if BG should be auto-deleted")
+	if businessGroup != nil {
+		count, err := a.n9eOperator.CountRulesByBusinessGroupUUID(c.Request.Context(), businessGroup.UUID)
+		if err != nil {
+			log.Printf("[DEBUG-CPURULE] ERROR: Failed to count rules: %v", err)
+			log.Printf("Warning: Failed to count rules for business group %s: %v", businessGroup.UUID, err)
+		} else {
+			log.Printf("[DEBUG-CPURULE] Remaining rules in BG %s: %d", businessGroup.UUID, count)
+			if count == 0 {
+				// No more rules, delete business group from local DB
+				log.Printf("[DEBUG-CPURULE] Auto-deleting BG (no remaining rules)")
+				log.Printf("Auto-deleting business group %s (no remaining rules)", businessGroup.UUID)
+				if err := a.n9eOperator.DeleteBusinessGroup(c.Request.Context(), businessGroup.UUID); err != nil {
+					log.Printf("[DEBUG-CPURULE] ERROR: Failed to delete BG from local DB: %v", err)
+					log.Printf("Warning: Failed to delete business group from DB %s: %v", businessGroup.UUID, err)
+				} else {
+					log.Printf("[DEBUG-CPURULE] SUCCESS: Deleted BG from local DB")
+				}
+				// Also delete from N9E API side
+				if a.n9eClient != nil {
+					log.Printf("[DEBUG-CPURULE] Deleting BG '%s' from N9E", businessGroup.Name)
+					n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
+					if bgErr != nil {
+						log.Printf("[DEBUG-CPURULE] ERROR: Failed to find N9E BG: %v", bgErr)
+						log.Printf("Warning: Failed to find N9E business group '%s': %v", businessGroup.Name, bgErr)
+					} else {
+						log.Printf("[DEBUG-CPURULE] Found N9E BG ID: %d, deleting...", n9eBGID)
+						if delErr := a.n9eClient.DeleteBusinessGroupByID(c.Request.Context(), n9eBGID); delErr != nil {
+							log.Printf("[DEBUG-CPURULE] ERROR: Failed to delete N9E BG: %v", delErr)
+							log.Printf("Warning: Failed to delete N9E business group ID %d: %v", n9eBGID, delErr)
+						} else {
+							log.Printf("[DEBUG-CPURULE] SUCCESS: Deleted N9E BG ID %d", n9eBGID)
+						}
+					}
+				}
+			}
+		}
 	}
 
+	log.Printf("[DEBUG-CPURULE] ===== DeleteCPURule SUCCESS for UUID: %s =====", uuid)
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid":    group.UUID,
-			"rule_id":       group.RuleID,
-			"deleted_files": deletedFiles,
-			"linked_vms":    linkedVMs,
+			"rule_id":     uuid,
+			"linked_vms":  linkedVMs,
+			"unbound_vms": len(instanceUUIDs),
 		},
 	})
 }
 
 func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
-	identifier := c.Param("uuid") // Can be RuleID or UUID
-	if identifier == "" {
+	uuid := c.Param("uuid")
+	if uuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "empty identifier error.",
-			"code":  "INVALID_IDENTIFIER",
+			"error": "empty uuid error.",
+			"code":  "INVALID_UUID",
 		})
 		return
 	}
 
-	// Adaptive query: try RuleID first, fallback to UUID
-	var group *model.RuleGroupV2
-	params := routes.ListRuleGroupsParams{
-		RuleID:   identifier,
-		RuleType: routes.RuleTypeMemory,
-		PageSize: 1,
-	}
-	groups, _, err := a.operator.ListRuleGroups(c.Request.Context(), params)
-	if err == nil && len(groups) > 0 {
-		// RuleID query succeeded
-		group = &groups[0]
-	} else {
-		// RuleID query failed, try UUID query
-		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), identifier)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":      "Rule not found: The specified rule does not exist",
-				"code":       "NOT_FOUND",
-				"identifier": identifier,
-			})
-			return
-		} else if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":      "Failed to retrieve rule information",
-				"code":       "INTERNAL_ERROR",
-				"identifier": identifier,
-			})
-			return
-		}
-	}
-
-	// Use actual GroupUUID for subsequent operations
-	groupUUID := group.UUID
-
-	if group.Type != routes.RuleTypeMemory {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Rule type mismatch: Expected Memory rule but found " + group.Type,
-			"code":       "INVALID_RULE_TYPE",
-			"identifier": identifier,
-			"rule_id":    group.RuleID,
+	// Step 1: Get memory rule
+	memoryRule, err := a.n9eOperator.GetMemoryRuleByUUID(c.Request.Context(), uuid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Rule not found: The specified rule does not exist",
+			"code":  "NOT_FOUND",
+			"uuid":  uuid,
+		})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve rule information",
+			"code":  "INTERNAL_ERROR",
+			"uuid":  uuid,
 		})
 		return
 	}
 
-	// Query linked VMs before deletion
-	linkedVMs := make([]string, 0)
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	if err == nil {
+	// Step 2: Get business group
+	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), memoryRule.BusinessGroupUUID)
+	if err != nil {
+		log.Printf("Warning: Failed to get business group %s: %v", memoryRule.BusinessGroupUUID, err)
+	}
+
+	// Step 3: Initialize components
+	a.InitN9EComponents()
+
+	// Step 4: Get linked VMs and clear anchor thresholds
+	vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid)
+	linkedVMs := []string{}
+	instanceUUIDs := []string{}
+
+	if err == nil && len(vmLinks) > 0 {
 		for _, link := range vmLinks {
+			if link.RuleType != "memory" {
+				continue
+			}
 			linkedVMs = append(linkedVMs, link.VMUUID)
+			instanceUUIDs = append(instanceUUIDs, link.VMUUID)
 		}
 	}
 
-	// Remove from matched_vms.json
-	if len(linkedVMs) > 0 {
-		_ = a.UpdateMatchedVMsJSON(c.Request.Context(), linkedVMs, groupUUID, "remove", "alarm-memory")
+	// Step 5: Clear anchor thresholds in VictoriaMetrics
+	// Note: Region/Domain not stored in DB link; partial clear uses just ruleUUID+instanceID.
+	// Remaining anchor data expires via last_over_time retention.
+	if len(instanceUUIDs) > 0 && a.anchorManager != nil {
+		anchorInstances := make([]routes.AnchorInstance, len(instanceUUIDs))
+		for i, vmUUID := range instanceUUIDs {
+			anchorInstances[i] = routes.AnchorInstance{
+				RuleUUID:   uuid,
+				InstanceID: vmUUID,
+				Owner:      memoryRule.Owner,
+			}
+		}
+		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), "mem", anchorInstances); err != nil {
+			log.Printf("Warning: Failed to clear memory anchor thresholds: %v", err)
+		}
 	}
 
-	owner := group.Owner
-	deletedFiles := make([]string, 0)
-
-	// Generate file paths
-	fileName := fmt.Sprintf("memory-%s-%s.yml", owner, groupUUID)
-
-	// Delete symlink in rules_enabled directory
-	linkPath := filepath.Join(routes.RulesEnabled, fileName)
-	if err := routes.RemoveFile(linkPath); err == nil {
-		deletedFiles = append(deletedFiles, linkPath)
-		logger.Infof("[MEMORY-DELETE-INFO] Deleted symlink: %s", linkPath)
-	} else {
-		logger.Errorf("[MEMORY-DELETE-WARNING] Failed to delete symlink: %s, error: %v", linkPath, err)
+	// Step 6: Delete VM links from database
+	for _, link := range vmLinks {
+		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), uuid, link.VMUUID, link.Interface); err != nil {
+			log.Printf("Warning: Failed to delete VM rule link: %v", err)
+		}
 	}
 
-	// Delete actual rule file in rules_general directory
-	rulePath := filepath.Join(routes.RulesGeneral, fileName)
-	if err := routes.RemoveFile(rulePath); err == nil {
-		deletedFiles = append(deletedFiles, rulePath)
-		logger.Infof("[MEMORY-DELETE-INFO] Deleted rule file: %s", rulePath)
-	} else {
-		logger.Errorf("[MEMORY-DELETE-WARNING] Failed to delete rule file: %s, error: %v", rulePath, err)
+	// Step 6.5: Delete N9E alert rule if exists
+	if memoryRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
+		n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
+		if bgErr != nil {
+			log.Printf("Warning: Failed to find N9E business group '%s' for alert rule deletion: %v", businessGroup.Name, bgErr)
+		} else {
+			if delErr := a.n9eClient.DeleteAlertRule(c.Request.Context(), n9eBGID, memoryRule.N9EAlertRuleID); delErr != nil {
+				log.Printf("Warning: Failed to delete N9E alert rule ID %d: %v", memoryRule.N9EAlertRuleID, delErr)
+			} else {
+				log.Printf("[N9E] Deleted alert rule ID %d from BG %d", memoryRule.N9EAlertRuleID, n9eBGID)
+			}
+		}
 	}
 
-	// Delete rule-related table data
-	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeMemory); err != nil {
+	// Step 7: Delete memory rule from local database
+	if err := a.n9eOperator.DeleteMemoryRule(c.Request.Context(), uuid); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "DB operation failed: " + err.Error(),
 			"code":  "DB_DELETE_FAILED",
@@ -1200,22 +1547,37 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 		return
 	}
 
-	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		logger.Errorf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to reload Prometheus",
-			"code":  "PROMETHEUS_RELOAD_FAILED",
-		})
-		return
+	// Step 8: Check if business group should be auto-deleted
+	if businessGroup != nil {
+		count, err := a.n9eOperator.CountRulesByBusinessGroupUUID(c.Request.Context(), businessGroup.UUID)
+		if err != nil {
+			log.Printf("Warning: Failed to count rules for business group %s: %v", businessGroup.UUID, err)
+		} else if count == 0 {
+			// No more rules, delete business group from local DB
+			log.Printf("Auto-deleting business group %s (no remaining rules)", businessGroup.UUID)
+			if err := a.n9eOperator.DeleteBusinessGroup(c.Request.Context(), businessGroup.UUID); err != nil {
+				log.Printf("Warning: Failed to delete business group from DB %s: %v", businessGroup.UUID, err)
+			}
+			// Also delete from N9E API side
+			if a.n9eClient != nil {
+				n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
+				if bgErr != nil {
+					log.Printf("Warning: Failed to find N9E business group '%s': %v", businessGroup.Name, bgErr)
+				} else {
+					if delErr := a.n9eClient.DeleteBusinessGroupByID(c.Request.Context(), n9eBGID); delErr != nil {
+						log.Printf("Warning: Failed to delete N9E business group ID %d: %v", n9eBGID, delErr)
+					}
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid":    group.UUID,
-			"rule_id":       group.RuleID,
-			"deleted_files": deletedFiles,
-			"linked_vms":    linkedVMs,
+			"rule_id":     uuid,
+			"linked_vms":  linkedVMs,
+			"unbound_vms": len(instanceUUIDs),
 		},
 	})
 }
@@ -1455,65 +1817,6 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	})
 }
 
-// GetActiveRules retrieves active rules from Prometheus
-func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
-	// Build Prometheus API URL from config
-	apiURL := fmt.Sprintf("http://%s:%d/api/v1/rules", routes.GetPrometheusIP(), routes.GetPrometheusPort())
-
-	// Create HTTP client with timeout
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := http.NewRequest("GET", apiURL, nil)
-	if err != nil {
-		logger.Errorf("Create request failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create API request"})
-		return
-	}
-
-	// Execute request
-	resp, err := client.Do(req)
-	if err != nil {
-		logger.Errorf("API request failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to Prometheus"})
-		return
-	}
-	defer resp.Body.Close()
-
-	// Validate response status
-	if resp.StatusCode != http.StatusOK {
-		logger.Errorf("Unexpected status code: %d", resp.StatusCode)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prometheus API returned non-200 status"})
-		return
-	}
-
-	// Parse JSON response
-	var result map[string]interface{}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		logger.Errorf("JSON decode error: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse response data"})
-		return
-	}
-
-	// Extract rule groups
-	activeRules := make([]gin.H, 0)
-	if data, ok := result["data"].(map[string]interface{}); ok {
-		if groups, ok := data["groups"].([]interface{}); ok {
-			for _, group := range groups {
-				if gMap, ok := group.(map[string]interface{}); ok {
-					activeRules = append(activeRules, gin.H{
-						"name":  gMap["name"],
-						"rules": gMap["rules"],
-					})
-				}
-			}
-		}
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"status": "success",
-		"data":   activeRules,
-	})
-}
-
 func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 	var req struct {
 		Name     string `json:"name" binding:"required"`
@@ -1527,112 +1830,170 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 			Name      string `json:"name"`
 			Limit     int    `json:"limit" binding:"required,min=1,max=100"`
 			Duration  int    `json:"duration" binding:"required,min=1"`
-		} `json:"rules" binding:"required,min=1"`
+			Operator  string `json:"operator"` // gt/lt/gte/lte/eq (default: gt)
+		} `json:"rules" binding:"required,min=1,max=2"`
 		LinkedVMs []struct {
 			InstanceID   string `json:"instance_id" binding:"required"`
 			TargetDevice string `json:"target_device" binding:"required"`
 		} `json:"linkedvms"`
+		DurationMinutes int `json:"duration_minutes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	group := &model.RuleGroupV2{
-		RuleID:   req.RuleID,
-		Name:     req.Name,
-		Type:     routes.RuleTypeBW,
-		Owner:    req.Owner,
-		Enabled:  req.Enable,
-		RegionID: req.RegionID,
-		Level:    req.Level,
-	}
-	if err := a.operator.CreateRuleGroup(c.Request.Context(), group); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "operator failed: " + err.Error()})
+
+	// Validate RuleID is in UUID format (ensures uniqueness)
+	if req.RuleID == "" || !isValidUUID(req.RuleID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_id must be a valid UUID format"})
 		return
 	}
-	for _, rule := range req.Rules {
-		detail := &model.BWRuleDetail{
-			GroupUUID: group.UUID,
-			Name:      rule.Name,
-			Direction: rule.Direction,
-			Limit:     rule.Limit,
-			Duration:  rule.Duration,
-			// Set legacy fields to -1 for backward compatibility
-			InThreshold:     -1,
-			InDuration:      -1,
-			InOverType:      "absolute",
-			InDownTo:        -1,
-			InDownDuration:  -1,
-			OutThreshold:    -1,
-			OutDuration:     -1,
-			OutOverType:     "absolute",
-			OutDownTo:       -1,
-			OutDownDuration: -1,
+
+	// Validate: 1 or 2 rules allowed (one per direction), no duplicate directions
+	if len(req.Rules) < 1 || len(req.Rules) > 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rules must contain 1 or 2 entries (one per direction: in/out)"})
+		return
+	}
+	if len(req.Rules) == 2 && req.Rules[0].Direction == req.Rules[1].Direction {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "duplicate direction: each direction (in/out) can only appear once"})
+		return
+	}
+
+	// Step 1: Create N9E Business Group (or get existing one)
+	regionName := viper.GetString("console.host")
+	businessGroup, err := a.n9eOperator.GetBusinessGroupByName(c.Request.Context(), regionName)
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query business group: " + err.Error()})
+		return
+	}
+
+	// If business group doesn't exist, create it
+	if businessGroup == nil {
+		businessGroup = &model.N9EBusinessGroup{
+			Name:     regionName,
+			Owner:    req.Owner,
+			RegionID: req.RegionID,
+			Level:    req.Level,
+			Enabled:  req.Enable,
 		}
-		if err := a.operator.CreateBWRuleDetail(c.Request.Context(), detail); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
+		if err := a.n9eOperator.CreateBusinessGroup(c.Request.Context(), businessGroup); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create business group: " + err.Error()})
 			return
 		}
 	}
-	if len(req.LinkedVMs) > 0 {
-		// Convert new format to existing format for VM linking
-		var vmUUIDs []string
-		for _, vm := range req.LinkedVMs {
-			vmUUIDs = append(vmUUIDs, vm.InstanceID) // InstanceID maps to VMUUID
-		}
 
-		_, _ = a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
+	// Step 2-4: Initialize N9E components, then loop over each direction rule
+	a.InitN9EComponents()
 
-		// Link VMs with target_device (Interface field)
-		for _, vm := range req.LinkedVMs {
-			_ = a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, []string{vm.InstanceID}, vm.TargetDevice)
-		}
+	var createdRuleUUIDs []string
 
-		// Update matched VMs JSON for each VM with its target_device
-		for _, vm := range req.LinkedVMs {
-			_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{vm.InstanceID}, group.UUID, "add", "alarm-bw", vm.TargetDevice)
-		}
-	}
-	// Render templates for each rule direction
 	for _, rule := range req.Rules {
-		data := map[string]interface{}{
-			"owner":          req.Owner,
-			"rule_group":     group.UUID,
-			"global_rule_id": req.RuleID,
-			"region_id":      req.RegionID,
-			"level":          req.Level,
+		// Step 2: Create N9E Bandwidth Rule record per direction
+		bwOperator := resolveOperator(rule.Operator)
+		bwRule := &model.N9EBandwidthRule{
+			RuleID:            req.RuleID,
+			BusinessGroupUUID: businessGroup.UUID,
+			Name:              rule.Name,
+			Owner:             req.Owner,
+			Direction:         rule.Direction,
+			Duration:          rule.Duration,
+			DurationMinutes:   req.DurationMinutes,
+			Operator:          bwOperator,
+			Enabled:           req.Enable,
 		}
 
-		var templateFile, outputFile string
-
-		if rule.Direction == "in" {
-			data["rule_id"] = fmt.Sprintf("alarm-bw-in-%s-%s", req.Owner, group.UUID)
-			data["in_threshold"] = rule.Limit
-			data["in_duration"] = rule.Duration
-			templateFile = "VM-in-bw-rule.yml.j2"
-			outputFile = fmt.Sprintf("bw-in-%s-%s.yml", req.Owner, group.UUID)
-		} else if rule.Direction == "out" {
-			data["rule_id"] = fmt.Sprintf("alarm-bw-out-%s-%s", req.Owner, group.UUID)
-			data["out_threshold"] = rule.Limit
-			data["out_duration"] = rule.Duration
-			templateFile = "VM-out-bw-rule.yml.j2"
-			outputFile = fmt.Sprintf("bw-out-%s-%s.yml", req.Owner, group.UUID)
-		}
-
-		if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
-			logger.Errorf("Failed to render %s-bw rule template: %v", rule.Direction, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s-bw rule template", rule.Direction)})
+		if err := a.n9eOperator.CreateBandwidthRule(c.Request.Context(), bwRule); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create bandwidth rule (" + rule.Direction + "): " + err.Error()})
 			return
 		}
+		createdRuleUUIDs = append(createdRuleUUIDs, bwRule.RuleID)
+
+		// Step 3: Render direction-specific PromQL template
+		// "bandwidth-in" uses N9E-bandwidth-in-promql.j2 (hardcoded receive / bw_in)
+		// "bandwidth-out" uses N9E-bandwidth-out-promql.j2 (hardcoded transmit / bw_out)
+		var ruleType string
+		if rule.Direction == "out" {
+			ruleType = "bandwidth-out"
+		} else {
+			ruleType = "bandwidth-in"
+		}
+
+		templateParams := map[string]interface{}{
+			"duration": bwRule.Duration,
+			"operator": bwOperator,
+		}
+		promql, templateErr := a.templateRenderer.RenderN9EPromQL(ruleType, bwRule.RuleID, templateParams)
+		if templateErr != nil {
+			log.Printf("Warning: Failed to render bandwidth PromQL template (%s) for rule %s: %v", ruleType, bwRule.RuleID, templateErr)
+			continue
+		}
+
+		// Step 4: Create N9E alert rule for this direction
+		if a.n9eClient != nil && promql != "" {
+			n9eGroupID, bgErr := a.n9eClient.GetOrCreateBusinessGroup(c.Request.Context(), regionName)
+			if bgErr != nil {
+				log.Printf("Warning: Failed to get/create N9E business group for region %s: %v", regionName, bgErr)
+				continue
+			}
+			datasourceName := viper.GetString("n9e.n9e_data_source")
+			datasourceID, dsErr := a.n9eClient.GetDataSourceByName(c.Request.Context(), datasourceName)
+			if dsErr != nil {
+				log.Printf("Warning: Failed to get N9E datasource %s: %v", datasourceName, dsErr)
+			}
+			if n9eGroupID > 0 && datasourceID > 0 {
+				n9eRule := routes.N9EAlertRule{
+					GroupID:          n9eGroupID,
+					RuleName:         bwRule.Name,
+					Severity:         getSeverityLevel(req.Level),
+					Disabled:         0,
+					DatasourceIDs:    []int64{datasourceID},
+					PromForDuration:  req.DurationMinutes * 60,
+					PromEvalInterval: 60,
+					NotifyRepeatStep: 60,
+					RuleConfig: routes.N9ERuleConfig{
+						Queries: []routes.N9EQuery{
+							{PromQL: promql, Severity: getSeverityLevel(req.Level)},
+						},
+					},
+				}
+				n9eAlertRuleID, ruleErr := a.n9eClient.CreateAlertRule(c.Request.Context(), n9eRule)
+				if ruleErr != nil {
+					log.Printf("Warning: Failed to create N9E alert rule for bandwidth rule %s: %v", bwRule.RuleID, ruleErr)
+				} else if n9eAlertRuleID > 0 {
+					if err := a.n9eOperator.UpdateBandwidthRuleN9EID(c.Request.Context(), bwRule.RuleID, n9eAlertRuleID); err != nil {
+						log.Printf("Warning: Failed to store N9E alert rule ID for bandwidth rule %s: %v", bwRule.RuleID, err)
+					}
+				}
+			}
+		}
+
+		// Step 5: Create VM rule links for this direction rule
+		// Note: anchor threshold metrics (vm_bw_in/out_anchor) must be written via LinkVMsToRule,
+		// since region/domain info is required for correct label matching in PromQL join.
+		if len(req.LinkedVMs) > 0 {
+			for _, vmLink := range req.LinkedVMs {
+				link := &model.N9EVMRuleLink{
+					RuleType:          "bandwidth",
+					RuleUUID:          bwRule.RuleID,
+					BusinessGroupUUID: businessGroup.UUID,
+					VMUUID:            vmLink.InstanceID,
+					Interface:         vmLink.TargetDevice,
+					Owner:             req.Owner,
+				}
+				if err := a.n9eOperator.CreateVMRuleLink(c.Request.Context(), link); err != nil {
+					log.Printf("Warning: Failed to create VM rule link: %v", err)
+				}
+			}
+		}
 	}
-	routes.ReloadPrometheusViaHTTP()
+
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid": group.UUID,
-			"rule_id":    req.RuleID,
-			"enabled":    req.Enable,
-			"linkedvms":  req.LinkedVMs,
+			"business_group_uuid": businessGroup.UUID,
+			"rule_id":             req.RuleID,
+			"enabled":             req.Enable,
+			"linkedvms":           req.LinkedVMs,
 		},
 	})
 }
@@ -1640,8 +2001,9 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
-	groupUUID := c.Param("uuid")
-	ruleID := c.Query("rule_id")
+	uuid := c.Param("uuid")
+	owner := c.Query("owner")
+
 	if page < 1 {
 		page = 1
 	}
@@ -1649,60 +2011,118 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 		pageSize = 20
 	}
 
-	queryParams := routes.ListRuleGroupsParams{
-		RuleType: routes.RuleTypeBW,
-		Page:     page,
-		PageSize: pageSize,
-		RuleID:   ruleID,
-	}
-
-	if groupUUID != "" {
-		queryParams.GroupUUID = groupUUID
-		queryParams.PageSize = 1
-	}
-
-	groups, total, err := a.operator.ListRuleGroups(c.Request.Context(), queryParams)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "query BW rules failed: " + err.Error()})
-		return
-	}
-	responseData := make([]gin.H, 0, len(groups))
-	for _, group := range groups {
-		details, err := a.operator.GetBWRuleDetails(c.Request.Context(), group.UUID)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "query BW detail rules failed: " + err.Error()})
+	// If uuid is provided, query single rule
+	if uuid != "" {
+		bwRule, err := a.n9eOperator.GetBandwidthRuleByUUID(c.Request.Context(), uuid)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Bandwidth rule not found"})
+			return
+		} else if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query bandwidth rule: " + err.Error()})
 			return
 		}
+
+		// Get business group
+		businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), bwRule.BusinessGroupUUID)
+		if err != nil {
+			log.Printf("Warning: Failed to get business group for bandwidth rule %s: %v", uuid, err)
+		}
+
+		// Get linked VMs
 		linkedVMs := make([]gin.H, 0)
-		vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), group.UUID)
+		vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), bwRule.RuleID)
 		if err == nil {
 			for _, link := range vmLinks {
-				linkedVMs = append(linkedVMs, gin.H{
-					"instance_id":   link.VMUUID,
-					"target_device": link.Interface,
-				})
+				if link.RuleType == "bandwidth" {
+					linkedVMs = append(linkedVMs, gin.H{
+						"instance_id":   link.VMUUID,
+						"target_device": link.Interface,
+					})
+				}
 			}
 		}
 
-		ruleDetails := make([]gin.H, 0, len(details))
-		for _, d := range details {
-			ruleDetails = append(ruleDetails, gin.H{
-				"direction": d.Direction,
-				"name":      d.Name,
-				"limit":     d.Limit,
-				"duration":  d.Duration,
-			})
+		responseData := gin.H{
+			"rule_id":           bwRule.RuleID,
+			"n9e_alert_rule_id": bwRule.N9EAlertRuleID,
+			"name":              bwRule.Name,
+			"owner":             bwRule.Owner,
+			"direction":         bwRule.Direction,
+			"duration":          bwRule.Duration,
+			"linkedvms":         linkedVMs,
+			"enabled":           bwRule.Enabled,
+			"region_id":         businessGroup.RegionID,
+			"level":             businessGroup.Level,
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"data": []gin.H{responseData},
+			"meta": gin.H{
+				"total":        1,
+				"current_page": 1,
+				"per_page":     1,
+				"total_pages":  1,
+			},
+		})
+		return
+	}
+
+	// List rules with pagination
+	queryParams := routes.ListN9ERulesParams{
+		Page:     page,
+		PageSize: pageSize,
+		Owner:    owner,
+	}
+	queryParams.SetDefaults()
+
+	rules, total, err := a.n9eOperator.ListBandwidthRules(c.Request.Context(), queryParams)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query bandwidth rules: " + err.Error()})
+		return
+	}
+
+	responseData := make([]gin.H, 0, len(rules))
+	for _, rule := range rules {
+		// Get business group
+		businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), rule.BusinessGroupUUID)
+		if err != nil {
+			log.Printf("Warning: Failed to get business group for bandwidth rule %s: %v", rule.UUID, err)
+		}
+
+		var regionID, level, businessGroupName string
+		if businessGroup != nil {
+			regionID = businessGroup.RegionID
+			level = businessGroup.Level
+			businessGroupName = businessGroup.Name
+		}
+
+		// Get linked VMs
+		linkedVMs := make([]gin.H, 0)
+		vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), rule.RuleID)
+		if err == nil {
+			for _, link := range vmLinks {
+				if link.RuleType == "bandwidth" {
+					linkedVMs = append(linkedVMs, gin.H{
+						"instance_id":   link.VMUUID,
+						"target_device": link.Interface,
+					})
+				}
+			}
 		}
 
 		responseData = append(responseData, gin.H{
-			"name":      group.Name,
-			"owner":     group.Owner,
-			"enable":    group.Enabled,
-			"region_id": group.RegionID,
-			"rule_id":   group.RuleID,
-			"level":     group.Level,
-			"rules":     ruleDetails,
-			"linkedvms": linkedVMs,
+			"rule_id":             rule.RuleID,
+			"n9e_alert_rule_id":   rule.N9EAlertRuleID,
+			"name":                rule.Name,
+			"owner":               rule.Owner,
+			"direction":           rule.Direction,
+			"duration":            rule.Duration,
+			"linkedvms":           linkedVMs,
+			"enabled":             rule.Enabled,
+			"business_group_uuid": rule.BusinessGroupUUID,
+			"business_group_name": businessGroupName,
+			"region_id":           regionID,
+			"level":               level,
 		})
 	}
 
@@ -1718,113 +2138,103 @@ func (a *AlarmAPI) GetBWRules(c *gin.Context) {
 }
 
 func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
-	identifier := c.Param("uuid")
-	if identifier == "" {
+	uuid := c.Param("uuid")
+	if uuid == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "empty identifier error.",
-			"code":  "INVALID_IDENTIFIER",
+			"error": "empty uuid error.",
+			"code":  "INVALID_UUID",
 		})
 		return
 	}
 
-	// Adaptive query: try RuleID first, fallback to UUID
-	var group *model.RuleGroupV2
-	params := routes.ListRuleGroupsParams{
-		RuleID:   identifier,
-		RuleType: routes.RuleTypeBW,
-		PageSize: 1,
-	}
-	groups, _, err := a.operator.ListRuleGroups(c.Request.Context(), params)
-	if err == nil && len(groups) > 0 {
-		// RuleID query succeeded
-		group = &groups[0]
-	} else {
-		// RuleID query failed, try UUID query
-		group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), identifier)
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{
-				"error":      "Rule not found: The specified rule does not exist",
-				"code":       "NOT_FOUND",
-				"identifier": identifier,
-			})
-			return
-		} else if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":      "Failed to retrieve rule information",
-				"code":       "INTERNAL_ERROR",
-				"identifier": identifier,
-			})
-			return
-		}
-	}
-
-	// Use actual GroupUUID for subsequent operations
-	groupUUID := group.UUID
-
-	// Verify rule type is correct
-	if group.Type != routes.RuleTypeBW {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":      "Rule type mismatch: Expected BW rule but found " + group.Type,
-			"code":       "INVALID_RULE_TYPE",
-			"identifier": identifier,
-			"rule_id":    group.RuleID,
+	// Step 1: Get bandwidth rule
+	bwRule, err := a.n9eOperator.GetBandwidthRuleByUUID(c.Request.Context(), uuid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Rule not found: The specified rule does not exist",
+			"code":  "NOT_FOUND",
+			"uuid":  uuid,
+		})
+		return
+	} else if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": "Failed to retrieve rule information",
+			"code":  "INTERNAL_ERROR",
+			"uuid":  uuid,
 		})
 		return
 	}
-	owner := group.Owner
 
-	// Delete all associated VMRuleLink
-	vmLinks, err := a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
-	linkedVMs := []string{}
-	if err == nil {
-		for _, link := range vmLinks {
-			linkedVMs = append(linkedVMs, link.VMUUID)
-		}
-		_, _ = a.operator.DeleteVMLink(c.Request.Context(), groupUUID, "", "")
-	}
-
-	// Remove related entries from matched_vms.json
-	_ = a.UpdateMatchedVMsJSON(c.Request.Context(), []string{}, groupUUID, "remove", "alarm-bw")
-
-	// Get BW rule details to determine which files to delete
-	details, err := a.operator.GetBWRuleDetails(c.Request.Context(), groupUUID)
+	// Step 2: Get business group
+	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), bwRule.BusinessGroupUUID)
 	if err != nil {
-		logger.Errorf("[BW-WARNING] Failed to get rule details for file cleanup: %v", err)
-		details = []model.BWRuleDetail{}
+		log.Printf("Warning: Failed to get business group %s: %v", bwRule.BusinessGroupUUID, err)
 	}
 
-	// Delete symlink and rule file (paths consistent with creation)
-	// Track deleted file paths
-	deletedFiles := []string{}
+	// Step 3: Initialize components
+	a.InitN9EComponents()
 
-	// Only delete files for directions that actually exist in the rule
-	for _, detail := range details {
-		var filename string
-		switch detail.Direction {
-		case "in":
-			filename = fmt.Sprintf("bw-in-%s-%s.yml", owner, groupUUID)
-		case "out":
-			filename = fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
-		default:
-			logger.Errorf("[BW-WARNING] Unknown direction: %s", detail.Direction)
-			continue
-		}
+	// Determine anchor type based on bandwidth direction
+	bwAnchorType := "bw_in"
+	if bwRule.Direction == "out" {
+		bwAnchorType = "bw_out"
+	}
 
-		linkPath := filepath.Join(routes.RulesEnabled, filename)
-		rulePath := filepath.Join(routes.RulesGeneral, filename) // All rules now stored in general_rules
+	// Step 4: Get linked VMs and clear anchor thresholds
+	vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid)
+	linkedVMs := []string{}
+	instanceUUIDs := []string{}
 
-		// Delete symlink
-		if err := routes.RemoveFile(linkPath); err == nil {
-			deletedFiles = append(deletedFiles, linkPath)
-		}
-		// Delete rule file
-		if err := routes.RemoveFile(rulePath); err == nil {
-			deletedFiles = append(deletedFiles, rulePath)
+	if err == nil && len(vmLinks) > 0 {
+		for _, link := range vmLinks {
+			if link.RuleType != "bandwidth" {
+				continue
+			}
+			linkedVMs = append(linkedVMs, link.VMUUID)
+			instanceUUIDs = append(instanceUUIDs, link.VMUUID)
 		}
 	}
 
-	// Delete rule-related table data
-	if err := a.operator.DeleteRuleGroupWithDependencies(c.Request.Context(), groupUUID, routes.RuleTypeBW); err != nil {
+	// Step 5: Clear anchor thresholds in VictoriaMetrics
+	// Note: Region/Domain not stored in DB link; partial clear uses just ruleUUID+instanceID.
+	// Remaining anchor data expires via last_over_time retention.
+	if len(instanceUUIDs) > 0 && a.anchorManager != nil {
+		anchorInstances := make([]routes.AnchorInstance, len(instanceUUIDs))
+		for i, vmUUID := range instanceUUIDs {
+			anchorInstances[i] = routes.AnchorInstance{
+				RuleUUID:   uuid,
+				InstanceID: vmUUID,
+				Owner:      bwRule.Owner,
+			}
+		}
+		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), bwAnchorType, anchorInstances); err != nil {
+			log.Printf("Warning: Failed to clear bandwidth anchor thresholds: %v", err)
+		}
+	}
+
+	// Step 6: Delete VM links from database
+	for _, link := range vmLinks {
+		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), uuid, link.VMUUID, link.Interface); err != nil {
+			log.Printf("Warning: Failed to delete VM rule link: %v", err)
+		}
+	}
+
+	// Step 6.5: Delete N9E alert rule if exists
+	if bwRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
+		n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
+		if bgErr != nil {
+			log.Printf("Warning: Failed to find N9E business group '%s' for alert rule deletion: %v", businessGroup.Name, bgErr)
+		} else {
+			if delErr := a.n9eClient.DeleteAlertRule(c.Request.Context(), n9eBGID, bwRule.N9EAlertRuleID); delErr != nil {
+				log.Printf("Warning: Failed to delete N9E alert rule ID %d: %v", bwRule.N9EAlertRuleID, delErr)
+			} else {
+				log.Printf("[N9E] Deleted alert rule ID %d from BG %d", bwRule.N9EAlertRuleID, n9eBGID)
+			}
+		}
+	}
+
+	// Step 7: Delete bandwidth rule
+	if err := a.n9eOperator.DeleteBandwidthRule(c.Request.Context(), uuid); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "DB operation failed: " + err.Error(),
 			"code":  "DB_DELETE_FAILED",
@@ -1832,24 +2242,83 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		return
 	}
 
-	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		logger.Errorf("Failed to reload Prometheus: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to reload Prometheus",
-			"code":  "PROMETHEUS_RELOAD_FAILED",
-		})
-		return
+	// Step 8: Check if business group should be auto-deleted
+	if businessGroup != nil {
+		count, err := a.n9eOperator.CountRulesByBusinessGroupUUID(c.Request.Context(), businessGroup.UUID)
+		if err != nil {
+			log.Printf("Warning: Failed to count rules for business group %s: %v", businessGroup.UUID, err)
+		} else if count == 0 {
+			// No more rules, delete business group from local DB
+			log.Printf("Auto-deleting business group %s (no remaining rules)", businessGroup.UUID)
+			if err := a.n9eOperator.DeleteBusinessGroup(c.Request.Context(), businessGroup.UUID); err != nil {
+				log.Printf("Warning: Failed to delete business group from DB %s: %v", businessGroup.UUID, err)
+			}
+			// Also delete from N9E API side
+			if a.n9eClient != nil {
+				n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
+				if bgErr != nil {
+					log.Printf("Warning: Failed to find N9E business group '%s': %v", businessGroup.Name, bgErr)
+				} else {
+					if delErr := a.n9eClient.DeleteBusinessGroupByID(c.Request.Context(), n9eBGID); delErr != nil {
+						log.Printf("Warning: Failed to delete N9E business group ID %d: %v", n9eBGID, delErr)
+					}
+				}
+			}
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
 		"status": "success",
 		"data": gin.H{
-			"group_uuid":    group.UUID,
-			"rule_id":       group.RuleID,
-			"deleted_files": deletedFiles,
-			"linked_vms":    linkedVMs,
+			"rule_id":     uuid,
+			"linked_vms":  linkedVMs,
+			"unbound_vms": len(instanceUUIDs),
 		},
 	})
+}
+
+// GetN9EAlertRule retrieves alert rule directly from N9E by rule ID
+// GET /api/v1/metrics/alarm/n9e/rule/:rule_id
+func (a *AlarmAPI) GetN9EAlertRule(c *gin.Context) {
+	ruleIDParam := c.Param("rule_id")
+	if ruleIDParam == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_id is required"})
+		return
+	}
+
+	ruleID, err := strconv.ParseInt(ruleIDParam, 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid rule_id format"})
+		return
+	}
+
+	// Initialize N9E components
+	a.InitN9EComponents()
+
+	if a.n9eClient == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "N9E client not initialized"})
+		return
+	}
+
+	// Get alert rule from N9E (returns raw response with dat/err structure)
+	result, err := a.n9eClient.GetAlertRule(c.Request.Context(), ruleID)
+	if err != nil {
+		if strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "not found") {
+			c.JSON(http.StatusNotFound, gin.H{
+				"error":   "Rule not found in N9E",
+				"rule_id": ruleID,
+			})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":   "Failed to get alert rule from N9E",
+			"details": err.Error(),
+		})
+		return
+	}
+
+	// Return the full N9E response (includes dat and err fields)
+	c.JSON(http.StatusOK, result)
 }
 
 func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
@@ -2825,20 +3294,764 @@ func (a *AlarmAPI) getAdjustRuleDetails(ctx context.Context, groupUUID, ruleType
 		result := make([]gin.H, 0, len(details))
 		for _, d := range details {
 			result = append(result, gin.H{
-				"name":               d.Name,
-				"direction":          d.Direction,
-				"high_threshold_pct": d.HighThresholdPct,
-				"smooth_window":      d.SmoothWindow,
-				"trigger_duration":   d.TriggerDuration,
-				"limit_duration":     d.LimitDuration,
-				"limit_value_pct":    d.LimitValuePct,
+				"name":             d.Name,
+				"high_threshold":   d.HighThresholdPct,
+				"smooth_window":    d.SmoothWindow,
+				"trigger_duration": d.TriggerDuration,
+				"limit_duration":   d.LimitDuration,
+				"limit_bandwidth":  d.LimitValuePct,
 			})
 		}
 		return result, nil
 
 	default:
-		return []gin.H{}, fmt.Errorf("unsupported adjust rule type: %s", ruleType)
+		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
+}
+
+// ============================================
+// N9E Anchor Management APIs
+// ============================================
+
+// LinkVMsToRule binds VMs to an alert rule by writing vm_rule_anchor metrics
+// POST /api/v1/alarm/anchor/link
+func (a *AlarmAPI) LinkVMsToRule(c *gin.Context) {
+	a.InitN9EComponents()
+
+	if a.anchorManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Anchor manager not configured"})
+		return
+	}
+
+	var req struct {
+		RuleUUID  string  `json:"rule_uuid" binding:"required"`
+		RuleType  string  `json:"rule_type" binding:"required,oneof=cpu memory bandwidth"`
+		TenantID  string  `json:"tenant_id" binding:"required"` // 调用方传入的租户UUID，写入 anchor label
+		RegionID  string  `json:"region_id" binding:"required"` // 业务层面的区域UUID，用于远端推送等业务逻辑
+		Threshold float64 `json:"threshold" binding:"required"` // 告警阈值
+		VMs       []struct {
+			InstanceID string `json:"instance_id" binding:"required"`
+			Interface  string `json:"interface"` // Required for bandwidth rules
+		} `json:"vms" binding:"required,min=1"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get rule to determine owner, business group, threshold, and anchor type
+	var owner string
+	var businessGroupUUID string
+	var anchorType string
+
+	switch req.RuleType {
+	case "cpu":
+		cpuRule, err := a.n9eOperator.GetCPURuleByUUID(c.Request.Context(), req.RuleUUID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "CPU rule not found"})
+			return
+		}
+		owner = cpuRule.Owner
+		businessGroupUUID = cpuRule.BusinessGroupUUID
+		anchorType = "cpu"
+	case "memory":
+		memoryRule, err := a.n9eOperator.GetMemoryRuleByUUID(c.Request.Context(), req.RuleUUID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Memory rule not found"})
+			return
+		}
+		owner = memoryRule.Owner
+		businessGroupUUID = memoryRule.BusinessGroupUUID
+		anchorType = "mem"
+	case "bandwidth":
+		bwRule, err := a.n9eOperator.GetBandwidthRuleByUUID(c.Request.Context(), req.RuleUUID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Bandwidth rule not found"})
+			return
+		}
+		owner = bwRule.Owner
+		businessGroupUUID = bwRule.BusinessGroupUUID
+		if bwRule.Direction == "out" {
+			anchorType = "bw_out"
+		} else {
+			anchorType = "bw_in"
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule type"})
+		return
+	}
+
+	// 带宽规则必须指定网卡
+	if req.RuleType == "bandwidth" {
+		for idx, vm := range req.VMs {
+			if vm.Interface == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("vms[%d]: interface is required for bandwidth rules", idx)})
+				return
+			}
+		}
+	}
+
+	// Build typed anchor instances and write thresholds to VictoriaMetrics
+	// Labels: rule_uuid, region, domain, instance_id, interface(bandwidth only), owner, tenant_id
+	anchorInstances := make([]routes.AnchorInstance, 0, len(req.VMs))
+	for i, vm := range req.VMs {
+		// Get domain, hypervisor, region from VictoriaMetrics vm_instance_map
+		domain, _, region, err := a.anchorManager.GetInstanceMetadata(c.Request.Context(), vm.InstanceID)
+		if err != nil {
+			// Fallback to database if vm_instance_map not available
+			log.Printf("Failed to get metadata from VM for instance %s, falling back to DB: %v", vm.InstanceID, err)
+			domain, err = routes.GetDomainByInstanceUUID(c.Request.Context(), vm.InstanceID)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("vms[%d]: failed to get metadata for instance %s: %v", i, vm.InstanceID, err)})
+				return
+			}
+			// When using DB fallback, region must be extracted from instance record
+			region = ""
+			log.Printf("Warning: using DB fallback without region for instance %s", vm.InstanceID)
+		} else {
+			log.Printf("Got metadata from VM: instance=%s, domain=%s, region=%s", vm.InstanceID, domain, region)
+		}
+
+		anchorInstances = append(anchorInstances, routes.AnchorInstance{
+			RuleUUID:   req.RuleUUID,
+			Region:     region,
+			Domain:     domain,
+			InstanceID: vm.InstanceID,
+			Interface:  vm.Interface,
+			Owner:      owner,
+			TenantID:   req.TenantID,
+			Threshold:  req.Threshold,
+		})
+	}
+
+	if err := a.anchorManager.WriteAnchorThresholdBatch(c.Request.Context(), anchorType, anchorInstances); err != nil {
+		log.Printf("Failed to write anchor thresholds for rule %s: %v", req.RuleUUID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to write anchor thresholds: %v", err)})
+		return
+	}
+
+	// Create VM rule links in database
+	for _, vm := range req.VMs {
+		link := &model.N9EVMRuleLink{
+			RuleType:          req.RuleType,
+			RuleUUID:          req.RuleUUID,
+			BusinessGroupUUID: businessGroupUUID,
+			VMUUID:            vm.InstanceID,
+			Interface:         vm.Interface,
+			Owner:             owner,
+			Threshold:         req.Threshold,
+			TenantID:          req.TenantID,
+		}
+		if err := a.n9eOperator.CreateVMRuleLink(c.Request.Context(), link); err != nil {
+			log.Printf("Warning: Failed to create VM rule link: %v", err)
+		}
+	}
+
+	log.Printf("Successfully linked %d VMs to rule %s (anchorType=%s, threshold=%g)", len(req.VMs), req.RuleUUID, anchorType, req.Threshold)
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "success",
+		"message":   fmt.Sprintf("Linked %d VMs to rule", len(req.VMs)),
+		"rule_uuid": req.RuleUUID,
+		"vm_count":  len(req.VMs),
+		"region_id": req.RegionID, // 返回业务层面的 region_id
+	})
+}
+
+// GetRuleLinks queries all VMs bound to a rule from VictoriaMetrics (typed anchors)
+// GET /api/v1/alarm/anchor/links
+// Query parameters (all optional):
+// - rule_uuid: query links for a specific rule
+// - rule_type: one of cpu/memory/bandwidth — narrows anchor metric type for rule_uuid queries
+// - owner: query all links for a specific owner (when rule_uuid not provided)
+func (a *AlarmAPI) GetRuleLinks(c *gin.Context) {
+	a.InitN9EComponents()
+
+	if a.anchorManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Anchor manager not configured"})
+		return
+	}
+
+	ruleUUID := c.Query("rule_uuid")
+	owner := c.Query("owner")
+	ruleType := c.Query("rule_type") // optional: cpu / memory / bandwidth
+
+	// anchorTypes 派生辅助函数：根据 rule_type query param 返回要查询的 anchorType 列表
+	resolveAnchorTypes := func(rt string) []string {
+		switch rt {
+		case "cpu":
+			return []string{"cpu"}
+		case "memory":
+			return []string{"mem"}
+		case "bandwidth":
+			return []string{"bw_in", "bw_out"}
+		default:
+			// 未指定则查全部 4 种
+			return []string{"cpu", "mem", "bw_in", "bw_out"}
+		}
+	}
+
+	// anchorResult → gin.H 转换
+	anchorToGinH := func(vm routes.AnchorResult) gin.H {
+		return gin.H{
+			"region":      vm.Region,
+			"domain":      vm.Domain,
+			"instance_id": vm.InstanceID,
+			"interface":   vm.Interface, // 带宽 anchor 有此字段，CPU/内存为空字符串
+			"owner":       vm.Owner,
+			"tenant_id":   vm.TenantID,
+			"threshold":   vm.Threshold,
+		}
+	}
+
+	var result gin.H
+
+	if ruleUUID != "" {
+		// 按 rule_uuid 查询（遍历所有相关 anchorType 并合并）
+		anchorTypes := resolveAnchorTypes(ruleType)
+		allVMs := make([]routes.AnchorResult, 0)
+		for _, at := range anchorTypes {
+			vms, queryErr := a.anchorManager.QueryTypedAnchorLinksByRule(c.Request.Context(), at, ruleUUID)
+			if queryErr != nil {
+				log.Printf("Failed to query typed anchor links for rule %s anchorType=%s: %v", ruleUUID, at, queryErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to query links: %v", queryErr)})
+				return
+			}
+			allVMs = append(allVMs, vms...)
+		}
+
+		vmList := make([]gin.H, len(allVMs))
+		for i, vm := range allVMs {
+			vmList[i] = anchorToGinH(vm)
+		}
+
+		result = gin.H{
+			"status":    "success",
+			"rule_uuid": ruleUUID,
+			"vm_count":  len(allVMs),
+			"vms":       vmList,
+		}
+	} else if owner != "" {
+		// 按 owner 查询（遍历所有相关 anchorType 并合并到 ruleMap）
+		anchorTypes := resolveAnchorTypes(ruleType)
+		ruleMap := make(map[string][]routes.AnchorResult)
+		for _, at := range anchorTypes {
+			partialMap, queryErr := a.anchorManager.QueryTypedAnchorLinksByOwner(c.Request.Context(), at, owner)
+			if queryErr != nil {
+				log.Printf("Failed to query typed anchor links for owner %s anchorType=%s: %v", owner, at, queryErr)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to query links: %v", queryErr)})
+				return
+			}
+			for rUUID, vms := range partialMap {
+				ruleMap[rUUID] = append(ruleMap[rUUID], vms...)
+			}
+		}
+
+		rules := make([]gin.H, 0, len(ruleMap))
+		totalVMs := 0
+		for rUUID, vms := range ruleMap {
+			vmList := make([]gin.H, len(vms))
+			for i, vm := range vms {
+				vmList[i] = anchorToGinH(vm)
+			}
+			rules = append(rules, gin.H{
+				"rule_uuid": rUUID,
+				"vm_count":  len(vms),
+				"vms":       vmList,
+			})
+			totalVMs += len(vms)
+		}
+
+		result = gin.H{
+			"status":     "success",
+			"owner":      owner,
+			"rule_count": len(ruleMap),
+			"total_vms":  totalVMs,
+			"rules":      rules,
+		}
+	} else {
+		// 查询全部（遍历 4 种 anchorType）
+		ruleMap, queryErr := a.anchorManager.QueryAllTypedAnchorLinks(c.Request.Context())
+		if queryErr != nil {
+			log.Printf("Failed to query all typed anchor links: %v", queryErr)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to query links: %v", queryErr)})
+			return
+		}
+
+		rules := make([]gin.H, 0, len(ruleMap))
+		totalVMs := 0
+		for rUUID, vms := range ruleMap {
+			vmList := make([]gin.H, len(vms))
+			for i, vm := range vms {
+				vmList[i] = anchorToGinH(vm)
+			}
+			rules = append(rules, gin.H{
+				"rule_uuid": rUUID,
+				"vm_count":  len(vms),
+				"vms":       vmList,
+			})
+			totalVMs += len(vms)
+		}
+
+		result = gin.H{
+			"status":     "success",
+			"rule_count": len(ruleMap),
+			"total_vms":  totalVMs,
+			"rules":      rules,
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// GetDBLinks queries VM links from CloudLand database
+// GET /api/v1/alarm/anchor/dblinks?rule_id=<rule_id>&owner=<owner>
+// Parameters are optional:
+// - rule_id: query links for a specific rule (by rule_id, not UUID)
+// - owner: query all links for a specific owner
+// - neither: query all links
+func (a *AlarmAPI) GetDBLinks(c *gin.Context) {
+	ruleUUID := c.Query("rule_uuid")
+	owner := c.Query("owner")
+	ruleType := c.Query("rule_type") // cpu, memory, bandwidth - optional filter
+
+	// Query database using N9E operator
+	var allLinks []model.N9EVMRuleLink
+	var err error
+
+	if ruleUUID != "" {
+		// Query by specific rule UUID
+		allLinks, err = a.n9eOperator.GetVMRuleLinks(c.Request.Context(), ruleUUID)
+		if err != nil {
+			log.Printf("Failed to query DB links: ruleUUID=%s, error=%v", ruleUUID, err)
+		}
+
+		// Filter by rule type if specified
+		if ruleType != "" && err == nil {
+			filtered := []model.N9EVMRuleLink{}
+			for _, link := range allLinks {
+				if link.RuleType == ruleType {
+					filtered = append(filtered, link)
+				}
+			}
+			allLinks = filtered
+		}
+	} else if owner != "" {
+		// Query by owner
+		allLinks, err = a.n9eOperator.GetVMRuleLinksByOwner(c.Request.Context(), owner)
+	} else {
+		// Query all (need to be careful with large datasets)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Must provide rule_uuid or owner parameter"})
+		return
+	}
+
+	if err != nil {
+		log.Printf("Failed to query DB links: ruleUUID=%s, owner=%s, error=%v", ruleUUID, owner, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to query database: %v", err)})
+		return
+	}
+
+	// Group links by rule UUID
+	linkMap := make(map[string][]model.N9EVMRuleLink)
+	for _, link := range allLinks {
+		linkMap[link.RuleUUID] = append(linkMap[link.RuleUUID], link)
+	}
+
+	// Convert to response format
+	rules := make([]gin.H, 0, len(linkMap))
+	totalVMs := 0
+
+	for rUUID, links := range linkMap {
+		if len(links) == 0 {
+			continue
+		}
+
+		// Get rule info based on rule type
+		firstLink := links[0]
+		var ruleName string
+		var ruleOwner string
+		var businessGroupName string
+
+		switch firstLink.RuleType {
+		case "cpu":
+			cpuRule, err := a.n9eOperator.GetCPURuleByUUID(c.Request.Context(), rUUID)
+			if err == nil {
+				ruleName = cpuRule.Name
+				ruleOwner = cpuRule.Owner
+				bg, _ := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), cpuRule.BusinessGroupUUID)
+				if bg != nil {
+					businessGroupName = bg.Name
+				}
+			}
+		case "memory":
+			memoryRule, err := a.n9eOperator.GetMemoryRuleByUUID(c.Request.Context(), rUUID)
+			if err == nil {
+				ruleName = memoryRule.Name
+				ruleOwner = memoryRule.Owner
+				bg, _ := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), memoryRule.BusinessGroupUUID)
+				if bg != nil {
+					businessGroupName = bg.Name
+				}
+			}
+		case "bandwidth":
+			bwRule, err := a.n9eOperator.GetBandwidthRuleByUUID(c.Request.Context(), rUUID)
+			if err == nil {
+				ruleName = bwRule.Name
+				ruleOwner = bwRule.Owner
+				bg, _ := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), bwRule.BusinessGroupUUID)
+				if bg != nil {
+					businessGroupName = bg.Name
+				}
+			}
+		}
+
+		vmList := make([]gin.H, len(links))
+		for i, link := range links {
+			vmList[i] = gin.H{
+				"vm_uuid":   link.VMUUID,
+				"interface": link.Interface,
+			}
+		}
+
+		rules = append(rules, gin.H{
+			"rule_uuid":           rUUID,
+			"rule_type":           firstLink.RuleType,
+			"rule_name":           ruleName,
+			"owner":               ruleOwner,
+			"business_group_uuid": firstLink.BusinessGroupUUID,
+			"business_group_name": businessGroupName,
+			"vm_count":            len(links),
+			"vms":                 vmList,
+		})
+		totalVMs += len(links)
+	}
+
+	result := gin.H{
+		"status":     "success",
+		"rule_count": len(rules),
+		"total_vms":  totalVMs,
+		"rules":      rules,
+	}
+
+	// Add filter info to response
+	if ruleUUID != "" {
+		result["filter_rule_uuid"] = ruleUUID
+	}
+	if owner != "" {
+		result["filter_owner"] = owner
+	}
+	if ruleType != "" {
+		result["filter_rule_type"] = ruleType
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+// UnlinkVMsFromRule unbinds VMs from a rule by writing vm_rule_anchor metrics with value=0
+// DELETE /api/v1/alarm/anchor/unlink
+// 调用方只需提供 rule_uuid + rule_type + vms[]{instance_id}，
+// region/domain/owner/tenant_id 等 label 从 VictoriaMetrics 已有 anchor 中自动读取，保证精确匹配。
+func (a *AlarmAPI) UnlinkVMsFromRule(c *gin.Context) {
+	a.InitN9EComponents()
+
+	if a.anchorManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Anchor manager not configured"})
+		return
+	}
+
+	var req struct {
+		RuleUUID string `json:"rule_uuid" binding:"required"`
+		RuleType string `json:"rule_type" binding:"required,oneof=cpu memory bandwidth"`
+		VMs      []struct {
+			InstanceID string `json:"instance_id" binding:"required"`
+			Interface  string `json:"interface"` // 带宽规则必填，用于定位具体网卡的 anchor series
+		} `json:"vms" binding:"required,min=1"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Determine anchor type from rule type; also validate bandwidth interface requirement
+	var anchorType string
+
+	switch req.RuleType {
+	case "cpu":
+		anchorType = "cpu"
+	case "memory":
+		anchorType = "mem"
+	case "bandwidth":
+		bwRule, err := a.n9eOperator.GetBandwidthRuleByUUID(c.Request.Context(), req.RuleUUID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Bandwidth rule not found"})
+			return
+		}
+		if bwRule.Direction == "out" {
+			anchorType = "bw_out"
+		} else {
+			anchorType = "bw_in"
+		}
+		// 带宽规则必须指定网卡
+		for idx, vm := range req.VMs {
+			if vm.Interface == "" {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("vms[%d]: interface is required for bandwidth rules", idx)})
+				return
+			}
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid rule type"})
+		return
+	}
+
+	// Delete anchor series from VictoriaMetrics using delete_series API.
+	// This physically removes the series so no stale data remains.
+	// For bandwidth: vm.Interface is required (validated above), targets exactly one NIC.
+	// For cpu/memory: vm.Interface is "", deletes the single series for that instance+rule.
+	for i, vm := range req.VMs {
+		if err := a.anchorManager.DeleteAnchorSeries(c.Request.Context(), anchorType, req.RuleUUID, vm.InstanceID, vm.Interface); err != nil {
+			log.Printf("Warning: vms[%d] failed to delete anchor series for instance %s: %v", i, vm.InstanceID, err)
+			// 删除失败不阻断流程，继续清理 DB 记录
+		}
+	}
+
+	// Delete VM rule links from database
+	existingLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), req.RuleUUID)
+	if err == nil {
+		for _, link := range existingLinks {
+			for _, vm := range req.VMs {
+				if link.VMUUID == vm.InstanceID {
+					if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), req.RuleUUID, link.VMUUID, link.Interface); err != nil {
+						log.Printf("Warning: Failed to delete VM rule link: %v", err)
+					}
+					break
+				}
+			}
+		}
+	}
+
+	log.Printf("Successfully unlinked %d VMs from rule %s (anchorType=%s)", len(req.VMs), req.RuleUUID, anchorType)
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "success",
+		"message":   fmt.Sprintf("Unlinked %d VMs from rule", len(req.VMs)),
+		"rule_uuid": req.RuleUUID,
+		"vm_count":  len(req.VMs),
+	})
+}
+
+// SyncAnchorThresholds refreshes stale anchor series in VictoriaMetrics.
+// POST /api/v1/alarm/anchor/sync
+// Finds anchor series active in [14d] but not refreshed in [7d], and re-imports them
+// with the current timestamp. Safe to call repeatedly; idempotent.
+func (a *AlarmAPI) SyncAnchorThresholds(c *gin.Context) {
+	a.InitN9EComponents()
+
+	if a.anchorManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Anchor manager not configured"})
+		return
+	}
+
+	startTime := time.Now()
+
+	// Step 1: query stale anchors across all 4 types
+	staleAnchors, queryErr := a.anchorManager.QueryStaleAnchors(c.Request.Context())
+
+	staleByType := make(map[string]int)
+	totalStale := 0
+	for anchorType, results := range staleAnchors {
+		staleByType[anchorType] = len(results)
+		totalStale += len(results)
+	}
+
+	if totalStale == 0 {
+		warning := ""
+		if queryErr != nil {
+			warning = queryErr.Error()
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"status":        "ok",
+			"message":       "No stale anchors found, nothing to sync.",
+			"stale_by_type": staleByType,
+			"total_stale":   0,
+			"elapsed_ms":    time.Since(startTime).Milliseconds(),
+			"query_warning": warning,
+		})
+		return
+	}
+
+	log.Printf("SyncAnchorThresholds: found total_stale=%d by_type=%v", totalStale, staleByType)
+
+	// Step 2: re-import in batches of 500, 50ms sleep between batches
+	refreshed, syncErr := a.anchorManager.SyncStaleAnchorsBatch(c.Request.Context(), staleAnchors, 500, 50)
+
+	totalRefreshed := 0
+	for _, count := range refreshed {
+		totalRefreshed += count
+	}
+
+	respBody := gin.H{
+		"status":          "ok",
+		"stale_by_type":   staleByType,
+		"refreshed":       refreshed,
+		"total_stale":     totalStale,
+		"total_refreshed": totalRefreshed,
+		"elapsed_ms":      time.Since(startTime).Milliseconds(),
+	}
+	if queryErr != nil {
+		respBody["query_warning"] = queryErr.Error()
+	}
+	if syncErr != nil {
+		respBody["status"] = "partial"
+		respBody["sync_error"] = syncErr.Error()
+		log.Printf("SyncAnchorThresholds: partial error: %v", syncErr)
+		c.JSON(http.StatusPartialContent, respBody)
+		return
+	}
+
+	log.Printf("SyncAnchorThresholds: done total_stale=%d total_refreshed=%d elapsed=%s",
+		totalStale, totalRefreshed, time.Since(startTime))
+	c.JSON(http.StatusOK, respBody)
+}
+
+// RecoverAnchorThresholds rebuilds VictoriaMetrics anchor metrics from the database.
+// This is a disaster-recovery endpoint for use when VM anchor data has been lost.
+// It reads all N9EVMRuleLink rows (which store threshold + tenant_id since the last LinkVMsToRule call),
+// fetches live domain/region from VictoriaMetrics vm_instance_map (with DB fallback), and
+// re-imports all anchor metrics in batches.
+//
+// POST /api/v1/metrics/alarm/anchor/recover
+func (a *AlarmAPI) RecoverAnchorThresholds(c *gin.Context) {
+	a.InitN9EComponents()
+
+	if a.anchorManager == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Anchor manager not configured"})
+		return
+	}
+
+	ctx := c.Request.Context()
+	startTime := time.Now()
+
+	// Step 1: query all VM rule links from database
+	allLinks, err := a.n9eOperator.GetAllVMRuleLinks(ctx)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to query VM rule links: %v", err)})
+		return
+	}
+	if len(allLinks) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"status":     "ok",
+			"message":    "No VM rule links found in database, nothing to recover.",
+			"elapsed_ms": time.Since(startTime).Milliseconds(),
+		})
+		return
+	}
+
+	// Cache bandwidth rule directions to avoid repeated DB lookups
+	bwDirectionCache := make(map[string]string) // rule_uuid → "in" or "out"
+
+	// Collect AnchorInstance lists per anchor type
+	anchorBatches := make(map[string][]routes.AnchorInstance)
+
+	skipped := 0
+	for _, link := range allLinks {
+		if link.Threshold <= 0 {
+			// Legacy links that were created before Threshold was stored; skip them
+			log.Printf("[RecoverAnchor] Skipping link rule=%s vm=%s: threshold=0 (legacy record)", link.RuleUUID, link.VMUUID)
+			skipped++
+			continue
+		}
+
+		// Determine anchor type
+		var anchorType string
+		switch link.RuleType {
+		case "cpu":
+			anchorType = "cpu"
+		case "memory":
+			anchorType = "mem"
+		case "bandwidth":
+			direction, ok := bwDirectionCache[link.RuleUUID]
+			if !ok {
+				bwRule, bwErr := a.n9eOperator.GetBandwidthRuleByUUID(ctx, link.RuleUUID)
+				if bwErr != nil {
+					log.Printf("[RecoverAnchor] Cannot get bandwidth rule %s: %v, skipping link", link.RuleUUID, bwErr)
+					skipped++
+					continue
+				}
+				direction = bwRule.Direction
+				bwDirectionCache[link.RuleUUID] = direction
+			}
+			if direction == "out" {
+				anchorType = "bw_out"
+			} else {
+				anchorType = "bw_in"
+			}
+		default:
+			log.Printf("[RecoverAnchor] Unknown rule type %q for link rule=%s, skipping", link.RuleType, link.RuleUUID)
+			skipped++
+			continue
+		}
+
+		// Resolve domain/region from VictoriaMetrics vm_instance_map; fallback to DB
+		domain, _, region, metaErr := a.anchorManager.GetInstanceMetadata(ctx, link.VMUUID)
+		if metaErr != nil {
+			log.Printf("[RecoverAnchor] VM metadata unavailable for %s (%v); trying DB fallback", link.VMUUID, metaErr)
+			domain, metaErr = routes.GetDomainByInstanceUUID(ctx, link.VMUUID)
+			if metaErr != nil {
+				log.Printf("[RecoverAnchor] DB fallback also failed for %s (%v); recovering with empty domain/region", link.VMUUID, metaErr)
+				domain = ""
+			}
+			region = ""
+		}
+
+		anchorBatches[anchorType] = append(anchorBatches[anchorType], routes.AnchorInstance{
+			RuleUUID:   link.RuleUUID,
+			Region:     region,
+			Domain:     domain,
+			InstanceID: link.VMUUID,
+			Interface:  link.Interface,
+			Owner:      link.Owner,
+			TenantID:   link.TenantID,
+			Threshold:  link.Threshold,
+		})
+	}
+
+	// Step 2: write each anchor type batch to VictoriaMetrics
+	recovered := make(map[string]int)
+	var writeErrors []string
+	for anchorType, instances := range anchorBatches {
+		if wErr := a.anchorManager.WriteAnchorThresholdBatch(ctx, anchorType, instances); wErr != nil {
+			log.Printf("[RecoverAnchor] Failed to write %s anchors: %v", anchorType, wErr)
+			writeErrors = append(writeErrors, fmt.Sprintf("%s: %v", anchorType, wErr))
+		} else {
+			recovered[anchorType] = len(instances)
+			log.Printf("[RecoverAnchor] Recovered %d %s anchor(s)", len(instances), anchorType)
+		}
+	}
+
+	totalRecovered := 0
+	for _, cnt := range recovered {
+		totalRecovered += cnt
+	}
+
+	resp := gin.H{
+		"status":          "ok",
+		"total_links":     len(allLinks),
+		"skipped":         skipped,
+		"total_recovered": totalRecovered,
+		"recovered":       recovered,
+		"elapsed_ms":      time.Since(startTime).Milliseconds(),
+	}
+	if len(writeErrors) > 0 {
+		resp["status"] = "partial"
+		resp["write_errors"] = writeErrors
+		log.Printf("[RecoverAnchor] Partial recovery: %v", writeErrors)
+		c.JSON(http.StatusPartialContent, resp)
+		return
+	}
+
+	log.Printf("[RecoverAnchor] Done: total_links=%d skipped=%d total_recovered=%d elapsed=%s",
+		len(allLinks), skipped, totalRecovered, time.Since(startTime))
+	c.JSON(http.StatusOK, resp)
 }
 
 func (a *AlarmAPI) sendSwitchAPIRequest(data map[string]interface{}) {
