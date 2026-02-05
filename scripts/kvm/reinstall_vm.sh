@@ -30,14 +30,9 @@ vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
 mv $vm_xml $vm_xml-$(date +'%s.%N')
 virsh dumpxml $vm_ID >$vm_xml
 
-# Try to undefine the domain, handle NVRAM case
-virsh undefine $vm_ID 2>/dev/null
+virsh undefine --nvram $vm_ID
 if [ $? -ne 0 ]; then
-    # If normal undefine fails, try with --nvram (for UEFI VMs)
-    virsh undefine --nvram $vm_ID
-    if [ $? -ne 0 ]; then
-        echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
-    fi
+    echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
 fi
 virsh destroy $vm_ID
 let fsize=$disk_size*1024*1024*1024
