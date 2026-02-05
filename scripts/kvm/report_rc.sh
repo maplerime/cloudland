@@ -9,7 +9,7 @@ exec <&-
 cpu=0
 total_cpu=$(cat /proc/cpuinfo | grep -c processor)
 memory=0
-[ -z "$system_reserved_memory" ] && system_reserved_memory=4000000
+[ -z "$system_reserved_memory" ] && system_reserved_memory=8000000
 total_memory=$(( $(free | grep 'Mem:' | awk '{print $2}') - $system_reserved_memory ))
 disk=0
 disk_info=$(df -B 1 $image_dir | tail -1)
