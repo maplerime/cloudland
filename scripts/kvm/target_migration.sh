@@ -57,10 +57,12 @@ while [ $i -lt $nvolume ]; do
     while [ $j -lt $npaths ]; do
 	vhost_path=$(jq -r .[$j] <<<$vhost_paths)
 	if [ "${vhost_path/$business_network:/}" == "$vhost_path" ]; then
-            ret_code=$(wds_curl PUT "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}" | jq -r .ret_code)
-            if [ "$ret_code" != "0" ]; then
-                echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
-	        exit 1
+            if [ "$migration_type" = "cold" ]; then
+                ret_code=$(wds_curl PUT "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}" | jq -r .ret_code)
+                if [ "$ret_code" != "0" ]; then
+                    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+	            exit 1
+                fi
             fi
         else
             wds_curl DELETE "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}"
