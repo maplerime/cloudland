@@ -204,7 +204,7 @@ fi
 sed_cmd="$sed_cmd; s#<instance_id>.*</instance_id>#<instance_id>$instance_uuid</instance_id>#g"
 sed -i "$sed_cmd" $vm_xml
 virsh define $vm_xml
-virsh autostart $vm_ID
+virsh autostart $vm_ID --disable
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
 echo "|:-COMMAND-:| launch_vm.sh '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
