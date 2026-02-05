@@ -191,7 +191,7 @@ if [ "$is_uefi_current" != "$should_be_uefi" ]; then
 fi
 
 # Update basic parameters (memory, CPU, instance UUID, and vhost name for WDS)
-sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g; /<topology/s/cores='[0-9]*'/cores='$vm_cpu'/"
+sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g;  s#\(<topology[^>]*\)cores='[0-9]*'#\1cores='$vm_cpu'#g"
 if [ -n "$wds_address" ]; then
   sed_cmd="$sed_cmd; s#$old_vhost_name#$vhost_name#g"
 fi
