@@ -46,10 +46,11 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Failed to query volume", err)
 		return
 	}
-	volume.InstanceID = 0
-	volume.Target = ""
-	volume.Status = model.VolumeStatusAvailable
-	err = db.Save(volume).Error
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{
+		"instance_id": volume.Instance,
+		"target":      "",
+		"status":      model.VolumeStatusAvailable,
+	}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return

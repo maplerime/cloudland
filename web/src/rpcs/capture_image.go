@@ -58,7 +58,11 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		}
 		image.Size = int64(imageSize)
 	}
-	err = db.Save(image).Error
+	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(map[string]interface{}{
+		"status": image.Status,
+		"format": image.Format,
+		"size":   image.Size,
+	}).Error
 	if err != nil {
 		logger.Error("Update image failed", err)
 		return
@@ -83,7 +87,10 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		} else {
 			storage.Status = model.StorageStatusError
 		}
-		err = db.Save(storage).Error
+		err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{
+			"status":    storage.Status,
+			"volume_id": storage.VolumeID,
+		}).Error
 		if err != nil {
 			logger.Error("Update image storage failed", err)
 			return

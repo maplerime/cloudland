@@ -27,10 +27,10 @@ func updateInstance(volume *model.Volume, status string, reason string) (err err
 			logger.Error("Invalid instance ID", err)
 			return err
 		}
-
-		instance.Status = model.InstanceStatus(status)
-		instance.Reason = reason
-		if err = db.Save(&instance).Error; err != nil {
+		if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+			"status": model.InstanceStatus(status),
+			"reason": reason,
+		}).Error; err != nil {
 			logger.Error("Update instance status failed", err)
 			return err
 		}

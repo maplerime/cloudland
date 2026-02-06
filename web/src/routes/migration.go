@@ -131,7 +131,9 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				task1.Summary = "No qualified target"
 				task1.Status = "not_doing"
 				migration.Status = "not_doing"
-				mErr := db.Model(migration).Save(migration).Error
+				mErr := db.Model(&model.Migration{}).Where("id = ?", migration.ID).Updates(map[string]interface{}{
+					"status": migration.Status,
+				}).Error
 				if mErr != nil {
 					logger.Error("Failed to update save migration, %v", mErr)
 					err = NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
