@@ -151,7 +151,6 @@ var notTrackedCommands = map[string]bool{
 func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execError error) {
 	// 功能未启用则直接返回
 	if !IsEnabled() {
-		logger.Debugf("ExtractAndPushEvent: callback feature is disabled, skipping command %s", cmd)
 		return
 	}
 	// 如果命令执行失败，不推送事件
@@ -160,18 +159,16 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		logger.Debugf("Command %s failed with error, skipping event push: %v", cmd, execError)
 		return
 	}
-
+	logger.Debugf("ExtractAndPushEvent enter: enabled=%v cmd=%s args_len=%d execErr=%v",
+		IsEnabled(), cmd, len(args), execError)
 	// 查找元数据
 	metadata, exists := commandMetadataRegistry[cmd]
+	logger.Debugf("metadata exists=%v notTracked=%v", exists, notTrackedCommands[cmd])
 	if !exists {
-		if !notTrackedCommands[cmd] {
-			// 该命令没有注册元数据，不处理
-			logger.Debugf("Command %s not registered in metadata registry", cmd)
-		}
 		return
 	}
-
-	logger.Debugf("ExtractAndPushEvent: processing command %s with args %v", cmd, args)
+	logger.Debugf("metadata: resourceType=%s idArgIndex=%d hasExtractor=%v action=%s",
+		metadata.ResourceType, metadata.IDArgIndex, metadata.Extractor != nil, metadata.ActionType)
 
 	var rcEvent *ResourceChangeEvent
 	var err error
@@ -194,6 +191,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 			ID:     rcEvent.ResourceUUID,
 			Region: GetRegion(),
 		}
+		logger.Infof("resource: type=%s id=%s region=%s", resource.Type, resource.ID, resource.Region)
 		// 推送事件到队列
 		event := &Event{
 			EventType:  rcEvent.ResourceType.String() + "_" + metadata.ActionType,
@@ -204,6 +202,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 			Data:       rcEvent.Data,
 			Metadata:   rcEvent.Metadata,
 		}
+		logger.Infof("event: type=%s TenantID=%s Data=%v", event.EventType, rcEvent.TenantID, rcEvent.Data)
 		success := PushEvent(event)
 		if !success {
 			logger.Warningf("Failed to push event for command %s: queue full", cmd)
@@ -260,7 +259,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 		logger.Errorf("Failed to query instance %d: %v", resourceID, err)
 		return nil, err
 	}
-
+	logger.Infof("Succeed to extractInstanceInfo %s", instance.OwnerInfo.UUID)
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeInstance,
 		ResourceUUID: instance.UUID,
@@ -285,7 +284,7 @@ func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, err
 		logger.Errorf("Failed to query volume %d: %v", resourceID, err)
 		return nil, err
 	}
-
+	logger.Infof("Succeed to extractInstanceInfo %s", volume.OwnerInfo.UUID)
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeVolume,
 		ResourceUUID: volume.UUID,
