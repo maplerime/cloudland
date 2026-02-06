@@ -216,7 +216,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 		logger.Debugf("IDArgIndex %d out of range for args length %d", metadata.IDArgIndex, len(args))
 		return nil, nil
 	}
-	logger.Infof("defaultExtractor %s", args)
+
 	// 提取资源 ID
 	resourceIDStr := args[metadata.IDArgIndex]
 	resourceID, err := strconv.ParseInt(resourceIDStr, 10, 64)
@@ -224,9 +224,9 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 		logger.Errorf("Failed to parse resource ID '%s': %v from command %s", resourceIDStr, err, args)
 		return nil, err
 	}
-	logger.Infof("defaultExtractor resourceID %s", resourceID)
+
 	db := DB()
-	logger.Infof("db has been initialized")
+
 	// 根据资源类型查询数据库
 	switch metadata.ResourceType {
 	case ResourceTypeInstance:
@@ -254,7 +254,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 		logger.Errorf("Failed to query instance %d: %v", resourceID, err)
 		return nil, err
 	}
-	logger.Infof("Succeed to extractInstanceInfo %s", instance.OwnerInfo.UUID)
+
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeInstance,
 		ResourceUUID: instance.UUID,
@@ -274,13 +274,12 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 
 // extractVolumeInfo 提取存储卷信息
 func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
-	logger.Infof("Start to extractVolumeInfo")
 	volume := &model.Volume{}
 	if err := db.Where("id = ?", resourceID).Take(volume).Error; err != nil {
 		logger.Errorf("Failed to query volume %d: %v", resourceID, err)
 		return nil, err
 	}
-	logger.Infof("Succeed to extractInstanceInfo %s", volume.OwnerInfo.UUID)
+
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeVolume,
 		ResourceUUID: volume.UUID,
