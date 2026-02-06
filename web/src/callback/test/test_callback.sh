@@ -22,7 +22,8 @@ curl -s -X POST "$SERVER_URL" \
     "OccurredAt": "2025-10-30T10:30:00Z",
     "resource": {
       "type": "instance",
-      "id": "550e8400-e29b-41d4-a716-446655440000"
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "region": "ap-hongkong"
     },
     "data": {
       "hostname": "test-vm-001",
@@ -49,7 +50,8 @@ curl -s -X POST "$SERVER_URL" \
     "OccurredAt": "2025-10-30T10:31:00Z",
     "resource": {
       "type": "volume",
-      "id": "660e8400-e29b-41d4-a716-446655440001"
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "region": "ap-hongkong"
     },
     "data": {
       "name": "test-volume-001",
@@ -75,7 +77,8 @@ curl -s -X POST "$SERVER_URL" \
     "OccurredAt": "2025-10-30T10:32:00Z",
     "resource": {
       "type": "volume",
-      "id": "660e8400-e29b-41d4-a716-446655440001"
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "region": "ap-hongkong"
     },
     "data": {
       "name": "test-volume-001",
@@ -100,7 +103,8 @@ curl -s -X POST "$SERVER_URL" \
     "OccurredAt": "2025-10-30T10:33:00Z",
     "resource": {
       "type": "image",
-      "id": "770e8400-e29b-41d4-a716-446655440002"
+      "id": "770e8400-e29b-41d4-a716-446655440002",
+      "region": "ap-hongkong"
     },
     "data": {
       "name": "ubuntu-22.04",
@@ -125,7 +129,8 @@ curl -s -X POST "$SERVER_URL" \
     "OccurredAt": "2025-10-30T10:34:00Z",
     "resource": {
       "type": "interface",
-      "id": "880e8400-e29b-41d4-a716-446655440003"
+      "id": "880e8400-e29b-41d4-a716-446655440003",
+      "region": "ap-hongkong"
     },
     "data": {
       "name": "eth0",
@@ -151,7 +156,8 @@ curl -s -X POST "$SERVER_URL" \
     "OccurredAt": "2025-10-30T10:35:00Z",
     "resource": {
       "type": "instance",
-      "id": "550e8400-e29b-41d4-a716-446655440000"
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "region": "ap-hongkong"
     },
     "data": {
       "hostname": "test-vm-001",

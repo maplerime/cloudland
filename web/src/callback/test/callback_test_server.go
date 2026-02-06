@@ -21,11 +21,11 @@ import (
 
 // ResourceChangeEvent 接收的资源变化事件结构
 type Resource struct {
-	Type   string            `json:"type"`             // 资源类型
-	ID     string            `json:"id"`               // 资源 UUID
-	Name   string            `json:"name,omitempty"`   // 资源名称
-	Region string            `json:"region,omitempty"` // 资源所属区域
-	Tags   map[string]string `json:"tags,omitempty"`   // 资源标签
+	Type   string            `json:"type"`           // 资源类型
+	ID     string            `json:"id"`             // 资源 UUID
+	Region string            `json:"region"`         // 资源所属区域
+	Name   string            `json:"name,omitempty"` // 资源名称
+	Tags   map[string]string `json:"tags,omitempty"` // 资源标签
 }
 
 // Cloudland event structure to be sent to callback URL
@@ -101,11 +101,12 @@ func printEvent(count uint64, event *Event) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Printf("Event #%d received at %s\n", count, time.Now().Format("2006-01-02 15:04:05.000"))
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Printf("  Event Type    : %s\n", event.EventType)
-	fmt.Printf("  Source        : %s\n", event.Source)
-	fmt.Printf("  Resource Type : %s\n", event.Resource.Type)
-	fmt.Printf("  Resource UUID : %s\n", event.Resource.ID)
-	fmt.Printf("  Tenant ID     : %s\n", event.TenantID)
+	fmt.Printf("  Event Type      : %s\n", event.EventType)
+	fmt.Printf("  Source          : %s\n", event.Source)
+	fmt.Printf("  Resource Type   : %s\n", event.Resource.Type)
+	fmt.Printf("  Resource UUID   : %s\n", event.Resource.ID)
+	fmt.Printf("  Resource Region : %s\n", event.Resource.Region)
+	fmt.Printf("  Tenant ID       : %s\n", event.TenantID)
 	fmt.Println()
 	fmt.Printf("  OccurredAt     : %s\n", event.OccurredAt.Format("2006-01-02 15:04:05.000"))
 
