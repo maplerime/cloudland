@@ -36,7 +36,7 @@ func PushEvent(event *Event) bool {
 		logger.Warning("Nil event provided, skipping event push")
 		return false
 	}
-	logger.Infof("callback queue initialized len=%d cap=%d", GetQueueLength(), GetQueueSize())
+
 	// 非阻塞推送
 	select {
 	case eventQueue <- event:

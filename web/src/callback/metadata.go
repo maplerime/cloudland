@@ -159,16 +159,15 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		logger.Debugf("Command %s failed with error, skipping event push: %v", cmd, execError)
 		return
 	}
-	logger.Debugf("ExtractAndPushEvent enter: enabled=%v cmd=%s args_len=%d execErr=%v",
-		IsEnabled(), cmd, len(args), execError)
+
 	// 查找元数据
 	metadata, exists := commandMetadataRegistry[cmd]
-	logger.Debugf("metadata exists=%v notTracked=%v", exists, notTrackedCommands[cmd])
 	if !exists {
+		if !notTrackedCommands[cmd] { // 该命令没有注册元数据，不处理
+			logger.Debugf("Command %s not registered in metadata registry", cmd)
+		}
 		return
 	}
-	logger.Debugf("metadata: resourceType=%s idArgIndex=%d hasExtractor=%v action=%s",
-		metadata.ResourceType, metadata.IDArgIndex, metadata.Extractor != nil, metadata.ActionType)
 
 	var rcEvent *ResourceChangeEvent
 	var err error
@@ -191,7 +190,6 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 			ID:     rcEvent.ResourceUUID,
 			Region: GetRegion(),
 		}
-		logger.Infof("resource: type=%s id=%s region=%s", resource.Type, resource.ID, resource.Region)
 		// 推送事件到队列
 		event := &Event{
 			EventType:  rcEvent.ResourceType.String() + "_" + metadata.ActionType,
@@ -202,12 +200,9 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 			Data:       rcEvent.Data,
 			Metadata:   rcEvent.Metadata,
 		}
-		logger.Infof("event: type=%s TenantID=%s Data=%v", event.EventType, rcEvent.TenantID, rcEvent.Data)
 		success := PushEvent(event)
 		if !success {
 			logger.Warningf("Failed to push event for command %s: queue full", cmd)
-		} else {
-			logger.Infof("Succeed to push event for command %s", cmd)
 		}
 	} else {
 		logger.Debugf("ExtractAndPushEvent: no event extracted for command %s (rcEvent is nil)", cmd)
@@ -221,7 +216,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 		logger.Debugf("IDArgIndex %d out of range for args length %d", metadata.IDArgIndex, len(args))
 		return nil, nil
 	}
-
+	logger.Infof("defaultExtractor %s", args)
 	// 提取资源 ID
 	resourceIDStr := args[metadata.IDArgIndex]
 	resourceID, err := strconv.ParseInt(resourceIDStr, 10, 64)
@@ -229,9 +224,9 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 		logger.Errorf("Failed to parse resource ID '%s': %v from command %s", resourceIDStr, err, args)
 		return nil, err
 	}
-
+	logger.Infof("defaultExtractor resourceID %s", resourceID)
 	db := DB()
-
+	logger.Infof("db has been initialized")
 	// 根据资源类型查询数据库
 	switch metadata.ResourceType {
 	case ResourceTypeInstance:
@@ -279,6 +274,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 
 // extractVolumeInfo 提取存储卷信息
 func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
+	logger.Infof("Start to extractVolumeInfo")
 	volume := &model.Volume{}
 	if err := db.Where("id = ?", resourceID).Take(volume).Error; err != nil {
 		logger.Errorf("Failed to query volume %d: %v", resourceID, err)
