@@ -275,10 +275,21 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 // extractVolumeInfo 提取存储卷信息
 func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	volume := &model.Volume{}
-	if err := db.Where("id = ?", resourceID).Take(volume).Error; err != nil {
+
+	// 显式禁用自动加载关联，防止循环关联导致的死锁
+	// Volume 模型有 Instance *Instance，Instance 又有 []*Volume，形成循环
+	err := db.Set("gorm:auto_preload", false).
+		Where("id = ?", resourceID).
+		Take(volume).
+		Error
+
+	if err != nil {
 		logger.Errorf("Failed to query volume %d: %v", resourceID, err)
 		return nil, err
 	}
+
+	logger.Infof("Succeed to extractVolumeInfo, volume UUID=%s, tenant UUID=%s",
+		volume.UUID, volume.OwnerInfo.UUID)
 
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeVolume,
