@@ -156,6 +156,7 @@ Event #1 received at 2025-10-30 10:35:12.345
   Source          : Cloudland
   Resource Type   : instance
   Resource UUID   : 550e8400-e29b-41d4-a716-446655440000
+  Resource Region : ap-guangzhou
   Tenant ID       : 111
   OccurredAt      : 2025-10-30 10:35:12.345
   data      :
@@ -189,6 +190,7 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
     "resource": {
       "type": "instance",
       "id": "550e8400-e29b-41d4-a716-446655440000",
+      "region": "ap-guangzhou"
     },
     "data": {
       "hostname": "test-vm-001",
@@ -207,7 +209,8 @@ curl -X POST http://localhost:8080/api/v1/resource-changes \
     "tenant_id": "111",
     "resource": {
       "type": "volume"
-      "id": "660e8400-e29b-41d4-a716-446655440001"
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "region": "ap-guangzhou"
     },
     "OccurredAt": "2025-10-30T10:31:00Z",
     "data": {
@@ -239,6 +242,7 @@ curl http://localhost:8080/stats | jq .
 - `OccurredAt`
 - `resource.type`
 - `resource.id`
+- `resource.region`
 - `data.status`
 
 ## 许可证

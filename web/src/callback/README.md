@@ -65,15 +65,12 @@ retry_interval = 5
 ### 虚拟机实例 (instance)
 - `launch_vm` - 虚拟机启动
 - `action_vm` - 虚拟机操作（启动、停止等）
-- `clear_vm` - 虚拟机清理
 - `migrate_vm` - 虚拟机迁移
 
 ### 存储卷 (volume)
-- `create_volume_local` - 创建本地卷
 - `create_volume_wds_vhost` - 创建 WDS vhost 卷
-- `attach_volume_local` - 挂载本地卷
 - `attach_volume_wds_vhost` - 挂载 WDS vhost 卷
-- `detach_volume` - 卸载卷
+- `detach_volume_wds_vhost` - 卸载 WDS vhost 卷
 - `resize_volume` - 扩容卷
 
 ### 镜像 (image)
@@ -82,7 +79,6 @@ retry_interval = 5
 
 ### 网络接口 (interface)
 - `attach_vm_nic` - 挂载网卡
-- `detach_vm_nic` - 卸载网卡
 
 ## 事件格式
 
@@ -95,6 +91,7 @@ retry_interval = 5
     "resource": {
       "type": "instance",
       "id": "550e8400-e29b-41d4-a716-446655440000",
+      "region": "ap-hongkong"
     },
     "data": {
       "hostname": "test-vm-001",
