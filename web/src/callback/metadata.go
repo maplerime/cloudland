@@ -153,7 +153,6 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 	if !IsEnabled() {
 		return
 	}
-
 	// 如果命令执行失败，不推送事件
 	// 可以根据需求修改这个逻辑，比如推送错误事件
 	if execError != nil {
@@ -206,6 +205,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		if !success {
 			logger.Warningf("Failed to push event for command %s: queue full", cmd)
 		}
+		logger.Infof("Succeed to push event for command %s", cmd)
 	}
 }
 
