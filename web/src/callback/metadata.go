@@ -151,6 +151,7 @@ var notTrackedCommands = map[string]bool{
 func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execError error) {
 	// 功能未启用则直接返回
 	if !IsEnabled() {
+		logger.Debugf("ExtractAndPushEvent: callback feature is disabled, skipping command %s", cmd)
 		return
 	}
 	// 如果命令执行失败，不推送事件
@@ -169,6 +170,8 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		}
 		return
 	}
+
+	logger.Debugf("ExtractAndPushEvent: processing command %s with args %v", cmd, args)
 
 	var rcEvent *ResourceChangeEvent
 	var err error
@@ -204,8 +207,11 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 		success := PushEvent(event)
 		if !success {
 			logger.Warningf("Failed to push event for command %s: queue full", cmd)
+		} else {
+			logger.Infof("Succeed to push event for command %s", cmd)
 		}
-		logger.Infof("Succeed to push event for command %s", cmd)
+	} else {
+		logger.Debugf("ExtractAndPushEvent: no event extracted for command %s (rcEvent is nil)", cmd)
 	}
 }
 
