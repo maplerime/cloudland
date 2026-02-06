@@ -249,8 +249,9 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 
 // extractInstanceInfo 提取虚拟机实例信息
 func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
+	logger.Debugf("extractInstanceInfo: starting query for instance ID=%d", resourceID)
 	instance := &model.Instance{}
-	if err := db.Where("id = ?", resourceID).Take(instance).Error; err != nil {
+	if err := db.Where("id = ?", resourceID).First(instance).Error; err != nil {
 		logger.Errorf("Failed to query instance %d: %v", resourceID, err)
 		return nil, err
 	}
@@ -276,14 +277,18 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	volume := &model.Volume{}
 
-	// 显式禁用自动加载关联，防止循环关联导致的死锁
-	// Volume 模型有 Instance *Instance，Instance 又有 []*Volume，形成循环
-	err := db.Set("gorm:auto_preload", false).
-		Where("id = ?", resourceID).
-		Take(volume).
-		Error
+	logger.Debugf("extractVolumeInfo: starting query for volume ID=%d", resourceID)
 
-	if err != nil {
+	// 使用原生 SQL 查询，避免 GORM 模型关联导致的死锁
+	// 直接查询需要的字段，不触发任何关联加载
+	query := `
+		SELECT id, uuid, owner, name, status, size,
+		       instance_id, target, format, path
+		FROM volumes
+		WHERE id = ?
+	`
+
+	if err := db.Raw(query, resourceID).Scan(volume).Error; err != nil {
 		logger.Errorf("Failed to query volume %d: %v", resourceID, err)
 		return nil, err
 	}
