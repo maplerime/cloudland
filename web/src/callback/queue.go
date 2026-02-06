@@ -40,13 +40,11 @@ func PushEvent(event *Event) bool {
 	// 非阻塞推送
 	select {
 	case eventQueue <- event:
-		logger.Debugf("Event pushed to queue: %s/%s -> %s",
-			event.EventType, event.Resource.ID, event.Data["status"])
+		logger.Debugf("Event pushed to queue: %s/%s", event.EventType, event.Resource.ID)
 		return true
 	default:
 		// 队列满了，记录警告并丢弃事件
-		logger.Warningf("Event queue is full, dropping event: %s/%s",
-			event.EventType, event.Resource.ID)
+		logger.Warningf("Event queue is full, dropping event: %s/%s", event.EventType, event.Resource.ID)
 		return false
 	}
 }
