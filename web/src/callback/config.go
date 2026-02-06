@@ -31,6 +31,10 @@ func GetCallbackURL() string {
 	return viper.GetString("callback.url")
 }
 
+func GetAPIKey() string {
+	return viper.GetString("callback.api_key")
+}
+
 // GetRegion 获取事件源的 region（带缓存）
 func GetRegion() string {
 	regionOnce.Do(func() {

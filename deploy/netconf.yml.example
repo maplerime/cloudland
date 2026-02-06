@@ -34,4 +34,5 @@ switch_api_endpoint: "localhost"
 switch_api_house: "test"
 
 ps_api_endpoint: "https://ps-test.petacloud.ai/mercury/ingestion/v1/events"
+ps_api_key: "your_api_key"
 region_name: "prestaging2"
