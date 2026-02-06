@@ -118,7 +118,7 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 		"cpu_model": cpuModel,
 		"virt_type": "kvm-x86_64",
 		"zone":      zone,
-		"hostip":    hostIP,
+		"host_ip":   hostIP,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to update hyper", err)
