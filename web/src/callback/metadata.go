@@ -316,101 +316,69 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 	}
 */
 func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
-	volume := &model.Volume{}
-
-	// ====== 可调参数（不改变原逻辑，只加观测）======
-	// 你原来 probe 里 stmt_timeout=3s/query_timeout=3s，这里对齐用 3s
-	// 这里不使用 context，而是用 timer 触发诊断日志（gorm v1 不支持 WithContext）
-	stmtTimeout := 3 * time.Second
-	diagAfter := 1200 * time.Millisecond // 卡住多久开始打印一次 dbstats（可改小点）
-	// ===========================================
-
 	traceID := fmt.Sprintf("vol-%d-%d", resourceID, time.Now().UnixNano())
 	start := time.Now()
 
+	// 用一个轻量结构接收查询结果（避免 OwnerInfo 指针问题）
+	type volRow struct {
+		ID         int64
+		UUID       string
+		Owner      int64
+		TenantUUID string `gorm:"column:tenant_uuid"`
+		Name       string
+		Status     string
+		Size       int32
+		InstanceID int64
+		Target     string
+		Format     string
+		Path       string
+	}
+
+	row := &volRow{}
+
 	logger.Debugf("[%s] extractVolumeInfo: start volumeID=%d", traceID, resourceID)
 
-	// 使用原生 SQL 查询，避免 GORM 模型关联导致的死锁
+	// 关键：显式 join 拿 tenant uuid
+	// organizations 表名/字段名如果不一致，请按实际改
 	query := `
-		SELECT id, uuid, owner, name, status, size,
-		       instance_id, target, format, path
-		FROM volumes
-		WHERE id = ?
-	`
-	logger.Debugf("[%s] extractVolumeInfo: sql=%s args=[%d] stmt_timeout=%s", traceID, compactSQL(query), resourceID, stmtTimeout)
+        SELECT v.id, v.uuid, v.owner, v.name, v.status, v.size,
+               v.instance_id, v.target, v.format, v.path,
+               o.uuid AS tenant_uuid
+        FROM volumes v
+        LEFT JOIN organizations o ON o.id = v.owner
+        WHERE v.id = ?
+    `
+	logger.Debugf("[%s] extractVolumeInfo: sql=%s args=[%d]", traceID, compactSQL(query), resourceID)
 
-	// —— 1) 设置 statement_timeout（只影响当前事务/当前连接），并打印设置结果
-	// gorm v1 不保证一定在事务里，但 SET LOCAL 在事务外会报错；因此这里用 SET statement_timeout 更稳
-	// 你原日志看到是 SET LOCAL statement_timeout = 3000，说明你那边可能包了事务；
-	// 为了不改变行为，我们先尝试 SET LOCAL，失败再 fallback 到 SET。
-	setStmtTimeoutWithFallback(db, stmtTimeout)
-
-	// —— 2) 观察是否“卡住”并输出诊断
-	done := make(chan struct{})
-	go func() {
-		defer func() { recover() }()
-
-		// 第一次到点打印 dbstats
-		timer := time.NewTimer(diagAfter)
-		select {
-		case <-timer.C:
-			logger.Errorf("[%s] extractVolumeInfo: still running after %s (possible hung)", traceID, diagAfter)
-			printDBStatsV1(db, traceID)
-
-			// 到这里再等到 stmtTimeout（总时长），超时则拉取 pg 诊断信息
-			timeoutTimer := time.NewTimer(stmtTimeout - diagAfter)
-			select {
-			case <-timeoutTimer.C:
-				logger.Errorf("[%s] extractVolumeInfo: exceeded stmt_timeout=%s, dumping pg diagnostics", traceID, stmtTimeout)
-				printDBStatsV1(db, traceID)
-				dumpPostgresDiagnostics(traceID)
-			case <-done:
-				timeoutTimer.Stop()
-				return
-			}
-
-		case <-done:
-			timer.Stop()
-			return
-		}
-	}()
-
-	// —— 3) 执行原来的查询（逻辑不变）
-	err := db.Raw(query, resourceID).Scan(volume).Error
-	close(done)
-
-	elapsed := time.Since(start)
-
-	if err != nil {
-		logger.Errorf("[%s] extractVolumeInfo: query FAILED elapsed=%s volumeID=%d err=%v", traceID, elapsed, resourceID, err)
-		printDBStatsV1(db, traceID)
-		// 失败时也做一次旁路诊断（不影响原逻辑，只增加信息）
-		dumpPostgresDiagnostics(traceID)
+	if err := db.Raw(query, resourceID).Scan(row).Error; err != nil {
+		logger.Errorf("[%s] extractVolumeInfo: query failed id=%d err=%v elapsed=%s",
+			traceID, resourceID, err, time.Since(start))
 		return nil, err
 	}
 
-	// 原逻辑：成功后记录 volume.UUID、volume.OwnerInfo.UUID
-	// 这里额外打印关键字段，便于确认 scan 到底拿到什么
-	logger.Infof("[%s] extractVolumeInfo: query OK elapsed=%s id=%d uuid=%s owner_id=%d instance_id=%d status=%s size=%d",
-		traceID, elapsed, volume.ID, volume.UUID, volume.Owner, volume.InstanceID, volume.Status.String(), volume.Size)
+	// 防御：tenant uuid 为空也要打出来（但不会 panic）
+	if row.TenantUUID == "" {
+		logger.Warningf("[%s] extractVolumeInfo: tenant uuid empty (owner_id=%d) volume_uuid=%s elapsed=%s",
+			traceID, row.Owner, row.UUID, time.Since(start))
+	} else {
+		logger.Infof("[%s] extractVolumeInfo: query OK elapsed=%s id=%d uuid=%s owner_id=%d tenant_uuid=%s instance_id=%d status=%s size=%d",
+			traceID, time.Since(start), row.ID, row.UUID, row.Owner, row.TenantUUID, row.InstanceID, row.Status, row.Size)
+	}
 
-	// 原逻辑保持：tenant UUID 从 OwnerInfo 取
-	// 如果 OwnerInfo 没加载到，可能导致后面读取 UUID 时卡/空；这里加一行观测日志
-	logger.Infof("[%s] extractVolumeInfo: tenant_uuid(from OwnerInfo)=%s", traceID, volume.OwnerInfo.UUID)
-
+	// 保持你原来的事件字段逻辑（TenantID 仍然用 org uuid）
 	return &ResourceChangeEvent{
 		ResourceType: ResourceTypeVolume,
-		ResourceUUID: volume.UUID,
-		TenantID:     volume.OwnerInfo.UUID,
+		ResourceUUID: row.UUID,
+		TenantID:     row.TenantUUID,
 		Timestamp:    time.Now(),
 		Data: map[string]interface{}{
-			"name":        volume.Name,
-			"status":      volume.Status.String(),
-			"size":        volume.Size,
-			"instance_id": volume.InstanceID,
-			"target":      volume.Target,
-			"format":      volume.Format,
-			"path":        volume.Path,
+			"name":        row.Name,
+			"status":      row.Status,
+			"size":        row.Size,
+			"instance_id": row.InstanceID,
+			"target":      row.Target,
+			"format":      row.Format,
+			"path":        row.Path,
 		},
 	}, nil
 }
