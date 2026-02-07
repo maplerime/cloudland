@@ -35,8 +35,6 @@ func (fb *FrontbackService) CallbackAgent(ctx context.Context, control, command 
 	values.LoadControl(control)
 	agent := &model.Hyper{}
 	values.Duration = int64(duration)
-	// PET-1218 fix hyper status
-	// values.Status = 1
 	if err = agent.Updates(ctx, values); err != nil {
 		logger.Error("Update hyper value error: ", err)
 		return
