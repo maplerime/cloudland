@@ -343,7 +343,7 @@ func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, err
 	// gorm v1 不保证一定在事务里，但 SET LOCAL 在事务外会报错；因此这里用 SET statement_timeout 更稳
 	// 你原日志看到是 SET LOCAL statement_timeout = 3000，说明你那边可能包了事务；
 	// 为了不改变行为，我们先尝试 SET LOCAL，失败再 fallback 到 SET。
-	setStmtTimeoutWithFallback(db, traceID, stmtTimeout)
+	setStmtTimeoutWithFallback(db, stmtTimeout)
 
 	// —— 2) 观察是否“卡住”并输出诊断
 	done := make(chan struct{})

@@ -19,24 +19,33 @@ func compactSQL(s string) string {
 	}
 	return ss
 }
+func setStmtTimeoutWithFallback(db *gorm.DB, d time.Duration) error {
+	// PostgreSQL statement_timeout 单位是毫秒（integer）或 '3s' 这种字面量
+	// 这里用毫秒整数，便于统一
+	ms := int64(d / time.Millisecond)
+	if d > 0 && ms <= 0 {
+		ms = 1
+	}
+	// 0 表示禁用超时
+	sqlLocal := fmt.Sprintf("SET LOCAL statement_timeout = %d", ms)
+	sqlSet := fmt.Sprintf("SET statement_timeout = %d", ms)
 
-func setStmtTimeoutWithFallback(db *gorm.DB, traceID string, d time.Duration) {
-	ms := int(d / time.Millisecond)
-
-	// 先尝试 SET LOCAL（和你现有日志行为一致）
-	if err := db.Exec("SET LOCAL statement_timeout = ?", ms).Error; err == nil {
-		logger.Debugf("[%s] statement_timeout set via SET LOCAL = %dms", traceID, ms)
-		return
-	} else {
-		logger.Debugf("[%s] SET LOCAL statement_timeout failed (maybe not in tx): %v, fallback to SET", traceID, err)
+	// 注意：SET/SET LOCAL 不支持 $1 参数占位符，所以必须拼接常量
+	if err := db.Exec(sqlLocal).Error; err != nil {
+		// 不在事务里时，SET LOCAL 会报 “can only be used in transaction blocks”
+		// 但你之前是 $1 语法错误，这里修复后才会出现这种情况
+		if strings.Contains(err.Error(), "transaction") || strings.Contains(err.Error(), "transaction block") {
+			// fallback 到 session 级别
+			if err2 := db.Exec(sqlSet).Error; err2 != nil {
+				return err2
+			}
+			return nil
+		}
+		// 其他错误直接返回
+		return err
 	}
 
-	// fallback：SET（对当前会话生效，后续建议你在调用后再恢复）
-	if err := db.Exec("SET statement_timeout = ?", ms).Error; err != nil {
-		logger.Errorf("[%s] SET statement_timeout failed: %v", traceID, err)
-		return
-	}
-	logger.Debugf("[%s] statement_timeout set via SET = %dms", traceID, ms)
+	return nil
 }
 
 func printDBStatsV1(gdb *gorm.DB, traceID string) {
