@@ -114,7 +114,7 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	// end PET-769
 	// PET-1218 fix hyper status
 	logger.Debugf("Updating hypervisor %s status to %d", hyperName, hyperStatus)
-	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
+	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Update(map[string]interface{}{
 		"hostname":  hyperName,
 		"status":    hyperStatus,
 		"cpu_model": cpuModel,
