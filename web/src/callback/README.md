@@ -16,10 +16,13 @@
 ```
 callback/
 ├── event.go          # 事件定义和资源类型枚举
+├── event_clone.go    # 不阻塞 worker: 用克隆的副本 + AfterFunc 回灌队列
 ├── config.go         # 配置管理
 ├── queue.go          # 事件队列管理
 ├── worker.go         # HTTP 推送 Worker
 ├── metadata.go       # 命令元数据注册表
+├── rows.go           # 行数据解析
+├── querys.go         # 各个资源的join 查询语句
 ├── README.md         # 本文档
 └── test/             # 测试服务器
     ├── callback_test_server.go    # 测试服务器程序
@@ -41,6 +44,15 @@ enabled = true
 
 # 回调目标 URL
 url = "http://your-monitoring-service.com/api/v1/resource-changes"
+
+# 认证信息
+api_key = "your-api-key"
+
+# 区域或数据中心，用于标记事件的来源
+region = "your-region"
+
+# 是否跳过 TLS 验证, 生产环境应设置为 false
+tls_insecure_skip_verify = true
 
 # Worker 并发数量（建议 3-5）
 workers = 3

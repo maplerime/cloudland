@@ -12,6 +12,15 @@ url = "http://localhost:8080/api/v1/resource-changes"
 # 对于远程服务器，使用：
 # url = "http://monitoring-service.example.com/api/v1/resource-changes"
 
+# 认证信息
+api_key = "your-api-key"
+
+# 区域或数据中心，用于标记事件的来源
+region = "your-region"
+
+# 是否跳过 TLS 验证, 生产环境应设置为 false
+tls_insecure_skip_verify = true
+
 # Worker 并发数量
 # 建议值：3-5，根据系统负载调整
 workers = 3
