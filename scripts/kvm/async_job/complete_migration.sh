@@ -18,7 +18,7 @@ for i in {1..600}; do
         state="completed"
         vm_xml=$xml_dir/$vm_ID/${vm_ID}.xml
         virsh define $vm_xml
-        virsh autostart $vm_ID
+        virsh autostart $vm_ID --disable
 
         # Update vm_instance_map metrics - add VM to current hypervisor
         echo "Updating vm_instance_map metrics: adding VM $vm_ID to current hypervisor"
