@@ -16,6 +16,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/spf13/viper"
 )
 
 // StartWorkers 启动多个 worker goroutine（外部用 GetWorkerCount() 传参即可）
@@ -70,7 +72,12 @@ func worker(ctx context.Context, id int) {
 				continue
 			}
 			apiKey := GetAPIKey()
-
+			if apiKey == "" {
+				// 没有api_key, 则不发送
+				logger.Errorf("Worker %d: api_key not configured; drop: %s/%s",
+					id, event.EventType, event.Resource.ID)
+				continue
+			}
 			reqTimeout := time.Duration(GetTimeout()) * time.Second
 			if reqTimeout <= 0 {
 				reqTimeout = 30 * time.Second
@@ -85,7 +92,7 @@ func worker(ctx context.Context, id int) {
 				retryInterval = 5 * time.Second
 			}
 
-			// 发一次
+			// 开始发一次
 			if err := sendEvent(ctx, client, callbackURL, apiKey, reqTimeout, event); err != nil {
 				logger.Errorf("Worker %d: send failed: %s/%s err=%v",
 					id, event.EventType, event.Resource.ID, err)
@@ -162,9 +169,7 @@ func sendEvent(
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "CloudLand-Callback/1.0")
-	if apiKey != "" {
-		req.Header.Set("X-PS-API-Key", apiKey)
-	}
+	req.Header.Set("X-PS-API-Key", apiKey)
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -191,7 +196,7 @@ var (
 
 func getHTTPClient() *http.Client {
 	httpClientOnce.Do(func() {
-		// insecure := viper.GetBool("callback.tls_insecure_skip_verify") 测试环境 true
+		insecure := viper.GetBool("callback.tls_insecure_skip_verify")
 		transport := &http.Transport{
 			Proxy: http.ProxyFromEnvironment,
 			DialContext: (&net.Dialer{
@@ -200,7 +205,7 @@ func getHTTPClient() *http.Client {
 			}).DialContext,
 			TLSClientConfig: &tls.Config{
 				MinVersion:         tls.VersionTLS12,
-				InsecureSkipVerify: true, // insecure,
+				InsecureSkipVerify: insecure,
 			},
 			MaxIdleConns:        200,
 			MaxIdleConnsPerHost: 50,
