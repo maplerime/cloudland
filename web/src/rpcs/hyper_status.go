@@ -21,6 +21,7 @@ func init() {
 
 func HyperStatus(ctx context.Context, args []string) (status string, err error) {
 	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model'"
+	logger.Debugf("HyperStatus updates %+v", args)
 	db := DB()
 	argn := len(args)
 	if argn < 15 {
@@ -112,13 +113,14 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	cpuModel := args[15]
 	// end PET-769
 	// PET-1218 fix hyper status
+	logger.Debugf("Updating hypervisor %s status to %d", hyperName, hyperStatus)
 	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Update(map[string]interface{}{
 		"hostname":  hyperName,
 		"status":    hyperStatus,
 		"cpu_model": cpuModel,
 		"virt_type": "kvm-x86_64",
 		"zone":      zone,
-		"hostip":    hostIP,
+		"host_ip":   hostIP,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to update hyper", err)

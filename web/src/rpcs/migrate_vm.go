@@ -174,7 +174,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				break
 			}
 		}
-		err = db.Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error
+		err = db.Where("instance_id = ? and type = ?", instance.ID, PublicFloating).Find(&instance.FloatingIps).Error
 		if err != nil {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
 			return

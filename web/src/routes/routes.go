@@ -258,6 +258,24 @@ func New() (m *macaron.Macaron) {
 	m.Post("/backups/new", backupView.Create)
 	m.Delete("/backups/:id", backupView.Delete)
 	m.Post("/restore", backupView.Restore)
+	// Consistency Groups
+	m.Get("/cgroups", consistencyGroupView.List)
+	m.Get("/cgroups/new", consistencyGroupView.New)
+	m.Post("/cgroups/new", consistencyGroupView.Create)
+	m.Get("/cgroups/:id", consistencyGroupView.Get)
+	m.Get("/cgroups/:id/edit", consistencyGroupView.Edit)
+	m.Post("/cgroups/:id", consistencyGroupView.Patch)
+	m.Delete("/cgroups/:id", consistencyGroupView.Delete)
+	// Consistency Group Volumes
+	m.Get("/cgroups/:id/volumes", consistencyGroupView.Volumes)
+	m.Post("/cgroups/:id/volumes", consistencyGroupView.AddVolumes)
+	m.Delete("/cgroups/:id/volumes/:volumeid", consistencyGroupView.RemoveVolume)
+	// Consistency Group Snapshots
+	m.Get("/cgroups/:id/snapshots", consistencyGroupView.ListSnapshots)
+	m.Get("/cgroups/:id/snapshots/new", consistencyGroupView.NewSnapshot)
+	m.Post("/cgroups/:id/snapshots/new", consistencyGroupView.CreateSnapshot)
+	m.Delete("/cgroups/:id/snapshots/:snapid", consistencyGroupView.DeleteSnapshot)
+	m.Post("/cgroups/:id/snapshots/:snapid/restore", consistencyGroupView.Restore)
 	m.Get("/tasks", taskView.List)
 	m.Get("/tasks/:id", taskView.Get)
 
