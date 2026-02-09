@@ -14,6 +14,8 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+
+	"github.com/jinzhu/gorm"
 )
 
 func init() {
@@ -163,16 +165,17 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to delete interfaces", err)
 		return
 	}
-	instance.Hostname = fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix())
-	instance.Status = model.InstanceStatusDeleted
-	instance.Reason = reason
-	instance.Interfaces = nil
-	err = db.Save(instance).Error
+
+	// DELETE instance
+	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+		"hostname":   fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix()),
+		"status":     model.InstanceStatusDeleted,
+		"reason":     reason,
+		"interfaces": nil,
+		"deleted_at": gorm.NowFunc(),
+	}).Error
 	if err != nil {
-		return
-	}
-	if err = db.Delete(instance).Error; err != nil {
-		logger.Error("Failed to delete instance, %v", err)
+		logger.Error("Failed to delete instance", err)
 		return
 	}
 	return
