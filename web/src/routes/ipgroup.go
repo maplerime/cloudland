@@ -119,8 +119,8 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 		"deleted_at": gorm.NowFunc(),
 	}).Error
 	if err != nil {
-		logger.Error("DB failed to delete ip group name", err)
-		err = NewCLError(ErrIpGroupDeleteFailed, "Failed to delete ip group name", err)
+		logger.Error("failed to delete ip group with name update", err)
+		err = NewCLError(ErrIpGroupDeleteFailed, "failed to delete ip group with name update", err)
 		return
 	}
 	return

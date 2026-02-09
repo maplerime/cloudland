@@ -171,11 +171,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		"hostname":   fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix()),
 		"status":     model.InstanceStatusDeleted,
 		"reason":     reason,
-		"interfaces": nil,
 		"deleted_at": gorm.NowFunc(),
 	}).Error
 	if err != nil {
-		logger.Error("Failed to delete instance", err)
+		logger.Error("failed to delete instance with name update", err)
 		return
 	}
 	return
