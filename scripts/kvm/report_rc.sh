@@ -11,7 +11,7 @@ total_cpu=$(cat /proc/cpuinfo | grep -c processor)
 memory=0
 if [ -z "$system_reserved_memory" ]; then
     let system_reserved_memory=$(cat /proc/meminfo | grep MemTotal | awk '{print $2}')/4
-    [ $system_reserved_memory -gt 8000000 ] && system_reserved_memory=8000000
+    [ $system_reserved_memory -gt 32000000 ] && system_reserved_memory=32000000
 fi
 total_memory=$(( $(free | grep 'Mem:' | awk '{print $2}') - $system_reserved_memory ))
 disk=0
@@ -224,7 +224,8 @@ function calc_resource()
     total_memory=${total_memory%.*}
     memory=$(echo "$total_memory-$virtual_memory" | bc)
     memory=${memory%.*}
-    [ $memory -lt 0 ] && memory=0
+    free_mem=$(cat /proc/meminfo | grep -i MemFree | awk '{print $2}')
+    [ $memory -lt $free_mem ] && memory=$free_mem
     if [ $(( $(date +"%s") % 10 )) -gt 7 ]; then
 	rm -f $run_dir/old_resource_list
     fi

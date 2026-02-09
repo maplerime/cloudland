@@ -134,7 +134,7 @@ func (hyper *Hyper) LoadCommand(command string) {
 			hyper.Hostid = int32(id)
 		}
 		if status, err := strconv.Atoi(items[2]); err == nil {
-			if status == 10 {
+			if hyper.Status != int32(status) {
 				hyper.Status = int32(status)
 			}
 		}
