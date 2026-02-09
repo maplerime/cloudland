@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 package callback
 
-// Clone 深拷贝 Event（只拷贝一层 map）
+// Clone 深拷贝 Event（只拷贝一层 map 即可）
 func (e *Event) Clone() *Event {
 	if e == nil {
 		return nil
