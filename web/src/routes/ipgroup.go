@@ -119,7 +119,9 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 	}
 	// Unscoped update
 	ipGroup.Name = fmt.Sprintf("%s-%d", ipGroup.Name, ipGroup.CreatedAt.Unix())
-	err = db.Model(ipGroup).Unscoped().Update("name", ipGroup.Name).Error
+	err = db.Model(&model.IpGroup{}).Unscoped().
+		Where("id = ?", ipGroup.ID).
+		Update("name", ipGroup.Name).Error
 	if err != nil {
 		logger.Error("DB failed to update ip group name", err)
 		err = NewCLError(ErrIpGroupUpdateFailed, "Failed to update ip group name", err)
