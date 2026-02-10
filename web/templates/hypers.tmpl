@@ -78,5 +78,45 @@
             </div>
         </div>
     </div>
-    
+</div>
+<!-- Disable Hypervisor Modal -->
+<div class="ui small basic disable-hyper modal">
+    <div class="ui icon header">
+        <i class="power off icon"></i>
+        {{.i18n.Tr "Disable Hypervisor"}}
+    </div>
+    <div class="content">
+        <p>{{.i18n.Tr "disable_hypervisor_confirm"}} <span id="disable-hyper-hostname"></span>?</p>
+    </div>
+    <div class="actions">
+        <div class="ui red basic cancel inverted button">
+            <i class="remove icon"></i>
+            {{.i18n.Tr "No"}}
+        </div>
+        <div class="ui green ok inverted button">
+            <i class="checkmark icon"></i>
+            {{.i18n.Tr "Yes"}}
+        </div>
+    </div>
+</div>
+<!-- Enable Hypervisor Modal -->
+<div class="ui small basic enable-hyper modal">
+    <div class="ui icon header">
+        <i class="power off icon"></i>
+        {{.i18n.Tr "Enable Hypervisor"}}
+    </div>
+    <div class="content">
+        <p>{{.i18n.Tr "enable_hypervisor_confirm"}} <span id="enable-hyper-hostname"></span>?</p>
+    </div>
+    <div class="actions">
+        <div class="ui red basic cancel inverted button">
+            <i class="remove icon"></i>
+            {{.i18n.Tr "No"}}
+        </div>
+        <div class="ui green ok inverted button">
+            <i class="checkmark icon"></i>
+            {{.i18n.Tr "Yes"}}
+        </div>
+    </div>
+</div>
 {{template "_footer" .}}
