@@ -20,7 +20,12 @@ func init() {
 
 func SyncImageInfo(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| sync_image_info.sh 'storage_id' 'volume_id' 'error'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")

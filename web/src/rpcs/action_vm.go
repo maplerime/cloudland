@@ -21,7 +21,12 @@ func init() {
 
 func ActionVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| action_vm.sh '127' 'running'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 2 {
 		err = fmt.Errorf("Wrong params")

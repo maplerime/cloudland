@@ -20,7 +20,12 @@ func init() {
 
 func CreatePortmap(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| create_portmap.sh 1.2.3.4 18010
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")

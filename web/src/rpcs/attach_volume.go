@@ -22,7 +22,12 @@ func init() {
 
 func AttachVolume(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| attach_volume.sh 5 7 vdb
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 
 	logger.Debugf("AttachVolume called with args: %v, length: %d", args, argn)

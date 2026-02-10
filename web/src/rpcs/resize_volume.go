@@ -21,7 +21,12 @@ func init() {
 func ResizeVolume(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| resize_volume.sh 5 error
 	logger.Debug("ResizeVolumeLocal", args)
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")

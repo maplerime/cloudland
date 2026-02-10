@@ -23,7 +23,12 @@ func init() {
 func DetachVolume(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| detach_volume.sh_local 5 7
 	//|:-COMMAND-:| detach_volume.sh_wds_vhost 5 7
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
