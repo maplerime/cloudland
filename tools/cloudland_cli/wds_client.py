@@ -15,6 +15,35 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 logger = logging.getLogger(__name__)
 
 
+def _mask_sensitive_data(data):
+    """Mask sensitive information in logs.
+
+    Args:
+        data: Dictionary or string containing potentially sensitive data.
+
+    Returns:
+        Masked version of the data safe for logging.
+    """
+    if isinstance(data, dict):
+        masked = data.copy()
+        # Mask known sensitive fields
+        sensitive_keys = ['password', 'token', 'access_token', 'secret', 'key']
+        for key in sensitive_keys:
+            if key in masked:
+                masked[key] = '***MASKED***'
+        return masked
+    elif isinstance(data, str):
+        # Mask common password patterns
+        import re
+        masked = data
+        # Mask JSON password fields
+        masked = re.sub(r'"password"\s*:\s*"[^"]*"', '"password": "***MASKED***"', masked)
+        # Mask URL password patterns
+        masked = re.sub(r'password=[^&\s"\']*', 'password=***MASKED***', masked)
+        return masked
+    return data
+
+
 class WDSClient:
     """Client for WDS distributed storage API.
 
@@ -83,23 +112,23 @@ class WDSClient:
             if resp.status_code >= 400:
                 log_msg = f"WDS API error: {method} {url}"
                 if req_params:
-                    log_msg += f"\n  Params: {req_params}"
+                    log_msg += f"\n  Params: {_mask_sensitive_data(req_params)}"
                 if req_json:
-                    log_msg += f"\n  Request body: {req_json}"
+                    log_msg += f"\n  Request body: {_mask_sensitive_data(req_json)}"
                 log_msg += f"\n  Response status: {resp.status_code}"
                 try:
                     resp_body = resp.json()
                 except Exception:
                     resp_body = resp.text
-                log_msg += f"\n  Response body: {resp_body}"
+                log_msg += f"\n  Response body: {_mask_sensitive_data(resp_body)}"
                 logger.error(log_msg)
 
             return resp
         except Exception as e:
             logger.error(
                 f"WDS API request failed: {method} {url}\n"
-                f"  Request JSON: {kwargs.get('json')}\n"
-                f"  Request Params: {kwargs.get('params')}\n"
+                f"  Request JSON: {_mask_sensitive_data(kwargs.get('json'))}\n"
+                f"  Request Params: {_mask_sensitive_data(kwargs.get('params'))}\n"
                 f"  Error: {e}",
                 exc_info=True
             )
@@ -124,7 +153,7 @@ class WDSClient:
         data = resp.json()
         access_token = data.get("access_token")
         if not access_token:
-            raise RuntimeError(f"WDS login failed: {data}")
+            raise RuntimeError(f"WDS login failed: {_mask_sensitive_data(data)}")
         self.token = access_token
 
     def _headers(self):
