@@ -112,16 +112,19 @@ func (a *IpGroupAdmin) Delete(ctx context.Context, ipGroup *model.IpGroup) (err 
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the ip group", nil)
 		return
 	}
-	ipGroup.Name = fmt.Sprintf("%s-%d", ipGroup.Name, ipGroup.CreatedAt.Unix())
-	err = db.Model(ipGroup).Update("name", ipGroup.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update ip group name", err)
-		err = NewCLError(ErrIpGroupUpdateFailed, "Failed to update ip group name", err)
-		return
-	}
 	if err = db.Delete(ipGroup).Error; err != nil {
 		logger.Errorf("DB failed to delete ip group, err=%v", err)
 		err = NewCLError(ErrIpGroupDeleteFailed, "Failed to delete ip group", err)
+		return
+	}
+	// Unscoped update
+	ipGroup.Name = fmt.Sprintf("%s-%d", ipGroup.Name, ipGroup.CreatedAt.Unix())
+	err = db.Model(&model.IpGroup{}).Unscoped().
+		Where("id = ?", ipGroup.ID).
+		Update("name", ipGroup.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update ip group name", err)
+		err = NewCLError(ErrIpGroupUpdateFailed, "Failed to update ip group name", err)
 		return
 	}
 	return

@@ -142,7 +142,7 @@ fi
 
 if [ "$migration_type" = "cold" ]; then
     virsh define $vm_xml
-    virsh autostart $vm_ID
+    virsh autostart $vm_ID --disable
     for vol_xml in $xml_dir/$vm_ID/disk-*.xml; do
         virsh attach-device $vm_ID $vol_xml --config --persistent
     done

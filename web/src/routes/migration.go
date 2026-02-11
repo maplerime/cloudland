@@ -54,7 +54,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
 			return
 		}
-		if targetHyper.Status != 1 {
+		if targetHyper.Status == 10 {
 			err = NewCLError(ErrHypervisorInvalidState, "Target hypervisor is in wrong state", nil)
 			logger.Error("Target hypervisor is in wrong state")
 			return
@@ -73,7 +73,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 		status := "in_progress"
 		migrationType := "cold"
-		if sourceHyper.Status == 1 && !force {
+		if sourceHyper.Status != 10 && !force {
 			migrationType = "warm"
 		}
 		if instance.Hyper == tgtHyper {

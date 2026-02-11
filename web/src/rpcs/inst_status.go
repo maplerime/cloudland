@@ -82,7 +82,6 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 				err = syncMigration(ctx, instance)
 				if err != nil {
 					logger.Error("Failed to sync migration info", err)
-					continue
 				}
 			}
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
@@ -97,7 +96,6 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update interface", err)
-				continue
 			}
 		}
 	}

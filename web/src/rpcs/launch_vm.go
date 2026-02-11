@@ -207,18 +207,15 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		err = syncMigration(ctx, instance)
 		if err != nil {
 			logger.Error("Failed to sync migration info", err)
-			return
 		}
 		err = syncNicInfo(ctx, instance)
 		if err != nil {
 			logger.Error("Failed to sync nic info", err)
-			return
 		}
 		if instance.RouterID > 0 {
 			err = syncFloatingIp(ctx, instance)
 			if err != nil {
 				logger.Error("Failed to sync floating ip", err)
-				return
 			}
 		}
 	}
@@ -284,7 +281,7 @@ func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
 	}
 	if primaryIface != nil {
 		floatingIps := []*model.FloatingIp{}
-		err = db.Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where("instance_id = ?", instance.ID).Find(&floatingIps).Error
+		err = db.Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Where("instance_id = ? and type = ?", instance.ID, PublicFloating).Find(&floatingIps).Error
 		if err != nil {
 			logger.Error("Failed to get floating ip", err)
 			return

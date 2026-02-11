@@ -62,7 +62,7 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 		logger.Error("Failed to marshal instance json data", err)
 		return
 	}
-	if sourceHyper.Status == 1 {
+	if sourceHyper.Status != 10 {
 		control := fmt.Sprintf("inter=%d", migration.SourceHyper)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/source_migration.sh '%d' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migrationType, volumesJson)
 		err = HyperExecute(ctx, control, command)
@@ -208,7 +208,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				break
 			}
 		}
-		err = db.Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error
+		err = db.Where("instance_id = ? and type = ?", instance.ID, PublicFloating).Find(&instance.FloatingIps).Error
 		if err != nil {
 			logger.Errorf("Failed to query floating ip(s), %v", err)
 			return

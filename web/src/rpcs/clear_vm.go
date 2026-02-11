@@ -163,17 +163,20 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to delete interfaces", err)
 		return
 	}
-	instance.Hostname = fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix())
-	instance.Status = model.InstanceStatusDeleted
-	instance.Reason = reason
-	instance.Interfaces = nil
-	err = db.Save(instance).Error
-	if err != nil {
-		return
-	}
 	if err = db.Delete(instance).Error; err != nil {
 		logger.Error("Failed to delete instance, %v", err)
 		return
 	}
+	// Unscoped update
+	err = db.Model(&model.Instance{}).Unscoped().Where("id = ?", instance.ID).Updates(map[string]interface{}{
+		"hostname": fmt.Sprintf("%s-%d", instance.Hostname, instance.CreatedAt.Unix()),
+		"status":   model.InstanceStatusDeleted,
+		"reason":   reason,
+	}).Error
+	if err != nil {
+		logger.Error("Failed to update instance, %v", err)
+		return
+	}
+
 	return
 }
