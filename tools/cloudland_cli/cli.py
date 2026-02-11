@@ -87,7 +87,12 @@ def _load_cfg_and_wds(ctx):
     try:
         wds = WDSClient(cfg["wds"]["address"], cfg["wds"]["admin"], cfg["wds"]["password"])
     except Exception as e:
-        click.echo(f"Error connecting to WDS: {e}", err=True)
+        # Log connection error without exposing sensitive credentials
+        error_msg = str(e)
+        # Mask any potential password in error message
+        import re
+        error_msg = re.sub(r'password[=:][^\s,\]]*', 'password=***MASKED***', error_msg)
+        click.echo(f"Error connecting to WDS: {error_msg}", err=True)
         sys.exit(1)
 
     return cfg, wds
