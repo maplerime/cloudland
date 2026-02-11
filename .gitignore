@@ -79,3 +79,8 @@ GEMINI.md
 .claude
 refs
 features
+**/venv
+**/.venv
+**/__pycache__
+**/*.egg-info/
+**/*.pyc
