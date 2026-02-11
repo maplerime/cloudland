@@ -44,13 +44,13 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 	}
 	statusList := strings.Split(args[2], " ")
 	for i := 0; i < len(statusList); i += 2 {
-		instID, err := strconv.Atoi(statusList[i])
+		instID, err := strconv.ParseInt(statusList[i], 10, 64)
 		if err != nil {
 			logger.Error("Invalid instance ID", err)
 			continue
 		}
 		status := statusList[i+1]
-		instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
+		instance := &model.Instance{Model: model.Model{ID: instID}}
 		err = db.Unscoped().Take(instance).Error
 		if err != nil {
 			logger.Error("Invalid instance ID", err)

@@ -27,7 +27,7 @@ type VolumeInfo struct {
 	Booting bool   `json:"booting"`
 }
 
-func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, migrationType string) (err error) {
+func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, script, migrationType string) (err error) {
 	db := DB()
 	targetHyper := &model.Hyper{}
 	err = db.Where("hostid = ?", migration.TargetHyper).Take(targetHyper).Error
@@ -72,6 +72,7 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 		}
 	} else {
 		err = fmt.Errorf("Source hyper is not in a valid state")
+		return
 	}
 	return
 }
@@ -85,17 +86,17 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid args", err)
 		return
 	}
-	migrationID, err := strconv.Atoi(args[1])
+	migrationID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid migration ID", err)
 		return
 	}
-	taskID, err := strconv.Atoi(args[2])
+	taskID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
 		logger.Error("Invalid task ID", err)
 		return
 	}
-	instID, err := strconv.Atoi(args[3])
+	instID, err := strconv.ParseInt(args[3], 10, 64)
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
@@ -107,31 +108,63 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	status = args[5]
 	taskStatus := status
-	migration := &model.Migration{Model: model.Model{ID: int64(migrationID)}}
+	migration := &model.Migration{Model: model.Model{ID: migrationID}}
 	err = db.Model(migration).Take(migration).Error
 	if err != nil {
 		logger.Error("Failed to get migration record", err)
 		return
 	}
-	instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
+	instance := &model.Instance{Model: model.Model{ID: instID}}
 	err = db.Preload("Volumes").Take(instance).Error
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
 	if status == "completed" {
-		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{"status": "running"}).Error
+		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/finish_source_migration.sh", migration.Type)
 		if err != nil {
-			logger.Error("Failed to update instance status to running, %v", err)
+			logger.Error("Failed to exec finish source migration", err)
+			status = "failed"
 			return
 		}
-		_, err = LaunchVM(ctx, []string{args[0], args[3], "running", args[4], "sync"})
+		_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
 		if err != nil {
 			logger.Error("Failed to sync vm info", err)
 			return
 		}
+	} else if status == "rollback" {
+		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/rollback_source_migration.sh", migration.Type)
+		if err != nil {
+			logger.Error("Failed to exec finish source migration", err)
+			status = "failed"
+			return
+		}
+	} else if status == "source_rollback" {
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": "rollback"}).Error
+		if err != nil {
+			logger.Error("Failed to update instance status to unknown, %v", err)
+			return
+		}
+		task3 := &model.Task{
+			Name:    "Source_Rollback",
+			Mission: migration.ID,
+			Summary: "Clean up target hypervisor",
+			Status:  "in_progress",
+		}
+		err = db.Model(task3).Create(task3).Error
+		if err != nil {
+			logger.Error("Failed to create task2", err)
+			return
+		}
+		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d'", migration.ID, task3.ID, instance.ID)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Execute clear target failed", err)
+			return
+		}
 	} else if status == "failed" {
-		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{"status": "unknown"}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": "unknown"}).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to unknown, %v", err)
 			return
@@ -155,10 +188,11 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to create task2", err)
 			return
 		}
-		err = execSourceMigrate(ctx, instance, migration, task2.ID, migration.Type)
+		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Error("Failed to exec source migration", err)
 			status = "failed"
+			return
 		}
 		taskStatus = "completed"
 	} else if status == "source_prepared" {
