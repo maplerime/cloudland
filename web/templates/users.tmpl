@@ -7,6 +7,7 @@
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "User_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
+				            {{template "_column_selector" .}}
 				            <a class="ui green tiny button" href="/users/new">{{.i18n.Tr "Create"}}</a>
 			            </div>
 		            </h4>
@@ -23,13 +24,12 @@
 	                        <thead>
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "ID"}}</th>
+			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
-									<th>{{.i18n.Tr "UUID"}}</th>
-			                        <th>{{.i18n.Tr "Name"}}</th>
-			                        <th>{{.i18n.Tr "Created_At"}}</th>
-			                        <th>{{.i18n.Tr "Edit"}}</th>
-                                    <th>{{.i18n.Tr "Delete"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+			                        <th data-column="Name">{{.i18n.Tr "Name"}}</th>
+			                        <th data-column="CreatedAt">{{.i18n.Tr "Created_At"}}</th>
+			                        <th data-column="Action">{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -41,25 +41,14 @@
 									{{ end }}
 									<td>{{.UUID}}</td>
 			                        <td>{{.Username}}</td>
-			                        <td><span title="Tue, 18 Dec 2018 14:24:59 &#43;0800">{{.CreatedAt}}</span></td>
-			                        <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a></td>
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+			                        <td><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
+			                        <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>
                         </table>
 		            </div>
-		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu">
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
-	                    </div>
+		            {{template "_pagination" .}}
 	            </div>
             </div>
         </div>
