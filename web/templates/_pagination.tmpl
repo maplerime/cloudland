@@ -1,0 +1,134 @@
+{{if .PageInfo}}
+<div class="ui segment pagination-container">
+	<div class="ui grid">
+		<!-- Page size selector -->
+		<div class="four wide column">
+			<div class="ui form">
+				<div class="field">
+					<label>{{.i18n.Tr "Page_Size"}}:</label>
+					<select class="ui dropdown" name="limit" onchange="changePageSize(this, '{{.Link}}', '{{.Query}}')">
+						<option value="10" {{if eq .Limit 10}}selected{{end}}>10</option>
+						<option value="20" {{if eq .Limit 20}}selected{{end}}>20</option>
+						<option value="50" {{if eq .Limit 50}}selected{{end}}>50</option>
+						<option value="100" {{if eq .Limit 100}}selected{{end}}>100</option>
+					</select>
+				</div>
+			</div>
+		</div>
+
+		<!-- Jump to page input -->
+		<div class="four wide column">
+			<div class="ui action input">
+				<input type="text" id="jumpPageInput" placeholder="{{.i18n.Tr "Jump_To_Page"}}">
+				<button class="ui button" onclick="jumpToPage('{{.Link}}', '{{.Query}}', {{.Limit}})">{{.i18n.Tr "Go"}}</button>
+			</div>
+		</div>
+
+		<!-- Page info text -->
+		<div class="eight wide column right aligned">
+			<span class="pagination-info">
+				{{.i18n.Tr "Total"}}: <strong>{{.Total}}</strong> |
+				{{.i18n.Tr "Page"}}: <strong>{{.PageInfo.CurrentPage}}</strong> / <strong>{{.PageInfo.TotalPages}}</strong>
+			</span>
+		</div>
+	</div>
+
+	<!-- Pagination menu with page numbers -->
+	<div class="ui pagination menu" style="margin-top: 1em;">
+		<!-- Previous button -->
+		{{if .PageInfo.HasPrevious}}
+			{{$prevOffset := 0}}
+			{{range $idx, $page := .PageInfo.Pages}}
+				{{if and (eq $page.Number (sub $.PageInfo.CurrentPage 1)) (not $page.IsEllipsis)}}
+					{{$prevOffset = $page.Offset}}
+				{{end}}
+			{{end}}
+			<a class="item" href="{{.Link}}?offset={{$prevOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
+				<i class="left chevron icon"></i> {{.i18n.Tr "Previous"}}
+			</a>
+		{{else}}
+			<div class="item disabled">
+				<i class="left chevron icon"></i> {{.i18n.Tr "Previous"}}
+			</div>
+		{{end}}
+
+		<!-- Page number links -->
+		{{range .PageInfo.Pages}}
+			{{if .IsEllipsis}}
+				<!-- Ellipsis placeholder -->
+				<div class="item disabled">
+					<span>...</span>
+				</div>
+			{{else}}
+				<!-- Page number link -->
+				{{if .IsCurrent}}
+					<a class="active item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">
+						{{.Number}}
+					</a>
+				{{else}}
+					<a class="item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">
+						{{.Number}}
+					</a>
+				{{end}}
+			{{end}}
+		{{end}}
+
+		<!-- Next button -->
+		{{if .PageInfo.HasNext}}
+			{{$nextOffset := 0}}
+			{{range $idx, $page := .PageInfo.Pages}}
+				{{if and (eq $page.Number (add $.PageInfo.CurrentPage 1)) (not $page.IsEllipsis)}}
+					{{$nextOffset = $page.Offset}}
+				{{end}}
+			{{end}}
+			<a class="item" href="{{.Link}}?offset={{$nextOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
+				{{.i18n.Tr "Next"}} <i class="right chevron icon"></i>
+			</a>
+		{{else}}
+			<div class="item disabled">
+				{{.i18n.Tr "Next"}} <i class="right chevron icon"></i>
+			</div>
+		{{end}}
+	</div>
+</div>
+
+<script>
+// Helper function to change page size
+function changePageSize(selectElement, baseLink, query) {
+	var limit = selectElement.value;
+	var url = baseLink + '?offset=0&limit=' + limit;
+	if (query) {
+		url += '&q=' + encodeURIComponent(query);
+	}
+	window.location.href = url;
+}
+
+// Helper function for pagination
+function jumpToPage(baseLink, query, limit) {
+	var pageNum = document.getElementById('jumpPageInput').value;
+	if (!pageNum || pageNum <= 0) {
+		alert('{{.i18n.Tr "Invalid_Page_Number"}}');
+		return;
+	}
+	var offset = (parseInt(pageNum) - 1) * limit;
+	var url = baseLink + '?offset=' + offset + '&limit=' + limit;
+	if (query) {
+		url += '&q=' + encodeURIComponent(query);
+	}
+	window.location.href = url;
+}
+
+// Handle Enter key in jump to page input
+document.addEventListener('DOMContentLoaded', function() {
+	var jumpInput = document.getElementById('jumpPageInput');
+	if (jumpInput) {
+		jumpInput.addEventListener('keypress', function(event) {
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				jumpToPage('{{.Link}}', '{{.Query}}', {{.Limit}});
+			}
+		});
+	}
+});
+</script>
+{{end}}

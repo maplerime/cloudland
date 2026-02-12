@@ -1,0 +1,229 @@
+{{if .ListName}}
+<div class="column-selector-wrapper">
+	<div class="ui dropdown button" id="columnSelectorButton">
+		<i class="columns icon"></i>
+		<span>{{.i18n.Tr "Columns"}}</span>
+		<div class="menu">
+			{{if .AvailableColumns}}
+				<!-- Column checkboxes -->
+				{{range .AvailableColumns}}
+					<div class="item">
+						<div class="ui checkbox">
+							<input type="checkbox" class="column-checkbox" data-column="{{.}}" value="{{.}}">
+							<label>{{.}}</label>
+						</div>
+					</div>
+				{{end}}
+
+				<!-- Divider -->
+				<div class="divider"></div>
+
+				<!-- Action buttons -->
+				<div class="item">
+					<button class="ui fluid button small primary" onclick="saveColumnPreference('{{.ListName}}')">
+						{{.i18n.Tr "Apply"}}
+					</button>
+				</div>
+				<div class="item">
+					<button class="ui fluid button small" onclick="resetColumns('{{.ListName}}')">
+						{{.i18n.Tr "Reset"}}
+					</button>
+				</div>
+			{{end}}
+		</div>
+	</div>
+</div>
+
+<script>
+// Column selector functionality
+(function() {
+	'use strict';
+
+	// Storage key for column preferences
+	function getStorageKey(listName) {
+		return 'columns_' + listName;
+	}
+
+	// Initialize column visibility from localStorage on page load
+	window.initColumnSelector = function(listName, defaultColumnsJSON) {
+		try {
+			var storageKey = getStorageKey(listName);
+			var savedColumns = localStorage.getItem(storageKey);
+			var visibleColumns = [];
+
+			// Parse default columns if provided
+			var defaultColumns = [];
+			if (defaultColumnsJSON) {
+				try {
+					defaultColumns = JSON.parse(defaultColumnsJSON);
+				} catch (e) {
+					console.error('Failed to parse default columns JSON:', e);
+					defaultColumns = [];
+				}
+			}
+
+			// Use saved columns or defaults
+			if (savedColumns) {
+				try {
+					visibleColumns = JSON.parse(savedColumns);
+				} catch (e) {
+					console.error('Failed to parse saved columns:', e);
+					visibleColumns = defaultColumns;
+				}
+			} else {
+				visibleColumns = defaultColumns;
+			}
+
+			// Update checkboxes based on visible columns
+			document.querySelectorAll('.column-checkbox').forEach(function(checkbox) {
+				var columnName = checkbox.getAttribute('data-column');
+				if (visibleColumns.indexOf(columnName) !== -1) {
+					checkbox.checked = true;
+				} else {
+					checkbox.checked = false;
+				}
+			});
+
+			// Apply visibility to table
+			applyColumnVisibility(listName, visibleColumns);
+		} catch (e) {
+			console.error('Error initializing column selector:', e);
+		}
+	};
+
+	// Save column preferences to localStorage
+	window.saveColumnPreference = function(listName) {
+		try {
+			var selectedColumns = [];
+			document.querySelectorAll('.column-checkbox:checked').forEach(function(checkbox) {
+				var columnName = checkbox.getAttribute('data-column');
+				if (columnName) {
+					selectedColumns.push(columnName);
+				}
+			});
+
+			if (selectedColumns.length === 0) {
+				alert('{{.i18n.Tr "Select_At_Least_One_Column"}}');
+				return;
+			}
+
+			var storageKey = getStorageKey(listName);
+			localStorage.setItem(storageKey, JSON.stringify(selectedColumns));
+
+			// Apply visibility and close dropdown
+			applyColumnVisibility(listName, selectedColumns);
+			closeColumnDropdown();
+
+			// Optional: Show confirmation message
+			console.log('Column preferences saved for ' + listName);
+		} catch (e) {
+			console.error('Error saving column preference:', e);
+			alert('{{.i18n.Tr "Failed_To_Save_Preferences"}}');
+		}
+	};
+
+	// Reset columns to defaults
+	window.resetColumns = function(listName) {
+		try {
+			var storageKey = getStorageKey(listName);
+			localStorage.removeItem(storageKey);
+
+			// Re-initialize with defaults
+			var defaultColumnsJSON = document.getElementById('columnSelectorButton').getAttribute('data-default');
+			initColumnSelector(listName, defaultColumnsJSON);
+
+			// Close dropdown
+			closeColumnDropdown();
+
+			// Optional: Show confirmation message
+			console.log('Column preferences reset for ' + listName);
+		} catch (e) {
+			console.error('Error resetting columns:', e);
+			alert('{{.i18n.Tr "Failed_To_Reset_Preferences"}}');
+		}
+	};
+
+	// Apply column visibility to table
+	function applyColumnVisibility(listName, visibleColumns) {
+		try {
+			// Get all table headers (th elements)
+			var headers = document.querySelectorAll('table th[data-column]');
+			var cells = document.querySelectorAll('table td[data-column]');
+
+			// Hide/show columns based on visibility list
+			headers.forEach(function(header) {
+				var columnName = header.getAttribute('data-column');
+				if (visibleColumns.indexOf(columnName) !== -1) {
+					header.style.display = '';
+				} else {
+					header.style.display = 'none';
+				}
+			});
+
+			cells.forEach(function(cell) {
+				var columnName = cell.getAttribute('data-column');
+				if (visibleColumns.indexOf(columnName) !== -1) {
+					cell.style.display = '';
+				} else {
+					cell.style.display = 'none';
+				}
+			});
+		} catch (e) {
+			console.error('Error applying column visibility:', e);
+		}
+	}
+
+	// Close the dropdown menu
+	function closeColumnDropdown() {
+		try {
+			var button = document.getElementById('columnSelectorButton');
+			if (button && button.classList.contains('active')) {
+				button.classList.remove('active');
+			}
+		} catch (e) {
+			console.error('Error closing dropdown:', e);
+		}
+	}
+
+	// Initialize Semantic UI dropdown functionality
+	document.addEventListener('DOMContentLoaded', function() {
+		try {
+			var buttonEl = document.getElementById('columnSelectorButton');
+			if (buttonEl && typeof jQuery !== 'undefined' && jQuery.fn.dropdown) {
+				jQuery(buttonEl).dropdown();
+			}
+		} catch (e) {
+			console.error('Error initializing dropdown:', e);
+		}
+	});
+})();
+</script>
+
+<style>
+.column-selector-wrapper {
+	display: inline-block;
+	margin-right: 1em;
+}
+
+.ui.dropdown.button {
+	margin-bottom: 0;
+}
+
+.column-selector-wrapper .ui.checkbox {
+	margin: 0.5em 0;
+}
+
+.column-selector-wrapper .ui.checkbox label {
+	margin-left: 0.5em;
+}
+
+.column-selector-wrapper .item .ui.button {
+	margin-top: 0.5em;
+}
+
+.column-selector-wrapper .divider {
+	margin: 0.5em 0;
+	border-top: 1px solid rgba(34, 36, 38, 0.15);
+}
+</style>
+{{end}}
