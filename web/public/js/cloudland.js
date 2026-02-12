@@ -1534,3 +1534,75 @@ function showMessageMaxLength(maxLen, textElemId, counterId) {
 
     $msg.keyup(onMessageKey).keydown(onMessageKey);
 }
+
+// URL parameter utility functions
+function getUrlParam(name) {
+    var url = window.location.href;
+    var regex = new RegExp('[?&]' + name + '=([^&#]*)', 'i');
+    var match = regex.exec(url);
+    return match ? decodeURIComponent(match[1]) : '';
+}
+
+function setUrlParam(name, value) {
+    var url = new URL(window.location);
+    url.searchParams.set(name, value);
+    window.history.replaceState({}, '', url);
+}
+
+function removeUrlParam(name) {
+    var url = new URL(window.location);
+    url.searchParams.delete(name);
+    window.history.replaceState({}, '', url);
+}
+
+// Column visibility helper functions using localStorage
+function getColumnVisibility(listName) {
+    var storageKey = 'columns_' + listName;
+    var saved = localStorage.getItem(storageKey);
+    return saved ? JSON.parse(saved) : null;
+}
+
+function setColumnVisibility(listName, columns) {
+    var storageKey = 'columns_' + listName;
+    localStorage.setItem(storageKey, JSON.stringify(columns));
+}
+
+function clearColumnVisibility(listName) {
+    var storageKey = 'columns_' + listName;
+    localStorage.removeItem(storageKey);
+}
+
+// Pagination form helper functions
+function setPageSize(newLimit) {
+    var url = new URL(window.location);
+    url.searchParams.set('limit', newLimit);
+    url.searchParams.set('offset', '0'); // Reset to first page
+    window.location.href = url.toString();
+}
+
+function jumpToPage(pageNum) {
+    var url = new URL(window.location);
+    var limit = url.searchParams.get('limit') || '16';
+    var offset = (pageNum - 1) * parseInt(limit);
+    url.searchParams.set('offset', offset);
+    window.location.href = url.toString();
+}
+
+// Pagination navigation helpers
+function goToPreviousPage() {
+    var offset = parseInt(getUrlParam('offset')) || 0;
+    var limit = parseInt(getUrlParam('limit')) || 16;
+    if (offset >= limit) {
+        var newOffset = offset - limit;
+        setUrlParam('offset', newOffset.toString());
+        window.location.reload();
+    }
+}
+
+function goToNextPage() {
+    var offset = parseInt(getUrlParam('offset')) || 0;
+    var limit = parseInt(getUrlParam('limit')) || 16;
+    var newOffset = offset + limit;
+    setUrlParam('offset', newOffset.toString());
+    window.location.reload();
+}
