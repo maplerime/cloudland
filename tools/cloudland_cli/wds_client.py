@@ -168,8 +168,8 @@ class WDSClient:
         except Exception as e:
             logger.error(
                 f"WDS API request failed: {method} {url}\n"
-                f"  Request body: ***REDACTED***\n"
-                f"  Request params: ***REDACTED***\n"
+                f"  Request JSON: {_mask_sensitive_data(kwargs.get('json'))}\n"
+                f"  Request Params: {_mask_sensitive_data(kwargs.get('params'))}\n"
                 f"  Error: {e}",
                 exc_info=True
             )
