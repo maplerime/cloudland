@@ -201,7 +201,12 @@ class WDSClient:
             return None
         try:
             data = resp.json()
-            return data.get("volume", data)  # Handle both wrapped and unwrapped responses
+            # WDS API returns volume_detail nested in response
+            volume_detail = data.get("volume_detail")
+            if volume_detail:
+                return volume_detail
+            # Fall back to volume field if available
+            return data.get("volume", data) if data.get("volume") else None
         except Exception:
             return None
 
