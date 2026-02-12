@@ -24,22 +24,62 @@ def _mask_sensitive_data(data):
     Returns:
         Masked version of the data safe for logging.
     """
-    if isinstance(data, dict):
-        masked = data.copy()
-        # Mask known sensitive fields
-        sensitive_keys = ['password', 'token', 'access_token', 'secret', 'key']
-        for key in sensitive_keys:
-            if key in masked:
-                masked[key] = '***MASKED***'
-        return masked
+    # Keys that may contain secrets and should be masked when found.
+    sensitive_keys = {
+        "password",
+        "pass",
+        "secret",
+        "token",
+        "access_token",
+        "refresh_token",
+        "api_key",
+        "key",
+        "authorization",
+        "auth",
+    }
+
+    def _mask(obj):
+        # Recursively walk dicts/lists and mask any sensitive-looking keys.
+        if isinstance(obj, dict):
+            masked_dict = {}
+            for k, v in obj.items():
+                if isinstance(k, str) and k.lower() in sensitive_keys:
+                    masked_dict[k] = "***MASKED***"
+                else:
+                    masked_dict[k] = _mask(v)
+            return masked_dict
+        if isinstance(obj, list):
+            return [_mask(item) for item in obj]
+        # Leave scalars as-is
+        return obj
+
+    if isinstance(data, (dict, list)):
+        return _mask(data)
     elif isinstance(data, str):
-        # Mask common password patterns
+        # Mask common password and token patterns in text representations.
         import re
         masked = data
-        # Mask JSON password fields
-        masked = re.sub(r'"password"\s*:\s*"[^"]*"', '"password": "***MASKED***"', masked)
-        # Mask URL password patterns
-        masked = re.sub(r'password=[^&\s"\']*', 'password=***MASKED***', masked)
+        # JSON-style "password": "value" or 'password': 'value'
+        masked = re.sub(
+            r'(["\'])password\1\s*:\s*(["\'])(?:(?!\2).)*\2',
+            r'"password": "***MASKED***"',
+            masked,
+            flags=re.IGNORECASE,
+        )
+        # password=value (e.g. URL or form-encoded)
+        masked = re.sub(
+            r'password=[^&\s"\']*',
+            'password=***MASKED***',
+            masked,
+            flags=re.IGNORECASE,
+        )
+        # Generic token-like fields
+        masked = re.sub(
+            r'(?:access_token|refresh_token|api_key|token)=([^&\s"\']*)',
+            lambda m: m.group(0).split("=", 1)[0] + "=***MASKED***",
+            masked,
+            flags=re.IGNORECASE,
+        )
         return masked
     return data
 
@@ -122,13 +162,14 @@ class WDSClient:
                     resp_body = resp.text
                 log_msg += f"\n  Response body: {_mask_sensitive_data(resp_body)}"
                 logger.error(log_msg)
+            # Avoid logging full request bodies or params, which may contain sensitive data.
 
             return resp
         except Exception as e:
             logger.error(
                 f"WDS API request failed: {method} {url}\n"
-                f"  Request JSON: {_mask_sensitive_data(kwargs.get('json'))}\n"
-                f"  Request Params: {_mask_sensitive_data(kwargs.get('params'))}\n"
+                f"  Request body: ***REDACTED***\n"
+                f"  Request params: ***REDACTED***\n"
                 f"  Error: {e}",
                 exc_info=True
             )
