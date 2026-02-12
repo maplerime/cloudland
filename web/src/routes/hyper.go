@@ -201,9 +201,31 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 	}
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
+
+	// Get list configuration
+	listConfig := GetListConfig("hypers")
+
 	if limit == 0 {
-		limit = 16
+		limit = listConfig.DefaultLimit
 	}
+
+	// Validate limit against allowed page sizes
+	validLimit := false
+	for _, size := range listConfig.PageSizes {
+		if limit == size {
+			validLimit = true
+			break
+		}
+	}
+	if !validLimit {
+		limit = listConfig.DefaultLimit
+	}
+
+	// Handle page jump parameter
+	if page := c.QueryInt64("page"); page > 0 {
+		offset = (page - 1) * limit
+	}
+
 	order := c.Query("order")
 	if order == "" {
 		order = "hostid"
@@ -222,11 +244,22 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 		hyper.Resource.Disk /= 1024 * 1024 * 1024      // Convert from B to GB
 		hyper.Resource.DiskTotal /= 1024 * 1024 * 1024 // Convert from B to GB
 	}
-	pages := GetPages(total, limit)
+
+	// Get pagination info
+	pageInfo := GetSmartPaginationInfo(total, limit, offset)
+	pageInfo.PageSizes = listConfig.PageSizes
+
 	c.Data["Hypers"] = hypers
 	c.Data["Total"] = total
-	c.Data["Pages"] = pages
+	c.Data["PageInfo"] = pageInfo
+	c.Data["Limit"] = limit
 	c.Data["Query"] = query
+	c.Data["ListConfig"] = listConfig
+	c.Data["ListName"] = "hypers"
+	// Hypers table columns: Hostid, Hostname, Parentid, CpuModel, HostIP, Status, Zone, Cpu, Memory, Disk, OverCommitRates, Remark, Action
+	c.Data["DefaultColumnsJSON"] = `["Hostid", "Hostname", "Status", "Zone", "Cpu", "Memory", "Disk", "Action"]`
+	c.Data["AvailableColumns"] = []string{"Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"}
+
 	c.HTML(200, "hypers")
 }
 
