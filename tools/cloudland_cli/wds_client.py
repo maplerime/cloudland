@@ -242,16 +242,12 @@ class WDSClient:
             return None
         try:
             data = resp.json()
-<<<<<<< HEAD
             # WDS API returns volume_detail nested in response
             volume_detail = data.get("volume_detail")
             if volume_detail:
                 return volume_detail
             # Fall back to volume field if available
             return data.get("volume", data) if data.get("volume") else None
-=======
-            return data.get("volume", data)  # Handle both wrapped and unwrapped responses
->>>>>>> 2e897e80 (PET-850: cli tool to check zombies in wds)
         except Exception:
             return None
 
