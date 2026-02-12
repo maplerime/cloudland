@@ -360,9 +360,25 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 func (v *RouterView) List(c *macaron.Context, store session.Store) {
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
+
+	listConfig := GetListConfig("routers")
 	if limit == 0 {
-		limit = 16
+		limit = listConfig.DefaultLimit
 	}
+	validLimit := false
+	for _, size := range listConfig.PageSizes {
+		if limit == size {
+			validLimit = true
+			break
+		}
+	}
+	if !validLimit {
+		limit = listConfig.DefaultLimit
+	}
+	if page := c.QueryInt64("page"); page > 0 {
+		offset = (page - 1) * limit
+	}
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -373,7 +389,6 @@ func (v *RouterView) List(c *macaron.Context, store session.Store) {
 
 	if queryStr != "" {
 		redirectURL := fmt.Sprintf("/instances?router_id=%s", queryStr)
-		// Perform the redirect
 		c.Redirect(redirectURL)
 	}
 
@@ -384,11 +399,19 @@ func (v *RouterView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+	pageInfo := GetSmartPaginationInfo(total, limit, offset)
+	pageInfo.PageSizes = listConfig.PageSizes
+
 	c.Data["Routers"] = routers
 	c.Data["Total"] = total
-	c.Data["Pages"] = pages
+	c.Data["PageInfo"] = pageInfo
+	c.Data["Limit"] = limit
 	c.Data["Query"] = query
+	c.Data["ListConfig"] = listConfig
+	c.Data["ListName"] = "routers"
+	c.Data["DefaultColumnsJSON"] = `["Name", "CreatedAt", "Action"]`
+	c.Data["AvailableColumns"] = []string{"ID", "Name", "CreatedAt", "Action"}
+
 	c.HTML(200, "routers")
 }
 
