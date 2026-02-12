@@ -362,9 +362,31 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 func (v *OrgView) List(c *macaron.Context, store session.Store) {
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
+
+	// Get list configuration
+	listConfig := GetListConfig("orgs")
+
 	if limit == 0 {
-		limit = 16
+		limit = listConfig.DefaultLimit
 	}
+
+	// Validate limit against allowed page sizes
+	validLimit := false
+	for _, size := range listConfig.PageSizes {
+		if limit == size {
+			validLimit = true
+			break
+		}
+	}
+	if !validLimit {
+		limit = listConfig.DefaultLimit
+	}
+
+	// Handle page jump parameter
+	if page := c.QueryInt64("page"); page > 0 {
+		offset = (page - 1) * limit
+	}
+
 	order := c.QueryTrim("order")
 	query := c.QueryTrim("q")
 	total, orgs, err := orgAdmin.List(c.Req.Context(), offset, limit, order, query)
@@ -374,11 +396,22 @@ func (v *OrgView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Get pagination info
+	pageInfo := GetSmartPaginationInfo(total, limit, offset)
+	pageInfo.PageSizes = listConfig.PageSizes
+
 	c.Data["Organizations"] = orgs
 	c.Data["Total"] = total
-	c.Data["Pages"] = pages
+	c.Data["PageInfo"] = pageInfo
+	c.Data["Limit"] = limit
 	c.Data["Query"] = query
+	c.Data["ListConfig"] = listConfig
+	c.Data["ListName"] = "orgs"
+	// Orgs table columns: ID, Name, CreatedAt, UpdatedAt, Action
+	c.Data["DefaultColumnsJSON"] = `["ID", "Name", "CreatedAt", "Action"]`
+	c.Data["AvailableColumns"] = []string{"ID", "Name", "CreatedAt", "UpdatedAt", "Action"}
+
 	c.HTML(200, "orgs")
 }
 
