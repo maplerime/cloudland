@@ -42,19 +42,19 @@
                                 {{ range .Hypers }}
                                 {{ $HyperID := .ID }}
 		                        <tr>
-			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostid}}</a></td>
-			                        <td><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostname}}</a></td>
-			                        <td>{{.Parentid}}</td>
-			                        <td>{{.CpuModel}}</td>
-			                        <td>{{.HostIP}}</td>
-			                        <td>{{.GetStatus}}</td>
-			                        <td>{{ if .Zone}}{{.Zone.Name}}{{end}}</td>
-			                        <td>{{.Resource.Cpu}}/<br>{{.Resource.CpuTotal}}</td>
-			                        <td>{{.Resource.Memory}}/<br>{{.Resource.MemoryTotal}}</td>
-			                        <td>{{.Resource.Disk}}/<br>{{.Resource.DiskTotal}}</td>
-			                        <td>CPU: {{.CpuOverRate}}<br>MEM: {{.MemOverRate}}<br>DISK: {{.DiskOverRate}}</td>
-			                        <td>{{.Remark}}</td>
-			                        <td>
+			                        <td data-column="Hostid"><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostid}}</a></td>
+			                        <td data-column="Hostname"><a href="{{$Link}}/edit?host_id={{.Hostid}}">{{.Hostname}}</a></td>
+			                        <td data-column="Parentid">{{.Parentid}}</td>
+			                        <td data-column="CpuModel">{{.CpuModel}}</td>
+			                        <td data-column="HostIP">{{.HostIP}}</td>
+			                        <td data-column="Status">{{.GetStatus}}</td>
+			                        <td data-column="Zone">{{ if .Zone}}{{.Zone.Name}}{{end}}</td>
+			                        <td data-column="Cpu">{{.Resource.Cpu}}/<br>{{.Resource.CpuTotal}}</td>
+			                        <td data-column="Memory">{{.Resource.Memory}}/<br>{{.Resource.MemoryTotal}}</td>
+			                        <td data-column="Disk">{{.Resource.Disk}}/<br>{{.Resource.DiskTotal}}</td>
+			                        <td data-column="OverCommitRates">CPU: {{.CpuOverRate}}<br>MEM: {{.MemOverRate}}<br>DISK: {{.DiskOverRate}}</td>
+			                        <td data-column="Remark">{{.Remark}}</td>
+			                        <td data-column="Action">
 										{{ if eq .Status 1 }}
 			                        <div class="ui green basic button disable-hyper-button" data-url="{{$Link}}/set_status?host_id={{.Hostid}}&status=0" data-hostname="{{.Hostname}}"><a href="{{$Link}}/set_status?host_id={{.Hostid}}&status=0">{{$.i18n.Tr "Disable"}}</a></div>
 										{{ else }}

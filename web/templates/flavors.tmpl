@@ -36,13 +36,13 @@
                                 {{ $Link := .Link }}
                                 {{ range .Flavors }}
 		                        <tr>
-			                        <td>{{.ID}}</td>
-			                        <td>{{.UUID}}</td>
-			                        <td>{{.Name}}</td>
-			                        <td>{{.Cpu}}</td>
-			                        <td>{{.Memory}}</td>
-			                        <td>{{.Disk}}</td>
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+			                        <td data-column="ID">{{.ID}}</td>
+			                        <td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Name">{{.Name}}</td>
+			                        <td data-column="Cpu">{{.Cpu}}</td>
+			                        <td data-column="Memory">{{.Memory}}</td>
+			                        <td data-column="Disk">{{.Disk}}</td>
+                                    <td data-column="Action"><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>

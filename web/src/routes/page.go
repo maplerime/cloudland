@@ -18,13 +18,14 @@ type Page struct {
 
 // PageInfo contains pagination metadata and page information
 type PageInfo struct {
-	Pages        []*Page // List of pages to display
-	TotalPages   int     // Total number of pages
-	CurrentPage  int     // Current page number
-	HasPrevious  bool    // Whether there is a previous page
-	HasNext      bool    // Whether there is a next page
-	PreviousPage int     // Previous page number (0 if no previous)
-	NextPage     int     // Next page number (0 if no next)
+	Pages        []*Page  // List of pages to display
+	TotalPages   int      // Total number of pages
+	CurrentPage  int      // Current page number
+	HasPrevious  bool     // Whether there is a previous page
+	HasNext      bool     // Whether there is a next page
+	PreviousPage int      // Previous page number (0 if no previous)
+	NextPage     int      // Next page number (0 if no next)
+	PageSizes    []int64  // Available page size options for pagination
 }
 
 // GetSmartPaginationInfo generates smart pagination information with limited page range display

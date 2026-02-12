@@ -34,11 +34,11 @@
                                 {{ $Link := .Link }}
                                 {{ range .Organizations }}
 		                        <tr>
-			                        <td>{{.ID}}</td>
-			                        <td>{{.Name}}</td>
-			                        <td><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
-			                        <td><span title="{{.UpdatedAt}}">{{.UpdatedAt}}</span></td>
-			                        <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+			                        <td data-column="ID">{{.ID}}</td>
+			                        <td data-column="Name">{{.Name}}</td>
+			                        <td data-column="CreatedAt"><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
+			                        <td data-column="UpdatedAt"><span title="{{.UpdatedAt}}">{{.UpdatedAt}}</span></td>
+			                        <td data-column="Action"><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>
