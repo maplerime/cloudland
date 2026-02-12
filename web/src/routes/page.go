@@ -2,6 +2,12 @@ package routes
 
 import "math"
 
+// Constants for smart pagination display
+const (
+	minPagesForSmartDisplay = 11 // Show all pages if total <= 11
+	pageRangeAroundCurrent  = 5  // Show 5 pages before and after current
+)
+
 // Page represents a single page in pagination
 type Page struct {
 	Number    int  // Page number
@@ -21,11 +27,12 @@ type PageInfo struct {
 	NextPage     int     // Next page number (0 if no next)
 }
 
-// GetPaginationInfo generates smart pagination information with limited page range display
-// It shows 5 pages before and after current page, and always includes first and last page
+// GetSmartPaginationInfo generates smart pagination information with limited page range display
+// It shows pageRangeAroundCurrent pages before and after the current page, and always includes first and last page
+// For datasets with <= minPagesForSmartDisplay pages, all pages are shown
 // Parameters: total - total number of items, limit - items per page, offset - current offset
-// Returns: *PageInfo with calculated pages and navigation information
-func GetPaginationInfo(total, limit, offset int64) *PageInfo {
+// Returns: *PageInfo with calculated pages (including ellipsis) and navigation information
+func GetSmartPaginationInfo(total, limit, offset int64) *PageInfo {
 	// Handle edge cases
 	if limit <= 0 {
 		limit = 1
@@ -66,7 +73,7 @@ func GetPaginationInfo(total, limit, offset int64) *PageInfo {
 	}
 
 	// If total pages is small, show all pages
-	if totalPages <= 11 {
+	if totalPages <= minPagesForSmartDisplay {
 		for i := 1; i <= totalPages; i++ {
 			pageOffset := int((int64(i) - 1) * limit)
 			info.Pages = append(info.Pages, &Page{
@@ -79,9 +86,9 @@ func GetPaginationInfo(total, limit, offset int64) *PageInfo {
 		return info
 	}
 
-	// For larger page counts, show smart range: 5 before, current, 5 after, with ellipsis
-	rangeStart := currentPage - 5
-	rangeEnd := currentPage + 5
+	// For larger page counts, show smart range: pageRangeAroundCurrent before, current, pageRangeAroundCurrent after, with ellipsis
+	rangeStart := currentPage - pageRangeAroundCurrent
+	rangeEnd := currentPage + pageRangeAroundCurrent
 
 	// Always include page 1
 	if rangeStart > 1 {
@@ -149,13 +156,42 @@ func GetPaginationInfo(total, limit, offset int64) *PageInfo {
 	return info
 }
 
-// GetPages generates page links for backward compatibility
-// It now uses GetPaginationInfo internally and returns just the pages array
+// GetPages generates page links for all pages (original behavior for backward compatibility)
+// This function returns ALL pages without smart range truncation or ellipsis
+// Parameters: total - total number of items, limit - items per page
+// Returns: []*Page with all page numbers from 1 to totalPages
+// Note: IsCurrent is always false since this function doesn't have context about the current offset
 func GetPages(total, limit int64) (pages []*Page) {
 	if total <= limit {
 		return
 	}
 
-	info := GetPaginationInfo(total, limit, 0)
-	return info.Pages
+	// Calculate total pages
+	totalPages := int(math.Ceil(float64(total) / float64(limit)))
+	if totalPages < 1 {
+		totalPages = 1
+	}
+
+	// Generate all pages without smart pagination
+	number := 0
+	for start := 0; start < int(total); start += int(limit) {
+		number++
+		page := &Page{
+			Number:     number,
+			Offset:     start,
+			IsCurrent:  false, // Don't calculate IsCurrent; offset context not available
+			IsEllipsis: false,
+		}
+		pages = append(pages, page)
+	}
+	return
+}
+
+// GetSmartPages generates page links using smart pagination with limited range display
+// This wraps GetSmartPaginationInfo() and returns just the pages array
+// Parameters: total - total number of items, limit - items per page, offset - current offset
+// Returns: []*Page with smart-range pages (may include ellipsis entries with Number=0)
+func GetSmartPages(total, limit, offset int64) []*Page {
+	pageInfo := GetSmartPaginationInfo(total, limit, offset)
+	return pageInfo.Pages
 }
