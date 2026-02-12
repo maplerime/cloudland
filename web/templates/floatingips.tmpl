@@ -44,27 +44,27 @@
                                 {{ range .FloatingIps }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td>{{.ID}}</td>
+			                        <td data-column="ID">{{.ID}}</td>
 									{{ end }}
-									<td>{{.UUID}}</td>
-									<td>{{.Name}}</td>
-									<td>{{if .Group}}{{.Group.Name}}{{end}}</td>
-			                        <td>{{.FipAddress}}</td>
-			                        <td>{{.IntAddress}}</td>
-			                        <td>{{.Type}}</td>
-			                        <td>{{.Inbound}}</td>
-			                        <td>{{.Outbound}}</td>
-			                        <td>
+									<td data-column="UUID">{{.UUID}}</td>
+									<td data-column="Name">{{.Name}}</td>
+									<td data-column="IpGroup">{{if .Group}}{{.Group.Name}}{{end}}</td>
+			                        <td data-column="FloatingIP">{{.FipAddress}}</td>
+			                        <td data-column="InternalIP">{{.IntAddress}}</td>
+			                        <td data-column="Type">{{.Type}}</td>
+			                        <td data-column="InboundBandwidth">{{.Inbound}}</td>
+			                        <td data-column="OutboundBandwidth">{{.Outbound}}</td>
+			                        <td data-column="Instance">
 						{{ if .Instance }}
 						{{.Instance.Hostname}}
 						{{ end }}
 						</td>
-			                        <td>
+			                        <td data-column="LoadBalancer">
 						{{ if .LoadBalancer }}
 						{{.LoadBalancer.Name}}
 						{{ end }}
 						</td>
-                                    <td><a href="{{$Link}}/{{.ID}}"><i class="dark purple pencil alternate icon"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+                                    <td data-column="Action"><a href="{{$Link}}/{{.ID}}"><i class="dark purple pencil alternate icon"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>

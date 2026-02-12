@@ -1154,11 +1154,9 @@ func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "cgroups")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -1206,11 +1204,12 @@ func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
 		cgsWithCounts = append(cgsWithCounts, cgwc)
 	}
 
-	pages := GetPages(total, limit)
 	c.Data["ConsistencyGroups"] = cgsWithCounts
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "cgroups", total, limit, offset, listConfig,
+		`["ID", "Name", "Description", "Status", "Volumes", "Snapshots", "Owner", "Actions"]`,
+		[]string{"ID", "Name", "Description", "Status", "Volumes", "Snapshots", "Owner", "Actions"})
+
 	c.HTML(200, "cgroups")
 }
 

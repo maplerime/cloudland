@@ -1,6 +1,6 @@
 {{if .ListName}}
 <div class="column-selector-wrapper">
-	<div class="ui dropdown button" id="columnSelectorButton">
+	<div class="ui dropdown button" id="columnSelectorButton" data-default="{{.DefaultColumnsJSON}}" data-listname="{{.ListName}}">
 		<i class="columns icon"></i>
 		<span>{{.i18n.Tr "Columns"}}</span>
 		<div class="menu">
@@ -185,15 +185,25 @@
 		}
 	}
 
-	// Initialize Semantic UI dropdown functionality
+	// Initialize Semantic UI dropdown and column visibility on page load
 	document.addEventListener('DOMContentLoaded', function() {
 		try {
 			var buttonEl = document.getElementById('columnSelectorButton');
-			if (buttonEl && typeof jQuery !== 'undefined' && jQuery.fn.dropdown) {
-				jQuery(buttonEl).dropdown();
+			if (buttonEl) {
+				// Initialize jQuery dropdown
+				if (typeof jQuery !== 'undefined' && jQuery.fn.dropdown) {
+					jQuery(buttonEl).dropdown();
+				}
+
+				// Initialize column visibility from saved preferences
+				var listName = buttonEl.getAttribute('data-listname');
+				var defaultColumnsJSON = buttonEl.getAttribute('data-default');
+				if (listName) {
+					initColumnSelector(listName, defaultColumnsJSON);
+				}
 			}
 		} catch (e) {
-			console.error('Error initializing dropdown:', e);
+			console.error('Error initializing column selector:', e);
 		}
 	});
 })();

@@ -46,21 +46,21 @@
                                 {{ range .Images }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-									<td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+									<td data-column="ID"><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
-			                        <td>{{.Name}}</td>
-			                        <td>{{.Format}}</td>
-			                        <td>{{.Status}}</td>
-			                        <td><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
-			                        <td>{{.OSCode}}</td>
-									<td>{{.OsFamily}}</td>
-			                        <td>{{.OsVersion}}</td>
-                                    <td>{{.Size}}</td>
-			                        <td>{{.UserName}}</td>
-			                        <td>{{.Architecture}}</td>
-			                        <td>{{.BootLoader}}</td>
-                                    <td>
+									<td data-column="UUID"><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
+			                        <td data-column="Name">{{.Name}}</td>
+			                        <td data-column="Format">{{.Format}}</td>
+			                        <td data-column="Status">{{.Status}}</td>
+			                        <td data-column="CreatedAt"><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
+			                        <td data-column="OSCode">{{.OSCode}}</td>
+									<td data-column="OSFamily">{{.OsFamily}}</td>
+			                        <td data-column="OSVersion">{{.OsVersion}}</td>
+                                    <td data-column="Size">{{.Size}}</td>
+			                        <td data-column="DefaultUsername">{{.UserName}}</td>
+			                        <td data-column="Architecture">{{.Architecture}}</td>
+			                        <td data-column="BootLoader">{{.BootLoader}}</td>
+                                    <td data-column="Action">
                                         <div class="ui selection dropdown">
                                             <input id="action" name="action" type="hidden">
                                                 <i class="dropdown icon"></i>

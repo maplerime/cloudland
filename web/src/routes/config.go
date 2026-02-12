@@ -7,6 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 
 package routes
 
+import (
+	macaron "gopkg.in/macaron.v1"
+)
+
 // FilterField defines a filter field configuration for list page searches
 type FilterField struct {
 	// Name is the database column name for filtering
@@ -53,7 +57,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Zone Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"hypers": {
@@ -74,7 +78,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Hostname",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"instances": {
@@ -95,7 +99,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Hostname",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"users": {
@@ -116,7 +120,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Username",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"orgs": {
@@ -137,7 +141,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Organization Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"flavors": {
@@ -158,7 +162,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Flavor Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"images": {
@@ -179,7 +183,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Image Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"volumes": {
@@ -200,7 +204,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Volume Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"subnets": {
@@ -221,7 +225,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Subnet Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"ipgroups": {
@@ -242,7 +246,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter IP Group Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"keys": {
@@ -263,7 +267,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Key Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"floatingips": {
@@ -284,7 +288,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter IP Address",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"routers": {
@@ -305,7 +309,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Router Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"secgroups": {
@@ -326,7 +330,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Security Group Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"backups": {
@@ -347,7 +351,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Backup Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"tasks": {
@@ -368,7 +372,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Task Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"loadbalancers": {
@@ -389,7 +393,7 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Load Balancer Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 	"cgroups": {
@@ -410,7 +414,49 @@ var GlobalListConfigs = map[string]ListConfig{
 				Placeholder: "Enter Consistency Group Name",
 			},
 		},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
+		PageSizes:    []int64{10, 20, 50, 100},
+	},
+	"dictionaries": {
+		Name: "dictionaries",
+		FilterFields: []FilterField{
+			{
+				Name:        "id",
+				Label:       "Dictionary ID",
+				Type:        "number",
+				Options:     []string{},
+				Placeholder: "Enter Dictionary ID",
+			},
+			{
+				Name:        "name",
+				Label:       "Dictionary Name",
+				Type:        "text",
+				Options:     []string{},
+				Placeholder: "Enter Dictionary Name",
+			},
+		},
+		DefaultLimit: 20,
+		PageSizes:    []int64{10, 20, 50, 100},
+	},
+	"migrations": {
+		Name: "migrations",
+		FilterFields: []FilterField{
+			{
+				Name:        "id",
+				Label:       "Migration ID",
+				Type:        "number",
+				Options:     []string{},
+				Placeholder: "Enter Migration ID",
+			},
+			{
+				Name:        "name",
+				Label:       "Migration Name",
+				Type:        "text",
+				Options:     []string{},
+				Placeholder: "Enter Migration Name",
+			},
+		},
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
 }
@@ -425,7 +471,55 @@ func GetListConfig(listName string) ListConfig {
 	return ListConfig{
 		Name:         listName,
 		FilterFields: []FilterField{},
-		DefaultLimit: 16,
+		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	}
+}
+
+// GetPaginationParams extracts and validates pagination parameters from the request query string
+// It returns the list config, validated offset and limit values
+// Parameters: c - macaron context, listName - name of the list configuration
+// Returns: listConfig, offset, limit
+func GetPaginationParams(c *macaron.Context, listName string) (listConfig ListConfig, offset, limit int64) {
+	listConfig = GetListConfig(listName)
+	offset = c.QueryInt64("offset")
+	limit = c.QueryInt64("limit")
+
+	// Apply default limit if not specified
+	if limit == 0 {
+		limit = listConfig.DefaultLimit
+	}
+
+	// Validate limit against allowed page sizes
+	validLimit := false
+	for _, size := range listConfig.PageSizes {
+		if limit == size {
+			validLimit = true
+			break
+		}
+	}
+	if !validLimit {
+		limit = listConfig.DefaultLimit
+	}
+
+	// Handle page jump parameter (page takes precedence over offset)
+	if page := c.QueryInt64("page"); page > 0 {
+		offset = (page - 1) * limit
+	}
+	return
+}
+
+// SetPaginationData sets common pagination template data on the macaron context
+// Parameters: c - macaron context, listName - list name, total/limit/offset - pagination values,
+// listConfig - list configuration, defaultColumns - default visible columns, availableColumns - all available columns
+func SetPaginationData(c *macaron.Context, listName string, total, limit, offset int64, listConfig ListConfig, defaultColumnsJSON string, availableColumns []string) {
+	pageInfo := GetSmartPaginationInfo(total, limit, offset)
+	pageInfo.PageSizes = listConfig.PageSizes
+	c.Data["PageInfo"] = pageInfo
+	c.Data["Total"] = total
+	c.Data["Limit"] = limit
+	c.Data["ListConfig"] = listConfig
+	c.Data["ListName"] = listName
+	c.Data["DefaultColumnsJSON"] = defaultColumnsJSON
+	c.Data["AvailableColumns"] = availableColumns
 }

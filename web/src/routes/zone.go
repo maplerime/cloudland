@@ -209,32 +209,8 @@ func (v *ZoneView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get list configuration
-	listConfig := GetListConfig("zones")
-
 	// Get pagination parameters
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Validate limit against allowed page sizes
-	validLimit := false
-	for _, size := range listConfig.PageSizes {
-		if limit == size {
-			validLimit = true
-			break
-		}
-	}
-	if !validLimit {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Handle page jump parameter (page takes precedence over offset)
-	if page := c.QueryInt64("page"); page > 0 {
-		offset = (page - 1) * limit
-	}
+	listConfig, offset, limit := GetPaginationParams(c, "zones")
 
 	// Get sort order
 	order := c.Query("order")
@@ -253,19 +229,12 @@ func (v *ZoneView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get pagination info with smart page range display
-	pageInfo := GetSmartPaginationInfo(total, limit, offset)
-
 	// Set template data
 	c.Data["Zones"] = zones
-	c.Data["Total"] = total
-	c.Data["PageInfo"] = pageInfo
-	c.Data["Limit"] = limit
 	c.Data["Query"] = query
-	c.Data["ListConfig"] = listConfig
-	c.Data["ListName"] = "zones"
-	c.Data["DefaultColumnsJSON"] = `["ID", "Name", "CreatedAt", "UpdatedAt", "Remark", "Action"]`
-	c.Data["AvailableColumns"] = []string{"ID", "Name", "CreatedAt", "UpdatedAt", "Remark", "Action"}
+	SetPaginationData(c, "zones", total, limit, offset, listConfig,
+		`["ID", "Name", "CreatedAt", "UpdatedAt", "Remark", "Action"]`,
+		[]string{"ID", "Name", "CreatedAt", "UpdatedAt", "Remark", "Action"})
 
 	c.HTML(200, "zones")
 }

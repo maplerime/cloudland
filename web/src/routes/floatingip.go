@@ -707,32 +707,8 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-
-	// Get list configuration
-	listConfig := GetListConfig("floatingips")
-
-	if limit == 0 {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Validate limit against allowed page sizes
-	validLimit := false
-	for _, size := range listConfig.PageSizes {
-		if limit == size {
-			validLimit = true
-			break
-		}
-	}
-	if !validLimit {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Handle page jump parameter
-	if page := c.QueryInt64("page"); page > 0 {
-		offset = (page - 1) * limit
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "floatingips")
 
 	order := c.Query("order")
 	if order == "" {
@@ -759,20 +735,11 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get pagination info
-	pageInfo := GetSmartPaginationInfo(total, limit, offset)
-	pageInfo.PageSizes = listConfig.PageSizes
-
 	c.Data["FloatingIps"] = floatingIps
-	c.Data["Total"] = total
-	c.Data["PageInfo"] = pageInfo
-	c.Data["Limit"] = limit
 	c.Data["Query"] = query
-	c.Data["ListConfig"] = listConfig
-	c.Data["ListName"] = "floatingips"
-	// Floating IPs table columns: Address, Instance, Subnet, Status, CreatedAt, Action
-	c.Data["DefaultColumnsJSON"] = `["Address", "Instance", "Subnet", "Status", "CreatedAt", "Action"]`
-	c.Data["AvailableColumns"] = []string{"Address", "Instance", "Subnet", "Status", "CreatedAt", "Action"}
+	SetPaginationData(c, "floatingips", total, limit, offset, listConfig,
+		`["Address", "Instance", "Subnet", "Status", "CreatedAt", "Action"]`,
+		[]string{"Address", "Instance", "Subnet", "Status", "CreatedAt", "Action"})
 
 	c.HTML(200, "floatingips")
 }

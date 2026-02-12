@@ -47,34 +47,34 @@
 								{{ if or $.IsAdmin (eq $.UserID .Creater) }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+			                        <td data-column="ID"><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td>{{.UUID}}</td>
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.Type}}
+									<td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Name"><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
+			                        <td data-column="Type">{{.Type}}
 										{{ if ne .Type "internal" }}
 											({{.IdleCount}})
 										{{ end }}
 									</td>
-									<td>
+									<td data-column="Group">
                         {{ if .Group }}
                         {{ .Group.Name }}
                         {{ end }}
                                             </td>
-			                        <td>{{.Network}}</td>
-			                        <td>{{.Netmask}}</td>
-			                        <td>{{.Priority}}</td>
-			                        <td>
+			                        <td data-column="Network">{{.Network}}</td>
+			                        <td data-column="Netmask">{{.Netmask}}</td>
+			                        <td data-column="Priority">{{.Priority}}</td>
+			                        <td data-column="VPC">
 						{{ if .Router }}
 						{{ .Router.Name }}
 						{{ end }}
                                     		</td>
 
 						{{ if $.IsAdmin }}
-			                        <td>{{.Vlan}}</td>
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Vlan">{{.Vlan}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+                                    <td data-column="Action"><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
 				{{ end }}
 				{{ end }}

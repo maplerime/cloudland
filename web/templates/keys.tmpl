@@ -40,15 +40,15 @@
                                 {{ range .Keys }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td>{{.ID}}</td>
+			                        <td data-column="ID">{{.ID}}</td>
 									{{ end }}
-			                        <td>{{.UUID}}</td>
-			                        <td>{{.Name}}</td>
+			                        <td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Name">{{.Name}}</td>
 						{{ if $.IsAdmin }}
-			                        <td>{{ if .OwnerInfo }} {{.OwnerInfo.Name}} {{end}}</td>
+			                        <td data-column="Owner">{{ if .OwnerInfo }} {{.OwnerInfo.Name}} {{end}}</td>
 						{{ end }}
-			                        <td><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+			                        <td data-column="CreatedAt"><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
+                                    <td data-column="Action"><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>

@@ -37,20 +37,20 @@
                                 {{ $Link := .Link }}
                                 {{ range .IpGroups }}
 		                        <tr>
-			                        <td>{{.ID}}</td>
-			                        <td>{{.UUID}}</td>
-			                        <td>{{.Name}}</td>
-									<td>{{.Type}}</td>
-									<td>
+			                        <td data-column="ID">{{.ID}}</td>
+			                        <td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Name">{{.Name}}</td>
+									<td data-column="Type">{{.Type}}</td>
+									<td data-column="Category">
 									{{ if .DictionaryType }}
 										{{ .DictionaryType.Name }}
 									{{ else }}
-										未知类型
+										{{ $.i18n.Tr "Unknown_Type" }}
 									{{ end }}
 									</td>
-			                        <td>{{.SubnetNames}}</td>
-									<td>{{.FloatingIPNames}}</td>
-			                        <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+			                        <td data-column="Subnets">{{.SubnetNames}}</td>
+									<td data-column="FloatingIPs">{{.FloatingIPNames}}</td>
+			                        <td data-column="Action"><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a> <div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>

@@ -1,99 +1,128 @@
 {{if .PageInfo}}
-<div class="ui segment pagination-container">
-	<div class="ui grid">
-		<!-- Page size selector -->
-		<div class="four wide column">
-			<div class="ui form">
-				<div class="field">
-					<label>{{.i18n.Tr "Page_Size"}}:</label>
-					<select class="ui dropdown" name="limit" onchange="changePageSize(this, '{{.Link}}', '{{.Query}}')">
-						<option value="10" {{if eq .Limit 10}}selected{{end}}>10</option>
-						<option value="20" {{if eq .Limit 20}}selected{{end}}>20</option>
-						<option value="50" {{if eq .Limit 50}}selected{{end}}>50</option>
-						<option value="100" {{if eq .Limit 100}}selected{{end}}>100</option>
-					</select>
-				</div>
-			</div>
-		</div>
+<div class="pagination-bar">
+	<!-- Left: page navigation -->
+	<div class="pagination-left">
+		<div class="ui small pagination menu">
+			{{if .PageInfo.HasPrevious}}
+				<a class="item" href="{{.Link}}?offset={{.PageInfo.PreviousOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
+					<i class="left chevron icon"></i>
+				</a>
+			{{else}}
+				<div class="item disabled"><i class="left chevron icon"></i></div>
+			{{end}}
 
-		<!-- Jump to page input -->
-		<div class="four wide column">
-			<div class="ui action input">
-				<input type="text" id="jumpPageInput" placeholder="{{.i18n.Tr "Jump_To_Page"}}">
-				<button class="ui button" onclick="jumpToPage('{{.Link}}', '{{.Query}}', {{.Limit}})">{{.i18n.Tr "Go"}}</button>
-			</div>
-		</div>
+			{{range .PageInfo.Pages}}
+				{{if .IsEllipsis}}
+					<div class="item disabled">...</div>
+				{{else if .IsCurrent}}
+					<a class="active item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">{{.Number}}</a>
+				{{else}}
+					<a class="item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">{{.Number}}</a>
+				{{end}}
+			{{end}}
 
-		<!-- Page info text -->
-		<div class="eight wide column right aligned">
-			<span class="pagination-info">
-				{{.i18n.Tr "Total"}}: <strong>{{.Total}}</strong> |
-				{{.i18n.Tr "Page"}}: <strong>{{.PageInfo.CurrentPage}}</strong> / <strong>{{.PageInfo.TotalPages}}</strong>
-			</span>
+			{{if .PageInfo.HasNext}}
+				<a class="item" href="{{.Link}}?offset={{.PageInfo.NextOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
+					<i class="right chevron icon"></i>
+				</a>
+			{{else}}
+				<div class="item disabled"><i class="right chevron icon"></i></div>
+			{{end}}
 		</div>
 	</div>
 
-	<!-- Pagination menu with page numbers -->
-	<div class="ui pagination menu" style="margin-top: 1em;">
-		<!-- Previous button -->
-		{{if .PageInfo.HasPrevious}}
-			{{$prevOffset := 0}}
-			{{range $idx, $page := .PageInfo.Pages}}
-				{{if and (eq $page.Number (sub $.PageInfo.CurrentPage 1)) (not $page.IsEllipsis)}}
-					{{$prevOffset = $page.Offset}}
-				{{end}}
-			{{end}}
-			<a class="item" href="{{.Link}}?offset={{$prevOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
-				<i class="left chevron icon"></i> {{.i18n.Tr "Previous"}}
-			</a>
-		{{else}}
-			<div class="item disabled">
-				<i class="left chevron icon"></i> {{.i18n.Tr "Previous"}}
-			</div>
-		{{end}}
+	<!-- Right: controls -->
+	<div class="pagination-right">
+		<span class="pagination-info">
+			{{.i18n.Tr "Total"}}: <strong>{{.Total}}</strong>
+			&nbsp;{{.i18n.Tr "Page"}}: <strong>{{.PageInfo.CurrentPage}}</strong>/<strong>{{.PageInfo.TotalPages}}</strong>
+		</span>
 
-		<!-- Page number links -->
-		{{range .PageInfo.Pages}}
-			{{if .IsEllipsis}}
-				<!-- Ellipsis placeholder -->
-				<div class="item disabled">
-					<span>...</span>
-				</div>
-			{{else}}
-				<!-- Page number link -->
-				{{if .IsCurrent}}
-					<a class="active item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">
-						{{.Number}}
-					</a>
-				{{else}}
-					<a class="item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">
-						{{.Number}}
-					</a>
-				{{end}}
-			{{end}}
-		{{end}}
+		<span class="pagination-sep">|</span>
 
-		<!-- Next button -->
-		{{if .PageInfo.HasNext}}
-			{{$nextOffset := 0}}
-			{{range $idx, $page := .PageInfo.Pages}}
-				{{if and (eq $page.Number (add $.PageInfo.CurrentPage 1)) (not $page.IsEllipsis)}}
-					{{$nextOffset = $page.Offset}}
-				{{end}}
-			{{end}}
-			<a class="item" href="{{.Link}}?offset={{$nextOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
-				{{.i18n.Tr "Next"}} <i class="right chevron icon"></i>
-			</a>
-		{{else}}
-			<div class="item disabled">
-				{{.i18n.Tr "Next"}} <i class="right chevron icon"></i>
-			</div>
-		{{end}}
+		<span class="pagination-ctrl">
+			<select class="pagination-select" onchange="changePageSize(this, '{{.Link}}', '{{.Query}}')">
+				<option value="10" {{if eq .Limit 10}}selected{{end}}>10</option>
+				<option value="20" {{if eq .Limit 20}}selected{{end}}>20</option>
+				<option value="50" {{if eq .Limit 50}}selected{{end}}>50</option>
+				<option value="100" {{if eq .Limit 100}}selected{{end}}>100</option>
+			</select>
+			{{.i18n.Tr "Page_Size"}}
+		</span>
+
+		<span class="pagination-sep">|</span>
+
+		<span class="pagination-ctrl">
+			<input type="text" class="pagination-jump-input" id="jumpPageInput" placeholder="{{.PageInfo.TotalPages}}">
+			<button class="ui mini basic button" onclick="jumpToPage('{{.Link}}', '{{.Query}}', {{.Limit}})">{{.i18n.Tr "Go"}}</button>
+		</span>
 	</div>
 </div>
 
+<style>
+.pagination-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 0;
+	margin-top: 8px;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.pagination-left {
+	flex-shrink: 0;
+}
+.pagination-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	font-size: 13px;
+	color: rgba(0,0,0,.6);
+}
+.pagination-info strong {
+	color: rgba(0,0,0,.85);
+}
+.pagination-sep {
+	color: rgba(0,0,0,.15);
+}
+.pagination-ctrl {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.pagination-select {
+	border: 1px solid rgba(34,36,38,.15);
+	border-radius: 4px;
+	padding: 4px 6px;
+	font-size: 13px;
+	outline: none;
+	background: #fff;
+	cursor: pointer;
+}
+.pagination-select:hover {
+	border-color: rgba(34,36,38,.35);
+}
+.pagination-jump-input {
+	width: 50px;
+	border: 1px solid rgba(34,36,38,.15);
+	border-radius: 4px;
+	padding: 4px 6px;
+	font-size: 13px;
+	text-align: center;
+	outline: none;
+}
+.pagination-jump-input:focus {
+	border-color: #85b7d9;
+}
+.pagination-bar .ui.mini.basic.button {
+	padding: 5px 10px !important;
+	font-size: 12px !important;
+	margin: 0 !important;
+}
+</style>
+
 <script>
-// Helper function to change page size
 function changePageSize(selectElement, baseLink, query) {
 	var limit = selectElement.value;
 	var url = baseLink + '?offset=0&limit=' + limit;
@@ -103,7 +132,6 @@ function changePageSize(selectElement, baseLink, query) {
 	window.location.href = url;
 }
 
-// Helper function for pagination
 function jumpToPage(baseLink, query, limit) {
 	var pageNum = document.getElementById('jumpPageInput').value;
 	if (!pageNum || pageNum <= 0) {
@@ -118,7 +146,6 @@ function jumpToPage(baseLink, query, limit) {
 	window.location.href = url;
 }
 
-// Handle Enter key in jump to page input
 document.addEventListener('DOMContentLoaded', function() {
 	var jumpInput = document.getElementById('jumpPageInput');
 	if (jumpInput) {

@@ -249,32 +249,8 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-
-	// Get list configuration
-	listConfig := GetListConfig("keys")
-
-	if limit == 0 {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Validate limit against allowed page sizes
-	validLimit := false
-	for _, size := range listConfig.PageSizes {
-		if limit == size {
-			validLimit = true
-			break
-		}
-	}
-	if !validLimit {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Handle page jump parameter
-	if page := c.QueryInt64("page"); page > 0 {
-		offset = (page - 1) * limit
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "keys")
 
 	order := c.QueryTrim("order")
 	if order == "" {
@@ -289,20 +265,11 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get pagination info
-	pageInfo := GetSmartPaginationInfo(total, limit, offset)
-	pageInfo.PageSizes = listConfig.PageSizes
-
 	c.Data["Keys"] = keys
-	c.Data["Total"] = total
-	c.Data["PageInfo"] = pageInfo
-	c.Data["Limit"] = limit
 	c.Data["Query"] = query
-	c.Data["ListConfig"] = listConfig
-	c.Data["ListName"] = "keys"
-	// Keys table columns: Name, Fingerprint, CreatedAt, Action
-	c.Data["DefaultColumnsJSON"] = `["Name", "Fingerprint", "CreatedAt", "Action"]`
-	c.Data["AvailableColumns"] = []string{"Name", "Fingerprint", "CreatedAt", "Action"}
+	SetPaginationData(c, "keys", total, limit, offset, listConfig,
+		`["Name", "Fingerprint", "CreatedAt", "Action"]`,
+		[]string{"Name", "Fingerprint", "CreatedAt", "Action"})
 
 	c.HTML(200, "keys")
 }

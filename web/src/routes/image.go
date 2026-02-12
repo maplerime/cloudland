@@ -413,32 +413,8 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-
-	// Get list configuration
-	listConfig := GetListConfig("images")
-
-	if limit == 0 {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Validate limit against allowed page sizes
-	validLimit := false
-	for _, size := range listConfig.PageSizes {
-		if limit == size {
-			validLimit = true
-			break
-		}
-	}
-	if !validLimit {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Handle page jump parameter
-	if page := c.QueryInt64("page"); page > 0 {
-		offset = (page - 1) * limit
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "images")
 
 	order := c.QueryTrim("order")
 	if order == "" {
@@ -452,24 +428,15 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get pagination info
-	pageInfo := GetSmartPaginationInfo(total, limit, offset)
-	pageInfo.PageSizes = listConfig.PageSizes
-
 	// Check if user is admin
 	isAdmin := memberShip.CheckPermission(model.Admin)
 
 	c.Data["Images"] = images
-	c.Data["Total"] = total
-	c.Data["PageInfo"] = pageInfo
-	c.Data["Limit"] = limit
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
-	c.Data["ListConfig"] = listConfig
-	c.Data["ListName"] = "images"
-	// Images table columns: ID (admin-only), UUID, Name, Format, Status, CreatedAt, OSCode, OSFamily, OSVersion, Size, DefaultUsername, Architecture, BootLoader, Action
-	c.Data["DefaultColumnsJSON"] = `["UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "Size", "Action"]`
-	c.Data["AvailableColumns"] = []string{"ID", "UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "OSFamily", "OSVersion", "Size", "DefaultUsername", "Architecture", "BootLoader", "Action"}
+	SetPaginationData(c, "images", total, limit, offset, listConfig,
+		`["UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "Size", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "OSFamily", "OSVersion", "Size", "DefaultUsername", "Architecture", "BootLoader", "Action"})
 
 	c.HTML(200, "images")
 }

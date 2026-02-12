@@ -7,6 +7,7 @@
                     <h4 class="ui top attached header">
                         {{.i18n.Tr "CG_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
                         <div class="ui right">
+                            {{template "_column_selector" .}}
                             <a class="ui green tiny button" href="/cgroups/new">{{.i18n.Tr "Create"}}</a>
                         </div>
                     </h4>
@@ -23,17 +24,17 @@
                             <thead>
                                 <tr>
                                     {{ if $.IsAdmin }}
-                                    <th>{{.i18n.Tr "ID"}}</th>
+                                    <th data-column="ID">{{.i18n.Tr "ID"}}</th>
                                     {{ end }}
-                                    <th>{{.i18n.Tr "Name"}}</th>
-                                    <th>{{.i18n.Tr "Description"}}</th>
-                                    <th>{{.i18n.Tr "Status"}}</th>
-                                    <th>{{.i18n.Tr "Volumes"}}</th>
-                                    <th>{{.i18n.Tr "Snapshots"}}</th>
+                                    <th data-column="Name">{{.i18n.Tr "Name"}}</th>
+                                    <th data-column="Description">{{.i18n.Tr "Description"}}</th>
+                                    <th data-column="Status">{{.i18n.Tr "Status"}}</th>
+                                    <th data-column="Volumes">{{.i18n.Tr "Volumes"}}</th>
+                                    <th data-column="Snapshots">{{.i18n.Tr "Snapshots"}}</th>
                                     {{ if $.IsAdmin }}
-                                    <th>{{.i18n.Tr "Owner"}}</th>
+                                    <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
                                     {{ end }}
-                                    <th>{{.i18n.Tr "Actions"}}</th>
+                                    <th data-column="Actions">{{.i18n.Tr "Actions"}}</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -41,17 +42,17 @@
                                 {{ range .ConsistencyGroups }}
                                 <tr>
                                     {{ if $.IsAdmin }}
-                                    <td>{{.ID}}</td>
+                                    <td data-column="ID">{{.ID}}</td>
                                     {{ end }}
-                                    <td><a href="/cgroups/{{.ID}}">{{.Name}}</a></td>
-                                    <td>{{.Description}}</td>
-                                    <td>{{.Status}}</td>
-                                    <td>{{.VolumeCount}}</td>
-                                    <td><a href="/cgroups/{{.ID}}/snapshots">{{.SnapshotCount}}</a></td>
+                                    <td data-column="Name"><a href="/cgroups/{{.ID}}">{{.Name}}</a></td>
+                                    <td data-column="Description">{{.Description}}</td>
+                                    <td data-column="Status">{{.Status}}</td>
+                                    <td data-column="Volumes">{{.VolumeCount}}</td>
+                                    <td data-column="Snapshots"><a href="/cgroups/{{.ID}}/snapshots">{{.SnapshotCount}}</a></td>
                                     {{ if $.IsAdmin }}
-                                    <td>{{ if .OwnerInfo }}{{.OwnerInfo.Name}}{{ end }}</td>
+                                    <td data-column="Owner">{{ if .OwnerInfo }}{{.OwnerInfo.Name}}{{ end }}</td>
                                     {{ end }}
-                                    <td>
+                                    <td data-column="Actions">
                                         <div class="ui selection dropdown">
                                             <input id="action" name="action" type="hidden">
                                             <i class="dropdown icon"></i>
@@ -80,15 +81,7 @@
                             </tbody>
                         </table>
                     </div>
-                    <div class="ui attached segment">
-                        {{ if .Pages}}
-                        <div class="ui pagination menu">
-                            {{ range $index, $element := .Pages }}
-                            <a class="item" href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                            {{ end }}
-                        </div>
-                        {{ end }}
-                    </div>
+                    {{template "_pagination" .}}
                 </div>
             </div>
         </div>

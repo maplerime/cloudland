@@ -46,21 +46,21 @@
                                 {{ range .Volumes }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+			                        <td data-column="ID"><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
-									<td>{{.Path}}</td>
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.Size}}</td>
-									<td>{{.IopsLimit}}</td>
-			                        <td>{{.BpsLimit}}</td>
-			                        <td>{{.Status}}</td>
-									<td>{{.Booting}}</td>
-			                        <td>{{ if .Instance }} {{.Instance.ID}}-{{.Instance.Hostname}}:{{.Target}} {{ end }}</td>
+									<td data-column="UUID"><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
+									<td data-column="Path">{{.Path}}</td>
+			                        <td data-column="Name"><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
+			                        <td data-column="Size">{{.Size}}</td>
+									<td data-column="IopsLimit">{{.IopsLimit}}</td>
+			                        <td data-column="BpsLimit">{{.BpsLimit}}</td>
+			                        <td data-column="Status">{{.Status}}</td>
+									<td data-column="Bootable">{{.Booting}}</td>
+			                        <td data-column="AttachedAs">{{ if .Instance }} {{.Instance.ID}}-{{.Instance.Hostname}}:{{.Target}} {{ end }}</td>
 						{{ if $.IsAdmin }}
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
-						            <td>
+						            <td data-column="Action">
                                         <div class="ui selection dropdown">
                                             <input id="action" name="action" type="hidden">
                                             <i class="dropdown icon"></i>

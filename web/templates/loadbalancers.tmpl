@@ -7,6 +7,7 @@
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "LoadBalancer_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
+				            {{template "_column_selector" .}}
 				            <a class="ui green tiny button" href="loadbalancers/new">{{.i18n.Tr "Create"}}</a>
 			            </div>
 		            </h4>
@@ -23,19 +24,19 @@
 	                        <thead>
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "ID"}}</th>
+			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
-									<th>{{.i18n.Tr "UUID"}}</th>
-			                        <th>{{.i18n.Tr "Name"}}</th>
-			                        <th>{{.i18n.Tr "Public IPs"}}</th>
-			                        <th>{{.i18n.Tr "Listeners"}}</th>
-			                        <th>{{.i18n.Tr "Status"}}</th>
-			                        <th>{{.i18n.Tr "Hypers"}}</th>
-			                        <th>{{.i18n.Tr "VPC"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+			                        <th data-column="Name">{{.i18n.Tr "Name"}}</th>
+			                        <th data-column="Public IPs">{{.i18n.Tr "Public IPs"}}</th>
+			                        <th data-column="Listeners">{{.i18n.Tr "Listeners"}}</th>
+			                        <th data-column="Status">{{.i18n.Tr "Status"}}</th>
+			                        <th data-column="Hypers">{{.i18n.Tr "Hypers"}}</th>
+			                        <th data-column="VPC">{{.i18n.Tr "VPC"}}</th>
 		   			        {{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "Owner"}}</th>
+			                        <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
 						{{ end }}
-                                    <th>{{.i18n.Tr "Action"}}</th>
+                                    <th data-column="Action">{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -43,31 +44,31 @@
                                 {{ range .LoadBalancers}}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td>{{.ID}}</td>
+			                        <td data-column="ID">{{.ID}}</td>
 									{{ end }}
-									<td>{{.UUID}}</td>
-			                        <td>{{.Name}}</td>
-			                        <td>
+									<td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Name">{{.Name}}</td>
+			                        <td data-column="Public IPs">
 							{{ range .FloatingIps}}
 								{{.FipAddress }}<br>
 							{{ end }}
                                     		</td>
-			                        <td>
+			                        <td data-column="Listeners">
 							{{ range .Listeners}}
 								{{.Name }}<br>
 							{{ end }}
                                     		</td>
-			                        <td>{{ $.i18n.Tr .Status }}</td>
-			                        <td>{{ .VrrpInstance.Hyper }}, {{ .VrrpInstance.Peer }}</td>
-			                        <td>
+			                        <td data-column="Status">{{ $.i18n.Tr .Status }}</td>
+			                        <td data-column="Hypers">{{ .VrrpInstance.Hyper }}, {{ .VrrpInstance.Peer }}</td>
+			                        <td data-column="VPC">
 						{{ if .Router }}
 						{{ .Router.Name }}
 						{{ end }}
                                     		</td>
 		   			        {{ if $.IsAdmin }}
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
-                                    <td><div class="ui selection dropdown">
+                                    <td data-column="Action"><div class="ui selection dropdown">
 											<input id="action" name="action" type="hidden">
 												<i class="dropdown icon"></i>
 													<div class="default text">Action
@@ -90,17 +91,7 @@
 	                        </tbody>
                         </table>
 		            </div>
-		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu">
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
-	                    </div>
+		            {{template "_pagination" .}}
 	            </div>
             </div>
         </div>

@@ -1402,32 +1402,9 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
 
-	// Get list configuration
-	listConfig := GetListConfig("instances")
-
-	if limit == 0 {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Validate limit against allowed page sizes
-	validLimit := false
-	for _, size := range listConfig.PageSizes {
-		if limit == size {
-			validLimit = true
-			break
-		}
-	}
-	if !validLimit {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Handle page jump parameter
-	if page := c.QueryInt64("page"); page > 0 {
-		offset = (page - 1) * limit
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "instances")
 
 	// Get search query and order
 	query := c.QueryTrim("q")
@@ -1445,26 +1422,17 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get pagination info
-	pageInfo := GetSmartPaginationInfo(total, limit, offset)
-	pageInfo.PageSizes = listConfig.PageSizes
-
 	// Check if user is admin
 	isAdmin := memberShip.CheckPermission(model.Admin)
 
 	// Set template data
 	c.Data["Instances"] = instances
-	c.Data["Total"] = total
-	c.Data["PageInfo"] = pageInfo
-	c.Data["Limit"] = limit
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
-	c.Data["ListConfig"] = listConfig
-	c.Data["ListName"] = "instances"
-	// Note: Instances table is more complex - include UUID, Hostname, Flavor, Image, IP, Status, Console, Hyper, Owner, Zone, Action
-	c.Data["DefaultColumnsJSON"] = `["UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"]`
-	c.Data["AvailableColumns"] = []string{"UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"}
 	c.Data["HostName"] = c.Query("hostname")
+	SetPaginationData(c, "instances", total, limit, offset, listConfig,
+		`["UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"]`,
+		[]string{"UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"})
 
 	c.HTML(200, "instances")
 }

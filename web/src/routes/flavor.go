@@ -142,32 +142,8 @@ func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, quer
 }
 
 func (v *FlavorView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-
-	// Get list configuration
-	listConfig := GetListConfig("flavors")
-
-	if limit == 0 {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Validate limit against allowed page sizes
-	validLimit := false
-	for _, size := range listConfig.PageSizes {
-		if limit == size {
-			validLimit = true
-			break
-		}
-	}
-	if !validLimit {
-		limit = listConfig.DefaultLimit
-	}
-
-	// Handle page jump parameter
-	if page := c.QueryInt64("page"); page > 0 {
-		offset = (page - 1) * limit
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "flavors")
 
 	order := c.Query("order")
 	if order == "" {
@@ -181,20 +157,11 @@ func (v *FlavorView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	// Get pagination info
-	pageInfo := GetSmartPaginationInfo(total, limit, offset)
-	pageInfo.PageSizes = listConfig.PageSizes
-
 	c.Data["Flavors"] = flavors
-	c.Data["Total"] = total
-	c.Data["PageInfo"] = pageInfo
-	c.Data["Limit"] = limit
 	c.Data["Query"] = query
-	c.Data["ListConfig"] = listConfig
-	c.Data["ListName"] = "flavors"
-	// Flavors table columns: ID, UUID, Name, Cpu, Memory, Disk, Action
-	c.Data["DefaultColumnsJSON"] = `["ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"]`
-	c.Data["AvailableColumns"] = []string{"ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"}
+	SetPaginationData(c, "flavors", total, limit, offset, listConfig,
+		`["ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"})
 
 	c.HTML(200, "flavors")
 }

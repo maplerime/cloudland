@@ -520,11 +520,9 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 }
 
 func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "loadbalancers")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -546,11 +544,12 @@ func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["LoadBalancers"] = loadBalancers
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "loadbalancers", total, limit, offset, listConfig,
+		`["ID", "UUID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"})
+
 	c.HTML(200, "loadbalancers")
 }
 

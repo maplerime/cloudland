@@ -18,14 +18,16 @@ type Page struct {
 
 // PageInfo contains pagination metadata and page information
 type PageInfo struct {
-	Pages        []*Page  // List of pages to display
-	TotalPages   int      // Total number of pages
-	CurrentPage  int      // Current page number
-	HasPrevious  bool     // Whether there is a previous page
-	HasNext      bool     // Whether there is a next page
-	PreviousPage int      // Previous page number (0 if no previous)
-	NextPage     int      // Next page number (0 if no next)
-	PageSizes    []int64  // Available page size options for pagination
+	Pages          []*Page // List of pages to display
+	TotalPages     int     // Total number of pages
+	CurrentPage    int     // Current page number
+	HasPrevious    bool    // Whether there is a previous page
+	HasNext        bool    // Whether there is a next page
+	PreviousPage   int     // Previous page number (0 if no previous)
+	NextPage       int     // Next page number (0 if no next)
+	PreviousOffset int     // Offset for previous page (precomputed for template use)
+	NextOffset     int     // Offset for next page (precomputed for template use)
+	PageSizes      []int64 // Available page size options for pagination
 }
 
 // GetSmartPaginationInfo generates smart pagination information with limited page range display
@@ -65,12 +67,14 @@ func GetSmartPaginationInfo(total, limit, offset int64) *PageInfo {
 		NextPage:    0,
 	}
 
-	// Set previous and next page numbers
+	// Set previous and next page numbers and precompute offsets
 	if info.HasPrevious {
 		info.PreviousPage = currentPage - 1
+		info.PreviousOffset = int((int64(currentPage-1) - 1) * limit)
 	}
 	if info.HasNext {
 		info.NextPage = currentPage + 1
+		info.NextOffset = int(int64(currentPage) * limit)
 	}
 
 	// If total pages is small, show all pages
