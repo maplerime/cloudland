@@ -1401,42 +1401,71 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
 	offset := c.QueryInt64("offset")
 	limit := c.QueryInt64("limit")
-	hostname := c.QueryTrim("hostname")
-	router_id := c.QueryTrim("router_id")
+
+	// Get list configuration
+	listConfig := GetListConfig("instances")
+
 	if limit == 0 {
-		limit = 16
-	}
-	order := c.QueryTrim("order")
-	if order == "" {
-		order = "-created_at"
-	}
-	queryStr := c.QueryTrim("q")
-	query := queryStr
-	if query != "" {
-		query = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
-	}
-	if router_id != "" {
-		routerID, err := strconv.Atoi(router_id)
-		if err != nil {
-			logger.Debugf("Error to convert router_id to integer: %+v ", err)
-		}
-		query = fmt.Sprintf("router_id = %d", routerID)
+		limit = listConfig.DefaultLimit
 	}
 
+	// Validate limit against allowed page sizes
+	validLimit := false
+	for _, size := range listConfig.PageSizes {
+		if limit == size {
+			validLimit = true
+			break
+		}
+	}
+	if !validLimit {
+		limit = listConfig.DefaultLimit
+	}
+
+	// Handle page jump parameter
+	if page := c.QueryInt64("page"); page > 0 {
+		offset = (page - 1) * limit
+	}
+
+	// Get search query and order
+	query := c.QueryTrim("q")
+	order := c.Query("order")
+	if order == "" {
+		order = "created_at"
+	}
+
+	// Fetch instances from database (call existing instanceAdmin.List function)
 	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
+		logger.Debugf("Failed to get instances, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Get pagination info
+	pageInfo := GetSmartPaginationInfo(total, limit, offset)
+	pageInfo.PageSizes = listConfig.PageSizes
+
+	// Check if user is admin
+	isAdmin := memberShip.CheckPermission(model.Admin)
+
+	// Set template data
 	c.Data["Instances"] = instances
 	c.Data["Total"] = total
-	c.Data["Pages"] = pages
-	c.Data["Query"] = queryStr
-	c.Data["HostName"] = hostname
+	c.Data["PageInfo"] = pageInfo
+	c.Data["Limit"] = limit
+	c.Data["Query"] = query
+	c.Data["IsAdmin"] = isAdmin
+	c.Data["ListConfig"] = listConfig
+	c.Data["ListName"] = "instances"
+	// Note: Instances table is more complex - include UUID, Hostname, Flavor, Image, IP, Status, Console, Hyper, Owner, Zone, Action
+	c.Data["DefaultColumnsJSON"] = `["UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"]`
+	c.Data["AvailableColumns"] = []string{"UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"}
+	c.Data["HostName"] = c.Query("hostname")
+
 	c.HTML(200, "instances")
 }
 
