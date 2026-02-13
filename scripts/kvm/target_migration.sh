@@ -22,7 +22,7 @@ state="failed"
 
 if [ -z "$wds_address" ]; then
     state="not_supported"
-    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'migration is only supported with shared storage'"
     exit 0
 fi
 
@@ -60,7 +60,7 @@ while [ $i -lt $nvolume ]; do
             if [ "$migration_type" = "cold" ]; then
                 ret_code=$(wds_curl PUT "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}" | jq -r .ret_code)
                 if [ "$ret_code" != "0" ]; then
-                    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+                    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
 	            exit 1
                 fi
             fi
@@ -75,7 +75,7 @@ while [ $i -lt $nvolume ]; do
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to bind uss for vhost'"
 	exit 1
     fi
     if [ "$booting" = "true" ]; then
@@ -161,5 +161,5 @@ if [ "$state" != "failed" ]; then
     ./generate_vm_instance_map.sh add $vm_ID
 fi
 
-echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
 async_exec ./async_job/complete_migration.sh "$migrate_ID" "$task_ID" "$ID" "$migration_type"

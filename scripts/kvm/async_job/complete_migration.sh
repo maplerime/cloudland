@@ -34,7 +34,7 @@ for i in {1..600}; do
         echo "Updating vm_instance_map metrics: adding VM $vm_ID to current hypervisor"
         ../generate_vm_instance_map.sh add $vm_ID
 
-        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
         exit 0
     fi
 done
@@ -48,4 +48,4 @@ virsh undefine --nvram $vm_ID
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 rm -f $run_dir/${vm_ID}-$migrate_ID
-echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state'"
+echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'cleanup target'"

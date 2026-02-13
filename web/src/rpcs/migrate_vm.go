@@ -27,7 +27,7 @@ type VolumeInfo struct {
 	Booting bool   `json:"booting"`
 }
 
-func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, script, migrationType string) (err error) {
+func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, migrationScript, migrationType string) (err error) {
 	db := DB()
 	targetHyper := &model.Hyper{}
 	err = db.Where("hostid = ?", migration.TargetHyper).Take(targetHyper).Error
@@ -64,7 +64,7 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 	}
 	if sourceHyper.Status != 10 {
 		control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/source_migration.sh '%d' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migrationType, volumesJson)
+		command := fmt.Sprintf("'%s' '%d' '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migrationType, volumesJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Source migration command execution failed", err)
@@ -108,6 +108,10 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	status = args[5]
 	taskStatus := status
+	message := ""
+	if len(args) > 6 {
+		message = args[6]
+	}
 	migration := &model.Migration{Model: model.Model{ID: migrationID}}
 	err = db.Model(migration).Take(migration).Error
 	if err != nil {
@@ -121,22 +125,20 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	if status == "completed" {
-		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/finish_source_migration.sh", migration.Type)
-		if err != nil {
-			logger.Error("Failed to exec finish source migration", err)
-			status = "failed"
-			return
-		}
 		_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
 		if err != nil {
 			logger.Error("Failed to sync vm info", err)
+			return
+		}
+		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/finish_source_migration.sh", migration.Type)
+		if err != nil {
+			logger.Error("Failed to exec finish source migration", err)
 			return
 		}
 	} else if status == "rollback" {
 		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/rollback_source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Error("Failed to exec finish source migration", err)
-			status = "failed"
 			return
 		}
 	} else if status == "source_rollback" {
@@ -191,10 +193,8 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Error("Failed to exec source migration", err)
-			status = "failed"
 			return
 		}
-		taskStatus = "completed"
 	} else if status == "source_prepared" {
 		err = db.Preload("SiteSubnets").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
 		if err != nil {
@@ -245,22 +245,25 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				return
 			}
 		}
-		taskStatus = "completed"
 	}
 	logger.Errorf("Migration condition: %s, new status: %s", migration.Status, status)
-	if migration.Status != "completed" && migration.Status != "failed" {
-		logger.Errorf("Migration status: %s, new status: %s", migration.Status, status)
+
+	// Use defer to handle status updates, ensuring both migration and task status
+	// are set to "failed" if any error occurs during the function execution.
+	defer func() {
+		taskStatus = "completed"
 		migration.Status = status
-	}
-	err = db.Model(migration).Save(migration).Error
-	if err != nil {
-		logger.Error("Failed to update migration", err)
-		return
-	}
-	err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus}).Error
-	if err != nil {
-		logger.Error("Failed to update task", err)
-		return
-	}
+		if err != nil {
+			taskStatus = "failed"
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus, "message": err.Error()}).Error
+		} else {
+			err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus, "message": message}).Error
+		}
+		err = db.Model(migration).Update(map[string]interface{}{"status": status}).Error
+		if err != nil {
+			logger.Error("Failed to update migration", err)
+		}
+	}()
+
 	return
 }

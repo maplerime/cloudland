@@ -34,6 +34,7 @@
 			                        <th>{{.i18n.Tr "Target Hyper"}}</th>
 			                        <th>{{.i18n.Tr "Force"}}</th>
 			                        <th>{{.i18n.Tr "Phases"}}</th>
+			                        <th>{{.i18n.Tr "Remarks"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
 		                        </tr>
 	                        </thead>
@@ -53,6 +54,7 @@
 			                        <td>{{.TargetHyper}}</td>
 			                        <td>{{.Force}}</td>
 			                        <td>{{ range .Phases }}{{.Name}}:{{.Summary}}:{{.Status}}<br>{{ end }}</td>
+			                        <td>{{ range .Phases }}{{ if .Message }}{{.Name}}: {{.Message}}<br>{{ end }}{{ end }}</td>
 			                        <td>{{.Status}}</td>
 		                        </tr>
                                 {{ end }}
