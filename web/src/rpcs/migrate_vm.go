@@ -125,6 +125,11 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	if status == "completed" {
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": model.InstanceStatusMigrated}).Error
+		if err != nil {
+			logger.Error("Failed to update instance status to unknown, %v", err)
+			return
+		}
 		_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
 		if err != nil {
 			logger.Error("Failed to sync vm info", err)
@@ -142,7 +147,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "source_rollback" {
-		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": "rollback"}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": model.InstanceStatusRollback}).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to unknown, %v", err)
 			return
@@ -166,7 +171,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "failed" {
-		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": "unknown"}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": model.InstanceStatusUnknown}).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to unknown, %v", err)
 			return
@@ -244,6 +249,13 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				logger.Error("Execute clear second ips failed", err)
 				return
 			}
+		}
+		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s'", migration.ID, taskID, instance.ID, migration.Type)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Execute clear target failed", err)
+			return
 		}
 	}
 	logger.Errorf("Migration condition: %s, new status: %s", migration.Status, status)

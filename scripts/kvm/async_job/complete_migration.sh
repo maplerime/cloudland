@@ -49,3 +49,4 @@ rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 rm -f $run_dir/${vm_ID}-$migrate_ID
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'cleanup target'"
+sync_vm $ID

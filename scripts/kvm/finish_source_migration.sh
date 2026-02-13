@@ -17,7 +17,7 @@ state=failed
 vm_xml=$(cat $xml_dir/$vm_ID/$vm_ID.xml)
 virsh destroy $vm_ID
 virsh undefine --nvram $vm_ID
-./clear_source_vhost.sh $ID
+./clear_hyper_vhost.sh $ID
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do

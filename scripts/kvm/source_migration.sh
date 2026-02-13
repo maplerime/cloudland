@@ -19,9 +19,9 @@ if [ "$migration_type" = "warm" ]; then
     state='source_rollback'
     vm_state=$(virsh domstate $vm_ID)
     if [ "$vm_state" = "shut off" ]; then
-        virsh migrate --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
+        virsh migrate --undefinesource --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
     else
-        virsh migrate --persistent --live $vm_ID qemu+ssh://$target_hyper/system
+        virsh migrate --undefinesource --persistent --live $vm_ID qemu+ssh://$target_hyper/system
     fi
     if [ $? -ne 0 ]; then
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'virsh migrate returns non-zero'"

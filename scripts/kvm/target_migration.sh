@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 cd $(dirname $0)
 source ../cloudrc
@@ -162,4 +162,3 @@ if [ "$state" != "failed" ]; then
 fi
 
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
-async_exec ./async_job/complete_migration.sh "$migrate_ID" "$task_ID" "$ID" "$migration_type"

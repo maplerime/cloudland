@@ -18,3 +18,4 @@ vm_xml=$xml_dir/$vm_ID/$vm_ID.xml
 virsh define $vm_xml
 virsh autostart $vm_ID --disable
 virsh start $vm_ID
+sync_vm $ID
