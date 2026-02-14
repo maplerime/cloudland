@@ -94,7 +94,9 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 			logger.Error("Failed to query hypervisor", hyperErr)
 			continue
 		}
-		hyperSet[iface.Hyper] = struct{}{}
+		if iface.Hyper >= 0 {
+			hyperSet[iface.Hyper] = struct{}{}
+		}
 		localRules = append(localRules, &FdbRule{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID})
 	}
 	if len(hyperSet) > 0 && len(spreadRules) > 0 {

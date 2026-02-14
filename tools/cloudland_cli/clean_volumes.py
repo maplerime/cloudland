@@ -185,10 +185,17 @@ def _print_zombie_table(zombies, wds_client):
         size_gb = 0.0
         try:
             vol_detail = wds_client.get_volume_detail(wds_id)
-            if vol_detail and "data_size" in vol_detail:
-                size_bytes = vol_detail.get("data_size", 0)
-                size_gb = size_bytes / (1024 ** 3)  # Convert bytes to GB
-                total_size_bytes += size_bytes
+            if vol_detail:
+                logger.debug("Volume detail for %s: %s", wds_id, vol_detail)
+                if "data_size" in vol_detail:
+                    size_bytes = vol_detail.get("data_size", 0)
+                    size_gb = size_bytes / (1024 ** 3)  # Convert bytes to GB
+                    total_size_bytes += size_bytes
+                    logger.debug("Volume %s data_size: %d bytes = %.2f GB", wds_id, size_bytes, size_gb)
+                else:
+                    logger.debug("No data_size found in volume detail for %s", wds_id)
+            else:
+                logger.debug("Failed to get volume detail for %s: returned None", wds_id)
         except Exception as e:
             logger.debug("Failed to get volume detail for %s: %s", wds_id, e)
 
