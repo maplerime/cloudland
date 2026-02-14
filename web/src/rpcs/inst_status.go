@@ -68,9 +68,10 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		if instance.Status == model.InstanceStatusMigrating || instance.Status == "rescuing" {
 			continue
 		}
-		if instance.Status.String() != status {
+		if instance.Status.String() != status || instance.DeletedAt != nil {
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
 				"status": status,
+				"deleted_at": nil,
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update status", err)
@@ -92,7 +93,6 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			err = db.Unscoped().Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{
 				"hyper":   int32(hyperID),
-				"zone_id": hyper.ZoneID,
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update interface", err)

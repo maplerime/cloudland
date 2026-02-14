@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -xv
 
 cd $(dirname $0)
 source ../cloudrc
@@ -14,12 +14,15 @@ target_hyper=$5
 migration_type=$6
 state=failed
 
-mkdir -p $run_dir/$vm_ID
-cat >$run_dir/$vm_ID/volumes.json
 virsh dumpxml $vm_ID >$xml_dir/$vm_ID/${vm_ID}.xml
 if [ "$migration_type" = "warm" ]; then
     state='source_rollback'
     vm_state=$(virsh domstate $vm_ID)
+    ./blacklist_hyper_vhost.sh $ID
+    if [ $? -ne 0 ]; then
+        echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
+        exit 1
+    fi
     if [ "$vm_state" = "shut off" ]; then
         virsh migrate --undefinesource --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
     else
