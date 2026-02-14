@@ -35,6 +35,8 @@ case "$OPERATION" in
 
             post-copy)
                 log "Post-copy migration START for domain: $DOMAIN_NAME"
+		/opt/cloudland/scripts/backend/blacklist_vhost.sh $DOMAIN_NAME >> "$LOG_FILE"
+		sleep 20
                 # TODO: Add post-copy specific tasks here
                 # - Monitor post-copy migration progress
                 # - Handle bandwidth throttling

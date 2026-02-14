@@ -14,6 +14,8 @@ target_hyper=$5
 migration_type=$6
 state=failed
 
+mkdir -p $run_dir/$vm_ID
+cat >$run_dir/$vm_ID/volumes.json
 virsh dumpxml $vm_ID >$xml_dir/$vm_ID/${vm_ID}.xml
 if [ "$migration_type" = "warm" ]; then
     state='source_rollback'
