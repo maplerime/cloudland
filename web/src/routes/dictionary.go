@@ -225,7 +225,7 @@ func (v *DictionaryView) List(c *macaron.Context, store session.Store) {
 	c.Data["Dictionaries"] = dictionaries
 	c.Data["Query"] = query
 	SetPaginationData(c, "dictionaries", total, limit, offset, listConfig,
-		`["ID", "UUID", "Category", "Name", "Value", "ShortName", "SubType1", "SubType2", "SubType3", "Edit", "Delete"]`,
+		`["ID", "Category", "Name", "Value", "ShortName", "SubType1", "SubType2", "SubType3", "Edit", "Delete"]`,
 		[]string{"ID", "UUID", "Category", "Name", "Value", "ShortName", "SubType1", "SubType2", "SubType3", "Edit", "Delete"})
 
 	c.HTML(200, "dictionaries")

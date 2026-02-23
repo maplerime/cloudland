@@ -628,8 +628,8 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	c.Data["Volumes"] = volumes
 	c.Data["Query"] = query
 	SetPaginationData(c, "volumes", total, limit, offset, listConfig,
-		`["UUID", "Name", "Status", "Size", "CreatedAt", "Action"]`,
-		[]string{"ID", "UUID", "Name", "Status", "Size", "CreatedAt", "Action"})
+		`["ID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"]`,
+		[]string{"ID", "UUID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"})
 
 	c.HTML(200, "volumes")
 }

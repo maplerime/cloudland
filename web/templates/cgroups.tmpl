@@ -26,6 +26,7 @@
                                     {{ if $.IsAdmin }}
                                     <th data-column="ID">{{.i18n.Tr "ID"}}</th>
                                     {{ end }}
+                                    <th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
                                     <th data-column="Name">{{.i18n.Tr "Name"}}</th>
                                     <th data-column="Description">{{.i18n.Tr "Description"}}</th>
                                     <th data-column="Status">{{.i18n.Tr "Status"}}</th>
@@ -44,6 +45,7 @@
                                     {{ if $.IsAdmin }}
                                     <td data-column="ID">{{.ID}}</td>
                                     {{ end }}
+                                    <td data-column="UUID">{{.UUID}}</td>
                                     <td data-column="Name"><a href="/cgroups/{{.ID}}">{{.Name}}</a></td>
                                     <td data-column="Description">{{.Description}}</td>
                                     <td data-column="Status">{{.Status}}</td>

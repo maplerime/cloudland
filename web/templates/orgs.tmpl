@@ -24,6 +24,7 @@
 	                        <thead>
 		                        <tr>
 									<th data-column="ID">{{.i18n.Tr "ID"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
 									<th data-column="Name">{{.i18n.Tr "Name"}}</th>
 			                        <th data-column="CreatedAt">{{.i18n.Tr "Created_At"}}</th>
 			                        <th data-column="UpdatedAt">{{.i18n.Tr "Updated_At"}}</th>
@@ -35,6 +36,7 @@
                                 {{ range .Organizations }}
 		                        <tr>
 			                        <td data-column="ID">{{.ID}}</td>
+			                        <td data-column="UUID">{{.UUID}}</td>
 			                        <td data-column="Name">{{.Name}}</td>
 			                        <td data-column="CreatedAt"><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
 			                        <td data-column="UpdatedAt"><span title="{{.UpdatedAt}}">{{.UpdatedAt}}</span></td>

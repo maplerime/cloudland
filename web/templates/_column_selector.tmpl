@@ -1,209 +1,118 @@
 {{if .ListName}}
 <div class="column-selector-wrapper">
-	<div class="ui dropdown button" id="columnSelectorButton" data-default="{{.DefaultColumnsJSON}}" data-listname="{{.ListName}}">
-		<i class="columns icon"></i>
-		<span>{{.i18n.Tr "Columns"}}</span>
-		<div class="menu">
-			{{if .AvailableColumns}}
-				<!-- Column checkboxes -->
+	<button class="ui tiny button" id="columnSelectorButton" data-default="{{.DefaultColumnsJSON}}" data-listname="{{.ListName}}" type="button">
+		<i class="columns icon"></i> {{.i18n.Tr "Columns"}}
+	</button>
+	<div class="column-selector-panel" id="columnSelectorPanel">
+		{{if .AvailableColumns}}
+			<div class="column-selector-list">
 				{{range .AvailableColumns}}
-					<div class="item">
-						<div class="ui checkbox">
-							<input type="checkbox" class="column-checkbox" data-column="{{.}}" value="{{.}}">
-							<label>{{.}}</label>
-						</div>
-					</div>
+					<label class="column-selector-item">
+						<input type="checkbox" class="column-checkbox" data-column="{{.}}" value="{{.}}">
+						<span>{{.}}</span>
+					</label>
 				{{end}}
-
-				<!-- Divider -->
-				<div class="divider"></div>
-
-				<!-- Action buttons -->
-				<div class="item">
-					<button class="ui fluid button small primary" onclick="saveColumnPreference('{{.ListName}}')">
-						{{.i18n.Tr "Apply"}}
-					</button>
-				</div>
-				<div class="item">
-					<button class="ui fluid button small" onclick="resetColumns('{{.ListName}}')">
-						{{.i18n.Tr "Reset"}}
-					</button>
-				</div>
-			{{end}}
-		</div>
+			</div>
+			<div class="column-selector-actions">
+				<button class="ui tiny primary button" type="button" onclick="saveColumnPreference('{{.ListName}}')">{{.i18n.Tr "Apply"}}</button>
+				<button class="ui tiny button" type="button" onclick="resetColumns('{{.ListName}}')">{{.i18n.Tr "Reset"}}</button>
+			</div>
+		{{end}}
 	</div>
 </div>
 
 <script>
-// Column selector functionality
 (function() {
 	'use strict';
 
-	// Storage key for column preferences
 	function getStorageKey(listName) {
 		return 'columns_' + listName;
 	}
 
-	// Initialize column visibility from localStorage on page load
+	// Toggle dropdown panel
+	var btn = document.getElementById('columnSelectorButton');
+	var panel = document.getElementById('columnSelectorPanel');
+	if (btn && panel) {
+		btn.addEventListener('click', function(e) {
+			e.stopPropagation();
+			panel.classList.toggle('visible');
+		});
+		// Clicking inside panel should NOT close it
+		panel.addEventListener('click', function(e) {
+			e.stopPropagation();
+		});
+		// Clicking outside closes the panel
+		document.addEventListener('click', function() {
+			panel.classList.remove('visible');
+		});
+	}
+
+	function closePanel() {
+		if (panel) panel.classList.remove('visible');
+	}
+
+	// Initialize column visibility from localStorage
 	window.initColumnSelector = function(listName, defaultColumnsJSON) {
-		try {
-			var storageKey = getStorageKey(listName);
-			var savedColumns = localStorage.getItem(storageKey);
-			var visibleColumns = [];
+		var storageKey = getStorageKey(listName);
+		var savedColumns = localStorage.getItem(storageKey);
+		var visibleColumns;
+		var defaultColumns = [];
 
-			// Parse default columns if provided
-			var defaultColumns = [];
-			if (defaultColumnsJSON) {
-				try {
-					defaultColumns = JSON.parse(defaultColumnsJSON);
-				} catch (e) {
-					console.error('Failed to parse default columns JSON:', e);
-					defaultColumns = [];
-				}
-			}
-
-			// Use saved columns or defaults
-			if (savedColumns) {
-				try {
-					visibleColumns = JSON.parse(savedColumns);
-				} catch (e) {
-					console.error('Failed to parse saved columns:', e);
-					visibleColumns = defaultColumns;
-				}
-			} else {
-				visibleColumns = defaultColumns;
-			}
-
-			// Update checkboxes based on visible columns
-			document.querySelectorAll('.column-checkbox').forEach(function(checkbox) {
-				var columnName = checkbox.getAttribute('data-column');
-				if (visibleColumns.indexOf(columnName) !== -1) {
-					checkbox.checked = true;
-				} else {
-					checkbox.checked = false;
-				}
-			});
-
-			// Apply visibility to table
-			applyColumnVisibility(listName, visibleColumns);
-		} catch (e) {
-			console.error('Error initializing column selector:', e);
+		if (defaultColumnsJSON) {
+			try { defaultColumns = JSON.parse(defaultColumnsJSON); } catch(e) { defaultColumns = []; }
 		}
+
+		if (savedColumns) {
+			try { visibleColumns = JSON.parse(savedColumns); } catch(e) { visibleColumns = defaultColumns; }
+		} else {
+			visibleColumns = defaultColumns;
+		}
+
+		// Update checkboxes
+		document.querySelectorAll('.column-checkbox').forEach(function(cb) {
+			cb.checked = visibleColumns.indexOf(cb.getAttribute('data-column')) !== -1;
+		});
+
+		// Apply visibility
+		applyColumnVisibility(visibleColumns);
 	};
 
-	// Save column preferences to localStorage
 	window.saveColumnPreference = function(listName) {
-		try {
-			var selectedColumns = [];
-			document.querySelectorAll('.column-checkbox:checked').forEach(function(checkbox) {
-				var columnName = checkbox.getAttribute('data-column');
-				if (columnName) {
-					selectedColumns.push(columnName);
-				}
-			});
-
-			if (selectedColumns.length === 0) {
-				alert('{{.i18n.Tr "Select_At_Least_One_Column"}}');
-				return;
-			}
-
-			var storageKey = getStorageKey(listName);
-			localStorage.setItem(storageKey, JSON.stringify(selectedColumns));
-
-			// Apply visibility and close dropdown
-			applyColumnVisibility(listName, selectedColumns);
-			closeColumnDropdown();
-
-			// Optional: Show confirmation message
-			console.log('Column preferences saved for ' + listName);
-		} catch (e) {
-			console.error('Error saving column preference:', e);
-			alert('{{.i18n.Tr "Failed_To_Save_Preferences"}}');
+		var selected = [];
+		document.querySelectorAll('.column-checkbox:checked').forEach(function(cb) {
+			var col = cb.getAttribute('data-column');
+			if (col) selected.push(col);
+		});
+		if (selected.length === 0) {
+			alert('{{.i18n.Tr "Select_At_Least_One_Column"}}');
+			return;
 		}
+		localStorage.setItem(getStorageKey(listName), JSON.stringify(selected));
+		applyColumnVisibility(selected);
+		closePanel();
 	};
 
-	// Reset columns to defaults
 	window.resetColumns = function(listName) {
-		try {
-			var storageKey = getStorageKey(listName);
-			localStorage.removeItem(storageKey);
-
-			// Re-initialize with defaults
-			var defaultColumnsJSON = document.getElementById('columnSelectorButton').getAttribute('data-default');
-			initColumnSelector(listName, defaultColumnsJSON);
-
-			// Close dropdown
-			closeColumnDropdown();
-
-			// Optional: Show confirmation message
-			console.log('Column preferences reset for ' + listName);
-		} catch (e) {
-			console.error('Error resetting columns:', e);
-			alert('{{.i18n.Tr "Failed_To_Reset_Preferences"}}');
-		}
+		localStorage.removeItem(getStorageKey(listName));
+		var el = document.getElementById('columnSelectorButton');
+		var defaultJSON = el ? el.getAttribute('data-default') : null;
+		initColumnSelector(listName, defaultJSON);
+		closePanel();
 	};
 
-	// Apply column visibility to table
-	function applyColumnVisibility(listName, visibleColumns) {
-		try {
-			// Get all table headers (th elements)
-			var headers = document.querySelectorAll('table th[data-column]');
-			var cells = document.querySelectorAll('table td[data-column]');
-
-			// Hide/show columns based on visibility list
-			headers.forEach(function(header) {
-				var columnName = header.getAttribute('data-column');
-				if (visibleColumns.indexOf(columnName) !== -1) {
-					header.style.display = '';
-				} else {
-					header.style.display = 'none';
-				}
-			});
-
-			cells.forEach(function(cell) {
-				var columnName = cell.getAttribute('data-column');
-				if (visibleColumns.indexOf(columnName) !== -1) {
-					cell.style.display = '';
-				} else {
-					cell.style.display = 'none';
-				}
-			});
-		} catch (e) {
-			console.error('Error applying column visibility:', e);
-		}
+	function applyColumnVisibility(visibleColumns) {
+		document.querySelectorAll('table th[data-column], table td[data-column]').forEach(function(el) {
+			el.style.display = visibleColumns.indexOf(el.getAttribute('data-column')) !== -1 ? '' : 'none';
+		});
 	}
 
-	// Close the dropdown menu
-	function closeColumnDropdown() {
-		try {
-			var button = document.getElementById('columnSelectorButton');
-			if (button && button.classList.contains('active')) {
-				button.classList.remove('active');
-			}
-		} catch (e) {
-			console.error('Error closing dropdown:', e);
-		}
-	}
-
-	// Initialize Semantic UI dropdown and column visibility on page load
+	// Auto-init on page load
 	document.addEventListener('DOMContentLoaded', function() {
-		try {
-			var buttonEl = document.getElementById('columnSelectorButton');
-			if (buttonEl) {
-				// Initialize jQuery dropdown
-				if (typeof jQuery !== 'undefined' && jQuery.fn.dropdown) {
-					jQuery(buttonEl).dropdown();
-				}
-
-				// Initialize column visibility from saved preferences
-				var listName = buttonEl.getAttribute('data-listname');
-				var defaultColumnsJSON = buttonEl.getAttribute('data-default');
-				if (listName) {
-					initColumnSelector(listName, defaultColumnsJSON);
-				}
-			}
-		} catch (e) {
-			console.error('Error initializing column selector:', e);
+		var el = document.getElementById('columnSelectorButton');
+		if (el) {
+			var listName = el.getAttribute('data-listname');
+			var defaultJSON = el.getAttribute('data-default');
+			if (listName) initColumnSelector(listName, defaultJSON);
 		}
 	});
 })();
@@ -212,28 +121,56 @@
 <style>
 .column-selector-wrapper {
 	display: inline-block;
-	margin-right: 1em;
+	position: relative;
+	margin-right: 0.5em;
+	vertical-align: middle;
 }
-
-.ui.dropdown.button {
-	margin-bottom: 0;
+.column-selector-panel {
+	display: none;
+	position: absolute;
+	right: 0;
+	top: 100%;
+	z-index: 1000;
+	background: #fff;
+	border: 1px solid rgba(34,36,38,.15);
+	border-radius: 4px;
+	box-shadow: 0 2px 8px rgba(0,0,0,.15);
+	min-width: 180px;
+	padding: 8px 0;
+	margin-top: 4px;
 }
-
-.column-selector-wrapper .ui.checkbox {
-	margin: 0.5em 0;
+.column-selector-panel.visible {
+	display: block;
 }
-
-.column-selector-wrapper .ui.checkbox label {
-	margin-left: 0.5em;
+.column-selector-list {
+	max-height: 300px;
+	overflow-y: auto;
+	padding: 0 12px;
 }
-
-.column-selector-wrapper .item .ui.button {
-	margin-top: 0.5em;
+.column-selector-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 0;
+	cursor: pointer;
+	font-size: 13px;
+	white-space: nowrap;
 }
-
-.column-selector-wrapper .divider {
-	margin: 0.5em 0;
-	border-top: 1px solid rgba(34, 36, 38, 0.15);
+.column-selector-item:hover {
+	color: #2185d0;
+}
+.column-selector-item input[type="checkbox"] {
+	margin: 0;
+}
+.column-selector-actions {
+	border-top: 1px solid rgba(34,36,38,.1);
+	padding: 8px 12px 4px;
+	margin-top: 4px;
+	display: flex;
+	gap: 6px;
+}
+.column-selector-actions .ui.button {
+	margin: 0 !important;
 }
 </style>
 {{end}}

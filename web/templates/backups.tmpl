@@ -27,7 +27,9 @@
 			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
 									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+						{{ if $.IsAdmin }}
 									<th data-column="Path">{{.i18n.Tr "Path"}}</th>
+						{{ end }}
 									<th data-column="Type">{{.i18n.Tr "Type"}}</th>
 			                        <th data-column="Name">{{.i18n.Tr "Name"}}</th>
 			                        <th data-column="Size">{{.i18n.Tr "Size"}} (MB)</th>
@@ -52,13 +54,11 @@
 						{{ if $.IsAdmin }}
 									<td data-column="Path">{{.Path}}</td>
 						{{ end }}
-                                    <th data-column="Type">{{.BackupType}}</th>
+                                    <td data-column="Type">{{.BackupType}}</td>
 			                        <td data-column="Name">{{.Name}}</td>
 			                        <td data-column="Size">{{.Size}}</td>
 			                        <td data-column="Status">{{.Status}}</td>
-						{{ if .Volume }}
-                                    <td data-column="Volume"><a href="/volumes/{{.Volume.ID}}">{{.Volume.Name}}</a></td>
-						{{ end }}
+                                    <td data-column="Volume">{{ if .Volume }}<a href="/volumes/{{.Volume.ID}}">{{.Volume.Name}}</a>{{ end }}</td>
 						{{ if $.IsAdmin }}
 			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}

@@ -1208,7 +1208,7 @@ func (v *ConsistencyGroupView) List(c *macaron.Context, store session.Store) {
 	c.Data["Query"] = query
 	SetPaginationData(c, "cgroups", total, limit, offset, listConfig,
 		`["ID", "Name", "Description", "Status", "Volumes", "Snapshots", "Owner", "Actions"]`,
-		[]string{"ID", "Name", "Description", "Status", "Volumes", "Snapshots", "Owner", "Actions"})
+		[]string{"ID", "UUID", "Name", "Description", "Status", "Volumes", "Snapshots", "Owner", "Actions"})
 
 	c.HTML(200, "cgroups")
 }

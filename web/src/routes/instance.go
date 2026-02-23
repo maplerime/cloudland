@@ -1431,8 +1431,8 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	c.Data["IsAdmin"] = isAdmin
 	c.Data["HostName"] = c.Query("hostname")
 	SetPaginationData(c, "instances", total, limit, offset, listConfig,
-		`["UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"]`,
-		[]string{"UUID", "Hostname", "Flavor", "Image", "IPAddress", "Status", "Console", "Hyper", "Owner", "Zone", "Action"})
+		`["ID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"]`,
+		[]string{"ID", "UUID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"})
 
 	c.HTML(200, "instances")
 }

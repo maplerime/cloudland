@@ -284,8 +284,8 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 	c.Data["IpGroups"] = ipGroups
 	c.Data["Query"] = query
 	SetPaginationData(c, "ipgroups", total, limit, offset, listConfig,
-		`["Name", "CreatedAt", "Action"]`,
-		[]string{"ID", "Name", "CreatedAt", "Action"})
+		`["ID", "Name", "Type", "Category", "Subnets", "FloatingIPs", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Type", "Category", "Subnets", "FloatingIPs", "Action"})
 
 	c.HTML(200, "ipgroups")
 }

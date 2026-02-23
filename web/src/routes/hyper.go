@@ -224,7 +224,7 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 	c.Data["Hypers"] = hypers
 	c.Data["Query"] = query
 	SetPaginationData(c, "hypers", total, limit, offset, listConfig,
-		`["Hostid", "Hostname", "Status", "Zone", "Cpu", "Memory", "Disk", "Action"]`,
+		`["Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"]`,
 		[]string{"Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"})
 
 	c.HTML(200, "hypers")

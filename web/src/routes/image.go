@@ -435,7 +435,7 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
 	SetPaginationData(c, "images", total, limit, offset, listConfig,
-		`["UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "Size", "Action"]`,
+		`["ID", "Name", "Format", "Status", "CreatedAt", "OSCode", "OSFamily", "OSVersion", "Size", "DefaultUsername", "Architecture", "BootLoader", "Action"]`,
 		[]string{"ID", "UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "OSFamily", "OSVersion", "Size", "DefaultUsername", "Architecture", "BootLoader", "Action"})
 
 	c.HTML(200, "images")

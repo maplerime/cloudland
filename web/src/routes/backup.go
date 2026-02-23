@@ -592,7 +592,7 @@ func (v *BackupView) List(c *macaron.Context, store session.Store) {
 	c.Data["Backups"] = backups
 	c.Data["Query"] = query
 	SetPaginationData(c, "backups", total, limit, offset, listConfig,
-		`["ID", "UUID", "Path", "Type", "Name", "Size", "Status", "Volume", "Owner", "Running Task", "Delete", "Restore"]`,
+		`["ID", "Path", "Type", "Name", "Size", "Status", "Volume", "Owner", "Running Task", "Delete", "Restore"]`,
 		[]string{"ID", "UUID", "Path", "Type", "Name", "Size", "Status", "Volume", "Owner", "Running Task", "Delete", "Restore"})
 
 	c.HTML(200, "backups")

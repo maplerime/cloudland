@@ -304,7 +304,7 @@ func (v *MigrationView) List(c *macaron.Context, store session.Store) {
 	c.Data["Migrations"] = migrations
 	c.Data["Query"] = query
 	SetPaginationData(c, "migrations", total, limit, offset, listConfig,
-		`["ID", "UUID", "Name", "CreatedAt", "UpdatedAt", "Instance", "Source Hyper", "Target Hyper", "Force", "Phases", "Status"]`,
+		`["ID", "Name", "CreatedAt", "UpdatedAt", "Instance", "Source Hyper", "Target Hyper", "Force", "Phases", "Status"]`,
 		[]string{"ID", "UUID", "Name", "CreatedAt", "UpdatedAt", "Instance", "Source Hyper", "Target Hyper", "Force", "Phases", "Status"})
 
 	c.HTML(200, "migrations")

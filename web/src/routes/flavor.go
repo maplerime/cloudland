@@ -160,7 +160,7 @@ func (v *FlavorView) List(c *macaron.Context, store session.Store) {
 	c.Data["Flavors"] = flavors
 	c.Data["Query"] = query
 	SetPaginationData(c, "flavors", total, limit, offset, listConfig,
-		`["ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"]`,
+		`["ID", "Name", "Cpu", "Memory", "Disk", "Action"]`,
 		[]string{"ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"})
 
 	c.HTML(200, "flavors")

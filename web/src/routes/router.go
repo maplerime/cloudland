@@ -385,8 +385,8 @@ func (v *RouterView) List(c *macaron.Context, store session.Store) {
 	c.Data["Routers"] = routers
 	c.Data["Query"] = query
 	SetPaginationData(c, "routers", total, limit, offset, listConfig,
-		`["Name", "CreatedAt", "Action"]`,
-		[]string{"ID", "Name", "CreatedAt", "Action"})
+		`["ID", "Name", "Subnets", "Status", "SecurityGroup", "Owner", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Subnets", "Status", "SecurityGroup", "Owner", "Action"})
 
 	c.HTML(200, "routers")
 }

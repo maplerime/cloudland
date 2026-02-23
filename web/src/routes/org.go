@@ -376,8 +376,8 @@ func (v *OrgView) List(c *macaron.Context, store session.Store) {
 	c.Data["Organizations"] = orgs
 	c.Data["Query"] = query
 	SetPaginationData(c, "orgs", total, limit, offset, listConfig,
-		`["ID", "Name", "CreatedAt", "Action"]`,
-		[]string{"ID", "Name", "CreatedAt", "UpdatedAt", "Action"})
+		`["ID", "Name", "CreatedAt", "UpdatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "CreatedAt", "UpdatedAt", "Action"})
 
 	c.HTML(200, "orgs")
 }

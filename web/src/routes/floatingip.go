@@ -738,8 +738,8 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 	c.Data["FloatingIps"] = floatingIps
 	c.Data["Query"] = query
 	SetPaginationData(c, "floatingips", total, limit, offset, listConfig,
-		`["Address", "Instance", "Subnet", "Status", "CreatedAt", "Action"]`,
-		[]string{"Address", "Instance", "Subnet", "Status", "CreatedAt", "Action"})
+		`["ID", "Name", "IpGroup", "FloatingIP", "InternalIP", "Type", "InboundBandwidth", "OutboundBandwidth", "Instance", "LoadBalancer", "Action"]`,
+		[]string{"ID", "UUID", "Name", "IpGroup", "FloatingIP", "InternalIP", "Type", "InboundBandwidth", "OutboundBandwidth", "Instance", "LoadBalancer", "Action"})
 
 	c.HTML(200, "floatingips")
 }

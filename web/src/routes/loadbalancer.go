@@ -547,7 +547,7 @@ func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
 	c.Data["LoadBalancers"] = loadBalancers
 	c.Data["Query"] = query
 	SetPaginationData(c, "loadbalancers", total, limit, offset, listConfig,
-		`["ID", "UUID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"]`,
+		`["ID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"]`,
 		[]string{"ID", "UUID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"})
 
 	c.HTML(200, "loadbalancers")

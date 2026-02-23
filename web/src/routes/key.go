@@ -268,8 +268,8 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 	c.Data["Keys"] = keys
 	c.Data["Query"] = query
 	SetPaginationData(c, "keys", total, limit, offset, listConfig,
-		`["Name", "Fingerprint", "CreatedAt", "Action"]`,
-		[]string{"Name", "Fingerprint", "CreatedAt", "Action"})
+		`["ID", "Name", "Owner", "CreatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Owner", "CreatedAt", "Action"})
 
 	c.HTML(200, "keys")
 }

@@ -586,7 +586,7 @@ func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
 	c.Data["SecurityGroups"] = secgroups
 	c.Data["Query"] = query
 	SetPaginationData(c, "secgroups", total, limit, offset, listConfig,
-		`["ID", "UUID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"]`,
+		`["ID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"]`,
 		[]string{"ID", "UUID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"})
 
 	c.HTML(200, "secgroups")

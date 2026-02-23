@@ -404,7 +404,7 @@ func (v *UserView) List(c *macaron.Context, store session.Store) {
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
 	SetPaginationData(c, "users", total, limit, offset, listConfig,
-		`["UUID", "Name", "CreatedAt", "Action"]`,
+		`["ID", "Name", "CreatedAt", "Action"]`,
 		[]string{"ID", "UUID", "Name", "CreatedAt", "Action"})
 
 	c.HTML(200, "users")
