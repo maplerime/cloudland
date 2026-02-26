@@ -92,6 +92,7 @@ done
 [ -z "$vm_cpu" ] && vm_cpu=1
 let vm_mem=${vm_mem%[m|M]}*1024
 vm_nested="disable"
+[ $vm_cpu -ge 12 ] && vm_nested="require"
 cpu_vendor=$(lscpu | grep "Vendor ID" | awk -F ':' '{print $2}' | tr -d ' ')
 if [ "$cpu_vendor" = "GenuineIntel" ]; then
     vm_virt_feature="vmx"
