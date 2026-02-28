@@ -183,16 +183,16 @@ func (a *ListenerAdmin) Delete(ctx context.Context, listener *model.Listener, lo
 			return
 		}
 	}
-	listener.Name = fmt.Sprintf("%s-%d", listener.Name, listener.CreatedAt.Unix())
-	err = db.Model(&model.Listener{Model: model.Model{ID: listener.ID}}).Update("name", listener.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update listsner name", err)
-		err = NewCLError(ErrListenerUpdateFailed, "DB failed to update listener name", err)
-		return
-	}
 	if err = db.Delete(listener).Error; err != nil {
 		logger.Error("DB failed to delete listener", err)
 		err = NewCLError(ErrListenerDeleteFailed, "Failed to delete listener", err)
+		return
+	}
+	listener.Name = fmt.Sprintf("%s-%d", listener.Name, listener.CreatedAt.Unix())
+	err = db.Model(&model.Listener{}).Unscoped().Where("id = ?", listener.ID).Update("name", listener.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update listsner name", err)
+		err = NewCLError(ErrListenerUpdateFailed, "DB failed to update listener name", err)
 		return
 	}
 	_, listeners, err := listenerAdmin.List(ctx, 0, -1, "", loadBalancer)
