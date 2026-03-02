@@ -482,16 +482,16 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 		err = NewCLError(ErrSecurityRuleDeleteFailed, "Failed to delete security group rules", err)
 		return
 	}
-	secgroup.Name = fmt.Sprintf("%s-%d", secgroup.Name, secgroup.CreatedAt.Unix())
-	err = db.Model(secgroup).Update("name", secgroup.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update security group name", err)
-		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group name", err)
-		return
-	}
 	if err = db.Delete(secgroup).Error; err != nil {
 		logger.Error("DB failed to delete security group", err)
 		err = NewCLError(ErrSecurityGroupDeleteFailed, "Failed to delete security group", err)
+		return
+	}
+	secgroup.Name = fmt.Sprintf("%s-%d", secgroup.Name, secgroup.CreatedAt.Unix())
+	err = db.Model(&model.SecurityGroup{}).Unscoped().Where("id = ?", secgroup.ID).Update("name", secgroup.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update security group name", err)
+		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group name", err)
 		return
 	}
 	return
