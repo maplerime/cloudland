@@ -196,6 +196,11 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 		primaryIface = floatingIps[0].Interface
 		updatePrimary = true
 	}
+	err = db.Model(primaryIface.Address).Updates(map[string]interface{}{"second_interface": 0}).Error
+	if err != nil {
+		logger.Error("Update interface ", err)
+		return
+	}
 	primarySubnet = primaryIface.Address.Subnet
 	for _, address := range primaryIface.SecondAddresses {
 		err = db.Model(address).Updates(map[string]interface{}{"second_interface": 0}).Error
@@ -219,11 +224,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				if err != nil {
 					logger.Error("Failed to update floating ip ", err)
 					return
-				}
-				for _, fip := range floatingIps {
-					if fip.ID == iface.FloatingIp {
-						fip.InstanceID = 0
-					}
 				}
 			}
 		}

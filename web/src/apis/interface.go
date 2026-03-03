@@ -322,6 +322,11 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 					ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 					return
 				}
+				if floatingIp.InstanceID > 0 {
+					logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+					ErrorResponse(c, http.StatusBadRequest, "Public IP is in use", err)
+					return
+				}
 				publicIps = append(publicIps, floatingIp)
 			}
 		}

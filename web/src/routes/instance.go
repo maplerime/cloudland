@@ -2324,6 +2324,12 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
+		if floatingIp.InstanceID > 0 {
+			logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+			c.Data["ErrorMsg"] = fmt.Sprintf("Public IP %s is in use", floatingIp.FipAddress)
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
 
 		err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
 		if err != nil {
