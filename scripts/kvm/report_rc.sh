@@ -165,7 +165,7 @@ function sync_instance()
     insts=$(ls $xml_dir)
     for inst in $insts; do
 	inst_id=${inst/inst-/}
-        for i in {1..10}; do
+        for i in {1..100}; do
             ls /var/run/wds/instance-${inst_id}*
             [ $? -eq 0 ] && break
             sleep 2

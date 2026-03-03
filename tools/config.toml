@@ -1,0 +1,8 @@
+[wds]
+address = "https://wds-server:port"
+admin = "admin"
+password = "xxx"
+
+[cloudland]
+# CloudLand config file path, used to read database connection info
+config_path = "../web/conf/config.toml"

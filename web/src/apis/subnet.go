@@ -28,18 +28,22 @@ type SubnetAPI struct{}
 
 type SubnetResponse struct {
 	*ResourceReference
-	Network    string             `json:"network"`
-	Netmask    string             `json:"netmask"`
-	Gateway    string             `json:"gateway"`
-	Start      string             `json:"start"`
-	End        string             `json:"end"`
-	NameServer string             `json:"dns,omitempty"`
-	VPC        *ResourceReference `json:"vpc,omitempty"`
-	Group      *ResourceReference `json:"group,omitempty"`
-	Type       SubnetType         `json:"type"`
-	IdleCount  int64              `json:"idle_count"`
-	Vlan       int                `json:"vlan"`
-	Priority   int32              `json:"priority"`
+	Network        string             `json:"network"`
+	Netmask        string             `json:"netmask"`
+	Gateway        string             `json:"gateway"`
+	Start          string             `json:"start"`
+	End            string             `json:"end"`
+	NameServer     string             `json:"dns,omitempty"`
+	VPC            *ResourceReference `json:"vpc,omitempty"`
+	Group          *ResourceReference `json:"group,omitempty"`
+	Type           SubnetType         `json:"type"`
+	IdleCount      int64              `json:"idle_count"`
+	TotalCount     int64              `json:"total_count"`
+	AllocatedCount int64              `json:"allocated_count"`
+	ReservedCount  int64              `json:"reserved_count"`
+	AvailableCount int64              `json:"available_count"`
+	Vlan           int                `json:"vlan"`
+	Priority       int32              `json:"priority"`
 }
 
 type SiteSubnetInfo struct {
@@ -65,7 +69,7 @@ type SubnetPayload struct {
 	NetworkCIDR string         `json:"network_cidr" binding:"required,cidrv4"`
 	Gateway     string         `json:"gateway" binding:"omitempty,ipv4"`
 	StartIP     string         `json:"start_ip" binding:"omitempty,ipv4"`
-	EndIP       string         `json:"end_ip" binding:"omitempty",ipv4`
+	EndIP       string         `json:"end_ip" binding:"omitempty,ipv4"`
 	NameServer  string         `json:"dns" binding:"omitempty"`
 	BaseDomain  string         `json:"base_domain" binding:"omitempty"`
 	Dhcp        bool           `json:"dhcp" binding:"omitempty"`
@@ -305,6 +309,19 @@ func (v *SubnetAPI) getSubnetResponse(ctx context.Context, subnet *model.Subnet)
 		return
 	}
 	subnetResp.IdleCount = idleCount
+
+	// Get comprehensive address statistics
+	var total, allocated, reserved, available int64
+	total, allocated, reserved, available, err = subnetAdmin.CountAddressStatistics(ctx, subnet)
+	if err != nil {
+		logger.Errorf("Failed to count address statistics for subnet, err=%v", err)
+		return
+	}
+	subnetResp.TotalCount = total
+	subnetResp.AllocatedCount = allocated
+	subnetResp.ReservedCount = reserved
+	subnetResp.AvailableCount = available
+
 	return
 }
 
@@ -322,6 +339,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
 	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
+	ipGroupType := strings.TrimSpace(c.DefaultQuery("ipgroup_type", "")) // Filter by ipgroup type
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid query offset: "+offsetStr, err)
@@ -353,6 +371,21 @@ func (v *SubnetAPI) List(c *gin.Context) {
 		logger.Debugf("The ipGroup with group_id: %+v\n", ipGroup)
 		logger.Debugf("The group_id in ipGroup is: %d", ipGroup.ID)
 		queryStr = fmt.Sprintf("group_id = %d", ipGroup.ID)
+	}
+	// Filter by ipgroup type (system or resource)
+	if ipGroupType != "" {
+		if ipGroupType == "system" || ipGroupType == "resource" {
+			if queryStr != "" {
+				queryStr = fmt.Sprintf("%s AND group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", queryStr, ipGroupType)
+			} else {
+				queryStr = fmt.Sprintf("group_id IN (SELECT id FROM ip_groups WHERE type = '%s')", ipGroupType)
+			}
+			logger.Debugf("Filtering subnets by ipgroup_type: %s", ipGroupType)
+		} else {
+			logger.Errorf("Invalid ipgroup_type: %s", ipGroupType)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid ipgroup_type filter, must be 'system' or 'resource'", nil)
+			return
+		}
 	}
 	total, subnets, err := subnetAdmin.List(ctx, int64(offset), int64(limit), "-created_at", queryStr, "")
 	if err != nil {
