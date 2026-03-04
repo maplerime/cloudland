@@ -424,7 +424,7 @@
             routes:
               # Route node alarms to node-webhook (one group per unique alert/host/IP/type/severity)
               - match_re:
-                  alert_type: node-(unavailable|cpu|disk|network|vcpu|syn-(inbound|outbound))
+                  alert_type: node-(unavailable|cpu|disk|network|hypervisor-resource|syn-(inbound|outbound))
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
                 receiver: 'node-webhook'
@@ -439,9 +439,9 @@
                 receiver: 'slack-node-status'
                 continue: true
 
-              # Node vCPU alerts → slack-resource-alerts
+              # Node hypervisor resource available alerts → slack-resource-alerts
               - match:
-                  alert_type: node-vcpu
+                  alert_type: node-hypervisor-resource
                 group_by: ['alertname', 'zone', 'region', 'alert_type', 'severity', 'node_type']
                 receiver: 'slack-resource-alerts'
                 continue: true
@@ -454,7 +454,7 @@
                 group_wait: 10s
                 group_interval: 1m
                 repeat_interval: 2h
-                receiver: 'slack-ip-block'
+                receiver: 'null'  # disabled, was: 'slack-ip-block'
                 continue: true
 
               - match:
@@ -519,6 +519,8 @@
                 <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
                 {% endraw %}
 
+
+          - name: 'null'
 
           - name: 'ip-block-webhook'
             webhook_configs:
@@ -605,7 +607,7 @@
           - name: 'slack-ip-block'
             slack_configs:
             - channel: '{{ slack_security_channel }}'
-              send_resolved: true
+              send_resolved: false
               username: 'alertmanager'
               icon_emoji: ':shield:'
               api_url: '{{ slack_security_webhook_url }}'
@@ -625,7 +627,7 @@
           - name: 'slack-drop-package'
             slack_configs:
             - channel: '{{ slack_security_channel }}'
-              send_resolved: true
+              send_resolved: false
               username: 'alertmanager'
               icon_emoji: ':shield:'
               api_url: '{{ slack_security_webhook_url }}'
@@ -648,11 +650,10 @@
               username: 'alertmanager'
               icon_emoji: ':warning:'
               api_url: '{{ slack_resource_webhook_url }}'
-              title: '{% raw %}IP Group {{ .CommonLabels.ipgroup_name }} - Low Available IPs ({{ .CommonLabels.subnet_name }}){% endraw %}'
+              title: '{% raw %}IP Group {{ .CommonLabels.ipgroup_name }} - Low Available IPs{% endraw %}'
               text: |-
                 {% raw %}
                 *[IP Group]*: {{ .CommonLabels.ipgroup_name }} ({{ .CommonLabels.ipgroup_id }})
-                *[Subnet]*: {{ .CommonLabels.subnet_name }} ({{ .CommonLabels.subnet_id }})
                 *[Region]*: {{ .CommonLabels.region }}
                 *[Summary]*: {{ .CommonAnnotations.summary }}
                 *[Description]*: {{ .CommonAnnotations.description }}
