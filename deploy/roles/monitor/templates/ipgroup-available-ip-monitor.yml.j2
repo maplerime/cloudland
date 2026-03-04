@@ -3,8 +3,10 @@ groups:
   rules:
     - alert: IPGroupLowAvailableIPs
       # Monitor total available IP count across all subnets in an IP group
+      # Only monitors IP groups with type="system" (via cloudland_ipgroup_info join)
       # Step 1: max by (ipgroup_id, subnet_id, region) deduplicates HA dual-exporter data
       # Step 2: sum by (ipgroup_id, region) aggregates all subnets into a single total per IP group
+      # Step 3: join with cloudland_ipgroup_info{type="system"} to filter system-type groups and carry ipgroup_name
       expr: |
         sum by (ipgroup_id, region) (
           max by (ipgroup_id, subnet_id, region) (
@@ -13,7 +15,7 @@ groups:
         )
         * on (ipgroup_id, region)
           group_left(ipgroup_name)
-          max by (ipgroup_id, region, ipgroup_name) (cloudland_subnet_info)
+          max by (ipgroup_id, region, ipgroup_name) (cloudland_ipgroup_info{type="system"})
         < {{ threshold | default(100) }}
       for: {{ for_duration | default("5m") }}
       labels:
