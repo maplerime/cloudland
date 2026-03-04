@@ -2,25 +2,28 @@ groups:
 - name: ipgroup-available-ip-monitor
   rules:
     - alert: IPGroupLowAvailableIPs
-      # Monitor available IP count in subnets
-      # Fix many-to-many matching by deduplicating both sides (HA deployment has 2 exporters)
+      # Monitor total available IP count across all subnets in an IP group
+      # Step 1: max by (ipgroup_id, subnet_id, region) deduplicates HA dual-exporter data
+      # Step 2: sum by (ipgroup_id, region) aggregates all subnets into a single total per IP group
       expr: |
-        max by (ipgroup_id, subnet_id, region) (
-          cloudland_subnet_ip_available < {{ threshold | default(100) }}
+        sum by (ipgroup_id, region) (
+          max by (ipgroup_id, subnet_id, region) (
+            cloudland_subnet_ip_available
+          )
         )
-        * on (ipgroup_id, subnet_id, region)
-          group_left(ipgroup_name, subnet_name)
-          max by (ipgroup_id, subnet_id, region, ipgroup_name, subnet_name) (cloudland_subnet_info)
+        * on (ipgroup_id, region)
+          group_left(ipgroup_name)
+          max by (ipgroup_id, region, ipgroup_name) (cloudland_subnet_info)
+        < {{ threshold | default(100) }}
       for: {{ for_duration | default("5m") }}
       labels:
         severity: {{ severity | default("warning") }}
         component: network
         alert_type: ipgroup_low_ips
       annotations:
-        summary: "IP Group {{ $labels.ipgroup_name }} - Low Available IPs in subnets:({{ $labels.subnet_name }})"
+        summary: "IP Group {{ $labels.ipgroup_name }} total available IPs low"
         description: |
           IP Group: {{ $labels.ipgroup_name }} ({{ $labels.ipgroup_id }})
-          Subnet: {{ $labels.subnet_name }} ({{ $labels.subnet_id }})
           Region: {{ $labels.region }}
-          Available IPs: {{ $value }}
-          This subnet has fallen below the configured threshold of {{ threshold | default(100) }} available IP addresses.
+          Total Available IPs: {{ $value }}
+          Threshold: {{ threshold | default(100) }}

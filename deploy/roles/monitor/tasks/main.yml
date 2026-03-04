@@ -650,11 +650,10 @@
               username: 'alertmanager'
               icon_emoji: ':warning:'
               api_url: '{{ slack_resource_webhook_url }}'
-              title: '{% raw %}IP Group {{ .CommonLabels.ipgroup_name }} - Low Available IPs ({{ .CommonLabels.subnet_name }}){% endraw %}'
+              title: '{% raw %}IP Group {{ .CommonLabels.ipgroup_name }} - Low Available IPs{% endraw %}'
               text: |-
                 {% raw %}
                 *[IP Group]*: {{ .CommonLabels.ipgroup_name }} ({{ .CommonLabels.ipgroup_id }})
-                *[Subnet]*: {{ .CommonLabels.subnet_name }} ({{ .CommonLabels.subnet_id }})
                 *[Region]*: {{ .CommonLabels.region }}
                 *[Summary]*: {{ .CommonAnnotations.summary }}
                 *[Description]*: {{ .CommonAnnotations.description }}
