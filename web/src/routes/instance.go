@@ -35,7 +35,7 @@ var (
 	instanceView  = &InstanceView{}
 )
 
-const MaxmumSnapshot = 96
+const MaxmumSnapshot = 64
 
 type InstanceAdmin struct{}
 
@@ -1179,6 +1179,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Failed to cleanup rule links", cleanupErr)
 	}
 
+	// Build imagePrefix for async snapshot cleanup (same rule as Create)
+	imagePrefix := ""
+	if instance.Image != nil {
+		imagePrefix = fmt.Sprintf("image-%d-%s", instance.Image.ID, strings.Split(instance.Image.UUID, "-")[0])
+	}
+
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	if instance.Hyper == -1 {
 		control = "toall="
@@ -1188,7 +1194,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, moreAddrsJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)
