@@ -51,7 +51,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			return
 		}
 		for _, inst := range instances {
-			hyperSet[inst.Hyper] = struct{}{}
+			if inst.Hyper >= 0 {
+				hyperSet[inst.Hyper] = struct{}{}
+			}
 		}
 		vrrpIfaces := []*model.Interface{}
 		err = db.Where("router_id = ?", routerID).Find(&vrrpIfaces).Error
@@ -60,7 +62,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			return
 		}
 		for _, iface := range vrrpIfaces {
-			hyperSet[iface.Hyper] = struct{}{}
+			if iface.Hyper >= 0 {
+				hyperSet[iface.Hyper] = struct{}{}
+			}
 		}
 	}
 	hyperList := fmt.Sprintf("group-fdb-%d", hyperNode)
@@ -117,7 +121,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
-				logger.Error("Execute floating ip failed", err)
+				logger.Error("Execute deleting fdb rules failed", err)
 				return
 			}
 		}
@@ -139,13 +143,13 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid args", err)
 		return
 	}
-	instID, err := strconv.Atoi(args[1])
+	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
 	reason := ""
-	instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
+	instance := &model.Instance{Model: model.Model{ID: instID}}
 	err = db.Take(instance).Error
 	if err != nil {
 		logger.Error("Invalid instance ID", err)

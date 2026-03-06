@@ -122,16 +122,16 @@ func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
 		err = NewCLError(ErrSSHKeyInUse, "Key can not be deleted if there are instances using it", nil)
 		return
 	}
-	key.Name = fmt.Sprintf("%s-%d", key.Name, key.CreatedAt.Unix())
-	err = db.Model(key).Update("name", key.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update key name", err)
-		err = NewCLError(ErrSSHKeyUpdateFailed, "Failed to update key name", err)
-		return
-	}
 	if err = db.Delete(key).Error; err != nil {
 		logger.Error("DB failed to delete key ", err)
 		err = NewCLError(ErrSSHKeyDeleteFailed, "Failed to delete key", err)
+		return
+	}
+	key.Name = fmt.Sprintf("%s-%d", key.Name, key.CreatedAt.Unix())
+	err = db.Model(&model.Key{}).Unscoped().Where("id = ?", key.ID).Update("name", key.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update key name", err)
+		err = NewCLError(ErrSSHKeyUpdateFailed, "Failed to update key name", err)
 		return
 	}
 	return

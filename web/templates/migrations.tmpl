@@ -35,6 +35,7 @@
 			                        <th data-column="Target Hyper">{{.i18n.Tr "Target Hyper"}}</th>
 			                        <th data-column="Force">{{.i18n.Tr "Force"}}</th>
 			                        <th data-column="Phases">{{.i18n.Tr "Phases"}}</th>
+									<th data-column="Remarks">{{.i18n.Tr "Remarks"}}</th>
 			                        <th data-column="Status">{{.i18n.Tr "Status"}}</th>
 		                        </tr>
 	                        </thead>
@@ -54,6 +55,7 @@
 			                        <td data-column="Target Hyper">{{.TargetHyper}}</td>
 			                        <td data-column="Force">{{.Force}}</td>
 			                        <td data-column="Phases">{{ range .Phases }}{{.Name}}:{{.Summary}}:{{.Status}}<br>{{ end }}</td>
+									<td data-column="Remarks">{{ range .Phases }}{{ if .Message }}{{.Name}}: {{.Message}}<br>{{ end }}{{ end }}</td>
 			                        <td data-column="Status">{{.Status}}</td>
 		                        </tr>
                                 {{ end }}

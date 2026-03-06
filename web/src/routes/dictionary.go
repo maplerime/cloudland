@@ -183,15 +183,15 @@ func (a *DictionaryAdmin) Delete(ctx context.Context, dictionaries *model.Dictio
 		err = NewCLError(ErrPermissionDenied, "Not authorized to delete the dictionary", nil)
 		return
 	}
-	dictionaries.Value = fmt.Sprintf("%s-%d", dictionaries.Value, dictionaries.CreatedAt.Unix())
-	err = db.Model(dictionaries).Update("value", dictionaries.Value).Error
-	if err != nil {
-		logger.Error("DB failed to update dictionary value", err)
-		return NewCLError(ErrDictionaryUpdateFailed, "Failed to update dictionary value", err)
-	}
 	if err = db.Delete(dictionaries).Error; err != nil {
 		logger.Errorf("DictionaryAdmin.Delete: db delete error, err=%v", err)
 		return NewCLError(ErrDictionaryDeleteFailed, "Failed to delete dictionary", err)
+	}
+	dictionaries.Value = fmt.Sprintf("%s-%d", dictionaries.Value, dictionaries.CreatedAt.Unix())
+	err = db.Model(&model.Dictionary{}).Unscoped().Where("id = ?", dictionaries.ID).Update("value", dictionaries.Value).Error
+	if err != nil {
+		logger.Error("DB failed to update dictionary value", err)
+		return NewCLError(ErrDictionaryUpdateFailed, "Failed to update dictionary value", err)
 	}
 	return
 }

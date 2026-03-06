@@ -285,16 +285,16 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 			return
 		}
 	}
-	router.Name = fmt.Sprintf("%s-%d", router.Name, router.CreatedAt.Unix())
-	err = db.Model(router).Update("name", router.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update router name", err)
-		err = NewCLError(ErrRouterUpdateFailed, "Failed to update router name", err)
-		return
-	}
 	if err = db.Delete(router).Error; err != nil {
 		logger.Error("DB failed to delete router", err)
 		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete router", err)
+		return
+	}
+	router.Name = fmt.Sprintf("%s-%d", router.Name, router.CreatedAt.Unix())
+	err = db.Model(&model.Router{}).Unscoped().Where("id = ?", router.ID).Update("name", router.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update router name", err)
+		err = NewCLError(ErrRouterUpdateFailed, "Failed to update router name", err)
 		return
 	}
 	secgroups := []*model.SecurityGroup{}

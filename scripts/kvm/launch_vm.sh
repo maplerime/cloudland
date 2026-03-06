@@ -76,7 +76,6 @@ else
             echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create image snapshot, $snapshot_ret'"
             exit -1
         fi
-        wds_curl DELETE "api/v2/sync/block/snaps/$image-$(($snapshot-1))?force=false"
     fi
     volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
     volume_id=$(echo $volume_ret | jq -r .id)

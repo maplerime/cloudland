@@ -286,17 +286,17 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 			return
 		}
 	}
-	org.Name = fmt.Sprintf("%s-%d", org.Name, org.CreatedAt.Unix())
-	err = db.Model(org).Update("name", org.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update org name", err)
-		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
-		return
-	}
 	err = db.Delete(org).Error
 	if err != nil {
 		logger.Error("DB failed to delete organization, %v", err)
 		err = NewCLError(ErrOrgDeleteFailed, "Failed to delete organization", err)
+		return
+	}
+	org.Name = fmt.Sprintf("%s-%d", org.Name, org.CreatedAt.Unix())
+	err = db.Model(&model.Organization{}).Unscoped().Where("id = ?", org.ID).Update("name", org.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update org name", err)
+		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
 		return
 	}
 	secgroups := []*model.SecurityGroup{}

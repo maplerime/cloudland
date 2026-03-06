@@ -504,17 +504,17 @@ func (a *SubnetAdmin) Delete(ctx context.Context, subnet *model.Subnet) (err err
 		err = NewCLError(ErrDatabaseError, "Database failed to count subnet", err)
 		return
 	}
-	subnet.Name = fmt.Sprintf("%s-%d", subnet.Name, subnet.CreatedAt.Unix())
-	err = db.Model(subnet).Update("name", subnet.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update subnet name", err)
-		err = NewCLError(ErrSubnetUpdateFailed, "DB failed to update subnet name", err)
-		return
-	}
 	err = db.Delete(subnet).Error
 	if err != nil {
 		logger.Error("Database delete subnet failed, %v", err)
 		err = NewCLError(ErrSubnetDeleteFailed, "Database delete subnet failed", err)
+		return
+	}
+	subnet.Name = fmt.Sprintf("%s-%d", subnet.Name, subnet.CreatedAt.Unix())
+	err = db.Model(&model.Subnet{}).Unscoped().Where("id = ?", subnet.ID).Update("name", subnet.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update subnet name", err)
+		err = NewCLError(ErrSubnetUpdateFailed, "DB failed to update subnet name", err)
 		return
 	}
 	// delete ip address
