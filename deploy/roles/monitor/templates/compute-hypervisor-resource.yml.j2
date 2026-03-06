@@ -7,8 +7,9 @@ groups:
     expr: |
       round(
         sum by (region) (
-          cloudland_hypervisor_cpu{zone="zone0"}
-          / on(hostname) group_left() cloudland_hypervisor_cpu_over_rate{zone="zone0"}
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu{zone="zone0"})
+          / on(hostname) group_left()
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu_over_rate{zone="zone0"})
         ) / {{ zone0_coefficient }},
       0.001) < {{ zone0_threshold }}
     for: {{ for_duration }}
@@ -26,8 +27,9 @@ groups:
     expr: |
       round(
         sum by (region) (
-          cloudland_hypervisor_cpu{zone="zone1"}
-          / on(hostname) group_left() cloudland_hypervisor_cpu_over_rate{zone="zone1"}
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu{zone="zone1"})
+          / on(hostname) group_left()
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu_over_rate{zone="zone1"})
         ) / {{ zone1_coefficient }},
       0.001) < {{ zone1_threshold }}
     for: {{ for_duration }}
@@ -45,8 +47,9 @@ groups:
     expr: |
       round(
         sum by (region) (
-          cloudland_hypervisor_cpu{zone="zone2"}
-          / on(hostname) group_left() cloudland_hypervisor_cpu_over_rate{zone="zone2"}
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu{zone="zone2"})
+          / on(hostname) group_left()
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu_over_rate{zone="zone2"})
         ) / {{ zone2_coefficient }},
       0.001) < {{ zone2_threshold }}
     for: {{ for_duration }}
