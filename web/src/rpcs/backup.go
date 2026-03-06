@@ -72,7 +72,7 @@ func BackupVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	}
 
 	// update backup
-	backup := &model.VolumeBackup{Model: model.Model{ID: int64(backupID)}}
+	backup := &model.VolumeBackup{Model: model.Model{ID: backupID}}
 	err = db.Preload("Volume").Where(backup).Take(backup).Error
 	if err != nil {
 		logger.Error("Invalid backup ID", err)
@@ -131,7 +131,7 @@ func RestoreVolumeWDSVhost(ctx context.Context, args []string) (status string, e
 		}
 	}()
 	// update task
-	task := &model.Task{Model: model.Model{ID: int64(taskID)}}
+	task := &model.Task{Model: model.Model{ID: taskID}}
 	err = db.Where(task).Take(task).Error
 	if err != nil {
 		logger.Error("Invalid task ID", err)
@@ -152,7 +152,7 @@ func RestoreVolumeWDSVhost(ctx context.Context, args []string) (status string, e
 	}
 
 	// update backup
-	backup := &model.VolumeBackup{Model: model.Model{ID: int64(backupID)}}
+	backup := &model.VolumeBackup{Model: model.Model{ID: backupID}}
 	err = db.Where(backup).Take(backup).Error
 	if err != nil {
 		logger.Error("Invalid backup ID", err)
@@ -165,7 +165,7 @@ func RestoreVolumeWDSVhost(ctx context.Context, args []string) (status string, e
 	}
 
 	// update volume
-	volume := &model.Volume{Model: model.Model{ID: int64(volumeID)}}
+	volume := &model.Volume{Model: model.Model{ID: volumeID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
 		logger.Error("Invalid volume ID", err)
