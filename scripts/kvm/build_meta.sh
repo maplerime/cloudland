@@ -96,11 +96,11 @@ chpasswd:
   list: |
     root:${root_passwd}
 
-  write_files:
-    - path: /etc/ssh/sshd_config.d/allow_root.conf
-      content: |
-        PermitRootLogin yes
-        PasswordAuthentication yes
+write_files:
+  - path: /etc/ssh/sshd_config.d/allow_root.conf
+    content: |
+      PermitRootLogin yes
+      PasswordAuthentication yes
 
 EOF
     )
@@ -112,6 +112,7 @@ fi
 # change qemu-guest-agent config
 if [ "${os_code}" = "linux" ]; then
     cloud_config_txt+=$(cat <<EOF
+
 runcmd:
   - |
     if [ -f /etc/sysconfig/qemu-ga ]; then
