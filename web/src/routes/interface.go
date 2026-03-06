@@ -955,6 +955,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 	var publicAddresses []*model.FloatingIp
 	publicIps := c.QueryStrings("public_ips")
 	logger.Error("public ips: ", publicIps)
+	ifaceVlan := iface.Address.Subnet.Vlan
 	if len(publicIps) > 0 {
 		for _, pubIp := range publicIps {
 			fID, err := strconv.Atoi(pubIp)
@@ -967,6 +968,12 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			if err != nil {
 				logger.Error("Get public ip failed", err)
 				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			if ifaceVlan != floatingIp.Subnet.Vlan {
+				logger.Error("Second addresses are not allowed to be in different vlan")
+				c.Data["ErrorMsg"] = "Second addresses are not allowed to be in different vlan"
 				c.HTML(http.StatusBadRequest, "error")
 				return
 			}
@@ -1040,7 +1047,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
-		if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+		if ifaceVlan != primaryFip.Subnet.Vlan {
 			logger.Error("New primary ip is not allowed to be in different vlan")
 			c.Data["ErrorMsg"] = "New primary ip is not allowed to be in different vlan"
 			c.HTML(http.StatusBadRequest, "error")

@@ -306,6 +306,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 	var ifaceSubnets []*model.Subnet
 	var publicIps []*model.FloatingIp
 	if iface.FloatingIp > 0 {
+		ifaceVlan := iface.Address.Subnet.Vlan
 		if payload.PublicAddresses == nil {
 			_, publicIps, err = floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("instance_id = %d", iface.Instance))
 			if err != nil {
@@ -322,6 +323,11 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 					ErrorResponse(c, http.StatusBadRequest, "Failed to get public ip", err)
 					return
 				}
+				if ifaceVlan != floatingIp.Subnet.Vlan {
+					logger.Error("Second ips are not allowed to be in different vlan")
+					ErrorResponse(c, http.StatusBadRequest, "Second ips are not allowed to be in different vlan", err)
+					return
+				}
 				publicIps = append(publicIps, floatingIp)
 			}
 		}
@@ -333,7 +339,7 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				ErrorResponse(c, http.StatusBadRequest, "Failed to get primary public ip", err)
 				return
 			}
-			if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+			if ifaceVlan != primaryFip.Subnet.Vlan {
 				logger.Error("New primary ip is not allowed to be in different vlan")
 				ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
 				return
