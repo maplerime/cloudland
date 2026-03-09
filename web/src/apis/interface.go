@@ -326,6 +326,10 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				if ifaceVlan != floatingIp.Subnet.Vlan {
 					logger.Error("Second ips are not allowed to be in different vlan")
 					ErrorResponse(c, http.StatusBadRequest, "Second ips are not allowed to be in different vlan", err)
+				}
+				if floatingIp.InstanceID > 0 && floatingIp.InstanceID != instance.ID {
+					logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+					ErrorResponse(c, http.StatusBadRequest, "Public IP is in use", err)
 					return
 				}
 				publicIps = append(publicIps, floatingIp)
@@ -461,7 +465,10 @@ func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, 
 			if err != nil {
 				return
 			}
-
+			if floatingIp.InstanceID > 0 {
+				logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+				return
+			}
 			err = floatingIpAdmin.EnsureSubnetID(ctx, floatingIp)
 			if err != nil {
 				logger.Error("Failed to ensure subnet_id", err)
