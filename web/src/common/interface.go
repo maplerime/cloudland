@@ -170,7 +170,7 @@ func DeallocateAddress(ctx context.Context, ifaces []*model.Interface) (err erro
 			where = fmt.Sprintf("%s or interface='%d'", where, iface.ID)
 		}
 	}
-	if err = db.Model(&model.Address{}).Where(where).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
+	if err = db.Model(&model.Address{}).Where(where).Update(map[string]interface{}{"allocated": false, "interface": 0, "second_interface": 0}).Error; err != nil {
 		logger.Error("Failed to Update addresses, %v", err)
 		return
 	}
@@ -224,6 +224,12 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				if err != nil {
 					logger.Error("Failed to update floating ip ", err)
 					return
+				}
+				for _, fip := range floatingIps {
+					if fip.ID == iface.FloatingIp {
+						fip.InstanceID = 0
+						break
+					}
 				}
 			}
 		}
