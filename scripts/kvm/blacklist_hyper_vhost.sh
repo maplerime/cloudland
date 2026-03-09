@@ -9,7 +9,6 @@ ID=$1
 vm_ID=inst-$ID
 hyper=$2
 volumes=$(cat)
-echo $volumes >/tmp/volumes.json
 nvolume=$(jq length <<< $volumes)
 uss_id=$(get_uss_gateway $hyper)
 business_network=$(wds_curl GET "api/v2/wds/uss/$uss_id" | jq -r .business_network)
@@ -22,7 +21,7 @@ while [ $i -lt $nvolume ]; do
     j=0
     while [ $j -lt $npaths ]; do
 	vhost_path=$(jq -r .[$j] <<<$vhost_paths)
-	if [ "${vhost_path/$business_network:/}" = "$vhost_path" ]; then
+	if [ "${vhost_path/$business_network:/}" != "$vhost_path" ]; then
             log_debug "putting $vhost_path into blacklist"
             ret_code=$(wds_curl PUT "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}" | jq -r .ret_code)
             if [ "$ret_code" != "0" ]; then

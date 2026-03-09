@@ -39,10 +39,15 @@ let fsize=$disk_size*1024*1024*1024
 vm_meta=$cache_dir/meta/$vm_ID.iso
 get_wds_token
 volumes=$(jq -r .volumes <<< $metadata)
+if [ "$migration_type" = "cold" ]; then
+    ./blacklist_hyper_vhost.sh $ID $source_hyper <<< $volumes
+    if [ $? -ne 0 ]; then
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
+        exit 1
+    fi
+fi
 nvolume=$(jq length <<< $volumes)
 uss_id=$(get_uss_gateway)
-business_network=$(wds_curl GET "api/v2/wds/uss/$uss_id" | jq -r .business_network)
-business_network=${business_network%/*}
 i=0
 while [ $i -lt $nvolume ]; do
     read -d'\n' -r vol_ID volume_id device booting < <(jq -r ".[$i].id, .[$i].uuid, .[$i].device, .[$i].booting" <<<$volumes)
@@ -51,24 +56,6 @@ while [ $i -lt $nvolume ]; do
     else
         vhost_name=instance-$ID-vol-$vol_ID
     fi
-    vhost_paths=$(wds_curl GET "api/v2/sync/block/volumes/$volume_id/bind_status" | jq -r .path)
-    npaths=$(jq length <<< $vhost_paths)
-    j=0
-    while [ $j -lt $npaths ]; do
-	vhost_path=$(jq -r .[$j] <<<$vhost_paths)
-	if [ "${vhost_path/$business_network:/}" == "$vhost_path" ]; then
-            if [ "$migration_type" = "cold" ]; then
-                ret_code=$(wds_curl PUT "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}" | jq -r .ret_code)
-                if [ "$ret_code" != "0" ]; then
-                    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
-	            exit 1
-                fi
-            fi
-        else
-            wds_curl DELETE "api/v2/failure_domain/black_list" "{\"path\": \"$vhost_path\"}"
-	fi
-        let j=$j+1
-    done
     ux_sock=/var/run/wds/$vhost_name
     vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$vhost_name" | jq -r '.vhosts[0].id')
     wds_curl PUT "api/v2/sync/block/vhost/unbind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"is_snapshot\": false}"
