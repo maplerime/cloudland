@@ -124,6 +124,21 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
+        errHndl := ctx.Value("error")
+        if errHndl != nil {
+		reason := "Resource is not enough"
+                err = db.Model(instance).Updates(map[string]interface{}{
+                        "status": "rollback",
+                        "reason": reason}).Error
+                if err != nil {
+                        logger.Error("Failed to update instance", err)
+                }
+		err = db.Model(migration).Update(map[string]interface{}{"status": "failed"}).Error
+		if err != nil {
+			logger.Error("Failed to update migration", err)
+		}
+                return
+        }
 	if status == "completed" {
 		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{"status": model.InstanceStatusMigrated}).Error
 		if err != nil {
@@ -177,7 +192,14 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "target_prepared" {
-		migration.TargetHyper = int32(hyperID)
+		if migration.TargetHyper == -1 {
+			migration.TargetHyper = int32(hyperID)
+			err = db.Model(migration).Update(map[string]interface{}{"target_hyper": hyperID}).Error
+			if err != nil {
+				logger.Error("Failed to update migration", err)
+				return
+			}
+		}
 		targetHyper := &model.Hyper{}
 		err = db.Where("hostid = ?", hyperID).Take(targetHyper).Error
 		if err != nil {
