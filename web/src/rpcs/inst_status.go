@@ -68,9 +68,17 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		if instance.Status == model.InstanceStatusMigrating || instance.Status == "rescuing" {
 			continue
 		}
-		if instance.Status.String() != status || instance.DeletedAt != nil {
-			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
+		if instance.Status.String() != status {
+			err = db.Model(instance).Update(map[string]interface{}{
 				"status": status,
+			}).Error
+			if err != nil {
+				logger.Error("Failed to update status", err)
+			}
+		}
+		if instance.DeletedAt != nil {
+			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
+				"hostname": instance.Hostname + "-unknown",
 				"deleted_at": nil,
 			}).Error
 			if err != nil {
