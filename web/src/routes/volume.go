@@ -319,6 +319,17 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			err = NewCLError(ErrBootVolumeCannotDetach, "Boot volume can not be detached", nil)
 			return
 		}
+		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
+		if err = db.Model(instance).Take(instance).Error; err != nil {
+			logger.Error("DB: query instance failed", err)
+			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		if instance.Status == model.InstanceStatusPaused {
+			logger.Error("Cannot detach volume to a paused instance", instID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot detach volume to a paused instance", nil)
+			return
+		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, uuid)
 		err = HyperExecute(ctx, control, command)
@@ -336,6 +347,11 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		if err = db.Model(instance).Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		if instance.Status == model.InstanceStatusPaused {
+			logger.Error("Cannot attach volume to a paused instance", instID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused instance", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
