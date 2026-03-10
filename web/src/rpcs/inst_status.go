@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	. "web/src/common"
 	"web/src/model"
@@ -65,8 +66,13 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
-		if instance.Status == model.InstanceStatusMigrating || instance.Status == "rescuing" {
+		if instance.Status == "rescuing" {
 			continue
+		}
+		if instance.Status == "migrating" {
+			if time.Since(instance.UpdatedAt) < 6*time.Minute {
+				continue
+			}
 		}
 		if instance.Status.String() != status {
 			err = db.Model(instance).Update(map[string]interface{}{

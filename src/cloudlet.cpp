@@ -90,8 +90,7 @@ void backHandler(void *user_param, sci_group_t group, void *buffer, int size)
         char *trace = packer.unpackStr();
 
         setenv("RequestID", trace, 1);
-        cmdStr = "sudo -E " + cmdStr + " 2>&1";
-        cmdStr = cmdStr + " 2>&1";
+	cmdStr = "sudo -E " + cmdStr + " 2>&1";
         fp = popen(cmdStr.c_str(), "r");
         char *p = fgets(tmp, sizeof(tmp), fp);
         while (p != NULL) {

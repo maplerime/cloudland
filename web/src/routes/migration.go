@@ -47,8 +47,8 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 	}()
 	if tgtHyper > -1 {
-		targetHyper := &model.Hyper{Hostid: tgtHyper}
-		err = db.Where(targetHyper).Take(targetHyper).Error
+		targetHyper := &model.Hyper{}
+		err = db.Where("hostid = ?", tgtHyper).Take(targetHyper).Error
 		if err != nil {
 			logger.Error("Failed to query hyper", err)
 			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
