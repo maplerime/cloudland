@@ -80,11 +80,11 @@ type FloatingIpPayload struct {
 }
 
 type FloatingIpPatchPayload struct {
-	Instance *BaseID `json:"instance" binding:"omitempty"`
-	LoadBalancer    *BaseID          `json:"load_balancer" binding:"omitempty"`
-	Inbound  *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
-	Outbound *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
-	Group    *BaseID `json:"group" binding:"omitempty"`
+	Instance     *BaseID `json:"instance" binding:"omitempty"`
+	LoadBalancer *BaseID `json:"load_balancer" binding:"omitempty"`
+	Inbound      *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
+	Outbound     *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
+	Group        *BaseID `json:"group" binding:"omitempty"`
 }
 
 // SiteAttachPayload represents the payload for site attach floating IPs
@@ -511,105 +511,15 @@ func (v *FloatingIpAPI) SiteAttach(c *gin.Context) {
 			return
 		}
 
-		// Verify that the subnet type is "site"
-		if subnet.Type != "site" {
-			logger.Errorf("Subnet %s is not a site type subnet", subnet.Name)
-			ErrorResponse(c, http.StatusBadRequest, "All subnets must be site type", err)
-			return
-		}
-
 		siteSubnets = append(siteSubnets, subnet)
 	}
 
-	// Find and attach floating IPs for each site subnet
-	var attachedFloatingIps []*model.FloatingIp
-	for _, subnet := range siteSubnets {
-		logger.Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
-
-		// Find floating IPs associated with this site subnet that are not attached to any instance
-		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", fmt.Sprintf("type = '%s' AND instance_id = 0", PublicSite))
-		if err != nil {
-			logger.Errorf("Failed to list floating ips %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)
-			return
-		}
-
-		logger.Debugf("Found %d available floating IPs for site subnet %s", len(floatingIps), subnet.Name)
-
-		// Find floating IPs that belong to this specific site subnet
-		var subnetFloatingIps []*model.FloatingIp
-		for _, fip := range floatingIps {
-			logger.Debugf("Checking floating IP: %s (ID: %d)", fip.FipAddress, fip.ID)
-
-			if fip.Interface == nil {
-				logger.Debugf("Floating IP %s has no interface", fip.FipAddress)
-				continue
-			}
-
-			if fip.Interface.Address == nil {
-				logger.Debugf("Floating IP %s interface has no address", fip.FipAddress)
-				continue
-			}
-
-			if fip.Interface.Address.Subnet == nil {
-				logger.Debugf("Floating IP %s interface address has no subnet", fip.FipAddress)
-				continue
-			}
-
-			logger.Debugf("Floating IP %s belongs to subnet %s (ID: %d), checking against target subnet %s (ID: %d)",
-				fip.FipAddress, fip.Interface.Address.Subnet.Name, fip.Interface.Address.Subnet.ID,
-				subnet.Name, subnet.ID)
-
-			if fip.Interface.Address.Subnet.ID == subnet.ID {
-				logger.Debugf("Found matching floating IP %s for subnet %s, adding to attach list", fip.FipAddress, subnet.Name)
-				subnetFloatingIps = append(subnetFloatingIps, fip)
-			} else {
-				logger.Debugf("Floating IP %s subnet ID (%d) doesn't match target subnet ID (%d)",
-					fip.FipAddress, fip.Interface.Address.Subnet.ID, subnet.ID)
-			}
-		}
-
-		// Check if there are floating IPs available for this subnet
-		if len(subnetFloatingIps) == 0 {
-			logger.Errorf("No floating IPs found for site subnet %s", subnet.Name)
-			ErrorResponse(c, http.StatusBadRequest, fmt.Sprintf("No floating IPs found for site subnet %s", subnet.Name), err)
-			return
-		}
-
-		logger.Debugf("Found %d floating IPs to attach for site subnet %s", len(subnetFloatingIps), subnet.Name)
-
-		// Attach the floating IPs to the instance
-		for _, fip := range subnetFloatingIps {
-			floatingIp, err := floatingIpAdmin.GetFloatingIpByUUID(ctx, fip.UUID)
-			if err != nil {
-				logger.Errorf("Failed to get floating ip %s: %v", fip.FipAddress, err)
-				ErrorResponse(c, http.StatusBadRequest, "Failed to get floating ip", err)
-				return
-			}
-			logger.Debugf("Attaching floating IP %s to instance %s", fip.FipAddress, instance.UUID)
-			err = floatingIpAdmin.Attach(ctx, floatingIp, instance)
-			if err != nil {
-				logger.Errorf("Failed to attach floating ip %s to instance %s: %v", fip.FipAddress, instance.UUID, err)
-				ErrorResponse(c, http.StatusBadRequest, "Failed to attach floating ip", err)
-				return
-			}
-			logger.Debugf("Successfully attached floating IP %s to instance %s", fip.FipAddress, instance.UUID)
-			attachedFloatingIps = append(attachedFloatingIps, fip)
-		}
-		var primaryInterfaceID int64
-		for _, iface := range instance.Interfaces {
-			if iface.PrimaryIf {
-				primaryInterfaceID = iface.ID
-				break
-			}
-		}
-		_, db := GetContextDB(ctx)
-		err = db.Model(&model.Subnet{}).Where("id = ?", subnet.ID).Update("interface", primaryInterfaceID).Error
-		if err != nil {
-			logger.Errorf("Failed to update subnet %s interface to instance %s: %v", subnet.Name, instance.UUID, err)
-			ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet interface", err)
-			return
-		}
+	// Call routes method to handle the attach logic with database operations
+	attachedFloatingIps, err := floatingIpAdmin.SiteAttach(ctx, instance, siteSubnets)
+	if err != nil {
+		logger.Errorf("Failed to attach floating ips %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to attach floating ips", err)
+		return
 	}
 
 	// Convert to response format
@@ -672,99 +582,17 @@ func (v *FloatingIpAPI) SiteDetach(c *gin.Context) {
 			return
 		}
 
-		// Verify that the subnet type is "site"
-		if subnet.Type != "site" {
-			logger.Errorf("Subnet %s is not a site type subnet", subnet.Name)
-			ErrorResponse(c, http.StatusBadRequest, "All subnets must be site type", err)
-			return
-		}
-
 		siteSubnets = append(siteSubnets, subnet)
 	}
 
-	// Find and detach floating IPs for each site subnet
-	detachedCount := 0
-	for _, subnet := range siteSubnets {
-		logger.Debugf("Processing site subnet: %s (ID: %d)", subnet.Name, subnet.ID)
-
-		// Find floating IPs associated with this subnet and instance
-		var queryCondition string
-		if payload.Instance != nil && instance != nil {
-			queryCondition = fmt.Sprintf("instance_id = %d AND type = '%s'", instance.ID, PublicSite)
-		} else {
-			queryCondition = fmt.Sprintf("type = '%s'", PublicSite)
-		}
-
-		_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", queryCondition)
-		if err != nil {
-			logger.Errorf("Failed to list floating ips %+v", err)
-			ErrorResponse(c, http.StatusBadRequest, "Failed to list floating ips", err)
-			return
-		}
-
-		logger.Debugf("Found %d floating IPs for subnet %d", len(floatingIps), subnet.ID)
-
-		// Detach floating IPs that are associated with the specified site subnet
-		for _, fip := range floatingIps {
-			logger.Debugf("Checking floating IP: %s (ID: %d)", fip.FipAddress, fip.ID)
-
-			if fip.Interface == nil {
-				logger.Debugf("Floating IP %s has no interface", fip.FipAddress)
-				continue
-			}
-
-			if fip.Interface.Address == nil {
-				logger.Debugf("Floating IP %s interface has no address", fip.FipAddress)
-				continue
-			}
-
-			if fip.Interface.Address.Subnet == nil {
-				logger.Debugf("Floating IP %s interface address has no subnet", fip.FipAddress)
-				continue
-			}
-
-			logger.Debugf("Floating IP %s belongs to subnet %s (ID: %d), checking against target subnet %s (ID: %d)",
-				fip.FipAddress, fip.Interface.Address.Subnet.Name, fip.Interface.Address.Subnet.ID,
-				subnet.Name, subnet.ID)
-
-			if fip.Interface.Address.Subnet.ID == subnet.ID {
-				logger.Debugf("Found matching floating IP %s for subnet %s, detaching...", fip.FipAddress, subnet.Name)
-
-				floatingIp, err := floatingIpAdmin.GetFloatingIpByUUID(ctx, fip.UUID)
-				if err != nil {
-					logger.Errorf("Failed to get floating ip %s: %v", fip.FipAddress, err)
-					ErrorResponse(c, http.StatusBadRequest, "Failed to get floating ip", err)
-					return
-				}
-
-				err = floatingIpAdmin.Detach(ctx, floatingIp)
-				if err != nil {
-					logger.Errorf("Failed to detach floating ip %s: %v", fip.FipAddress, err)
-					ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ip", err)
-					return
-				}
-				detachedCount++
-				logger.Debugf("Successfully detached floating IP %s", fip.FipAddress)
-			} else {
-				logger.Debugf("Floating IP %s subnet ID (%d) doesn't match target subnet ID (%d)",
-					fip.FipAddress, fip.Interface.Address.Subnet.ID, subnet.ID)
-			}
-		}
-		// Update subnet interface to 0 after successful detachment
-		_, db := GetContextDB(ctx)
-		err = db.Model(&model.Subnet{}).Where("id = ?", subnet.ID).Update("interface", 0).Error
-		if err != nil {
-			logger.Errorf("Failed to update subnet %s interface to 0: %v", subnet.Name, err)
-			ErrorResponse(c, http.StatusInternalServerError, "Failed to update subnet interface", err)
-			return
-		}
+	// Call routes method to handle the detach logic with database operations
+	detachedCount, err := floatingIpAdmin.SiteDetach(ctx, instance, siteSubnets)
+	if err != nil {
+		logger.Errorf("Failed to detach floating ips %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to detach floating ips", err)
+		return
 	}
 
-	logger.Debugf("Batch detached %d floating ips from instance %s", detachedCount, func() string {
-		if instance != nil {
-			return instance.UUID
-		}
-		return "unknown"
-	}())
+	logger.Debugf("Batch detached %d floating ips", detachedCount)
 	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("Batch detach completed successfully. Detached %d floating IPs.", detachedCount)})
 }
