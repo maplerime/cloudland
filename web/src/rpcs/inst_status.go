@@ -70,7 +70,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			continue
 		}
 		if instance.Status == "migrating" {
-			if time.Since(instance.UpdatedAt) < 6*time.Minute {
+			if time.Since(instance.UpdatedAt) < 12*time.Minute {
 				continue
 			}
 		}
@@ -84,7 +84,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		}
 		if instance.DeletedAt != nil {
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
-				"hostname": instance.Hostname + "-unknown",
+				"hostname":   instance.Hostname + "-unknown",
 				"deleted_at": nil,
 			}).Error
 			if err != nil {
@@ -106,7 +106,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 				logger.Error("Failed to update hypervisor", err)
 			}
 			err = db.Unscoped().Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{
-				"hyper":   int32(hyperID),
+				"hyper": int32(hyperID),
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update interface", err)
