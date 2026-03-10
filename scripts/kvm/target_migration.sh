@@ -40,6 +40,7 @@ vm_meta=$cache_dir/meta/$vm_ID.iso
 get_wds_token
 volumes=$(jq -r .volumes <<< $metadata)
 if [ "$migration_type" = "cold" ]; then
+    echo ./blacklist_hyper_vhost.sh $ID $source_hyper $volumes > /tmp/black_cmd
     ./blacklist_hyper_vhost.sh $ID $source_hyper <<< $volumes
     if [ $? -ne 0 ]; then
         echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"

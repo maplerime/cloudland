@@ -32,7 +32,7 @@ type MigrationAdmin struct{}
 type MigrationView struct{}
 
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
-	logger.Debugf("Start migrating instances to %d", tgtHyper)
+	logger.Debugf("Start migrating instances to %d, migration type %t", tgtHyper, force)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
