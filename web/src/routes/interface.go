@@ -56,7 +56,7 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 	ctx, db := GetContextDB(ctx)
 	iface = &model.Interface{Model: model.Model{ID: id}}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at")
+		return db.Where("interface > 0").Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
@@ -955,6 +955,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 	var publicAddresses []*model.FloatingIp
 	publicIps := c.QueryStrings("public_ips")
 	logger.Error("public ips: ", publicIps)
+	ifaceVlan := iface.Address.Subnet.Vlan
 	if len(publicIps) > 0 {
 		for _, pubIp := range publicIps {
 			fID, err := strconv.Atoi(pubIp)
@@ -967,6 +968,17 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			if err != nil {
 				logger.Error("Get public ip failed", err)
 				c.Data["ErrorMsg"] = err.Error()
+				c.HTML(http.StatusBadRequest, "error")
+				return
+			}
+			if ifaceVlan != floatingIp.Subnet.Vlan {
+				logger.Error("Second addresses are not allowed to be in different vlan")
+				c.Data["ErrorMsg"] = "Second addresses are not allowed to be in different vlan"
+			}
+			if floatingIp.InstanceID > 0 && floatingIp.InstanceID != instance.ID {
+				errMsg := fmt.Sprintf("Public IP %s is in use", floatingIp.FipAddress)
+				logger.Errorf(errMsg)
+				c.Data["ErrorMsg"] = errMsg
 				c.HTML(http.StatusBadRequest, "error")
 				return
 			}
@@ -1040,7 +1052,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
-		if iface.Address.Subnet.Vlan != primaryFip.Subnet.Vlan {
+		if ifaceVlan != primaryFip.Subnet.Vlan {
 			logger.Error("New primary ip is not allowed to be in different vlan")
 			c.Data["ErrorMsg"] = "New primary ip is not allowed to be in different vlan"
 			c.HTML(http.StatusBadRequest, "error")

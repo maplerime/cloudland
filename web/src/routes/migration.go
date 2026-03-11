@@ -32,7 +32,7 @@ type MigrationAdmin struct{}
 type MigrationView struct{}
 
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
-	logger.Debugf("Start migrating instances to %d", tgtHyper)
+	logger.Debugf("Start migrating instances to %d, migration type %t", tgtHyper, force)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
@@ -47,8 +47,8 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		}
 	}()
 	if tgtHyper > -1 {
-		targetHyper := &model.Hyper{Hostid: tgtHyper}
-		err = db.Where(targetHyper).Take(targetHyper).Error
+		targetHyper := &model.Hyper{}
+		err = db.Where("hostid = ?", tgtHyper).Take(targetHyper).Error
 		if err != nil {
 			logger.Error("Failed to query hyper", err)
 			err = NewCLError(ErrHypervisorNotFound, "Failed to find target hypervisor", err)
@@ -141,7 +141,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				continue
 			}
 			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-			control = "select=" + hyperGroup + rcNeeded
+			control = "select=" + hyperGroup + " " + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {
