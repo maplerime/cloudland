@@ -32,12 +32,13 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		logger.Error("Invalid args", err)
 		return
 	}
-	hyperID, err := strconv.Atoi(args[1])
+	parsedHyperID, err := strconv.ParseInt(args[1], 10, 32)
 	if err != nil {
 		logger.Error("Invalid hypervisor ID", err)
 		return
 	}
-	hyper := &model.Hyper{Hostid: int32(hyperID)}
+	hyperID := int32(parsedHyperID)
+	hyper := &model.Hyper{Hostid: hyperID}
 	err = db.Where(hyper).Take(hyper).Error
 	if err != nil {
 		logger.Error("Failed to query hyper", err)
@@ -58,7 +59,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			if gorm.IsRecordNotFoundError(err) {
 				instance.Hostname = "unknown"
 				instance.Status = model.InstanceStatus(status)
-				instance.Hyper = int32(hyperID)
+				instance.Hyper = hyperID
 				err = db.Create(instance).Error
 				if err != nil {
 					logger.Error("Failed to create unknown instance", err)
@@ -70,7 +71,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			continue
 		}
 		if instance.Status == "migrating" {
-			if time.Since(instance.UpdatedAt) < 6*time.Minute {
+			if time.Since(instance.UpdatedAt) < 12*time.Minute {
 				continue
 			}
 		}
@@ -84,29 +85,29 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		}
 		if instance.DeletedAt != nil {
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
-				"hostname": instance.Hostname + "-unknown",
+				"hostname":   instance.Hostname + "-unknown",
 				"deleted_at": nil,
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update status", err)
 			}
 		}
-		if instance.Hyper != int32(hyperID) {
+		if instance.Hyper != hyperID {
 			if instance.Hyper >= 0 {
-				instance.Hyper = int32(hyperID)
+				instance.Hyper = hyperID
 				err = syncMigration(ctx, instance)
 				if err != nil {
 					logger.Error("Failed to sync migration info", err)
 				}
 			}
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
-				"hyper": int32(hyperID),
+				"hyper": hyperID,
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update hypervisor", err)
 			}
 			err = db.Unscoped().Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{
-				"hyper":   int32(hyperID),
+				"hyper": hyperID,
 			}).Error
 			if err != nil {
 				logger.Error("Failed to update interface", err)
