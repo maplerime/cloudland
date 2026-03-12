@@ -21,21 +21,14 @@ virsh dumpxml $vm_ID >$xml_dir/$vm_ID/${vm_ID}.xml
 if [ "$migration_type" = "warm" ]; then
     state='source_rollback'
     vm_state=$(virsh domstate $vm_ID)
-    log_debug $ID "source_migration.sh: VM state=$vm_state, calling blacklist_hyper_vhost.sh"
-    # ./blacklist_hyper_vhost.sh $ID # no need to add blacklist when live migration
-    if [ $? -ne 0 ]; then
-        log_debug $ID "source_migration.sh: Failed to put vhost into blacklist"
-        echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
-        exit 1
-    fi
-    log_debug $ID "source_migration.sh: Blacklist operation completed successfully"
     if [ "$vm_state" = "shut off" ]; then
         log_debug $ID "source_migration.sh: Starting offline migration to $target_hyper"
         virsh migrate --undefinesource --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
     else
         log_debug $ID "source_migration.sh: Starting live migration to $target_hyper"
-        virsh migrate --undefinesource --persistent --live $vm_ID qemu+ssh://$target_hyper/system
+        virsh migrate --undefinesource --persistent --suspend --live $vm_ID qemu+ssh://$target_hyper/system
     fi
+    old_state=$vm_state
     if [ $? -ne 0 ]; then
         log_debug $ID "source_migration.sh: virsh migrate failed with non-zero exit code"
         echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'virsh migrate returns non-zero'"
@@ -44,8 +37,19 @@ if [ "$migration_type" = "warm" ]; then
     log_debug $ID "source_migration.sh: virsh migrate command completed, waiting for VM to disappear from source"
     for i in {1..60}; do
         vm_state=$(virsh domstate $vm_ID)
-        [ -z "$vm_state" ] && break
-        sleep 1
+        if [ -z "$vm_state" ]; then
+            if [ "$old_state" = "running" ]; then
+	        ssh $target_hyper virsh resume $vm_ID
+                if [ $? -ne 0 ]; then
+                    log_debug $ID "source_migration.sh: failed to resume vm on the target host"
+                    echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to resume vm on target host'"
+                    exit 0
+                fi
+                log_debug $ID "source_migration.sh: vm $vm_ID on target host resumed"
+	    fi
+            break
+        fi
+        sleep 0.5
     done
     if [ -n "$vm_state" ]; then
         log_debug $ID "source_migration.sh: VM still exists after 60 seconds wait"
