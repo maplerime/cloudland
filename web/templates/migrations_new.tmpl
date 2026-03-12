@@ -54,8 +54,8 @@
 									  <div class="menu">
 										{{ if .Hypers }}
 										{{ range .Hypers }}
-										<div class="item" data-value={{.Hostid}} data-text={{.Hostname}}>
-										  {{.Hostname}}
+										<div class="item" data-value={{.Hostid}} data-text={{.Hostname}}--{{.Hostid}}>
+										  {{.Hostname}}--{{.Hostid}}
 										</div>
 										{{ end }}
 										{{ end }}

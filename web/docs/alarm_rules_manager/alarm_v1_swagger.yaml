@@ -7,11 +7,31 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
-  apis.AddressPatchPayload:
+  apis.AddressListResponse:
     properties:
+      addresses:
+        items:
+          $ref: '#/definitions/apis.AddressResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.AddressRemarkPayload:
+    properties:
+      addresses:
+        items:
+          $ref: '#/definitions/common.BaseID'
+        minItems: 1
+        type: array
       remark:
         maxLength: 512
         type: string
+    required:
+    - addresses
     type: object
   apis.AddressResponse:
     properties:
@@ -42,8 +62,15 @@ definitions:
     type: object
   apis.AddressUpdateLockPayload:
     properties:
+      addresses:
+        items:
+          $ref: '#/definitions/common.BaseID'
+        minItems: 1
+        type: array
       lock:
         type: boolean
+    required:
+    - addresses
     type: object
   apis.BackendListResponse:
     properties:
@@ -144,6 +171,130 @@ definitions:
         type: string
       updated_at:
         type: string
+    type: object
+  apis.ConsistencyGroupListResponse:
+    properties:
+      consistency_groups:
+        items:
+          $ref: '#/definitions/apis.ConsistencyGroupResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.ConsistencyGroupPatchPayload:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  apis.ConsistencyGroupPayload:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+      volumes:
+        description: Volume UUIDs
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - name
+    - volumes
+    type: object
+  apis.ConsistencyGroupResponse:
+    properties:
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      status:
+        type: string
+      updated_at:
+        type: string
+      volumes:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        type: array
+      wds_cg_id:
+        type: string
+    type: object
+  apis.ConsistencyGroupRestoreResponse:
+    properties:
+      status:
+        type: string
+      task_id:
+        type: string
+      task_uuid:
+        type: string
+    type: object
+  apis.ConsistencyGroupSnapshotListResponse:
+    properties:
+      limit:
+        type: integer
+      offset:
+        type: integer
+      snapshots:
+        items:
+          $ref: '#/definitions/apis.ConsistencyGroupSnapshotResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.ConsistencyGroupSnapshotPayload:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    required:
+    - name
+    type: object
+  apis.ConsistencyGroupSnapshotResponse:
+    properties:
+      cg_id:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      size:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
+      wds_snap_id:
+        type: string
+    type: object
+  apis.ConsistencyGroupVolumesPayload:
+    properties:
+      volumes:
+        description: Volume UUIDs
+        items:
+          type: string
+        minItems: 1
+        type: array
+    required:
+    - volumes
     type: object
   apis.ConsoleResponse:
     properties:
@@ -770,6 +921,10 @@ definitions:
       userdata:
         type: string
       userdata_type:
+        type: string
+      vendordata:
+        type: string
+      vendordatatype:
         type: string
       vpc:
         $ref: '#/definitions/common.BaseReference'
@@ -1588,6 +1743,10 @@ definitions:
         maxLength: 64
         minLength: 2
         type: string
+      priority:
+        maximum: 100000
+        minimum: 0
+        type: integer
       type:
         allOf:
         - $ref: '#/definitions/common.SubnetType'
@@ -1616,6 +1775,10 @@ definitions:
         type: string
       network_cidr:
         type: string
+      priority:
+        maximum: 100000
+        minimum: 0
+        type: integer
       start_ip:
         type: string
       type:
@@ -1632,6 +1795,10 @@ definitions:
     type: object
   apis.SubnetResponse:
     properties:
+      allocated_count:
+        type: integer
+      available_count:
+        type: integer
       created_at:
         type: string
       dns:
@@ -1654,8 +1821,14 @@ definitions:
         type: string
       owner:
         type: string
+      priority:
+        type: integer
+      reserved_count:
+        type: integer
       start:
         type: string
+      total_count:
+        type: integer
       type:
         $ref: '#/definitions/common.SubnetType'
       updated_at:
@@ -2170,6 +2343,93 @@ info:
   title: Alarm Rules Manager API
   version: "1.0"
 paths:
+  /addresses/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: list all IP addresses for a subnet identified by UUID
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AddressListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list IP addresses by subnet UUID
+      tags:
+      - Network
+  /addresses/remark:
+    patch:
+      consumes:
+      - application/json
+      description: batch patch addresses with unified remark
+      parameters:
+      - description: Address patch payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressRemarkPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.AddressResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: batch patch addresses
+      tags:
+      - Network
+  /addresses/update-lock:
+    patch:
+      consumes:
+      - application/json
+      description: batch lock or unlock addresses
+      parameters:
+      - description: batch lock or unlock payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.AddressUpdateLockPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/apis.AddressResponse'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: batch update address lock
+      tags:
+      - Network
   /api/v1/metrics/alarm/sync-mappings:
     post:
       consumes:
@@ -2378,6 +2638,407 @@ paths:
       summary: restore volume from a backup/snapshot
       tags:
       - Compute
+  /consistency_groups:
+    get:
+      consumes:
+      - application/json
+      description: List consistency groups with pagination
+      parameters:
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Order
+        in: query
+        name: order
+        type: string
+      - description: Name filter
+        in: query
+        name: name
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: List consistency groups
+      tags:
+      - Storage
+    post:
+      consumes:
+      - application/json
+      description: Create a new consistency group with volumes
+      parameters:
+      - description: Consistency Group Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ConsistencyGroupPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Create a consistency group
+      tags:
+      - Storage
+  /consistency_groups/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a consistency group
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Delete a consistency group
+      tags:
+      - Storage
+    get:
+      consumes:
+      - application/json
+      description: Get a consistency group by UUID
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get a consistency group
+      tags:
+      - Storage
+    patch:
+      consumes:
+      - application/json
+      description: Update a consistency group's name and description
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ConsistencyGroupPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Update a consistency group
+      tags:
+      - Storage
+  /consistency_groups/{id}/snapshots:
+    get:
+      consumes:
+      - application/json
+      description: List snapshots for a consistency group with pagination
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Order
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupSnapshotListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: List consistency group snapshots
+      tags:
+      - Storage
+    post:
+      consumes:
+      - application/json
+      description: Create a snapshot for a consistency group
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Snapshot Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ConsistencyGroupSnapshotPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupSnapshotResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Create a consistency group snapshot
+      tags:
+      - Storage
+  /consistency_groups/{id}/snapshots/{snap_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a snapshot from a consistency group
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Snapshot UUID
+        in: path
+        name: snap_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Delete a consistency group snapshot
+      tags:
+      - Storage
+    get:
+      consumes:
+      - application/json
+      description: Get a consistency group snapshot by UUID
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Snapshot UUID
+        in: path
+        name: snap_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupSnapshotResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get a consistency group snapshot
+      tags:
+      - Storage
+  /consistency_groups/{id}/snapshots/{snap_id}/restore:
+    post:
+      consumes:
+      - application/json
+      description: Restore all volumes in a consistency group from a snapshot
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Snapshot UUID
+        in: path
+        name: snap_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupRestoreResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Restore a consistency group from snapshot
+      tags:
+      - Storage
+  /consistency_groups/{id}/volumes:
+    post:
+      consumes:
+      - application/json
+      description: Add volumes to an existing consistency group
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Volumes Payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ConsistencyGroupVolumesPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Add volumes to a consistency group
+      tags:
+      - Storage
+  /consistency_groups/{id}/volumes/{volume_id}:
+    delete:
+      consumes:
+      - application/json
+      description: Remove a volume from an existing consistency group
+      parameters:
+      - description: Consistency Group UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Volume UUID
+        in: path
+        name: volume_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ConsistencyGroupResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Remove a volume from a consistency group
+      tags:
+      - Storage
   /dictionaries:
     get:
       consumes:
@@ -4745,66 +5406,6 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a subnet
-      tags:
-      - Network
-  /subnets/{id}/addresses/{address_id}:
-    patch:
-      consumes:
-      - application/json
-      description: patch an address
-      parameters:
-      - description: Address patch payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.AddressPatchPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.AddressResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: patch an address
-      tags:
-      - Network
-  /subnets/{id}/addresses/{address_id}/update-lock:
-    patch:
-      consumes:
-      - application/json
-      description: lock or unlock an address
-      parameters:
-      - description: Address lock or unlock payload
-        in: body
-        name: message
-        required: true
-        schema:
-          $ref: '#/definitions/apis.AddressUpdateLockPayload'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/apis.AddressResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: update address lock
       tags:
       - Network
   /tasks:

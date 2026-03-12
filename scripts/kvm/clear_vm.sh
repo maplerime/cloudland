@@ -3,12 +3,13 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 3 ] && die "$0 <vm_ID> <router> <boot_volume>"
+[ $# -lt 4 ] && die "$0 <vm_ID> <router> <boot_volume> <image>"
 
 ID=$1
 vm_ID=inst-$ID
 router=$2
 boot_volume=$3
+image=$4
 vm_xml=$(virsh dumpxml $vm_ID)
 
 # Call generate_vm_instance_map.sh to remove mapping before VM deletion
@@ -77,6 +78,10 @@ else
             let j=$j+1
 	done
         wds_curl DELETE "api/v2/sync/block/volumes/$boot_volume?force=false"
+    fi
+    # async cleanup of image snapshots
+    if [ -n "$image" ]; then
+        async_exec ./async_job/clear_image_snaps.sh $ID $image
     fi
 fi
 echo "|:-COMMAND-:| $(basename $0) '$ID'"

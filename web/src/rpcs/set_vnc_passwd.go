@@ -28,7 +28,7 @@ func SetVncPasswd(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Invalid args", err)
 		return
 	}
-	instID, err := strconv.Atoi(args[1])
+	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
@@ -40,11 +40,11 @@ func SetVncPasswd(ctx context.Context, args []string) (status string, err error)
 	}
 	hyperip := args[3]
 	vnc := &model.Vnc{
-		InstanceID:   int64(instID),
+		InstanceID:   instID,
 		LocalAddress: hyperip,
 		LocalPort:    int32(portN),
 	}
-	err = db.Where("instance_id = ?", int64(instID)).Assign(vnc).FirstOrCreate(&model.Vnc{}).Error
+	err = db.Where("instance_id = ?", instID).Assign(vnc).FirstOrCreate(&model.Vnc{}).Error
 	if err != nil {
 		logger.Error("Failed to update vnc", err)
 		return

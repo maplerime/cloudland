@@ -142,11 +142,9 @@ func (a *FlavorAdmin) List(ctx context.Context, offset, limit int64, order, quer
 }
 
 func (v *FlavorView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "flavors")
+
 	order := c.Query("order")
 	if order == "" {
 		order = "-created_at"
@@ -158,11 +156,13 @@ func (v *FlavorView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["Flavors"] = flavors
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "flavors", total, limit, offset, listConfig,
+		`["ID", "Name", "Cpu", "Memory", "Disk", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Cpu", "Memory", "Disk", "Action"})
+
 	c.HTML(200, "flavors")
 }
 

@@ -141,12 +141,12 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid args", err)
 		return
 	}
-	instID, err := strconv.Atoi(args[1])
+	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
-	instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
+	instance := &model.Instance{Model: model.Model{ID: instID}}
 	reason := ""
 	errHndl := ctx.Value("error")
 	if errHndl != nil {
@@ -190,7 +190,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	instance.ZoneID = hyper.ZoneID
 	if instance.Status != model.InstanceStatusMigrating {
-		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instID)}}).Updates(map[string]interface{}{
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{
 			"status": serverStatus,
 			"hyper":  int32(hyperID),
 			"zoneID": hyper.ZoneID,
@@ -205,7 +205,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	}
-	if serverStatus == "running" && reason == "sync" {
+	if reason == "sync" {
 		err = syncMigration(ctx, instance)
 		if err != nil {
 			logger.Error("Failed to sync migration info", err)
@@ -227,7 +227,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	migration := &model.Migration{}
 	db := DB()
-	err = db.Preload("Phases", "name = 'Prepare_Source' and status == 'failed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
+	err = db.Preload("Phases", "name = 'Prepare_Source' and status = 'failed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			err = nil
@@ -237,7 +237,7 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 		return
 	}
 	for _, task := range migration.Phases {
-		err = execSourceMigrate(ctx, instance, migration, task.ID, "cold")
+		err = execSourceMigrate(ctx, instance, migration, task.ID, "/opt/cloudland/scripts/backend/source_migration.sh", "cold")
 		if err != nil {
 			logger.Error("Failed to exec source migration", err)
 			return

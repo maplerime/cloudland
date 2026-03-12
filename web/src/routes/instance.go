@@ -35,7 +35,7 @@ var (
 	instanceView  = &InstanceView{}
 )
 
-const MaxmumSnapshot = 96
+const MaxmumSnapshot = 64
 
 type InstanceAdmin struct{}
 
@@ -1179,6 +1179,12 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Failed to cleanup rule links", cleanupErr)
 	}
 
+	// Build imagePrefix for async snapshot cleanup (same rule as Create)
+	imagePrefix := ""
+	if instance.Image != nil {
+		imagePrefix = fmt.Sprintf("image-%d-%s", instance.Image.ID, strings.Split(instance.Image.UUID, "-")[0])
+	}
+
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	if instance.Hyper == -1 {
 		control = "toall="
@@ -1188,7 +1194,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, moreAddrsJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)
@@ -1223,7 +1229,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 	}
 	if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Order("addresses.updated_at")
+		return db.Where("interface > 0").Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
@@ -1365,7 +1371,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	db = db.Offset(0).Limit(-1)
 	for _, instance := range instances {
 		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-			return db.Order("addresses.updated_at")
+			return db.Where("interface > 0").Order("addresses.updated_at")
 		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
@@ -1401,14 +1407,13 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	hostname := c.QueryTrim("hostname")
-	router_id := c.QueryTrim("router_id")
-	if limit == 0 {
-		limit = 16
-	}
-	order := c.QueryTrim("order")
+	memberShip := GetMemberShip(c.Req.Context())
+
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "instances")
+
+	// Get search query and order
+	order := c.Query("order")
 	if order == "" {
 		order = "-created_at"
 	}
@@ -1417,6 +1422,8 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	if query != "" {
 		query = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
 	}
+	hostname := c.QueryTrim("hostname")
+	router_id := c.QueryTrim("router_id")
 	if router_id != "" {
 		routerID, err := strconv.Atoi(router_id)
 		if err != nil {
@@ -1424,19 +1431,27 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 		}
 		query = fmt.Sprintf("router_id = %d", routerID)
 	}
-
+	// Fetch instances from database (call existing instanceAdmin.List function)
 	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
+		logger.Debugf("Failed to get instances, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Check if user is admin
+	isAdmin := memberShip.CheckPermission(model.Admin)
+
+	// Set template data
 	c.Data["Instances"] = instances
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = queryStr
+	c.Data["IsAdmin"] = isAdmin
 	c.Data["HostName"] = hostname
+	SetPaginationData(c, "instances", total, limit, offset, listConfig,
+		`["ID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"]`,
+		[]string{"ID", "UUID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"})
+
 	c.HTML(200, "instances")
 }
 
@@ -2321,6 +2336,12 @@ func (v *InstanceView) Create(c *macaron.Context, store session.Store) {
 		if err != nil {
 			logger.Error("Get public ip failed", err)
 			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		if floatingIp.InstanceID > 0 {
+			logger.Errorf("Public IP %s is in use", floatingIp.FipAddress)
+			c.Data["ErrorMsg"] = fmt.Sprintf("Public IP %s is in use", floatingIp.FipAddress)
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}

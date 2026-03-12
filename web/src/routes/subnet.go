@@ -680,11 +680,9 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit <= 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "subnets")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -710,12 +708,14 @@ func (v *SubnetView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["Subnets"] = subnets
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
 	c.Data["UserID"] = store.Get("uid").(int64)
+	SetPaginationData(c, "subnets", total, limit, offset, listConfig,
+		`["ID", "Name", "Type", "Group", "Network", "Netmask", "Priority", "VPC", "Vlan", "Owner", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Type", "Group", "Network", "Netmask", "Priority", "VPC", "Vlan", "Owner", "Action"})
+
 	c.HTML(200, "subnets")
 }
 
