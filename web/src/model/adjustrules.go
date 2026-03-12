@@ -1,7 +1,6 @@
 package model
 
 import (
-	"log"
 	"time"
 	"web/src/dbs"
 
@@ -40,19 +39,19 @@ func init() {
 		`).Error
 
 		if err != nil {
-			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			logger.Errorf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
 			err = db.Exec(`
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_adjust_rule_id_active
 				ON adjust_rule_group (rule_id)
 				WHERE deleted_at IS NULL
 			`).Error
 			if err != nil {
-				log.Printf("Failed to create partial unique index for adjust_rule_group.rule_id: %v", err)
+				logger.Errorf("Failed to create partial unique index for adjust_rule_group.rule_id: %v", err)
 				return err
 			}
 		}
 
-		log.Printf("Successfully created partial unique index idx_adjust_rule_id_active")
+		logger.Infof("Successfully created partial unique index idx_adjust_rule_id_active")
 		return nil
 	})
 }

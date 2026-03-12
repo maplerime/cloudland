@@ -85,19 +85,18 @@ func init() {
 	} else {
 		prometheusIP = viper.GetString("monitor.host")
 		prometheusPort = viper.GetInt("monitor.port")
-		logger.Info("prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
+		logger.Infof("prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
 
-		fmt.Printf("wngzhe prometheusIP: %s,  prometheusPort: %d", prometheusIP, prometheusPort)
 		volemonitorIP = viper.GetString("WDS.host")
 		volemonitorIPort = viper.GetInt("WDS.port")
 		volemonitorUser = viper.GetString("WDS.admin")
 		volemonitorPasswd = viper.GetString("WDS.password")
-		logger.Info("volemonitorIP: %s,  volemonitorIPort: %d volemonitorUser: %s, volemonitorPasswd: %s",
+		logger.Infof("volemonitorIP: %s,  volemonitorIPort: %d volemonitorUser: %s, volemonitorPasswd: %s",
 			volemonitorIP, volemonitorIPort, volemonitorUser, volemonitorPasswd)
 
 		SwitchAPIEndpoint = viper.GetString("switch_api.endpoint")
 		SwitchAPIHouse = viper.GetString("switch_api.house")
-		logger.Info("Switch API Endpoint: %s, House: %s", SwitchAPIEndpoint, SwitchAPIHouse)
+		logger.Infof("Switch API Endpoint: %s, House: %s", SwitchAPIEndpoint, SwitchAPIHouse)
 	}
 	if prometheusIP == "" {
 		prometheusIP = "localhost"
@@ -316,7 +315,7 @@ const (
 )
 
 func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, deviceIDs []string) string {
-	logger.Info("Building range query - metric type: %s, instance IDs: %v, device IDs: %v",
+	logger.Infof("Building range query - metric type: %s, instance IDs: %v, device IDs: %v",
 		metricType, instanceIDs, deviceIDs)
 
 	if len(instanceIDs) == 0 {
@@ -325,7 +324,7 @@ func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, de
 	}
 
 	uuidFilter := strings.Join(instanceIDs, "|")
-	logger.Info("UUID filter: %s", uuidFilter)
+	logger.Infof("UUID filter: %s", uuidFilter)
 
 	query, ok := rangeQueries[metricType]
 	if !ok {
@@ -346,13 +345,13 @@ func (api *MonitorAPI) getRangeQuery(metricType string, instanceIDs []string, de
 		} else {
 			deviceFilter = strings.Join(deviceIDs, "|")
 		}
-		logger.Info("Device filter: %s", deviceFilter)
+		logger.Infof("Device filter: %s", deviceFilter)
 		finalQuery = fmt.Sprintf(query, uuidFilter, deviceFilter)
 	} else {
 		finalQuery = fmt.Sprintf(query, uuidFilter)
 	}
 
-	logger.Info("Generated query: %s", finalQuery)
+	logger.Infof("Generated query: %s", finalQuery)
 	return finalQuery
 }
 
@@ -701,7 +700,7 @@ func getWDSToken() (string, error) {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
 	if time.Now().Before(wdsTokenExp) && wdsToken != "" {
-		logger.Info("Using cached token")
+		logger.Infof("Using cached token")
 		return wdsToken, nil
 	}
 
@@ -1042,7 +1041,7 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 
 	var instanceIDs []string
 	for _, uuid := range request.ID {
-		logger.Info("Attempting to convert UUID: %s\n", uuid)
+		logger.Infof("Attempting to convert UUID: %s\n", uuid)
 		if instanceID, ok := getInstanceIDFromCache(uuid); ok {
 			instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
 			continue
@@ -1058,7 +1057,7 @@ func (api *MonitorAPI) GetNetwork(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Internal Server Error"})
 			return
 		}
-		logger.Info("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
+		logger.Infof("Successfully converted UUID %s to instanceID %d\n", uuid, instanceID)
 		instanceIDs = append(instanceIDs, "inst-"+strconv.Itoa(instanceID))
 		addToCache(uuid, instanceID)
 	}
@@ -1140,7 +1139,7 @@ func validateAndParseTimeParams(startStr, endStr, step string) (int64, int64, er
 
 func queryPrometheus(baseURL, query string, start, end, step string) (*PrometheusResponse, error) {
 	// record query params
-	logger.Info("Prometheus url: %s query: %s, start: %s, end: %s, step: %s", baseURL, query, start, end, step)
+	logger.Infof("Prometheus url: %s query: %s, start: %s, end: %s, step: %s", baseURL, query, start, end, step)
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", baseURL, nil)
@@ -1155,7 +1154,7 @@ func queryPrometheus(baseURL, query string, start, end, step string) (*Prometheu
 	req.URL.RawQuery = q.Encode()
 
 	// record full request URL
-	logger.Info("Prometheus request URL: %s", req.URL.String())
+	logger.Infof("Prometheus request URL: %s", req.URL.String())
 
 	resp, err := client.Do(req)
 	if err != nil {
