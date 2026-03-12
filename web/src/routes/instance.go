@@ -1413,12 +1413,24 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	listConfig, offset, limit := GetPaginationParams(c, "instances")
 
 	// Get search query and order
-	query := c.QueryTrim("q")
 	order := c.Query("order")
 	if order == "" {
-		order = "created_at"
+		order = "-created_at"
 	}
-
+	queryStr := c.QueryTrim("q")
+	query := queryStr
+	if query != "" {
+		query = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
+	}
+	hostname := c.QueryTrim("hostname")
+	router_id := c.QueryTrim("router_id")
+	if router_id != "" {
+		routerID, err := strconv.Atoi(router_id)
+		if err != nil {
+			logger.Debugf("Error to convert router_id to integer: %+v ", err)
+		}
+		query = fmt.Sprintf("router_id = %d", routerID)
+	}
 	// Fetch instances from database (call existing instanceAdmin.List function)
 	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
@@ -1435,7 +1447,7 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	c.Data["Instances"] = instances
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
-	c.Data["HostName"] = c.Query("hostname")
+	c.Data["HostName"] = hostname
 	SetPaginationData(c, "instances", total, limit, offset, listConfig,
 		`["ID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"]`,
 		[]string{"ID", "UUID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"})
