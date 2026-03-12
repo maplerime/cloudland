@@ -413,11 +413,9 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "images")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -429,11 +427,17 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		c.Error(http.StatusInternalServerError)
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Check if user is admin
+	isAdmin := memberShip.CheckPermission(model.Admin)
+
 	c.Data["Images"] = images
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	c.Data["IsAdmin"] = isAdmin
+	SetPaginationData(c, "images", total, limit, offset, listConfig,
+		`["ID", "Name", "Format", "Status", "CreatedAt", "OSCode", "OSFamily", "OSVersion", "Size", "DefaultUsername", "Architecture", "BootLoader", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Format", "Status", "CreatedAt", "OSCode", "OSFamily", "OSVersion", "Size", "DefaultUsername", "Architecture", "BootLoader", "Action"})
+
 	c.HTML(200, "images")
 }
 

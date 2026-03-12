@@ -207,11 +207,9 @@ func (v *DictionaryView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "dictionaries")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -224,11 +222,12 @@ func (v *DictionaryView) List(c *macaron.Context, store session.Store) {
 		c.Error(500)
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["Dictionaries"] = dictionaries
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "dictionaries", total, limit, offset, listConfig,
+		`["ID", "Category", "Name", "Value", "ShortName", "SubType1", "SubType2", "SubType3", "Edit", "Delete"]`,
+		[]string{"ID", "UUID", "Category", "Name", "Value", "ShortName", "SubType1", "SubType2", "SubType3", "Edit", "Delete"})
+
 	c.HTML(200, "dictionaries")
 }
 

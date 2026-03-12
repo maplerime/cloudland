@@ -220,6 +220,7 @@
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "Instance_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
+				            {{template "_column_selector" .}}
 				            <a id="toCreate" class="ui green tiny button" href="instances/new">{{.i18n.Tr "Create"}}</a>
 							<div style="display:none">
 								<input id="hideHost" name="hideHost" value="{{.HostName}}">
@@ -239,23 +240,23 @@
 	                        <thead>
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "ID"}}</th>
+			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
-									<th>{{.i18n.Tr "UUID"}}</th>
-			                        <th>{{.i18n.Tr "Hostname"}}</th>
-			                        <th>{{.i18n.Tr "Login_Port"}}</th>
-			                        <th>{{.i18n.Tr "Flavor"}}</th>
-			                        <th>{{.i18n.Tr "Image"}}</th>
-			                        <th>{{.i18n.Tr "IP_Address"}}</th>
-			                        <th>{{.i18n.Tr "Status"}}</th>
-			                        <th>{{.i18n.Tr "Console"}}</th>
-			                        <th>{{.i18n.Tr "VPC"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+			                        <th data-column="Hostname">{{.i18n.Tr "Hostname"}}</th>
+			                        <th data-column="LoginPort">{{.i18n.Tr "Login Port"}}</th>
+			                        <th data-column="Flavor">{{.i18n.Tr "Flavor"}}</th>
+			                        <th data-column="Image">{{.i18n.Tr "Image"}}</th>
+			                        <th data-column="IPAddress">{{.i18n.Tr "IP_Address"}}</th>
+			                        <th data-column="Status">{{.i18n.Tr "Status"}}</th>
+			                        <th data-column="Console">{{.i18n.Tr "Console"}}</th>
+			                        <th data-column="VPC">{{.i18n.Tr "VPC"}}</th>
 									{{ if .IsAdmin }}
-			                        <th>{{.i18n.Tr "Hyper"}}</th>
-			                        <th>{{.i18n.Tr "Owner"}}</th>
+			                        <th data-column="Hyper">{{.i18n.Tr "Hyper"}}</th>
+			                        <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
 									{{ end }}
-			                        <th>{{.i18n.Tr "Zone"}}</th>
-                                    <th>{{.i18n.Tr "Action"}}</th>
+			                        <th data-column="Zone">{{.i18n.Tr "Zone"}}</th>
+                                    <th data-column="Action">{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody id="instances_tbody">
@@ -264,20 +265,20 @@
                                 {{ $InstanceID := .ID }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+			                        <td data-column="ID"><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td>{{.UUID}}</td>
-			                        <td>{{ if .Hostname }}<a href="{{$Link}}/{{.ID}}">{{.Hostname}}</a>{{ end }}</td>
-			                        <td>{{ if .LoginPort }}{{.LoginPort}}{{ end }}</td>
-			                        <td>
+									<td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Hostname">{{ if .Hostname }}<a href="{{$Link}}/{{.ID}}">{{.Hostname}}</a>{{ end }}</td>
+			                        <td data-column="LoginPort">{{ if .LoginPort }}{{.LoginPort}}{{ end }}</td>
+			                        <td data-column="Flavor">
 			                        {{ if .Cpu }}
                                         {{ .Cpu }}C{{ .Memory}}M{{ .Disk }}G
                                     {{ else if .Flavor }}
                                         {{ .Flavor.Cpu }}C{{ .Flavor.Memory }}M{{ .Flavor.Disk }}G
                                     {{ end }}
                                     </td>
-			                        <td>{{ if .Image }}{{.Image.Name}}{{end}}</td>
-			                        <td>
+			                        <td data-column="Image">{{ if .Image }}{{.Image.Name}}{{end}}</td>
+			                        <td data-column="IPAddress">
 						{{ if .FloatingIps }}
 							{{ range .FloatingIps }}
 								{{ if and (ne .Type "site") (ne .Type "native") (ne .Type "reserved") }}
@@ -305,23 +306,23 @@
 							{{ end }}
 					        {{ end }}
 						</td>
-			                        <td>{{$.i18n.Tr .Status.String}}{{ if eq .Status.String "error" }}: {{ .Reason }}{{ end }}</td>
-                        <td>
+			                        <td data-column="Status">{{$.i18n.Tr .Status.String}}{{ if eq .Status.String "error" }}: {{ .Reason }}{{ end }}</td>
+                        <td data-column="Console">
 							<form name="submitForm{{.ID}}" method="post" target="_blank" action="{{$Link}}/{{.ID}}/console">
 							<a href="javascript:document.submitForm{{.ID}}.submit()">VNC</a>
 							</form>
 						</td>
-			                        <td>
+			                        <td data-column="VPC">
 						{{ if .Router }}
 						{{ .Router.Name }}
 						{{ end }}
                                     		</td>
 						{{ if $.IsAdmin }}
-			                        <td>{{.Hyper}}</td>
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Hyper">{{.Hyper}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
-			                        <td>{{ if .Zone }}{{.Zone.Name}}{{ end }}</td>
-                                    <td><div class="ui selection dropdown">
+			                        <td data-column="Zone">{{ if .Zone }}{{.Zone.Name}}{{ end }}</td>
+                                    <td data-column="Action"><div class="ui selection dropdown">
 											<input id="action" name="action" type="hidden">
 												<i class="dropdown icon"></i>
 													<div class="default text">Action
@@ -365,17 +366,7 @@
 	                        </tbody>
                         </table>
 		            </div>
-		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu" id="page_content" >
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
-	                    </div>
+		            {{template "_pagination" .}}
 	            </div>
             </div>
         </div>

@@ -707,11 +707,9 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "floatingips")
+
 	order := c.Query("order")
 	if order == "" {
 		order = "-created_at"
@@ -736,11 +734,13 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["FloatingIps"] = floatingIps
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "floatingips", total, limit, offset, listConfig,
+		`["ID", "Name", "IpGroup", "FloatingIP", "InternalIP", "Type", "InboundBandwidth", "OutboundBandwidth", "Instance", "LoadBalancer", "Action"]`,
+		[]string{"ID", "UUID", "Name", "IpGroup", "FloatingIP", "InternalIP", "Type", "InboundBandwidth", "OutboundBandwidth", "Instance", "LoadBalancer", "Action"})
+
 	c.HTML(200, "floatingips")
 }
 

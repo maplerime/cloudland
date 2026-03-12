@@ -1407,42 +1407,39 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	hostname := c.QueryTrim("hostname")
-	router_id := c.QueryTrim("router_id")
-	if limit == 0 {
-		limit = 16
-	}
-	order := c.QueryTrim("order")
+	memberShip := GetMemberShip(c.Req.Context())
+
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "instances")
+
+	// Get search query and order
+	query := c.QueryTrim("q")
+	order := c.Query("order")
 	if order == "" {
-		order = "-created_at"
-	}
-	queryStr := c.QueryTrim("q")
-	query := queryStr
-	if query != "" {
-		query = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
-	}
-	if router_id != "" {
-		routerID, err := strconv.Atoi(router_id)
-		if err != nil {
-			logger.Debugf("Error to convert router_id to integer: %+v ", err)
-		}
-		query = fmt.Sprintf("router_id = %d", routerID)
+		order = "created_at"
 	}
 
+	// Fetch instances from database (call existing instanceAdmin.List function)
 	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
+		logger.Debugf("Failed to get instances, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Check if user is admin
+	isAdmin := memberShip.CheckPermission(model.Admin)
+
+	// Set template data
 	c.Data["Instances"] = instances
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
-	c.Data["Query"] = queryStr
-	c.Data["HostName"] = hostname
+	c.Data["Query"] = query
+	c.Data["IsAdmin"] = isAdmin
+	c.Data["HostName"] = c.Query("hostname")
+	SetPaginationData(c, "instances", total, limit, offset, listConfig,
+		`["ID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"]`,
+		[]string{"ID", "UUID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"})
+
 	c.HTML(200, "instances")
 }
 
