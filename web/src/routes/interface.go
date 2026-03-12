@@ -817,7 +817,7 @@ func (v *InterfaceView) List(c *macaron.Context, store session.Store) {
 	}
 	order := c.QueryTrim("order")
 	if order == "" {
-		order = "created_at"
+		order = "-created_at"
 	}
 	instid := c.Params("instid")
 	if instid == "" {

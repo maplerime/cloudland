@@ -214,7 +214,11 @@ func (v *DictionaryView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
-	query := c.QueryTrim("q")
+	queryStr := c.QueryTrim("q")
+	query := queryStr
+	if query != "" {
+		query = fmt.Sprintf("name like '%%%s%%'", queryStr)
+	}
 	total, dictionaries, err := dictionaryAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		logger.Error("Failed to list dictionaries", err)
