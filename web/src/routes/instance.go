@@ -1445,7 +1445,7 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 
 	// Set template data
 	c.Data["Instances"] = instances
-	c.Data["Query"] = query
+	c.Data["Query"] = queryStr
 	c.Data["IsAdmin"] = isAdmin
 	c.Data["HostName"] = hostname
 	SetPaginationData(c, "instances", total, limit, offset, listConfig,
