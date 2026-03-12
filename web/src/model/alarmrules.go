@@ -4,7 +4,6 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"log"
 	"web/src/dbs"
 
 	"github.com/jinzhu/gorm"
@@ -38,19 +37,19 @@ func init() {
 		`).Error
 
 		if err != nil {
-			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			logger.Errorf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
 			err = db.Exec(`
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_id_active
 				ON rule_group_v2 (rule_id)
 				WHERE deleted_at IS NULL
 			`).Error
 			if err != nil {
-				log.Printf("Failed to create partial unique index for rule_group_v2.rule_id: %v", err)
+				logger.Errorf("Failed to create partial unique index for rule_group_v2.rule_id: %v", err)
 				return err
 			}
 		}
 
-		log.Printf("Successfully created partial unique index idx_rule_id_active")
+		logger.Infof("Successfully created partial unique index idx_rule_id_active")
 		return nil
 	})
 
@@ -70,19 +69,19 @@ func init() {
 		`).Error
 
 		if err != nil {
-			log.Printf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
+			logger.Errorf("CONCURRENTLY create index failed: %v, fallback to non-concurrent mode", err)
 			err = db.Exec(`
 				CREATE UNIQUE INDEX IF NOT EXISTS idx_rule_group_name_active
 				ON rule_group_v2 (name)
 				WHERE deleted_at IS NULL
 			`).Error
 			if err != nil {
-				log.Printf("Failed to create partial unique index for rule_group_v2.name: %v", err)
+				logger.Errorf("Failed to create partial unique index for rule_group_v2.name: %v", err)
 				return err
 			}
 		}
 
-		log.Printf("Successfully created partial unique index idx_rule_group_name_active")
+		logger.Infof("Successfully created partial unique index idx_rule_group_name_active")
 		return nil
 	})
 }
@@ -175,7 +174,7 @@ type ConfigWrapper struct {
 }
 
 func (c *ConfigWrapper) Scan(value interface{}) error {
-	log.Printf("Scanning config with value: %v (type: %T)", value, value)
+	logger.Infof("Scanning config with value: %v (type: %T)", value, value)
 	if value == nil {
 		c.RawMessage = nil
 		return nil
