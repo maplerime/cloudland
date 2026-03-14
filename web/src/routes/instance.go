@@ -1229,7 +1229,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 	}
 	if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Where("interface > 0").Order("addresses.updated_at")
+		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
@@ -1371,7 +1371,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	db = db.Offset(0).Limit(-1)
 	for _, instance := range instances {
 		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-			return db.Where("interface > 0").Order("addresses.updated_at")
+			return db.Order("addresses.updated_at")
 		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
