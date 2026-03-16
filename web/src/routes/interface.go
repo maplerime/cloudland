@@ -974,6 +974,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			if ifaceVlan != floatingIp.Subnet.Vlan {
 				logger.Error("Second addresses are not allowed to be in different vlan")
 				c.Data["ErrorMsg"] = "Second addresses are not allowed to be in different vlan"
+				return
 			}
 			if floatingIp.InstanceID > 0 && floatingIp.InstanceID != instance.ID {
 				errMsg := fmt.Sprintf("Public IP %s is in use", floatingIp.FipAddress)
