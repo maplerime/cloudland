@@ -46,6 +46,7 @@
                         <select name="public_ips" id="public_ips" multiple="" class="ui multiple selection dropdown">
                             <option value="{{ .Interface.FloatingIp }}" selected>{{ .Interface.Address.Address }}</option>
                             {{ $PrimaryAddress := .Interface.Address.Address }}
+                            {{ $Vlan := .Interface.Address.Subnet.Vlan }}
                             {{ $PublicIps := .PublicIps }}
                             {{ range .Interface.SecondAddresses }}
                               {{ $Address := .Address }}
@@ -69,7 +70,9 @@
                                 {{ end }}
                               {{ end }}
                               {{ if not $selected }}
+                                {{ if eq .Subnet.Vlan $Vlan }}
                                 <option value="{{ .ID }}">{{ $FipAddress }}</option>
+                                {{ end }}
                               {{ end }}
                             {{ end }}
                         </select>

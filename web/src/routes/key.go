@@ -122,16 +122,16 @@ func (a *KeyAdmin) Delete(ctx context.Context, key *model.Key) (err error) {
 		err = NewCLError(ErrSSHKeyInUse, "Key can not be deleted if there are instances using it", nil)
 		return
 	}
-	key.Name = fmt.Sprintf("%s-%d", key.Name, key.CreatedAt.Unix())
-	err = db.Model(key).Update("name", key.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update key name", err)
-		err = NewCLError(ErrSSHKeyUpdateFailed, "Failed to update key name", err)
-		return
-	}
 	if err = db.Delete(key).Error; err != nil {
 		logger.Error("DB failed to delete key ", err)
 		err = NewCLError(ErrSSHKeyDeleteFailed, "Failed to delete key", err)
+		return
+	}
+	key.Name = fmt.Sprintf("%s-%d", key.Name, key.CreatedAt.Unix())
+	err = db.Model(&model.Key{}).Unscoped().Where("id = ?", key.ID).Update("name", key.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update key name", err)
+		err = NewCLError(ErrSSHKeyUpdateFailed, "Failed to update key name", err)
 		return
 	}
 	return
@@ -249,11 +249,9 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "keys")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -266,10 +264,13 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+
 	c.Data["Keys"] = keys
-	c.Data["Total"] = total
-	c.Data["Pages"] = GetPages(total, limit)
 	c.Data["Query"] = query
+	SetPaginationData(c, "keys", total, limit, offset, listConfig,
+		`["ID", "Name", "Owner", "CreatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Owner", "CreatedAt", "Action"})
+
 	c.HTML(200, "keys")
 }
 

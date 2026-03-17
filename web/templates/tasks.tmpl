@@ -6,6 +6,9 @@
           	    <div class="twelve wide column content">
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "Tasks_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
+			            <div class="ui right">
+				            {{template "_column_selector" .}}
+			            </div>
 		            </h4>
 		            <div class="ui attached segment">
 			            <form class="ui form">
@@ -42,19 +45,19 @@
 	                        <thead>
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "ID"}}</th>
+			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
-									<th>{{.i18n.Tr "UUID"}}</th>
-									<th>{{.i18n.Tr "Source"}}</th>
-			                        <th>{{.i18n.Tr "Name"}}</th>
-                                    <th>{{.i18n.Tr "Summary"}}</th>
-			                        <th>{{.i18n.Tr "Status"}}</th>
-									<th>{{.i18n.Tr "Message"}}</th>
-                                    <th>{{.i18n.Tr "Action"}}</th>
-                                    <th>{{.i18n.Tr "Resources"}}</th>
-                                    <th>{{.i18n.Tr "Cron"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+									<th data-column="Source">{{.i18n.Tr "Source"}}</th>
+			                        <th data-column="Name">{{.i18n.Tr "Name"}}</th>
+                                    <th data-column="Summary">{{.i18n.Tr "Summary"}}</th>
+			                        <th data-column="Status">{{.i18n.Tr "Status"}}</th>
+									<th data-column="Message">{{.i18n.Tr "Message"}}</th>
+                                    <th data-column="Action">{{.i18n.Tr "Action"}}</th>
+                                    <th data-column="Resources">{{.i18n.Tr "Resources"}}</th>
+                                    <th data-column="Cron">{{.i18n.Tr "Cron"}}</th>
 						{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "Owner"}}</th>
+			                        <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
 						{{ end }}
 		                        </tr>
 	                        </thead>
@@ -63,39 +66,28 @@
                                 {{ range .Tasks }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="/tasks/{{.ID}}">{{.ID}}</a></td>
+			                        <td data-column="ID"><a href="/tasks/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td><a href="/tasks/{{.ID}}">{{.UUID}}</a></td>
-									<th>{{.Source}}</th>
-			                        <td><a href="/tasks/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.Summary}}</td>
-			                        <td>{{.Status}}</td>
-			                        <td>{{.Message}}</td>
-			                        <td>{{.Action}}</td>
-			                        <td>{{.Resources}}</td>
-			                        <td>{{.Cron}}</td>
+									<td data-column="UUID"><a href="/tasks/{{.ID}}">{{.UUID}}</a></td>
+									<th data-column="Source">{{.Source}}</th>
+			                        <td data-column="Name"><a href="/tasks/{{.ID}}">{{.Name}}</a></td>
+			                        <td data-column="Summary">{{.Summary}}</td>
+			                        <td data-column="Status">{{.Status}}</td>
+			                        <td data-column="Message">{{.Message}}</td>
+			                        <td data-column="Action">{{.Action}}</td>
+			                        <td data-column="Resources">{{.Resources}}</td>
+			                        <td data-column="Cron">{{.Cron}}</td>
 						{{ if $.IsAdmin }}
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
 		                        </tr>
                                 {{ end }}
 	                        </tbody>
                         </table>
 		            </div>
-		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu">
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
-	                    </div>
+		            {{template "_pagination" .}}
 	            </div>
             </div>
         </div>
     </div>
 {{template "_footer" .}}
-

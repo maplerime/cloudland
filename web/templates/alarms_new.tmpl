@@ -25,7 +25,7 @@
                                         <option value="node_available">{{.i18n.Tr "Node_Available"}}</option>
                                         <option value="control_node">{{.i18n.Tr "Control_Node"}}</option>
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
-                                        <option value="hypervisor_vcpu">{{.i18n.Tr "Hypervisor_vCPU"}}</option>
+                                        <option value="hypervisor_resource">{{.i18n.Tr "Node_Hypervisor_Resource"}}</option>
                                         <option value="packet_drop">{{.i18n.Tr "Packet_Drop"}}</option>
 										<option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
 										<option value="ipgroup_available_ip">{{.i18n.Tr "IP_Group_Available_IP"}}</option>
@@ -97,8 +97,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 "internet":  { "threshold": 5, "pattern": "=\"eth1\"", "duration": "5m" }
             }
         },
-        'hypervisor_vcpu': {
-            "vcpu_usage_threshold": 80,
+        'hypervisor_resource': {
+            "zone0_threshold": 1.0,
+            "zone0_coefficient": 88,
+            "zone1_threshold": 1.0,
+            "zone1_coefficient": 88,
+            "zone2_threshold": 1.0,
+            "zone2_coefficient": 256,
             "for_duration": "5m"
         },
         'packet_drop': {

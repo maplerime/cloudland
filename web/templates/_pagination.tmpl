@@ -1,0 +1,161 @@
+{{if .PageInfo}}
+<div class="pagination-bar">
+	<!-- Left: page navigation -->
+	<div class="pagination-left">
+		<div class="ui small pagination menu">
+			{{if .PageInfo.HasPrevious}}
+				<a class="item" href="{{.Link}}?offset={{.PageInfo.PreviousOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
+					<i class="left chevron icon"></i>
+				</a>
+			{{else}}
+				<div class="item disabled"><i class="left chevron icon"></i></div>
+			{{end}}
+
+			{{range .PageInfo.Pages}}
+				{{if .IsEllipsis}}
+					<div class="item disabled">...</div>
+				{{else if .IsCurrent}}
+					<a class="active item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">{{.Number}}</a>
+				{{else}}
+					<a class="item" href="{{$.Link}}?offset={{.Offset}}&limit={{$.Limit}}{{if $.Query}}&q={{$.Query}}{{end}}">{{.Number}}</a>
+				{{end}}
+			{{end}}
+
+			{{if .PageInfo.HasNext}}
+				<a class="item" href="{{.Link}}?offset={{.PageInfo.NextOffset}}&limit={{.Limit}}{{if .Query}}&q={{.Query}}{{end}}">
+					<i class="right chevron icon"></i>
+				</a>
+			{{else}}
+				<div class="item disabled"><i class="right chevron icon"></i></div>
+			{{end}}
+		</div>
+	</div>
+
+	<!-- Right: controls -->
+	<div class="pagination-right">
+		<span class="pagination-info">
+			{{.i18n.Tr "Total"}}: <strong>{{.Total}}</strong>
+			&nbsp;{{.i18n.Tr "Page"}}: <strong>{{.PageInfo.CurrentPage}}</strong>/<strong>{{.PageInfo.TotalPages}}</strong>
+		</span>
+
+		<span class="pagination-sep">|</span>
+
+		<span class="pagination-ctrl">
+			<select class="pagination-select" onchange="changePageSize(this, '{{.Link}}', '{{.Query}}')">
+				<option value="10" {{if eq .Limit 10}}selected{{end}}>10</option>
+				<option value="20" {{if eq .Limit 20}}selected{{end}}>20</option>
+				<option value="50" {{if eq .Limit 50}}selected{{end}}>50</option>
+				<option value="100" {{if eq .Limit 100}}selected{{end}}>100</option>
+			</select>
+			{{.i18n.Tr "Page_Size"}}
+		</span>
+
+		<span class="pagination-sep">|</span>
+
+		<span class="pagination-ctrl">
+			<input type="text" class="pagination-jump-input" id="jumpPageInput" placeholder="{{.PageInfo.TotalPages}}">
+			<button class="ui mini basic button" onclick="jumpToPage('{{.Link}}', '{{.Query}}', {{.Limit}})">{{.i18n.Tr "Go"}}</button>
+		</span>
+	</div>
+</div>
+
+<style>
+.pagination-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 0;
+	margin-top: 8px;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+.pagination-left {
+	flex-shrink: 0;
+}
+.pagination-right {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	font-size: 13px;
+	color: rgba(0,0,0,.6);
+}
+.pagination-info strong {
+	color: rgba(0,0,0,.85);
+}
+.pagination-sep {
+	color: rgba(0,0,0,.15);
+}
+.pagination-ctrl {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+.pagination-select {
+	border: 1px solid rgba(34,36,38,.15);
+	border-radius: 4px;
+	padding: 4px 6px;
+	font-size: 13px;
+	outline: none;
+	background: #fff;
+	cursor: pointer;
+}
+.pagination-select:hover {
+	border-color: rgba(34,36,38,.35);
+}
+.pagination-jump-input {
+	width: 50px;
+	border: 1px solid rgba(34,36,38,.15);
+	border-radius: 4px;
+	padding: 4px 6px;
+	font-size: 13px;
+	text-align: center;
+	outline: none;
+}
+.pagination-jump-input:focus {
+	border-color: #85b7d9;
+}
+.pagination-bar .ui.mini.basic.button {
+	padding: 5px 10px !important;
+	font-size: 12px !important;
+	margin: 0 !important;
+}
+</style>
+
+<script>
+function changePageSize(selectElement, baseLink, query) {
+	var limit = selectElement.value;
+	var url = baseLink + '?offset=0&limit=' + limit;
+	if (query) {
+		url += '&q=' + encodeURIComponent(query);
+	}
+	window.location.href = url;
+}
+
+function jumpToPage(baseLink, query, limit) {
+	var pageNum = document.getElementById('jumpPageInput').value;
+	if (!pageNum || pageNum <= 0) {
+		alert('{{.i18n.Tr "Invalid_Page_Number"}}');
+		return;
+	}
+	var offset = (parseInt(pageNum) - 1) * limit;
+	var url = baseLink + '?offset=' + offset + '&limit=' + limit;
+	if (query) {
+		url += '&q=' + encodeURIComponent(query);
+	}
+	window.location.href = url;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+	var jumpInput = document.getElementById('jumpPageInput');
+	if (jumpInput) {
+		jumpInput.addEventListener('keypress', function(event) {
+			if (event.key === 'Enter') {
+				event.preventDefault();
+				jumpToPage('{{.Link}}', '{{.Query}}', {{.Limit}});
+			}
+		});
+	}
+});
+</script>
+{{end}}

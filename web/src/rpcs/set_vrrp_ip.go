@@ -43,7 +43,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid args", err)
 		return
 	}
-	vrrpID, err := strconv.Atoi(args[1])
+	vrrpID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil || vrrpID < 0 {
 		logger.Error("Invalid vrrp ID", err)
 		return
@@ -60,7 +60,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	role := args[3]
-	vrrpInstance := &model.VrrpInstance{Model: model.Model{ID: int64(vrrpID)}}
+	vrrpInstance := &model.VrrpInstance{Model: model.Model{ID: vrrpID}}
 	err = db.Preload("VrrpSubnet").Take(vrrpInstance).Error
 	if err != nil {
 		logger.Error("Failed to query vrrp instance", err)
@@ -86,7 +86,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	if role == "MASTER" {
-		err = db.Model(&model.VrrpInstance{Model: model.Model{ID: int64(vrrpID)}}).Updates(map[string]interface{}{
+		err = db.Model(&model.VrrpInstance{Model: model.Model{ID: vrrpID}}).Updates(map[string]interface{}{
 			"hyper": hyperID}).Error
 		if err != nil {
 			logger.Error("Failed to update vrrp ", err)
@@ -116,7 +116,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else {
-		err = db.Model(&model.VrrpInstance{Model: model.Model{ID: int64(vrrpID)}}).Updates(map[string]interface{}{
+		err = db.Model(&model.VrrpInstance{Model: model.Model{ID: vrrpID}}).Updates(map[string]interface{}{
 			"peer": hyperID}).Error
 		if err != nil {
 			logger.Error("Failed to update vrrp ", err)

@@ -271,3 +271,9 @@ function wait_qemu_ping()
         sleep 5
     done
 }
+
+function sync_vm()
+{
+    ID=$1
+    sed -i "/$1/d" $image_dir/old_inst_list
+}

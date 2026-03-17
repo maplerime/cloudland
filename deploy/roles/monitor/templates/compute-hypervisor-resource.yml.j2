@@ -1,0 +1,63 @@
+groups:
+- name: compute-hypervisor-resource
+  rules:
+  # zone0: available equivalent node count = sum(cpu / over_rate) / coefficient
+  # Alert when round(result, 0.001) < threshold
+  - alert: Zone0_LowNodeResourceAvailable
+    expr: |
+      round(
+        sum by (region) (
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu{zone="zone0"})
+          / on(hostname) group_left()
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu_over_rate{zone="zone0"})
+        ) / {{ zone0_coefficient }},
+      0.001) < {{ zone0_threshold }}
+    for: {{ for_duration }}
+    labels:
+      severity: warning
+      node_type: compute
+      alert_type: "node-hypervisor-resource"
+      zone: "zone0"
+    annotations:
+      summary: "Zone zone0 in [{{ $labels.region }}] available node low"
+      description: "Region: {{ $labels.region }} | Zone: zone0 | Available node resource: {{ $value }} < threshold {{ zone0_threshold }}"
+
+  # zone1: available equivalent node count = sum(cpu / over_rate) / coefficient
+  - alert: Zone1_LowNodeResourceAvailable
+    expr: |
+      round(
+        sum by (region) (
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu{zone="zone1"})
+          / on(hostname) group_left()
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu_over_rate{zone="zone1"})
+        ) / {{ zone1_coefficient }},
+      0.001) < {{ zone1_threshold }}
+    for: {{ for_duration }}
+    labels:
+      severity: warning
+      node_type: compute
+      alert_type: "node-hypervisor-resource"
+      zone: "zone1"
+    annotations:
+      summary: "Zone zone1 in [{{ $labels.region }}] available node low"
+      description: "Region: {{ $labels.region }} | Zone: zone1 | Available node resource: {{ $value }} < threshold {{ zone1_threshold }}"
+
+  # zone2: available equivalent node count = sum(cpu / over_rate) / coefficient
+  - alert: Zone2_LowNodeResourceAvailable
+    expr: |
+      round(
+        sum by (region) (
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu{zone="zone2"})
+          / on(hostname) group_left()
+          max by (hostname, zone, region) (cloudland_hypervisor_cpu_over_rate{zone="zone2"})
+        ) / {{ zone2_coefficient }},
+      0.001) < {{ zone2_threshold }}
+    for: {{ for_duration }}
+    labels:
+      severity: warning
+      node_type: compute
+      alert_type: "node-hypervisor-resource"
+      zone: "zone2"
+    annotations:
+      summary: "Zone zone2 in [{{ $labels.region }}] available node low"
+      description: "Region: {{ $labels.region }} | Zone: zone2 | Available node resource: {{ $value }} < threshold {{ zone2_threshold }}"

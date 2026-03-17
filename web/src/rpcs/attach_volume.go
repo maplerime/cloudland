@@ -33,13 +33,13 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 	logger.Debugf("AttachVolume called with args: %v, length: %d", args, argn)
 
 	if argn < 4 {
-		volID, parseErr := strconv.Atoi(args[2])
+		volID, parseErr := strconv.ParseInt(args[2], 10, 64)
 		if parseErr != nil {
 			err = fmt.Errorf("Invalid volume ID: %w", parseErr)
 			logger.Error("Invalid volume ID", err)
 			return
 		}
-		volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
+		volume := &model.Volume{Model: model.Model{ID: volID}}
 		err = db.Where(volume).Take(volume).Error
 		if err != nil {
 			logger.Error("Failed to query volume", err)
@@ -52,18 +52,18 @@ func AttachVolume(ctx context.Context, args []string) (status string, err error)
 		}
 		return
 	}
-	instanceID, err := strconv.Atoi(args[1])
+	instanceID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
-	volID, err := strconv.Atoi(args[2])
+	volID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
 		logger.Error("Invalid volume ID", err)
 		return
 	}
 	target := args[3]
-	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
+	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
 		logger.Error("Failed to query volume", err)

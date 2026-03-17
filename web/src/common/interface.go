@@ -152,7 +152,12 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	} else {
 		address.Interface = ifaceID
 	}
-	if err = db.Model(address).Update(address).Error; err != nil {
+	if err = db.Model(&model.Address{}).Where("id = ?", address.ID).Updates(map[string]interface{}{
+		"allocated":        address.Allocated,
+		"type":             address.Type,
+		"second_interface": address.SecondInterface,
+		"interface":        address.Interface,
+	}).Error; err != nil {
 		logger.Error("Failed to Update address, %v", err)
 		return nil, err
 	}
@@ -170,7 +175,7 @@ func DeallocateAddress(ctx context.Context, ifaces []*model.Interface) (err erro
 			where = fmt.Sprintf("%s or interface='%d'", where, iface.ID)
 		}
 	}
-	if err = db.Model(&model.Address{}).Where(where).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
+	if err = db.Model(&model.Address{}).Where(where).Update(map[string]interface{}{"allocated": false, "interface": 0, "second_interface": 0}).Error; err != nil {
 		logger.Error("Failed to Update addresses, %v", err)
 		return
 	}
@@ -195,6 +200,11 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 	if primaryIface == nil {
 		primaryIface = floatingIps[0].Interface
 		updatePrimary = true
+	}
+	err = db.Model(primaryIface.Address).Updates(map[string]interface{}{"second_interface": 0}).Error
+	if err != nil {
+		logger.Error("Update interface ", err)
+		return
 	}
 	primarySubnet = primaryIface.Address.Subnet
 	for _, address := range primaryIface.SecondAddresses {
@@ -223,6 +233,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				for _, fip := range floatingIps {
 					if fip.ID == iface.FloatingIp {
 						fip.InstanceID = 0
+						break
 					}
 				}
 			}
@@ -379,11 +390,7 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 		return
 	}
 	if len(ifaces) > 0 {
-		err = DeallocateAddress(ctx, ifaces)
-		if err != nil {
-			logger.Error("Failed to deallocate address, %v", err)
-			return
-		}
+		// Delete interface first, then deallocate address (matching create path lock order: interface -> address)
 		if ifType == "instance" {
 			err = db.Where("instance = ? and type = ?", masterID, "instance").Where(where).Delete(&model.Interface{}).Error
 		} else if ifType == "floating" {
@@ -397,6 +404,11 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 			logger.Error("Failed to delete interface, %v", err)
 			return
 		}
+		err = DeallocateAddress(ctx, ifaces)
+		if err != nil {
+			logger.Error("Failed to deallocate address, %v", err)
+			return
+		}
 	}
 	return
 }
@@ -404,13 +416,14 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 	var db *gorm.DB
 	ctx, db = GetContextDB(ctx)
-	if err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update addresses, %v", err)
-		return
-	}
+	// Delete interface first, then deallocate address (matching create path lock order: interface -> address)
 	err = db.Delete(iface).Error
 	if err != nil {
 		logger.Error("Failed to delete interface", err)
+		return
+	}
+	if err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update addresses, %v", err)
 		return
 	}
 	return

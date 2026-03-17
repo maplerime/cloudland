@@ -17,7 +17,7 @@ import (
 	. "web/src/common"
 	"web/src/model"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v4"
 	"github.com/sethvargo/go-password/password"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/macaron.v1"
@@ -73,6 +73,12 @@ func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, er
 func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 	var err error
 	ctx := c.Req.Context()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	token := c.Params("token")
 	logger.Debug("Get JWT token", token)
 	instanceID, memberShip, err := ResolveToken(ctx, token)
@@ -82,12 +88,6 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 		c.Error(code, http.StatusText(code))
 		return
 	}
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
-		}
-	}()
 	if err != nil {
 		logger.Error("Unable to resolve token", err)
 		code := http.StatusUnauthorized

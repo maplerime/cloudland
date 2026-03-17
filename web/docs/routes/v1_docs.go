@@ -117,6 +117,41 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/addresses/{uuid}": {
+            "get": {
+                "description": "list all IP addresses for a subnet identified by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "list IP addresses by subnet UUID",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.AddressListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/metrics/alarm/sync-mappings": {
             "post": {
                 "description": "Perform a full synchronization of all VM rule mappings to ensure matched_vms.json is consistent with the database",
@@ -5536,6 +5571,26 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.AddressListResponse": {
+            "type": "object",
+            "properties": {
+                "addresses": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.AddressResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "apis.AddressRemarkPayload": {
             "type": "object",
             "required": [
@@ -8135,6 +8190,12 @@ const docTemplatev1 = `{
         "apis.SubnetResponse": {
             "type": "object",
             "properties": {
+                "allocated_count": {
+                    "type": "integer"
+                },
+                "available_count": {
+                    "type": "integer"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -8171,8 +8232,14 @@ const docTemplatev1 = `{
                 "priority": {
                     "type": "integer"
                 },
+                "reserved_count": {
+                    "type": "integer"
+                },
                 "start": {
                     "type": "string"
+                },
+                "total_count": {
+                    "type": "integer"
                 },
                 "type": {
                     "$ref": "#/definitions/common.SubnetType"

@@ -96,15 +96,38 @@ chpasswd:
   list: |
     root:${root_passwd}
 
+write_files:
+  - path: /etc/ssh/sshd_config.d/allow_root.conf
+    content: |
+      PermitRootLogin yes
+      PasswordAuthentication yes
+
 EOF
     )
+    # we will redo this change in vendor scripts
     vendor_scripts+="echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config.d/allow_root.conf\n"
     vendor_scripts+="echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config.d/allow_root.conf\n"
 fi
 
 # change qemu-guest-agent config
 if [ "${os_code}" = "linux" ]; then
-        vendor_scripts+=$(cat <<EOF
+    cloud_config_txt+=$(cat <<EOF
+
+runcmd:
+  - |
+    if [ -f /etc/sysconfig/qemu-ga ]; then
+      sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
+    elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
+      sed -i \"s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+      sed -i \"s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+      systemctl daemon-reload
+    fi
+    systemctl restart qemu-guest-agent.service
+
+EOF
+    )
+    # we will redo this change in vendor scripts
+    vendor_scripts+=$(cat <<EOF
 
 # change qemu-guest-agent config
 if [ -f /etc/sysconfig/qemu-ga ]; then
@@ -121,6 +144,17 @@ EOF
 # use runcmd to change the port value of /etc/ssh/sshd_config
 # and restart the ssh service
     if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
+        cloud_config_txt+=$(cat <<EOF
+
+    sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    systemctl daemon-reload
+    systemctl restart ssh.socket
+    systemctl restart sshd || systemctl restart ssh
+
+EOF
+        )
+        # we will redo this change in vendor scripts    
         vendor_scripts+=$(cat <<EOF
 
 # change ssh port

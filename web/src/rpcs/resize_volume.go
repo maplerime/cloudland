@@ -33,12 +33,12 @@ func ResizeVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Invalid args", err)
 		return
 	}
-	volID, err := strconv.Atoi(args[1])
+	volID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid volume ID", err)
 		return
 	}
-	volume := &model.Volume{Model: model.Model{ID: int64(volID)}}
+	volume := &model.Volume{Model: model.Model{ID: volID}}
 	err = db.Where(volume).Take(volume).Error
 	if err != nil {
 		logger.Error("Invalid volume ID", err)

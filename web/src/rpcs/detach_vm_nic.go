@@ -33,23 +33,23 @@ func DetachInterface(ctx context.Context, args []string) (status string, err err
 		logger.Error("Invalid args", err)
 		return
 	}
-	instID, err := strconv.Atoi(args[1])
+	instID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid gateway ID", err)
 		return
 	}
-	instance := &model.Instance{Model: model.Model{ID: int64(instID)}}
+	instance := &model.Instance{Model: model.Model{ID: instID}}
 	err = db.Take(instance).Error
 	if err != nil {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
-	ifaceID, err := strconv.Atoi(args[2])
+	ifaceID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
 		logger.Error("Invalid interface ID", err)
 		return
 	}
-	iface := &model.Interface{Model: model.Model{ID: int64(ifaceID)}}
+	iface := &model.Interface{Model: model.Model{ID: ifaceID}}
 	err = db.Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address").Preload("Address.Subnet").Where("instance = ?", instID).Take(iface).Error
 	if err != nil {
 		logger.Error("Failed to get interface", err)
@@ -67,7 +67,7 @@ func DetachInterface(ctx context.Context, args []string) (status string, err err
 	}
 	if len(tmpIfaces) == 0 {
 		instance.RouterID = 0
-		err = db.Model(&model.Instance{Model: model.Model{ID: int64(instance.ID)}}).Update(map[string]interface{}{
+		err = db.Model(&model.Instance{Model: model.Model{ID: instance.ID}}).Update(map[string]interface{}{
 			"router_id": instance.RouterID}).Error
 		if err != nil {
 			logger.Debug("Failed to update instance", err)

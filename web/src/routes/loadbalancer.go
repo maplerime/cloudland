@@ -403,13 +403,6 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		}
 	}
 	loadBalancer.Listeners = nil
-	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
-	err = db.Model(&model.LoadBalancer{Model: model.Model{ID: loadBalancer.ID}}).Update("name", loadBalancer.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update loadBalancer name", err)
-		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
-		return
-	}
 	vrrpInstance := loadBalancer.VrrpInstance
 	vrrpSubnet := vrrpInstance.VrrpSubnet
 	routerID := loadBalancer.RouterID
@@ -457,6 +450,13 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	if err = db.Delete(loadBalancer).Error; err != nil {
 		logger.Error("DB failed to delete load balancer", err)
 		err = NewCLError(ErrLoadBalancerDeleteFailed, "Failed to delete load balancer", err)
+		return
+	}
+	loadBalancer.Name = fmt.Sprintf("%s-%d", loadBalancer.Name, loadBalancer.CreatedAt.Unix())
+	err = db.Model(&model.LoadBalancer{}).Unscoped().Where("id = ?", loadBalancer.ID).Update("name", loadBalancer.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update loadBalancer name", err)
+		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
 	}
 	count := 0
@@ -520,11 +520,9 @@ func (a *LoadBalancerAdmin) List(ctx context.Context, offset, limit int64, order
 }
 
 func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "loadbalancers")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -546,11 +544,12 @@ func (v *LoadBalancerView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["LoadBalancers"] = loadBalancers
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "loadbalancers", total, limit, offset, listConfig,
+		`["ID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Public IPs", "Listeners", "Status", "Hypers", "VPC", "Owner", "Action"})
+
 	c.HTML(200, "loadbalancers")
 }
 

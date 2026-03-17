@@ -482,16 +482,16 @@ func (a *SecgroupAdmin) Delete(ctx context.Context, secgroup *model.SecurityGrou
 		err = NewCLError(ErrSecurityRuleDeleteFailed, "Failed to delete security group rules", err)
 		return
 	}
-	secgroup.Name = fmt.Sprintf("%s-%d", secgroup.Name, secgroup.CreatedAt.Unix())
-	err = db.Model(secgroup).Update("name", secgroup.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update security group name", err)
-		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group name", err)
-		return
-	}
 	if err = db.Delete(secgroup).Error; err != nil {
 		logger.Error("DB failed to delete security group", err)
 		err = NewCLError(ErrSecurityGroupDeleteFailed, "Failed to delete security group", err)
+		return
+	}
+	secgroup.Name = fmt.Sprintf("%s-%d", secgroup.Name, secgroup.CreatedAt.Unix())
+	err = db.Model(&model.SecurityGroup{}).Unscoped().Where("id = ?", secgroup.ID).Update("name", secgroup.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update security group name", err)
+		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group name", err)
 		return
 	}
 	return
@@ -556,12 +556,10 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "secgroups")
+
 	router_id := c.QueryTrim("router_id")
-	if limit == 0 {
-		limit = 16
-	}
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -585,11 +583,12 @@ func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["SecurityGroups"] = secgroups
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "secgroups", total, limit, offset, listConfig,
+		`["ID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"]`,
+		[]string{"ID", "UUID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"})
+
 	c.HTML(200, "secgroups")
 }
 

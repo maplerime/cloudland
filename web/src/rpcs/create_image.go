@@ -32,12 +32,12 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		logger.Error("Invalid args", err)
 		return
 	}
-	imgID, err := strconv.Atoi(args[1])
+	imgID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid image ID", err)
 		return
 	}
-	image := &model.Image{Model: model.Model{ID: int64(imgID)}}
+	image := &model.Image{Model: model.Model{ID: imgID}}
 	err = db.Take(image).Error
 	if err != nil {
 		logger.Error("Invalid image ID", err)
@@ -57,14 +57,13 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		logger.Error("Update image failed", err)
 		return
 	}
-	storageID := 0
-	storageID, err = strconv.Atoi(args[6])
+	storageID, err := strconv.ParseInt(args[6], 10, 64)
 	if err != nil {
 		logger.Error("Invalid storage ID", err)
 		return
 	}
 	if storageID > 0 {
-		storage := &model.ImageStorage{Model: model.Model{ID: int64(storageID)}}
+		storage := &model.ImageStorage{Model: model.Model{ID: storageID}}
 		err = db.Take(storage).Error
 		if err != nil {
 			logger.Error("Invalid storage ID", err)

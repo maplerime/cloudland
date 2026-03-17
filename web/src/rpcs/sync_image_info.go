@@ -32,12 +32,12 @@ func SyncImageInfo(ctx context.Context, args []string) (status string, err error
 		logger.Error("Invalid args", err)
 		return
 	}
-	storageID, err := strconv.Atoi(args[1])
+	storageID, err := strconv.ParseInt(args[1], 10, 64)
 	if err != nil {
 		logger.Error("Invalid storage ID", err)
 		return
 	}
-	storage := &model.ImageStorage{Model: model.Model{ID: int64(storageID)}}
+	storage := &model.ImageStorage{Model: model.Model{ID: storageID}}
 	err = db.Take(storage).Error
 	if err != nil {
 		logger.Error("Invalid storage ID", err)

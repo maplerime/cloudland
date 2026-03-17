@@ -285,16 +285,16 @@ func (a *RouterAdmin) Delete(ctx context.Context, router *model.Router) (err err
 			return
 		}
 	}
-	router.Name = fmt.Sprintf("%s-%d", router.Name, router.CreatedAt.Unix())
-	err = db.Model(router).Update("name", router.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update router name", err)
-		err = NewCLError(ErrRouterUpdateFailed, "Failed to update router name", err)
-		return
-	}
 	if err = db.Delete(router).Error; err != nil {
 		logger.Error("DB failed to delete router", err)
 		err = NewCLError(ErrRouterDeleteFailed, "Failed to delete router", err)
+		return
+	}
+	router.Name = fmt.Sprintf("%s-%d", router.Name, router.CreatedAt.Unix())
+	err = db.Model(&model.Router{}).Unscoped().Where("id = ?", router.ID).Update("name", router.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update router name", err)
+		err = NewCLError(ErrRouterUpdateFailed, "Failed to update router name", err)
 		return
 	}
 	secgroups := []*model.SecurityGroup{}
@@ -358,11 +358,9 @@ func (a *RouterAdmin) List(ctx context.Context, offset, limit int64, order, quer
 }
 
 func (v *RouterView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "routers")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -373,7 +371,6 @@ func (v *RouterView) List(c *macaron.Context, store session.Store) {
 
 	if queryStr != "" {
 		redirectURL := fmt.Sprintf("/instances?router_id=%s", queryStr)
-		// Perform the redirect
 		c.Redirect(redirectURL)
 	}
 
@@ -384,11 +381,13 @@ func (v *RouterView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["Routers"] = routers
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "routers", total, limit, offset, listConfig,
+		`["ID", "Name", "Subnets", "Status", "SecurityGroup", "Owner", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Subnets", "Status", "SecurityGroup", "Owner", "Action"})
+
 	c.HTML(200, "routers")
 }
 

@@ -145,13 +145,6 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 			EndTransaction(ctx, err)
 		}
 	}()
-	user.Username = fmt.Sprintf("%s-%d", user.Username, user.CreatedAt.Unix())
-	err = db.Model(user).Update("username", user.Username).Error
-	if err != nil {
-		logger.Error("DB failed to update user name", err)
-		err = NewCLError(ErrUserUpdateFailed, "Failed to update user name", err)
-		return
-	}
 	if err = db.Where("user_id = ?", user.ID).Delete(&model.Member{}).Error; err != nil {
 		logger.Error("DB failed to delete members", err)
 		err = NewCLError(ErrMemberDeleteFailed, "Failed to delete organization members", err)
@@ -160,6 +153,13 @@ func (a *UserAdmin) Delete(ctx context.Context, user *model.User) (err error) {
 	if err = db.Delete(user).Error; err != nil {
 		logger.Error("DB failed to delete user", err)
 		err = NewCLError(ErrUserDeleteFailed, "Failed to delete user", err)
+		return
+	}
+	user.Username = fmt.Sprintf("%s-%d", user.Username, user.CreatedAt.Unix())
+	err = db.Model(&model.User{}).Unscoped().Where("id = ?", user.ID).Update("username", user.Username).Error
+	if err != nil {
+		logger.Error("DB failed to update user name", err)
+		err = NewCLError(ErrUserUpdateFailed, "Failed to update user name", err)
 		return
 	}
 	return
@@ -381,11 +381,9 @@ func (v *UserView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "users")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -398,11 +396,17 @@ func (v *UserView) List(c *macaron.Context, store session.Store) {
 		c.Error(500)
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Check if user is admin
+	isAdmin := memberShip.CheckPermission(model.Admin)
+
 	c.Data["Users"] = users
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	c.Data["IsAdmin"] = isAdmin
+	SetPaginationData(c, "users", total, limit, offset, listConfig,
+		`["ID", "Name", "CreatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "CreatedAt", "Action"})
+
 	c.HTML(200, "users")
 }
 

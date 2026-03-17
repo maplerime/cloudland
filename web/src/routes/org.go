@@ -286,17 +286,17 @@ func (a *OrgAdmin) Delete(ctx context.Context, org *model.Organization) (err err
 			return
 		}
 	}
-	org.Name = fmt.Sprintf("%s-%d", org.Name, org.CreatedAt.Unix())
-	err = db.Model(org).Update("name", org.Name).Error
-	if err != nil {
-		logger.Error("DB failed to update org name", err)
-		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
-		return
-	}
 	err = db.Delete(org).Error
 	if err != nil {
 		logger.Error("DB failed to delete organization, %v", err)
 		err = NewCLError(ErrOrgDeleteFailed, "Failed to delete organization", err)
+		return
+	}
+	org.Name = fmt.Sprintf("%s-%d", org.Name, org.CreatedAt.Unix())
+	err = db.Model(&model.Organization{}).Unscoped().Where("id = ?", org.ID).Update("name", org.Name).Error
+	if err != nil {
+		logger.Error("DB failed to update org name", err)
+		err = NewCLError(ErrOrgUpdateFailed, "Failed to update organization name", err)
 		return
 	}
 	secgroups := []*model.SecurityGroup{}
@@ -360,11 +360,9 @@ func (a *OrgAdmin) List(ctx context.Context, offset, limit int64, order, query s
 }
 
 func (v *OrgView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "orgs")
+
 	order := c.QueryTrim("order")
 	query := c.QueryTrim("q")
 	total, orgs, err := orgAdmin.List(c.Req.Context(), offset, limit, order, query)
@@ -374,11 +372,13 @@ func (v *OrgView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["Organizations"] = orgs
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "orgs", total, limit, offset, listConfig,
+		`["ID", "Name", "CreatedAt", "UpdatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "CreatedAt", "UpdatedAt", "Action"})
+
 	c.HTML(200, "orgs")
 }
 

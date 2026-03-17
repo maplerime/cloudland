@@ -18,7 +18,7 @@ import (
 
 	"web/src/model"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v4"
 )
 
 func TestSigningMethodRS256(t *testing.T) {
