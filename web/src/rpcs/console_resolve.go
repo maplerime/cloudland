@@ -8,6 +8,7 @@ SPDX-License-Identifier: Apache-2.0
 package rpcs
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -36,7 +37,7 @@ type ConsoleInfo struct {
 	Password  string `json:"password"`
 }
 
-func ResolveToken(tokenString string) (int, *MemberShip, error) {
+func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &TokenClaim{}, func(token *jwt.Token) (interface{}, error) {
 		return SignedSeret, nil
 	})
@@ -49,7 +50,8 @@ func ResolveToken(tokenString string) (int, *MemberShip, error) {
 	}
 	instanceID := claims.InstanceID
 	console := &model.Console{Instance: int64(instanceID)}
-	err = DB().Where(console).Take(console).Error
+	ctx, db := GetContextDB(ctx)
+	err = db.Where(console).Take(console).Error
 	if err != nil {
 		return 0, nil, err
 	}
@@ -69,9 +71,23 @@ func ResolveToken(tokenString string) (int, *MemberShip, error) {
 }
 
 func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
+	var err error
+	ctx := c.Req.Context()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	token := c.Params("token")
 	logger.Debug("Get JWT token", token)
-	instanceID, memberShip, err := ResolveToken(token)
+	instanceID, memberShip, err := ResolveToken(ctx, token)
+	if err != nil {
+		logger.Error("Unable to resolve token", err)
+		code := http.StatusUnauthorized
+		c.Error(code, http.StatusText(code))
+		return
+	}
 	if err != nil {
 		logger.Error("Unable to resolve token", err)
 		code := http.StatusUnauthorized
@@ -84,7 +100,6 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 		err = fmt.Errorf("Not authorized")
 		return
 	}
-	db := DB()
 	instance := &model.Instance{Model: model.Model{ID: int64(instanceID)}}
 	err = db.Take(instance).Error
 	if err != nil {
@@ -108,7 +123,7 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vnc_passwd.sh '%d' '%s'", instance.ID, accessPass)
-	err = HyperExecute(c.Req.Context(), control, command)
+	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set vnc password execution failed", err)
 		return
@@ -125,6 +140,7 @@ func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 	if vnc.LocalAddress == "" {
 		logger.Error("get VNC record successfully", err)
 		c.JSON(http.StatusInternalServerError, &APIError{ErrorMessage: "Internal error"})
+		return
 	}
 	address := fmt.Sprintf("%s:%d", vnc.LocalAddress, vnc.LocalPort)
 	consoleInfo := &ConsoleInfo{

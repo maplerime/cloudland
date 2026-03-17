@@ -20,7 +20,7 @@ func init() {
 }
 
 func UpdateLoadBalancerStatus(ctx context.Context, vrrpInstance *model.VrrpInstance) (err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	err = db.Model(&model.LoadBalancer{}).Where("vrrp_instance_id = ?", vrrpInstance.ID).Updates(map[string]interface{}{
 		"status": "available"}).Error
 	if err != nil {
@@ -31,7 +31,12 @@ func UpdateLoadBalancerStatus(ctx context.Context, vrrpInstance *model.VrrpInsta
 
 func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| set_vrrp_ip.sh '1' '0' 'MASTER'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")

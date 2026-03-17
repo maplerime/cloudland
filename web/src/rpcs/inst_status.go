@@ -25,7 +25,12 @@ func init() {
 
 func InstanceStatus(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| inst_status.sh '3' '5 running 7 running 9 shut_off'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
