@@ -16,7 +16,7 @@ import (
 	. "web/src/common"
 	"web/src/model"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v4"
 	"github.com/sethvargo/go-password/password"
 	"golang.org/x/crypto/sha3"
 	"gopkg.in/macaron.v1"
