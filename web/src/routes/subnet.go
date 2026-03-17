@@ -438,6 +438,11 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 
 	ip := net.ParseIP(start)
 	for {
+		if !ipNet.Contains(ip) {
+			err = NewCLError(ErrInvalidParameter, "Invalid start/end/gateway range, IP exceeded subnet range", nil)
+			logger.Error("Invalid subnet IP range, IP exceeded subnet range")
+			return
+		}
 		ipstr := fmt.Sprintf("%s/%d", ip.String(), preSize)
 		address := &model.Address{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Address: ipstr, Netmask: netmask, Type: "ipv4", SubnetID: subnet.ID}
 		err = db.Create(address).Error
@@ -449,7 +454,8 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 			break
 		}
 		ip = cidr.Inc(ip)
-		if ipstr == gateway {
+		// Skip gateway based on next IP, not previous ipstr.
+		if fmt.Sprintf("%s/%d", ip.String(), preSize) == gateway {
 			ip = cidr.Inc(ip)
 		}
 	}
