@@ -1265,7 +1265,11 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 
 func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID int64) (err error) {
 	ctx, db := GetContextDB(ctx)
-	DeleteInterfaces(ctx, floatingIpID, 0, "floating")
+	err = DeleteInterfaces(ctx, floatingIpID, 0, "floating")
+	if err != nil {
+		logger.Error("Failed to delete interfaces, %v", err)
+		return NewCLError(ErrInterfaceDeleteFailed, "Failed to delete interfaces", err)
+	}
 	floatingIp := &model.FloatingIp{Model: model.Model{ID: floatingIpID}}
 	err = db.Delete(floatingIp).Error
 	if err != nil {
