@@ -1,0 +1,205 @@
+---
+- name: Resolve process monitor profile (for labeling only)
+  set_fact:
+    process_monitor_profile_resolved: >-
+      {% if process_monitor_profile is defined and process_monitor_profile | length > 0 %}
+      {{ process_monitor_profile }}
+      {% elif 'cland' in group_names %}
+      cland
+      {% elif 'hyper' in group_names %}
+      hyper_tcp
+      {% else %}
+      
+      {% endif %}
+  tags: [process_monitor, process_monitor_add]
+
+- name: Validate process monitor profile exists for host
+  fail:
+    msg: "Host {{ inventory_hostname }} has no process monitor profile. Set process_monitor_profile in inventory."
+  when: process_monitor_profile_resolved | trim | length == 0
+  tags: [process_monitor, process_monitor_add]
+
+- name: Build include and exclude regex for universal collection
+  set_fact:
+    process_monitor_systemd_include_regex: ".+\\.service"
+    process_monitor_systemd_exclude_regex: ".+\\.mount|.+\\.scope|user@.+\\.service"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Ensure systemd-exporter group exists
+  become: true
+  group:
+    name: systemd-exporter
+    system: true
+  tags: [process_monitor, process_monitor_add]
+
+- name: Ensure systemd-exporter user exists
+  become: true
+  user:
+    name: systemd-exporter
+    group: systemd-exporter
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+  tags: [process_monitor, process_monitor_add]
+
+- name: Check if Docker is already available
+  command: docker --version
+  register: docker_check
+  failed_when: false
+  changed_when: false
+  tags: [process_monitor, process_monitor_add]
+
+- name: Install Docker runtime (docker.io)
+  become: true
+  apt:
+    name: docker.io
+    state: present
+    update_cache: yes
+  when: docker_check.rc != 0
+  tags: [process_monitor, process_monitor_add]
+
+- name: Install Python and SSL dependencies
+  become: true
+  apt:
+    name:
+      - python3-pip
+      - ca-certificates
+    state: present
+  tags: [process_monitor, process_monitor_add]
+
+- name: Install Docker SDK for Python
+  become: true
+  pip:
+    name: docker
+    executable: pip3
+    state: present
+  tags: [process_monitor, process_monitor_add]
+
+- name: Ensure Docker service is running
+  become: true
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+  tags: [process_monitor, process_monitor_add]
+
+- name: Run systemd_exporter container
+  become: true
+  docker_container:
+    name: systemd_exporter
+    image: "quay.io/prometheuscommunity/systemd-exporter:{{ process_monitor_systemd_exporter_version | default('v0.6.0') }}"
+    state: started
+    restart_policy: always
+    recreate: yes
+    network_mode: host
+    privileged: true
+    pid_mode: host
+    command:
+      - --systemd.collector.enable-restart-count
+      - --systemd.collector.unit-include={{ process_monitor_systemd_include_regex }}
+      - --systemd.collector.unit-exclude={{ process_monitor_systemd_exclude_regex }}
+    volumes:
+      - /var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket:ro
+  tags: [process_monitor, process_monitor_add]
+
+- name: Run cAdvisor container
+  become: true
+  docker_container:
+    name: cadvisor
+    image: "ghcr.io/google/cadvisor:{{ process_monitor_cadvisor_version | default('0.54.1') }}"
+    state: started
+    restart_policy: always
+    recreate: yes
+    privileged: true
+    network_mode: host
+    command:
+      - --housekeeping_interval=15s
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    devices:
+      - /dev/kmsg
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify systemd_exporter container is running
+  become: true
+  docker_container_info:
+    name: systemd_exporter
+  register: process_systemd_exporter_container_info
+  retries: 6
+  delay: 5
+  until:
+    - process_systemd_exporter_container_info.exists
+    - process_systemd_exporter_container_info.container is defined
+    - process_systemd_exporter_container_info.container.State is defined
+    - process_systemd_exporter_container_info.container.State.Running
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify systemd_exporter metrics endpoint
+  uri:
+    url: http://127.0.0.1:9558/metrics
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: process_systemd_exporter_health
+  retries: 6
+  delay: 5
+  until: process_systemd_exporter_health.status == 200
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify cAdvisor container is running
+  become: true
+  docker_container_info:
+    name: cadvisor
+  register: process_cadvisor_container_info
+  retries: 6
+  delay: 5
+  until:
+    - process_cadvisor_container_info.exists
+    - process_cadvisor_container_info.container is defined
+    - process_cadvisor_container_info.container.State is defined
+    - process_cadvisor_container_info.container.State.Running
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify systemd_exporter metrics endpoint
+  uri:
+    url: http://127.0.0.1:9558/metrics
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: process_systemd_exporter_health
+  retries: 6
+  delay: 5
+  until: process_systemd_exporter_health.status == 200
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify cAdvisor metrics endpoint
+  uri:
+    url: http://127.0.0.1:8080/metrics
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: process_cadvisor_health
+  retries: 6
+  delay: 5
+  until: process_cadvisor_health.status == 200
+  tags: [process_monitor, process_monitor_add]
+
+- name: Remove systemd_exporter container
+  become: true
+  docker_container:
+    name: systemd_exporter
+    state: absent
+  failed_when: false
+  tags: [process_monitor_remove]
+
+- name: Remove cAdvisor container
+  become: true
+  docker_container:
+    name: cadvisor
+    state: absent
+  failed_when: false
+  tags: [process_monitor_remove]

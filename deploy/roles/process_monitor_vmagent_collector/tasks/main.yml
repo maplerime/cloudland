@@ -1,0 +1,182 @@
+---
+- name: Set process vmagent variables
+  set_fact:
+    process_vmagent_version: "{{ process_vmagent_version | default('v1.132.0') }}"
+    process_vmagent_port: "{{ process_vmagent_port | default(8430) }}"
+    process_vmagent_base_dir: "{{ process_vmagent_base_dir | default('/opt/vmagent-process') }}"
+    process_vmagent_scrape_interval: "{{ process_vmagent_scrape_interval | default('30s') }}"
+    process_vmagent_scrape_timeout: "{{ process_vmagent_scrape_timeout | default('20s') }}"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Validate process monitor prometheus remote write url
+  fail:
+    msg: "process_monitor_prometheus_write_url must be configured in netconf.yml"
+  when: process_monitor_prometheus_write_url is not defined or process_monitor_prometheus_write_url | length == 0
+  tags: [process_monitor, process_monitor_add]
+
+- name: Build process monitor target host list
+  set_fact:
+    process_monitor_non_default_hosts: "{{ (groups['all'] | default([])) | difference(groups['cland'] | default([])) | difference(groups['hyper'] | default([])) | difference(groups['process_monitor'] | default([])) | difference(groups['vmagent'] | default([])) | difference(['localhost']) }}"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Validate other host types must explicitly set profile
+  fail:
+    msg: "Host {{ item }} is outside cland/hyper and must define process_monitor_profile in inventory."
+  when: hostvars[item]['process_monitor_profile'] is not defined or hostvars[item]['process_monitor_profile'] | length == 0
+  loop: "{{ process_monitor_non_default_hosts }}"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Build extra monitor hosts from explicit profiles
+  set_fact:
+    process_monitor_extra_hosts: "{{ (process_monitor_extra_hosts | default([])) + [item] }}"
+  when: hostvars[item]['process_monitor_profile'] is defined and hostvars[item]['process_monitor_profile'] | length > 0
+  loop: "{{ process_monitor_non_default_hosts }}"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Build process monitor target host list
+  set_fact:
+    process_monitor_target_hosts: "{{ ((groups['cland'] | default([])) + (groups['hyper'] | default([])) + (process_monitor_extra_hosts | default([]))) | unique }}"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Compute process monitor targets with resolved profile
+  set_fact:
+    process_monitor_targets: "{{ (process_monitor_targets | default([])) + [process_monitor_target] }}"
+  vars:
+    node_types: >-
+      {{
+        ([] +
+         (['mgmt'] if item in (groups['cland'] | default([])) else []) +
+         (['compute'] if item in (groups['hyper'] | default([])) else [])
+        ) | unique | sort
+      }}
+    process_monitor_target:
+      host: "{{ item }}"
+      ip: "{{ hostvars[item]['ansible_host'] }}"
+      node_type: "{{ node_types | join('|') }}"
+      profile: "{{ hostvars[item]['process_monitor_profile'] | default('cland' if item in (groups['cland'] | default([])) else 'hyper_tcp') }}"
+  loop: "{{ process_monitor_target_hosts }}"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Check if Docker is already available
+  command: docker --version
+  register: docker_check
+  failed_when: false
+  changed_when: false
+  tags: [process_monitor, process_monitor_add]
+
+- name: Install Docker runtime (docker.io)
+  become: true
+  apt:
+    name: docker.io
+    state: present
+    update_cache: yes
+  when: docker_check.rc != 0
+  tags: [process_monitor, process_monitor_add]
+
+- name: Install Python and SSL dependencies
+  become: true
+  apt:
+    name:
+      - python3-pip
+      - ca-certificates
+    state: present
+  tags: [process_monitor, process_monitor_add]
+
+- name: Install Docker SDK for Python
+  become: true
+  pip:
+    name: docker
+    executable: pip3
+    state: present
+  tags: [process_monitor, process_monitor_add]
+
+- name: Ensure Docker service is running
+  become: true
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+  tags: [process_monitor, process_monitor_add]
+
+- name: Ensure process vmagent directories
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - "{{ process_vmagent_base_dir }}"
+    - "{{ process_vmagent_base_dir }}/vmagentdata"
+    - "{{ process_vmagent_base_dir }}/sd_configs"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Render vmagent process config
+  become: true
+  template:
+    src: vmagent-process.yml.j2
+    dest: "{{ process_vmagent_base_dir }}/vmagent-process.yml"
+    mode: '0644'
+  tags: [process_monitor, process_monitor_add]
+
+- name: Render systemd nodes service discovery file
+  become: true
+  template:
+    src: systemd_nodes.json.j2
+    dest: "{{ process_vmagent_base_dir }}/sd_configs/systemd_nodes.json"
+    mode: '0644'
+  tags: [process_monitor, process_monitor_add]
+
+- name: Render cadvisor nodes service discovery file
+  become: true
+  template:
+    src: cadvisor_nodes.json.j2
+    dest: "{{ process_vmagent_base_dir }}/sd_configs/cadvisor_nodes.json"
+    mode: '0644'
+  tags: [process_monitor, process_monitor_add]
+
+- name: Deploy or refresh vmagent-process container
+  become: true
+  docker_container:
+    name: vmagent-process
+    image: "victoriametrics/vmagent:{{ process_vmagent_version }}"
+    state: started
+    restart_policy: always
+    ports:
+      - "{{ process_vmagent_port }}:{{ process_vmagent_port }}"
+    volumes:
+      - "{{ process_vmagent_base_dir }}:{{ process_vmagent_base_dir }}"
+    command:
+      - "-promscrape.config={{ process_vmagent_base_dir }}/vmagent-process.yml"
+      - "-remoteWrite.tmpDataPath={{ process_vmagent_base_dir }}/vmagentdata"
+      - "-remoteWrite.url={{ process_monitor_prometheus_write_url }}"
+      - "-httpListenAddr=:{{ process_vmagent_port }}"
+      - "-loggerFormat=json"
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify vmagent-process container is running
+  become: true
+  docker_container_info:
+    name: vmagent-process
+  register: process_vmagent_container_info
+  retries: 6
+  delay: 5
+  until:
+    - process_vmagent_container_info.exists
+    - process_vmagent_container_info.container is defined
+    - process_vmagent_container_info.container.State is defined
+    - process_vmagent_container_info.container.State.Running
+  tags: [process_monitor, process_monitor_add]
+
+- name: Verify vmagent-process endpoint
+  uri:
+    url: "http://127.0.0.1:{{ process_vmagent_port }}/targets"
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: process_vmagent_health
+  retries: 6
+  delay: 5
+  until: process_vmagent_health.status == 200
+  tags: [process_monitor, process_monitor_add]

@@ -30,6 +30,10 @@ metering_server_port: "8480"
 metering_server_url: "http://{{ metering_server_vip }}:{{ metering_server_port }}/insert/0/prometheus/api/v1/write"
 metering_api_port: "8480"
 
+process_monitor_prometheus_write_url: "http://127.0.0.1:9090/api/v1/write"
+process_vmagent_base_dir: "/opt/vmagent-process"
+process_vmagent_port: "8430"
+
 switch_api_endpoint: "localhost"
 switch_api_house: "test"
 

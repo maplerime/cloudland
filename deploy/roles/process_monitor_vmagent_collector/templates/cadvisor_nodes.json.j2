@@ -1,0 +1,12 @@
+[
+{% for node in process_monitor_targets %}
+  {
+    "targets": ["{{ node.ip }}:8080"],
+    "labels": {
+      "node_type": "{{ node.node_type }}",
+      "process_monitor_profile": "{{ node.profile }}",
+      "host": "{{ node.host }}"
+    }
+  }{% if not loop.last %},{% endif %}
+{% endfor %}
+]

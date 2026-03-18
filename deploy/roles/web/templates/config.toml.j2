@@ -34,6 +34,11 @@ port = "{{ monitor_access_port }}"
 host = "{{ metering_server_vip }}"
 port = "{{ metering_api_port }}"
 
+[process_monitor]
+prometheus_write_url = "{{ process_monitor_prometheus_write_url }}"
+vmagent_base_dir = "{{ process_vmagent_base_dir }}"
+vmagent_port = "{{ process_vmagent_port }}"
+
 [switch_api]
 endpoint = "{{ switch_api_endpoint }}"
 house = "{{ switch_api_house }}"
