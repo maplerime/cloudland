@@ -27,6 +27,7 @@ vol_state=error
 md=$(cat)
 metadata=$(echo $md | base64 -d)
 read -d'\n' -r sysdisk_iops_limit sysdisk_bps_limit < <(jq -r ".disk_iops_limit, .disk_bps_limit" <<<$metadata)
+storage_pool_relation=$(jq -c '.storage_pool_relation // {}' <<<$metadata)
 
 let fsize=$disk_size*1024*1024*1024
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
@@ -58,6 +59,21 @@ if [ -z "$wds_address" ]; then
     fi
 else
     get_wds_token
+    if [ -n "$storage_pool_relation" ] && [ "$storage_pool_relation" != "{}" ]; then
+        pool_list=$(jq -r 'keys | join(",")' <<<$storage_pool_relation)
+        if [ -n "$pool_list" ]; then
+            selected_pool=$(select_pool_lowest_usage "$pool_list")
+            if [ -n "$selected_pool" ]; then
+                img_vol_from_rel=$(jq -r ".\"$selected_pool\".image_volume_id // empty" <<<$storage_pool_relation)
+                snap_from_rel=$(jq -r ".\"$selected_pool\".snapshot // empty" <<<$storage_pool_relation)
+                if [ -n "$img_vol_from_rel" ] && [ -n "$snap_from_rel" ]; then
+                    pool_ID=$selected_pool
+                    image_volume_id=$img_vol_from_rel
+                    snapshot=$snap_from_rel
+                fi
+            fi
+        fi
+    fi
     if [ -z "$pool_ID" ]; then
         pool_ID=$wds_pool_id
     fi

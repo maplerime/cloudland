@@ -149,6 +149,57 @@ function wds_curl()
     echo
 }
 
+# Select pool with lowest usage (real_data_size/valid_size) from comma-separated list.
+# Skips pools with valid_size=0 or API failure; fallback to first pool if none valid.
+# Usage: pool_ID=$(select_pool_lowest_usage "id1, id2, id3")
+function select_pool_lowest_usage()
+{
+    local pool_list="$1"
+    local first_pool=""
+    local best_pool=""
+    local best_ratio=""
+    local pid
+
+    IFS=',' read -ra arr <<< "$pool_list"
+    for pid in "${arr[@]}"; do
+        pid=$(echo "$pid" | xargs)
+        [ -z "$pid" ] && continue
+        [ -z "$first_pool" ] && first_pool="$pid"
+
+        local resp
+        resp=$(wds_curl GET "api/v2/failure_domain/$pid")
+        local ret_code
+        ret_code=$(echo "$resp" | jq -r '.ret_code')
+        [ "$ret_code" != "0" ] && continue
+
+        local real_data_size valid_size
+        real_data_size=$(echo "$resp" | jq -r '.members.real_data_size')
+        valid_size=$(echo "$resp" | jq -r '.members.valid_size')
+
+        [ "$valid_size" = "null" ] && continue
+        [ -z "$valid_size" ] && continue
+        [ "$valid_size" = "0" ] && continue
+
+        local ratio
+        ratio=$(echo "$real_data_size" "$valid_size" | awk 'BEGIN{OFMT="%.10f"} {print $1/$2}')
+
+        if [ -z "$best_pool" ]; then
+            best_pool="$pid"
+            best_ratio="$ratio"
+        else
+            local is_better
+            is_better=$(echo "$ratio $best_ratio" | awk '{if($1<$2) print "1"; else print "0"}')
+            [ "$is_better" = "1" ] && best_pool="$pid" && best_ratio="$ratio"
+        fi
+    done
+
+    if [ -n "$best_pool" ]; then
+        echo "$best_pool"
+    else
+        echo "$first_pool"
+    fi
+}
+
 function get_uss_gateway()
 {
     uss_hname=$1

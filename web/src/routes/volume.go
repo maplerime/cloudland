@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -158,6 +159,17 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
+	newPoolID := poolID
+	if poolID != "" {
+		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
+		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+			if dictionary.Value != "" {
+				newPoolID = dictionary.Value
+				poolID = strings.TrimSpace(strings.Split(newPoolID, ",")[0])
+			}
+		}
+	}
+
 	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
 	if err != nil {
 		logger.Error("DB create volume failed", err)
@@ -167,7 +179,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	control := fmt.Sprintf("inter=")
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)

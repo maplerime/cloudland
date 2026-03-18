@@ -60,22 +60,28 @@ type VolumeInfo struct {
 	Booting bool   `json:"booting"`
 }
 
+type PoolRelationItem struct {
+	ImageVolumeID string `json:"image_volume_id"`
+	Snapshot      int64  `json:"snapshot"`
+}
+
 type InstanceData struct {
-	Userdata       string             `json:"userdata"`
-	UserdataType   string             `json:"userdata_type"`
-	Vendordata     string             `json:"vendordata"`
-	VendordataType string             `json:"vendordata_type"`
-	DNS            string             `json:"dns"`
-	Vlans          []*VlanInfo        `json:"vlans"`
-	Networks       []*InstanceNetwork `json:"networks"`
-	Links          []*NetworkLink     `json:"links"`
-	Volumes        []*VolumeInfo      `json:"volumes"`
-	Keys           []string           `json:"keys"`
-	RootPasswd     string             `json:"root_passwd"`
-	LoginPort      int                `json:"login_port"`
-	OSCode         string             `json:"os_code"`
-	DiskIopsLimit  int32              `json:"disk_iops_limit"`
-	DiskBpsLimit   int32              `json:"disk_bps_limit"`
+	Userdata            string                      `json:"userdata"`
+	UserdataType        string                      `json:"userdata_type"`
+	Vendordata          string                      `json:"vendordata"`
+	VendordataType      string                      `json:"vendordata_type"`
+	DNS                 string                      `json:"dns"`
+	Vlans               []*VlanInfo                 `json:"vlans"`
+	Networks            []*InstanceNetwork          `json:"networks"`
+	Links               []*NetworkLink              `json:"links"`
+	Volumes             []*VolumeInfo               `json:"volumes"`
+	Keys                []string                    `json:"keys"`
+	RootPasswd          string                      `json:"root_passwd"`
+	LoginPort           int                         `json:"login_port"`
+	OSCode              string                      `json:"os_code"`
+	DiskIopsLimit       int32                       `json:"disk_iops_limit"`
+	DiskBpsLimit        int32                       `json:"disk_bps_limit"`
+	StoragePoolRelation map[string]PoolRelationItem `json:"storage_pool_relation,omitempty"`
 }
 
 type InstancesData struct {
@@ -142,21 +148,40 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}
 
 	driver := GetVolumeDriver()
-	imageVolumeID := ""
+	var poolRelation map[string]PoolRelationItem
+	var firstPoolID, firstImageVolumeID string
+	firstPoolID = poolID
 	if driver != "local" {
 		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 		if poolID == "" {
 			poolID = defaultPoolID
 		}
-		storage := model.ImageStorage{}
-		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
-		if err != nil {
-			logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
-			err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
-			return
+		poolIDs := []string{}
+		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
+		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+			for _, s := range strings.Split(dictionary.Value, ",") {
+				if trimmed := strings.TrimSpace(s); trimmed != "" {
+					poolIDs = append(poolIDs, trimmed)
+				}
+			}
 		}
-		imageVolumeID = storage.VolumeID
-		logger.Debugf("Using volume driver %s with pool ID %s", driver, poolID)
+		if len(poolIDs) == 0 {
+			poolIDs = append(poolIDs, poolID)
+		}
+		poolRelation = make(map[string]PoolRelationItem)
+		for _, pid := range poolIDs {
+			storage := model.ImageStorage{}
+			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, pid, model.StorageStatusSynced).First(&storage).Error
+			if err != nil {
+				logger.Errorf("Failed to query image storage %d for pool %s, %v", image.ID, pid, err)
+				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
+				return
+			}
+			poolRelation[pid] = PoolRelationItem{ImageVolumeID: storage.VolumeID, Snapshot: 0}
+		}
+		firstPoolID = poolIDs[0]
+		firstImageVolumeID = poolRelation[firstPoolID].ImageVolumeID
+		logger.Debugf("Using volume driver %s with pool IDs %v, relation %+v", driver, poolIDs, poolRelation)
 	}
 
 	execCommands := []*ExecutionCommand{}
@@ -167,29 +192,39 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			hostname = fmt.Sprintf("%s-%d", prefix, i+1)
 		}
 		total := 0
+		var snapshotForInstance int64
 
 		if driver == "local" {
 			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 				logger.Error("Failed to query total instances with the image", err)
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
 			}
+			snapshotForInstance = int64(total/MaxmumSnapshot + 1)
 		} else {
-			if err = db.Model(&model.Instance{}).
-				Unscoped().
-				Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
-				Where("v.pool_id = ?", poolID).
-				Where("instances.image_id = ?", image.ID).
-				Count(&total).Error; err != nil {
-				logger.Error("Failed to count instances with volumes matching pool_id", err)
+			for pid, rel := range poolRelation {
+				var poolTotal int
+				if err = db.Model(&model.Instance{}).
+					Unscoped().
+					Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
+					Where("v.pool_id = ?", pid).
+					Where("instances.image_id = ?", image.ID).
+					Count(&poolTotal).Error; err != nil {
+					logger.Errorf("Failed to count instances for pool %s, %v", pid, err)
+					continue
+				}
+				poolSnap := poolTotal/MaxmumSnapshot + 1
+				poolRelation[pid] = PoolRelationItem{ImageVolumeID: rel.ImageVolumeID, Snapshot: int64(poolSnap)}
+				if pid == firstPoolID {
+					snapshotForInstance = int64(poolSnap)
+				}
 			}
 		}
-		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
 			Model:          model.Model{Creater: memberShip.UserID},
 			Owner:          memberShip.OrgID,
 			Hostname:       hostname,
 			ImageID:        image.ID,
-			Snapshot:       int64(snapshot),
+			Snapshot:       snapshotForInstance,
 			Keys:           keys,
 			PasswdLogin:    passwdLogin,
 			LoginPort:      int32(loginPort),
@@ -214,7 +249,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0, poolID)
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0, firstPoolID)
 		if err != nil {
 			logger.Error("Failed to create boot volume", err)
 			return
@@ -237,7 +272,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
 
-		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, "")
+		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, "", poolRelation)
 		if err != nil {
 			logger.Error("Build instance metadata failed", err)
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
@@ -248,7 +283,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshotForInstance, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, firstPoolID, instance.UUID, firstImageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -827,7 +862,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 
 func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32, routerID, zoneID int64,
-	service string) (interfaces []*model.Interface, metadata string, err error) {
+	service string, poolRelation map[string]PoolRelationItem) (interfaces []*model.Interface, metadata string, err error) {
 	if rootPasswd == "" {
 		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, routerID: %d, zoneID: %d, service: %s",
 			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, service)
@@ -922,20 +957,21 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:       instance.Userdata,
-		UserdataType:   instance.UserdataType,
-		Vendordata:     instance.Vendordata,
-		VendordataType: instance.VendordataType,
-		DNS:            dns,
-		Vlans:          vlans,
-		Networks:       instNetworks,
-		Links:          instLinks,
-		Keys:           instKeys,
-		RootPasswd:     rootPasswd,
-		LoginPort:      loginPort,
-		OSCode:         GetImageOSCode(ctx, instance),
-		DiskIopsLimit:  diskIopsLimit,
-		DiskBpsLimit:   diskBpsLimit,
+		Userdata:            instance.Userdata,
+		UserdataType:        instance.UserdataType,
+		Vendordata:          instance.Vendordata,
+		VendordataType:      instance.VendordataType,
+		DNS:                 dns,
+		Vlans:               vlans,
+		Networks:            instNetworks,
+		Links:               instLinks,
+		Keys:                instKeys,
+		RootPasswd:          rootPasswd,
+		LoginPort:           loginPort,
+		OSCode:              GetImageOSCode(ctx, instance),
+		DiskIopsLimit:       diskIopsLimit,
+		DiskBpsLimit:        diskBpsLimit,
+		StoragePoolRelation: poolRelation,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
