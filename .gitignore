@@ -36,6 +36,7 @@ wget-log
 /web/.version
 /web/src/public/misc/openshift/ocd.conf*
 /web/src/public/novnc
+/web/pkg
 /deploy/*.retry
 /deploy/netconf.yml
 /web/conf/config.toml
