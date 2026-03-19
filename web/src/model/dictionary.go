@@ -8,8 +8,6 @@ package model
 
 import (
 	"web/src/dbs"
-
-	"github.com/jinzhu/gorm"
 )
 
 const (
@@ -33,8 +31,4 @@ type Dictionary struct {
 
 func init() {
 	dbs.AutoMigrate(&Dictionary{})
-	dbs.AutoUpgrade("dictionary_drop_value_unique_v2", func(db *gorm.DB) error {
-		_ = db.Exec("DROP INDEX IF EXISTS uix_dictionaries_value").Error
-		return nil
-	})
 }
