@@ -33,9 +33,13 @@ type Dictionary struct {
 
 func init() {
 	dbs.AutoMigrate(&Dictionary{})
-	dbs.AutoUpgrade("dictionary_drop_value_unique", func(db *gorm.DB) error {
-		_ = db.Exec("DROP INDEX IF EXISTS uix_dictionaries_value").Error
-		_ = db.Exec("DROP INDEX IF EXISTS idx_dictionaries_value").Error
+	dbs.AutoUpgrade("dictionary_drop_value_unique_v2", func(db *gorm.DB) error {
+		sql := "DROP INDEX IF EXISTS public.uix_dictionaries_value"
+
+		if err := db.Exec(sql).Error; err != nil {
+			return err
+		}
+
 		return nil
 	})
 }
