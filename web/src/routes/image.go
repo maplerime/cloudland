@@ -447,9 +447,28 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	searchField := c.QueryTrim("search_field")
 	query := c.QueryTrim("q")
 	params := &ImageSearchParams{}
-	params.Name = query
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(query); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = query
+	case "os_code":
+		if query != "" {
+			params.OSCodes = []string{query}
+		}
+	case "status":
+		if query != "" {
+			params.Statuses = []string{query}
+		}
+	default:
+		searchField = "name"
+		params.Name = query
+	}
 	total, images, err := imageAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -461,6 +480,7 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	isAdmin := memberShip.CheckPermission(model.Admin)
 
 	c.Data["Images"] = images
+	c.Data["SearchField"] = searchField
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
 	SetPaginationData(c, "images", total, limit, offset, listConfig,

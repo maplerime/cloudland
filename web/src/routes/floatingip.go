@@ -813,10 +813,27 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		}
 		intQuery = fmt.Sprintf("load_balancer_id = %d", loadBalancerID)
 	}
+	searchField := c.QueryTrim("search_field")
 	query := c.QueryTrim("q")
 	params := &FloatingIpSearchParams{}
-	if query != "" {
-		params.AnyQuery = query
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(query); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = query
+	case "name":
+		params.Name = query
+	case "fip_address":
+		params.FipAddress = query
+	case "int_address":
+		params.IntAddress = query
+	default:
+		searchField = "name"
+		if query != "" {
+			params.AnyQuery = query
+		}
 	}
 	if intQuery != "" {
 		params.RawCondition = intQuery
@@ -830,6 +847,7 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["FloatingIps"] = floatingIps
+	c.Data["SearchField"] = searchField
 	c.Data["Query"] = query
 	SetPaginationData(c, "floatingips", total, limit, offset, listConfig,
 		`["ID", "Name", "IpGroup", "FloatingIP", "InternalIP", "Type", "InboundBandwidth", "OutboundBandwidth", "Instance", "LoadBalancer", "Action"]`,
