@@ -14,10 +14,26 @@
 		            <div class="ui attached segment">
 			            <form class="ui form">
 	                        <div class="ui fluid tiny action input">
-	                            <input name="q" value="{{ .Query }}" placeholder="Search..." autofocus>
+	                            <select name="search_field" id="searchField" data-current="{{.SearchField}}" style="min-width:120px;max-width:160px;border-right:0;border-radius:.28571429rem 0 0 .28571429rem;">
+	                                <option value="name">{{.i18n.Tr "Name"}}</option>
+	                                <option value="id">ID</option>
+	                                <option value="uuid">UUID</option>
+	                                <option value="fip_address">{{.i18n.Tr "FloatingIP"}}</option>
+	                                <option value="int_address">{{.i18n.Tr "InternalIP"}}</option>
+	                            </select>
+	                            <input name="q" value="{{ .Query }}" placeholder="{{.i18n.Tr "Search"}}..." autofocus>
 	                            <button class="ui blue tiny button">{{.i18n.Tr "Search"}}</button>
 	                        </div>
                         </form>
+                        <script>
+                        (function(){
+                            var fieldEl = document.getElementById('searchField');
+                            var savedField = fieldEl.getAttribute('data-current');
+                            for (var i = 0; i < fieldEl.options.length; i++) {
+                                if (fieldEl.options[i].value === savedField) { fieldEl.selectedIndex = i; break; }
+                            }
+                        })();
+                        </script>
 		            </div>
 		            <div class="ui unstackable attached table segment">
                         <table class="ui unstackable very basic striped table">

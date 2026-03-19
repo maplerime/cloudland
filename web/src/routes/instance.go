@@ -1535,9 +1535,26 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	searchField := c.QueryTrim("search_field")
 	queryStr := c.QueryTrim("q")
 	params := &InstanceSearchParams{}
-	params.Name = queryStr
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(queryStr); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = queryStr
+	case "status":
+		if queryStr != "" {
+			params.Statuses = []string{queryStr}
+		}
+	case "ip":
+		params.IP = queryStr
+	default:
+		searchField = "name"
+		params.Name = queryStr
+	}
 	routerIDStr := c.QueryTrim("router_id")
 	if routerIDStr != "" {
 		if routerID, err := strconv.Atoi(routerIDStr); err == nil {
@@ -1558,7 +1575,8 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 
 	// Set template data
 	c.Data["Instances"] = instances
-	c.Data["Query"] = params.Name
+	c.Data["SearchField"] = searchField
+	c.Data["Query"] = queryStr
 	c.Data["IsAdmin"] = isAdmin
 	c.Data["HostName"] = c.QueryTrim("hostname")
 	SetPaginationData(c, "instances", total, limit, offset, listConfig,

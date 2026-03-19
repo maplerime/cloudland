@@ -690,9 +690,29 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	searchField := c.QueryTrim("search_field")
+	queryStr := c.QueryTrim("q")
 	params := &VolumeSearchParams{}
-	params.Name = c.QueryTrim("q")
 	params.VolumeType = "all"
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(queryStr); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = queryStr
+	case "status":
+		if queryStr != "" {
+			params.Statuses = []string{queryStr}
+		}
+	case "bootable":
+		if queryStr != "" {
+			params.VolumeType = queryStr
+		}
+	default:
+		searchField = "name"
+		params.Name = queryStr
+	}
 	total, volumes, err := volumeAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
@@ -701,7 +721,8 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Volumes"] = volumes
-	c.Data["Query"] = params.Name
+	c.Data["SearchField"] = searchField
+	c.Data["Query"] = queryStr
 	SetPaginationData(c, "volumes", total, limit, offset, listConfig,
 		`["ID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"]`,
 		[]string{"ID", "UUID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"})
