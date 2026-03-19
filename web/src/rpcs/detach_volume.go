@@ -23,9 +23,14 @@ func init() {
 func DetachVolume(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| detach_volume.sh_local 5 7
 	//|:-COMMAND-:| detach_volume.sh_wds_vhost 5 7
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
-	if argn < 3 {
+	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -46,10 +51,21 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Failed to query volume", err)
 		return
 	}
-	volume.InstanceID = 0
-	volume.Target = ""
-	volume.Status = model.VolumeStatusAvailable
-	err = db.Save(volume).Error
+	//volume.InstanceID = 0
+	//volume.Target = ""
+	//volume.Status = model.VolumeStatusAvailable
+	//err = db.Save(volume).Error
+
+	volume.Status = model.VolumeStatus(args[3])
+	if volume.Status == model.VolumeStatusAvailable {
+		volume.InstanceID = 0
+		volume.Target = ""
+	}
+	err = db.Model(&model.Volume{}).Where("id = ?", volume.ID).Updates(map[string]interface{}{
+		"instance_id": volume.InstanceID,
+		"target":      volume.Target,
+		"status":      volume.Status,
+	}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return

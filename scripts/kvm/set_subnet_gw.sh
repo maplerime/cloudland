@@ -19,7 +19,7 @@ if [ $? -ne 0 ]; then
     apply_vnic -I ln-$vlan
 fi
 brctl addif br$vlan ln-$vlan
-read -d'\n' -r network bcast hostmin hostmax < <(ipcalc -nb $gateway | awk '/Network/ {print $2} /Broadcast/ {print $2} /HostMin/ {print $2} /HostMax/ {print $2}')
+read -r network bcast hostmin hostmax < <(ipcalc $gateway | awk '/^Network:/ {n=$2} /^Broadcast:/ {b=$2} /^HostMin:/ {min=$2} /^HostMax:/ {max=$2} END {print n,b,min,max}')
 ip netns exec $router ipset add nonat $network
 ip netns exec $router ip addr add $gateway brd $bcast dev ns-$vlan
 mac_map=$(printf "%06x" $vlan)

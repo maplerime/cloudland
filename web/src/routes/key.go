@@ -249,11 +249,9 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "keys")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -266,10 +264,13 @@ func (v *KeyView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+
 	c.Data["Keys"] = keys
-	c.Data["Total"] = total
-	c.Data["Pages"] = GetPages(total, limit)
 	c.Data["Query"] = query
+	SetPaginationData(c, "keys", total, limit, offset, listConfig,
+		`["ID", "Name", "Owner", "CreatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Owner", "CreatedAt", "Action"})
+
 	c.HTML(200, "keys")
 }
 

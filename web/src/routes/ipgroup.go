@@ -262,11 +262,9 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "ipgroups")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -282,11 +280,13 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 		c.Error(500)
 		return
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["IpGroups"] = ipGroups
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "ipgroups", total, limit, offset, listConfig,
+		`["ID", "Name", "Type", "Category", "Subnets", "FloatingIPs", "Action"]`,
+		[]string{"ID", "UUID", "Name", "Type", "Category", "Subnets", "FloatingIPs", "Action"})
+
 	c.HTML(200, "ipgroups")
 }
 

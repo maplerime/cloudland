@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -71,21 +70,21 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 
 	// Check if rules are provided
 	if len(req.Rules) == 0 {
-		log.Printf("[ADJUST-ERROR] No rules provided")
+		logger.Errorf("[ADJUST-ERROR] No rules provided")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No rules provided"})
 		return
 	}
 
 	// Currently only support one rule
 	if len(req.Rules) > 1 {
-		log.Printf("[ADJUST-ERROR] Currently only one rule is supported")
+		logger.Errorf("[ADJUST-ERROR] Currently only one rule is supported")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Currently only one rule is supported"})
 		return
 	}
 
 	// Check if the owner is admin
 	if req.Owner != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can create adjustment rules")
+		logger.Errorf("[ADJUST-ERROR] Permission denied: only admin can create adjustment rules")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can create adjustment rules"})
 		return
 	}
@@ -121,27 +120,27 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 
 		// Validate required parameters - no default values allowed
 		if detail.HighThreshold == 0 {
-			log.Printf("[ADJUST-ERROR] High threshold cannot be zero")
+			logger.Errorf("[ADJUST-ERROR] High threshold cannot be zero")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "High threshold cannot be zero"})
 			return
 		}
 		if detail.SmoothWindow == 0 {
-			log.Printf("[ADJUST-ERROR] Smooth window cannot be zero")
+			logger.Errorf("[ADJUST-ERROR] Smooth window cannot be zero")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Smooth window cannot be zero"})
 			return
 		}
 		if detail.TriggerDuration == 0 {
-			log.Printf("[ADJUST-ERROR] Trigger duration cannot be zero")
+			logger.Errorf("[ADJUST-ERROR] Trigger duration cannot be zero")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Trigger duration cannot be zero"})
 			return
 		}
 		if detail.LimitDuration == 0 {
-			log.Printf("[ADJUST-ERROR] Limit duration cannot be zero")
+			logger.Errorf("[ADJUST-ERROR] Limit duration cannot be zero")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Limit duration cannot be zero"})
 			return
 		}
 		if detail.LimitPercent == 0 {
-			log.Printf("[ADJUST-ERROR] CPU limit percentage cannot be zero")
+			logger.Errorf("[ADJUST-ERROR] CPU limit percentage cannot be zero")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "CPU limit percentage cannot be zero"})
 			return
 		}
@@ -167,14 +166,14 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 
 		// Generate record rules
 		if err := routes.ProcessTemplate(CPUAdjustRuleTemplate, fmt.Sprintf("cpu-adjust-%s-%s.yml", req.Owner, group.UUID), ruleData); err != nil {
-			log.Printf("Failed to render CPU adjust rule: %v", err)
+			logger.Errorf("Failed to render CPU adjust rule: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render CPU adjust rule"})
 			return
 		}
 
 		// Generate alert rules
 		if err := routes.ProcessTemplate(ResourceAdjustAlertsTemplate, fmt.Sprintf("resource-adjust-alerts-%s-%s.yml", req.Owner, group.UUID), ruleData); err != nil {
-			log.Printf("Failed to render resource adjustment alerts: %v", err)
+			logger.Errorf("Failed to render resource adjustment alerts: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render resource adjustment alerts"})
 			return
 		}
@@ -186,7 +185,7 @@ func (a *AdjustAPI) CreateCPUAdjustRule(c *gin.Context) {
 		alarmOperator := &routes.AlarmOperator{}
 		_, _ = alarmOperator.DeleteVMLink(c.Request.Context(), group.UUID, "", "")
 		if err := alarmOperator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, ""); err != nil {
-			log.Printf("[ADJUST-WARNING] Failed to link VMs: %v", err)
+			logger.Errorf("[ADJUST-WARNING] Failed to link VMs: %v", err)
 		}
 
 		// Update matched_vms.json
@@ -224,7 +223,7 @@ func (a *AdjustAPI) GetCPUAdjustRules(c *gin.Context) {
 	// TODO: Get current user from authentication info
 	currentUser := "admin" // Temporary setting, should get from authentication
 	if currentUser != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can view adjustment rules, user: %s", currentUser)
+		logger.Errorf("[ADJUST-ERROR] Permission denied: only admin can view adjustment rules, user: %s", currentUser)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can view adjustment rules"})
 		return
 	}
@@ -341,7 +340,7 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 
 	// Check permission: only admin can delete adjustment rules
 	if group.Owner != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can delete adjustment rules, owner: %s", group.Owner)
+		logger.Errorf("[ADJUST-ERROR] Permission denied: only admin can delete adjustment rules, owner: %s", group.Owner)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can delete adjustment rules"})
 		return
 	}
@@ -368,45 +367,45 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 	// Delete symlinks
 	if err := routes.RemoveFile(ruleLinkPath); err == nil {
 		deletedFiles = append(deletedFiles, ruleLinkPath)
-		log.Printf("[ADJUST-INFO] Removed symlink: %s", ruleLinkPath)
+		logger.Debugf("[ADJUST-INFO] Removed symlink: %s", ruleLinkPath)
 	} else {
-		log.Printf("[ADJUST-ERROR] Failed to remove symlink %s: %v", ruleLinkPath, err)
+		logger.Errorf("[ADJUST-ERROR] Failed to remove symlink %s: %v", ruleLinkPath, err)
 	}
 
 	if err := routes.RemoveFile(alertLinkPath); err == nil {
 		deletedFiles = append(deletedFiles, alertLinkPath)
-		log.Printf("[ADJUST-INFO] Removed symlink: %s", alertLinkPath)
+		logger.Debugf("[ADJUST-INFO] Removed symlink: %s", alertLinkPath)
 	} else {
-		log.Printf("[ADJUST-ERROR] Failed to remove symlink %s: %v", alertLinkPath, err)
+		logger.Errorf("[ADJUST-ERROR] Failed to remove symlink %s: %v", alertLinkPath, err)
 	}
 
 	// Delete rule files
 	if err := routes.RemoveFile(rulePath); err == nil {
 		deletedFiles = append(deletedFiles, rulePath)
-		log.Printf("[ADJUST-INFO] Removed file: %s", rulePath)
+		logger.Debugf("[ADJUST-INFO] Removed file: %s", rulePath)
 	} else {
-		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", rulePath, err)
+		logger.Errorf("[ADJUST-ERROR] Failed to remove file %s: %v", rulePath, err)
 	}
 
 	if err := routes.RemoveFile(alertPath); err == nil {
 		deletedFiles = append(deletedFiles, alertPath)
-		log.Printf("[ADJUST-INFO] Removed file: %s", alertPath)
+		logger.Debugf("[ADJUST-INFO] Removed file: %s", alertPath)
 	} else {
-		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
+		logger.Errorf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
 	}
 
 	// Restore CPU resources for all linked VMs
-	log.Printf("[ADJUST-INFO] Restoring CPU resources for all linked VMs before rule deletion: %s", group.UUID)
+	logger.Infof("[ADJUST-INFO] Restoring CPU resources for all linked VMs before rule deletion: %s", group.UUID)
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[ADJUST-WARNING] Failed to get linked VMs for CPU restore: %v", err)
+		logger.Errorf("[ADJUST-WARNING] Failed to get linked VMs for CPU restore: %v", err)
 	} else {
 		// Restore CPU resources for each VM
 		for _, link := range vmLinks {
 			// Get VM domain information
 			domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
+				logger.Errorf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
 				continue
 			}
 
@@ -419,17 +418,17 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 			// Restore CPU resources
 			err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, link.VMUUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARNING] Failed to restore CPU for VM %s: %v", link.VMUUID, err)
+				logger.Errorf("[ADJUST-WARNING] Failed to restore CPU for VM %s: %v", link.VMUUID, err)
 			} else {
-				log.Printf("[ADJUST-INFO] Successfully restored CPU for VM %s", link.VMUUID)
+				logger.Infof("[ADJUST-INFO] Successfully restored CPU for VM %s", link.VMUUID)
 			}
 		}
 	}
 
 	// Clean up adjustment status metrics on compute nodes
-	log.Printf("[ADJUST-INFO] Cleaning up CPU adjustment metrics for rule: %s", group.UUID)
+	logger.Infof("[ADJUST-INFO] Cleaning up CPU adjustment metrics for rule: %s", group.UUID)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), group.UUID, "cpu"); err != nil {
-		log.Printf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
+		logger.Errorf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
 	}
 
 	// Delete database records
@@ -440,9 +439,9 @@ func (a *AdjustAPI) DeleteCPUAdjustRule(c *gin.Context) {
 	}
 
 	// Reload Prometheus
-	log.Printf("[ADJUST-INFO] Reloading Prometheus configuration")
+	logger.Infof("[ADJUST-INFO] Reloading Prometheus configuration")
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("[ADJUST-WARNING] Failed to reload Prometheus: %v", err)
+		logger.Errorf("[ADJUST-WARNING] Failed to reload Prometheus: %v", err)
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -460,7 +459,7 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 	// Read request body
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to read request body: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to read request body: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request", "code": "REQUEST_READ_ERROR"})
 		return
 	}
@@ -470,12 +469,12 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 	// Parse alert data
 	var req routes.AlertWebhookRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to parse request body: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to parse request body: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid alert format", "code": "INVALID_FORMAT"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Processing %d adjustment alert(s) with status: %s", len(req.Alerts), req.Status)
+	logger.Infof("[ADJUST-INFO] Processing %d adjustment alert(s) with status: %s", len(req.Alerts), req.Status)
 
 	// Track processing results
 	successCount := 0
@@ -510,7 +509,7 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 					status := a.queryAdjustmentStatus(c.Request.Context(),
 						alert.Labels["domain"], alert.Labels["rule_id"], adjustType, alert.Labels["target_device"])
 					if status == 1 {
-						log.Printf("[ADJUST-INFO] Skip notification: domain=%s already limited", alert.Labels["domain"])
+						logger.Debugf("[ADJUST-INFO] Skip notification: domain=%s already limited", alert.Labels["domain"])
 						continue
 					}
 				}
@@ -561,17 +560,17 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 			// Use AlarmOperator's SendNotification directly
 			alarmOperator := &routes.AlarmOperator{}
 			if err := alarmOperator.SendNotification(c.Request.Context(), notifyURL, notifyParams); err != nil {
-				log.Printf("[ADJUST-WARNING] Failed to send notification for alert %d: %v", i+1, err)
+				logger.Errorf("[ADJUST-WARNING] Failed to send notification for alert %d: %v", i+1, err)
 			} else {
-				log.Printf("[ADJUST-INFO] Successfully sent notification for domain: %s, action: %s, success: %v",
+				logger.Infof("[ADJUST-INFO] Successfully sent notification for domain: %s, action: %s, success: %v",
 					alert.Labels["domain"], alert.Labels["action_type"], result)
 			}
 		} else {
-			log.Printf("[ADJUST-WARNING] No notify_url found in alert labels for alert %d", i+1)
+			logger.Warningf("[ADJUST-WARNING] No notify_url found in alert labels for alert %d", i+1)
 		}
 	}
 
-	log.Printf("[ADJUST-INFO] Adjustment completed: total=%d, success=%d, failed=%d",
+	logger.Infof("[ADJUST-INFO] Adjustment completed: total=%d, success=%d, failed=%d",
 		len(req.Alerts), successCount, failedCount)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -604,14 +603,14 @@ func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, a
 		query = fmt.Sprintf(`vm_bandwidth_adjustment_status{domain="%s",rule_id="%s",type="%s",target_device="%s"}`,
 			domain, ruleID, bwType, targetDevice)
 	default:
-		log.Printf("[ADJUST-STATUS-QUERY] Invalid adjust type: %s", adjustType)
+		logger.Errorf("[ADJUST-STATUS-QUERY] Invalid adjust type: %s", adjustType)
 		return -1
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest("GET", PrometheusURL, nil)
 	if err != nil {
-		log.Printf("[ADJUST-STATUS-QUERY] Failed to create request: %v", err)
+		logger.Errorf("[ADJUST-STATUS-QUERY] Failed to create request: %v", err)
 		return -1
 	}
 
@@ -621,7 +620,7 @@ func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, a
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[ADJUST-STATUS-QUERY] Failed to query Prometheus: %v", err)
+		logger.Errorf("[ADJUST-STATUS-QUERY] Failed to query Prometheus: %v", err)
 		return -1
 	}
 	defer resp.Body.Close()
@@ -636,7 +635,7 @@ func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, a
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("[ADJUST-STATUS-QUERY] Failed to decode response: %v", err)
+		logger.Errorf("[ADJUST-STATUS-QUERY] Failed to decode response: %v", err)
 		return -1
 	}
 
@@ -655,7 +654,7 @@ func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, a
 		return 0
 	}
 
-	log.Printf("[ADJUST-STATUS-QUERY] Domain %s already limited (rule_id=%s, type=%s)", domain, ruleID, adjustType)
+	logger.Infof("[ADJUST-STATUS-QUERY] Domain %s already limited (rule_id=%s, type=%s)", domain, ruleID, adjustType)
 	return 1
 }
 
@@ -664,12 +663,12 @@ func (a *AdjustAPI) queryAdjustmentStatus(ctx context.Context, domain, ruleID, a
 // If query fails or metric not found, returns false, 0, 0
 func (a *AdjustAPI) queryBandwidthConfig(domain, targetDevice string) (bool, int, int) {
 	query := fmt.Sprintf(`vm_interface_bandwidth_config_mbps{domain="%s",target_device="%s"}`, domain, targetDevice)
-	log.Printf("[BW-CONFIG-QUERY] Querying bandwidth config: domain=%s, device=%s, query=%s", domain, targetDevice, query)
+	logger.Infof("[BW-CONFIG-QUERY] Querying bandwidth config: domain=%s, device=%s, query=%s", domain, targetDevice, query)
 
 	client := &http.Client{Timeout: 5 * time.Second}
 	req, err := http.NewRequest("GET", PrometheusURL, nil)
 	if err != nil {
-		log.Printf("[BW-CONFIG-QUERY] Failed to create request: %v", err)
+		logger.Errorf("[BW-CONFIG-QUERY] Failed to create request: %v", err)
 		return false, 0, 0
 	}
 
@@ -679,7 +678,7 @@ func (a *AdjustAPI) queryBandwidthConfig(domain, targetDevice string) (bool, int
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[BW-CONFIG-QUERY] Failed to query Prometheus: %v", err)
+		logger.Errorf("[BW-CONFIG-QUERY] Failed to query Prometheus: %v", err)
 		return false, 0, 0
 	}
 	defer resp.Body.Close()
@@ -695,12 +694,12 @@ func (a *AdjustAPI) queryBandwidthConfig(domain, targetDevice string) (bool, int
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("[BW-CONFIG-QUERY] Failed to decode response: %v", err)
+		logger.Errorf("[BW-CONFIG-QUERY] Failed to decode response: %v", err)
 		return false, 0, 0
 	}
 
 	if result.Status != "success" || len(result.Data.Result) == 0 {
-		log.Printf("[BW-CONFIG-QUERY] No bandwidth config found for domain=%s, device=%s", domain, targetDevice)
+		logger.Debugf("[BW-CONFIG-QUERY] No bandwidth config found for domain=%s, device=%s", domain, targetDevice)
 		return false, 0, 0
 	}
 
@@ -723,7 +722,7 @@ func (a *AdjustAPI) queryBandwidthConfig(domain, targetDevice string) (bool, int
 		}
 	}
 
-	log.Printf("[BW-CONFIG-QUERY] Retrieved config: domain=%s, device=%s, in=%d Mbps, out=%d Mbps",
+	logger.Infof("[BW-CONFIG-QUERY] Retrieved config: domain=%s, device=%s, in=%d Mbps, out=%d Mbps",
 		domain, targetDevice, inBw, outBw)
 	return true, inBw, outBw
 }
@@ -741,12 +740,12 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 
 	// Parameter validation
 	if domain == "" || ruleID == "" || actionType == "" {
-		log.Printf("[ADJUST-%s] Missing required parameters: domain=%s, ruleID=%s, actionType=%s",
+		logger.Errorf("[ADJUST-%s] Missing required parameters: domain=%s, ruleID=%s, actionType=%s",
 			requestID, domain, ruleID, actionType)
 		return false
 	}
 
-	log.Printf("[ADJUST-%s] Processing %s for domain=%s, rule=%s", requestID, actionType, domain, ruleID)
+	logger.Infof("[ADJUST-%s] Processing %s for domain=%s, rule=%s", requestID, actionType, domain, ruleID)
 
 	// Create adjustment record
 	record := &routes.AdjustmentRecord{
@@ -777,9 +776,9 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 		if ok, inBw, outBw := a.queryBandwidthConfig(domain, record.TargetDevice); ok {
 			totalInBw = inBw
 			totalOutBw = outBw
-			log.Printf("[ADJUST-%s] Bandwidth config: in=%d Mbps, out=%d Mbps", requestID, totalInBw, totalOutBw)
+			logger.Debugf("[ADJUST-%s] Bandwidth config: in=%d Mbps, out=%d Mbps", requestID, totalInBw, totalOutBw)
 		} else {
-			log.Printf("[ADJUST-%s] Bandwidth config not found, treating as unlimited (0)", requestID)
+			logger.Errorf("[ADJUST-%s] Bandwidth config not found, treating as unlimited (0)", requestID)
 			totalInBw = 0
 			totalOutBw = 0
 		}
@@ -802,11 +801,11 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 		err = a.operator.RestoreBandwidthResource(ctx, record, domain, record.TargetDevice, instanceID)
 	case "config_missing":
 		// Bandwidth configuration missing - only log and send notification, no action or DB record
-		log.Printf("[ADJUST-%s] Bandwidth config missing for VM %s interface %s - notification only, no DB record",
+		logger.Errorf("[ADJUST-%s] Bandwidth config missing for VM %s interface %s - notification only, no DB record",
 			requestID, domain, record.TargetDevice)
 		return true // Return success as this is just a notification
 	default:
-		log.Printf("[ADJUST-%s] Unknown adjustment type: %s", requestID, actionType)
+		logger.Errorf("[ADJUST-%s] Unknown adjustment type: %s", requestID, actionType)
 		history.Status = "failed"
 		history.Details = fmt.Sprintf("Unknown adjustment type: %s", actionType)
 		a.operator.SaveAdjustmentHistory(ctx, history)
@@ -815,11 +814,11 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 
 	// Update history record status
 	if err != nil {
-		log.Printf("[ADJUST-%s] Failed: %v", requestID, err)
+		logger.Errorf("[ADJUST-%s] Failed: %v", requestID, err)
 		history.Status = "failed"
 		history.Details = fmt.Sprintf("Processing %s failed: %v", actionType, err)
 	} else {
-		log.Printf("[ADJUST-%s] Completed successfully (%.2fs)", requestID, time.Since(startTime).Seconds())
+		logger.Infof("[ADJUST-%s] Completed successfully (%.2fs)", requestID, time.Since(startTime).Seconds())
 		history.Status = "completed"
 		history.Details = fmt.Sprintf("Successfully processed %s", actionType)
 	}
@@ -855,21 +854,21 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ADJUST-ERROR] Parameter parsing failed: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Parameter parsing failed: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	// Check if rules are provided
 	if len(req.Rules) == 0 {
-		log.Printf("[ADJUST-ERROR] No rules provided")
+		logger.Errorf("[ADJUST-ERROR] No rules provided")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "No rules provided"})
 		return
 	}
 
 	// Check if the owner is admin
 	if req.Owner != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can create adjustment rules")
+		logger.Errorf("[ADJUST-ERROR] Permission denied: only admin can create adjustment rules")
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can create adjustment rules"})
 		return
 	}
@@ -897,9 +896,9 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		NotifyURL: req.NotifyURL,
 	}
 
-	log.Printf("[ADJUST-INFO] Creating bandwidth adjustment rule group: name=%s, type=%s", req.Name, ruleType)
+	logger.Infof("[ADJUST-INFO] Creating bandwidth adjustment rule group: name=%s, type=%s", req.Name, ruleType)
 	if err := a.operator.CreateAdjustRuleGroup(c.Request.Context(), group); err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to create rule group: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to create rule group: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule group failed: " + err.Error()})
 		return
 	}
@@ -923,7 +922,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		}
 
 		if err := a.operator.CreateBWAdjustRuleDetail(c.Request.Context(), detail); err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to create rule detail: %v", err)
+			logger.Errorf("[ADJUST-ERROR] Failed to create rule detail: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "create rule detail failed: " + err.Error()})
 			return
 		}
@@ -959,7 +958,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		}
 
 		if err := routes.ProcessTemplate(template, filename, ruleData); err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to render %s BW adjust rule: %v", rule.Direction, err)
+			logger.Errorf("[ADJUST-ERROR] Failed to render %s BW adjust rule: %v", rule.Direction, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s BW adjust rule", rule.Direction)})
 			return
 		}
@@ -982,7 +981,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 	}
 
 	if err := routes.ProcessTemplate(ResourceAdjustAlertsTemplate, fmt.Sprintf("resource-adjust-alerts-%s-%s.yml", req.Owner, group.UUID), alertRuleData); err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to render resource adjustment alerts: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to render resource adjustment alerts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render resource adjustment alerts"})
 		return
 	}
@@ -993,7 +992,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		// Validate LinkedVMs
 		for i, vm := range req.LinkedVMs {
 			if vm.VMUUID == "" {
-				log.Printf("[ADJUST-ERROR] Empty VM UUID at index %d", i)
+				logger.Errorf("[ADJUST-ERROR] Empty VM UUID at index %d", i)
 				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("VM UUID cannot be empty at index %d", i)})
 				return
 			}
@@ -1005,7 +1004,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		// Get and delete existing linked VMs
 		existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 		if err != nil {
-			log.Printf("[ADJUST-WARN] Failed to get existing VM links for group %s: %v", group.UUID, err)
+			logger.Errorf("[ADJUST-WARN] Failed to get existing VM links for group %s: %v", group.UUID, err)
 		} else {
 			for _, link := range existingLinks {
 				_, _ = alarmOperator.DeleteVMLink(c.Request.Context(), group.UUID, link.VMUUID, link.Interface)
@@ -1015,7 +1014,7 @@ func (a *AdjustAPI) CreateBWAdjustRule(c *gin.Context) {
 		// Create new VM links with target device mapping
 		for _, vm := range req.LinkedVMs {
 			if err := alarmOperator.BatchLinkVMs(c.Request.Context(), group.UUID, []string{vm.VMUUID}, vm.TargetDevice); err != nil {
-				log.Printf("[ADJUST-WARNING] Failed to link VM %s: %v", vm.VMUUID, err)
+				logger.Errorf("[ADJUST-WARNING] Failed to link VM %s: %v", vm.VMUUID, err)
 			}
 		}
 
@@ -1058,7 +1057,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 	// TODO: Get current user from authentication info
 	currentUser := "admin" // Temporary setting, should get from authentication
 	if currentUser != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can view adjustment rules, user: %s", currentUser)
+		logger.Errorf("[ADJUST-ERROR] Permission denied: only admin can view adjustment rules, user: %s", currentUser)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can view adjustment rules"})
 		return
 	}
@@ -1110,7 +1109,7 @@ func (a *AdjustAPI) GetBWAdjustRules(c *gin.Context) {
 	for _, group := range groups {
 		details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 		if err != nil {
-			log.Printf("[ADJUST-ERROR] Failed to get bandwidth adjustment rule details: %v", err)
+			logger.Errorf("[ADJUST-ERROR] Failed to get bandwidth adjustment rule details: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "get bw adjust rule details failed: " + err.Error()})
 			return
 		}
@@ -1202,7 +1201,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 
 	// Check permission: only admin can delete adjustment rules
 	if group.Owner != "admin" {
-		log.Printf("[ADJUST-ERROR] Permission denied: only admin can delete adjustment rules, owner: %s", group.Owner)
+		logger.Errorf("[ADJUST-ERROR] Permission denied: only admin can delete adjustment rules, owner: %s", group.Owner)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Permission denied: only admin can delete adjustment rules"})
 		return
 	}
@@ -1218,7 +1217,7 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 	// Get rule details to determine files to delete
 	details, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[ADJUST-WARNING] Failed to get rule details for file cleanup: %v", err)
+		logger.Errorf("[ADJUST-WARNING] Failed to get rule details for file cleanup: %v", err)
 		details = []model.BWAdjustRuleDetail{}
 	}
 
@@ -1245,46 +1244,46 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 		// Delete symlink
 		if err := routes.RemoveFile(ruleLinkPath); err == nil {
 			deletedFiles = append(deletedFiles, ruleLinkPath)
-			log.Printf("[ADJUST-INFO] Removed symlink: %s", ruleLinkPath)
+			logger.Debugf("[ADJUST-INFO] Removed symlink: %s", ruleLinkPath)
 		} else {
-			log.Printf("[ADJUST-ERROR] Failed to remove symlink %s: %v", ruleLinkPath, err)
+			logger.Errorf("[ADJUST-ERROR] Failed to remove symlink %s: %v", ruleLinkPath, err)
 		}
 
 		// Delete rule file
 		if err := routes.RemoveFile(rulePath); err == nil {
 			deletedFiles = append(deletedFiles, rulePath)
-			log.Printf("[ADJUST-INFO] Removed file: %s", rulePath)
+			logger.Debugf("[ADJUST-INFO] Removed file: %s", rulePath)
 		} else {
-			log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", rulePath, err)
+			logger.Errorf("[ADJUST-ERROR] Failed to remove file %s: %v", rulePath, err)
 		}
 	}
 
 	// Delete alert rule files
 	if err := routes.RemoveFile(alertLinkPath); err == nil {
 		deletedFiles = append(deletedFiles, alertLinkPath)
-		log.Printf("[ADJUST-INFO] Removed symlink: %s", alertLinkPath)
+		logger.Debugf("[ADJUST-INFO] Removed symlink: %s", alertLinkPath)
 	} else {
-		log.Printf("[ADJUST-ERROR] Failed to remove symlink %s: %v", alertLinkPath, err)
+		logger.Errorf("[ADJUST-ERROR] Failed to remove symlink %s: %v", alertLinkPath, err)
 	}
 	if err := routes.RemoveFile(alertPath); err == nil {
 		deletedFiles = append(deletedFiles, alertPath)
-		log.Printf("[ADJUST-INFO] Removed file: %s", alertPath)
+		logger.Debugf("[ADJUST-INFO] Removed file: %s", alertPath)
 	} else {
-		log.Printf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
+		logger.Errorf("[ADJUST-ERROR] Failed to remove file %s: %v", alertPath, err)
 	}
 
 	// Restore bandwidth resources for all linked VMs
-	log.Printf("[ADJUST-INFO] Restoring bandwidth resources for all linked VMs before rule deletion: %s", group.UUID)
+	logger.Infof("[ADJUST-INFO] Restoring bandwidth resources for all linked VMs before rule deletion: %s", group.UUID)
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[ADJUST-WARNING] Failed to get linked VMs for bandwidth restore: %v", err)
+		logger.Errorf("[ADJUST-WARNING] Failed to get linked VMs for bandwidth restore: %v", err)
 	} else {
 		// Restore bandwidth resources for each VM
 		for _, link := range vmLinks {
 			// Get VM domain information
 			domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
+				logger.Errorf("[ADJUST-WARNING] Failed to get domain for VM %s: %v", link.VMUUID, err)
 				continue
 			}
 
@@ -1298,23 +1297,23 @@ func (a *AdjustAPI) DeleteBWAdjustRule(c *gin.Context) {
 			// Restore bandwidth resources
 			err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, link.Interface, link.VMUUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARNING] Failed to restore bandwidth for VM %s: %v", link.VMUUID, err)
+				logger.Errorf("[ADJUST-WARNING] Failed to restore bandwidth for VM %s: %v", link.VMUUID, err)
 			} else {
-				log.Printf("[ADJUST-INFO] Successfully restored bandwidth for VM %s", link.VMUUID)
+				logger.Infof("[ADJUST-INFO] Successfully restored bandwidth for VM %s", link.VMUUID)
 			}
 		}
 	}
 
 	// Clean up adjustment status metrics on compute nodes
-	log.Printf("[ADJUST-INFO] Cleaning up bandwidth adjustment metrics for rule: %s", group.UUID)
+	logger.Infof("[ADJUST-INFO] Cleaning up bandwidth adjustment metrics for rule: %s", group.UUID)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), group.UUID, "bandwidth"); err != nil {
-		log.Printf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
+		logger.Errorf("[ADJUST-WARNING] Failed to cleanup rule metrics: %v", err)
 	}
 
 	// Delete database records
 	err = a.operator.DeleteAdjustRuleGroupWithDependencies(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to delete rule group: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to delete rule group: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete rule: " + err.Error()})
 		return
 	}
@@ -1365,7 +1364,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ADJUST-ERROR] Invalid request parameters: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Invalid request parameters: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters: " + err.Error()})
 		return
 	}
@@ -1390,19 +1389,19 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	}
 
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "adjustment rule group not found"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Linking VM to adjustment rule: identifier=%s, vm_uuid=%s, interface=%s",
+	logger.Infof("[ADJUST-INFO] Linking VM to adjustment rule: identifier=%s, vm_uuid=%s, interface=%s",
 		identifier, req.VMUUID, req.Interface)
 
 	// Validate interface parameter based on rule type
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 		// BW type requires interface parameter
 		if req.Interface == "" {
-			log.Printf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
+			logger.Errorf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "interface parameter is required for bandwidth adjustment rules"})
 			return
 		}
@@ -1416,7 +1415,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	exists := alarmOperator.CheckVMLinkExists(c.Request.Context(), group.UUID, req.VMUUID, req.Interface)
 
 	if exists {
-		log.Printf("[ADJUST-INFO] VM already linked to rule group, skipping: vm_uuid=%s, group_uuid=%s, interface=%s",
+		logger.Infof("[ADJUST-INFO] VM already linked to rule group, skipping: vm_uuid=%s, group_uuid=%s, interface=%s",
 			req.VMUUID, group.UUID, req.Interface)
 		c.JSON(http.StatusOK, gin.H{
 			"status":  "success",
@@ -1435,7 +1434,7 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 	// Create link (incremental)
 	err = alarmOperator.CreateVMLink(c.Request.Context(), group.UUID, req.VMUUID, req.Interface)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to create VM link: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to create VM link: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create VM link: " + err.Error()})
 		return
 	}
@@ -1449,11 +1448,11 @@ func (a *AdjustAPI) LinkAdjustRule(c *gin.Context) {
 
 	err = alarmAPI.UpdateMatchedVMsJSON(c.Request.Context(), []string{req.VMUUID}, group.UUID, "add", ruleType, req.Interface)
 	if err != nil {
-		log.Printf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
+		logger.Errorf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
 		// Don't return error as database operation was successful
 	}
 
-	log.Printf("[ADJUST-INFO] Successfully linked VM to adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
+	logger.Infof("[ADJUST-INFO] Successfully linked VM to adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
 		group.UUID, req.VMUUID, req.Interface)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1479,7 +1478,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		log.Printf("[ADJUST-ERROR] Invalid request parameters: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Invalid request parameters: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request parameters: " + err.Error()})
 		return
 	}
@@ -1504,19 +1503,19 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	}
 
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to get adjustment rule group: %v", err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "adjustment rule group not found"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Unlinking VM from adjustment rule: identifier=%s, vm_uuid=%s, interface=%s",
+	logger.Infof("[ADJUST-INFO] Unlinking VM from adjustment rule: identifier=%s, vm_uuid=%s, interface=%s",
 		identifier, req.VMUUID, req.Interface)
 
 	// Validate interface parameter based on rule type
 	if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 		// BW type requires interface parameter
 		if req.Interface == "" {
-			log.Printf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
+			logger.Errorf("[ADJUST-ERROR] Interface parameter is required for bandwidth adjustment rules")
 			c.JSON(http.StatusBadRequest, gin.H{"error": "interface parameter is required for bandwidth adjustment rules"})
 			return
 		}
@@ -1529,7 +1528,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	alarmOperator := &routes.AlarmOperator{}
 	existingLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get linked VMs: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to get linked VMs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get linked VMs: " + err.Error()})
 		return
 	}
@@ -1561,7 +1560,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	if !linkExists {
 		if vmFoundWithDifferentInterface {
 			// VM exists but interface doesn't match, provide specific error message
-			log.Printf("[ADJUST-ERROR] VM linked with different interface: vm_uuid=%s, requested_interface=%s, actual_interface=%s",
+			logger.Errorf("[ADJUST-ERROR] VM linked with different interface: vm_uuid=%s, requested_interface=%s, actual_interface=%s",
 				req.VMUUID, req.Interface, existingInterface)
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error": fmt.Sprintf("VM %s is linked to this rule group but with interface '%s', not '%s'. Please use the correct interface value.",
@@ -1575,7 +1574,7 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 			})
 		} else {
 			// VM is not linked to this rule group at all
-			log.Printf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s, interface=%s",
+			logger.Errorf("[ADJUST-WARN] VM not linked to rule group: vm_uuid=%s, group_uuid=%s, interface=%s",
 				req.VMUUID, group.UUID, req.Interface)
 			c.JSON(http.StatusNotFound, gin.H{"error": "VM not linked to this rule group"})
 		}
@@ -1586,16 +1585,16 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), req.VMUUID)
 	vmExists := true
 	if err != nil {
-		log.Printf("[ADJUST-WARN] Failed to get domain for VM %s (VM may have been deleted): %v", req.VMUUID, err)
+		logger.Errorf("[ADJUST-WARN] Failed to get domain for VM %s (VM may have been deleted): %v", req.VMUUID, err)
 		vmExists = false
 		domain = "" // Set to empty to avoid subsequent operations using invalid domain
 	}
 
 	// Check if VM is currently limited, perform restore if yes
 	if vmExists {
-		log.Printf("[ADJUST-INFO] Checking if VM is currently being limited: domain=%s", domain)
+		logger.Debugf("[ADJUST-INFO] Checking if VM is currently being limited: domain=%s", domain)
 	} else {
-		log.Printf("[ADJUST-INFO] VM %s does not exist, skipping resource restoration", req.VMUUID)
+		logger.Infof("[ADJUST-INFO] VM %s does not exist, skipping resource restoration", req.VMUUID)
 	}
 
 	// Create restore record
@@ -1608,53 +1607,53 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 	if vmExists {
 		if group.Type == model.RuleTypeAdjustCPU {
 			// CPU type: check and restore CPU resources
-			log.Printf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
+			logger.Debugf("[ADJUST-INFO] Checking CPU adjustment status for domain: %s", domain)
 
 			// Check CPU adjustment status metrics
 			isCPULimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "cpu", group.UUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARN] Failed to check CPU adjustment status: %v", err)
+				logger.Errorf("[ADJUST-WARN] Failed to check CPU adjustment status: %v", err)
 			} else if isCPULimited {
-				log.Printf("[ADJUST-INFO] VM is currently CPU limited, performing restore: domain=%s", domain)
+				logger.Infof("[ADJUST-INFO] VM is currently CPU limited, performing restore: domain=%s", domain)
 				record.AdjustType = "restore_cpu"
 				err = a.operator.RestoreCPUResource(c.Request.Context(), record, domain, req.VMUUID)
 				if err != nil {
-					log.Printf("[ADJUST-WARN] Failed to restore CPU resources: %v", err)
+					logger.Errorf("[ADJUST-WARN] Failed to restore CPU resources: %v", err)
 				} else {
-					log.Printf("[ADJUST-INFO] Successfully restored CPU resources for domain: %s", domain)
+					logger.Infof("[ADJUST-INFO] Successfully restored CPU resources for domain: %s", domain)
 				}
 			} else {
-				log.Printf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
+				logger.Debugf("[ADJUST-INFO] VM is not currently CPU limited: domain=%s", domain)
 			}
 		} else if group.Type == model.RuleTypeAdjustInBW || group.Type == model.RuleTypeAdjustOutBW {
 			// Bandwidth type: check and restore bandwidth resources
-			log.Printf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
+			logger.Debugf("[ADJUST-INFO] Checking bandwidth adjustment status for domain: %s, interface: %s", domain, req.Interface)
 
 			// Check bandwidth adjustment status metrics
 			isBWLimited, err := a.checkVMAdjustmentStatus(c.Request.Context(), domain, "bandwidth", group.UUID)
 			if err != nil {
-				log.Printf("[ADJUST-WARN] Failed to check bandwidth adjustment status: %v", err)
+				logger.Errorf("[ADJUST-WARN] Failed to check bandwidth adjustment status: %v", err)
 			} else if isBWLimited {
-				log.Printf("[ADJUST-INFO] VM is currently bandwidth limited, performing restore: domain=%s, interface=%s", domain, req.Interface)
+				logger.Infof("[ADJUST-INFO] VM is currently bandwidth limited, performing restore: domain=%s, interface=%s", domain, req.Interface)
 				record.AdjustType = "restore_bw"
 				err = a.operator.RestoreBandwidthResource(c.Request.Context(), record, domain, req.Interface, req.VMUUID)
 				if err != nil {
-					log.Printf("[ADJUST-WARN] Failed to restore bandwidth resources: %v", err)
+					logger.Errorf("[ADJUST-WARN] Failed to restore bandwidth resources: %v", err)
 				} else {
-					log.Printf("[ADJUST-INFO] Successfully restored bandwidth resources for domain: %s, interface: %s", domain, req.Interface)
+					logger.Infof("[ADJUST-INFO] Successfully restored bandwidth resources for domain: %s, interface: %s", domain, req.Interface)
 				}
 			} else {
-				log.Printf("[ADJUST-INFO] VM is not currently bandwidth limited: domain=%s, interface=%s", domain, req.Interface)
+				logger.Debugf("[ADJUST-INFO] VM is not currently bandwidth limited: domain=%s, interface=%s", domain, req.Interface)
 			}
 		}
 	} else {
-		log.Printf("[ADJUST-INFO] Skipping resource restoration for deleted VM: %s", req.VMUUID)
+		logger.Infof("[ADJUST-INFO] Skipping resource restoration for deleted VM: %s", req.VMUUID)
 	}
 
 	// Delete link
 	_, err = alarmOperator.DeleteVMLink(c.Request.Context(), group.UUID, req.VMUUID, req.Interface)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to delete VM link: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to delete VM link: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to delete VM link: " + err.Error()})
 		return
 	}
@@ -1665,9 +1664,9 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 		ruleType = "bandwidth"
 	}
 
-	log.Printf("[ADJUST-INFO] Cleaning up %s adjustment metrics for rule: %s", ruleType, group.UUID)
+	logger.Infof("[ADJUST-INFO] Cleaning up %s adjustment metrics for rule: %s", ruleType, group.UUID)
 	if err := a.cleanupRuleMetricsOnNodes(c.Request.Context(), group.UUID, ruleType); err != nil {
-		log.Printf("[ADJUST-WARN] Failed to cleanup rule metrics: %v", err)
+		logger.Errorf("[ADJUST-WARN] Failed to cleanup rule metrics: %v", err)
 		// Don't return error as database operation was successful
 	}
 
@@ -1680,11 +1679,11 @@ func (a *AdjustAPI) UnlinkAdjustRule(c *gin.Context) {
 
 	err = alarmAPI.UpdateMatchedVMsJSON(c.Request.Context(), []string{req.VMUUID}, group.UUID, "remove", ruleType, req.Interface)
 	if err != nil {
-		log.Printf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
+		logger.Errorf("[ADJUST-WARN] Failed to update Prometheus config: %v", err)
 		// Don't return error as database operation was successful
 	}
 
-	log.Printf("[ADJUST-INFO] Successfully unlinked VM from adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
+	logger.Infof("[ADJUST-INFO] Successfully unlinked VM from adjustment rule: group_uuid=%s, vm_uuid=%s, interface=%s",
 		group.UUID, req.VMUUID, req.Interface)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1727,7 +1726,7 @@ func (a *AdjustAPI) checkVMAdjustmentStatus(ctx context.Context, domain, metricT
 	q.Add("query", query)
 	req.URL.RawQuery = q.Encode()
 
-	log.Printf("[ADJUST-INFO] Querying Prometheus: %s", req.URL.String())
+	logger.Debugf("[ADJUST-INFO] Querying Prometheus: %s", req.URL.String())
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -1801,9 +1800,9 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status 0 --target-device '%s'",
 			domain, ruleID, bwType, "unknown")
 
-		log.Printf("[BW-STATUS-CLEANUP] Calling update script: domain=%s, rule_id=%s, type=%s, status=0, target_device=unknown",
+		logger.Debugf("[BW-STATUS-CLEANUP] Calling update script: domain=%s, rule_id=%s, type=%s, status=0, target_device=unknown",
 			domain, ruleID, bwType)
-		log.Printf("[BW-STATUS-CLEANUP] Full command: %s", command)
+		logger.Debugf("[BW-STATUS-CLEANUP] Full command: %s", command)
 
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
@@ -1820,12 +1819,12 @@ func (a *AdjustAPI) cleanupVMMetrics(ctx context.Context, vmUUID, ruleGroupUUID 
 func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 	ruleID := c.Query("rule_id")
 	if ruleID == "" {
-		log.Printf("[RULE-ERROR] Missing rule_id parameter")
+		logger.Infof("[RULE-ERROR] Missing rule_id parameter")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "rule_id parameter is required"})
 		return
 	}
 
-	log.Printf("[RULE-INFO] Getting rule links: rule_id=%s", ruleID)
+	logger.Infof("[RULE-INFO] Getting rule links: rule_id=%s", ruleID)
 
 	// Try to find the rule in both alarm and adjustment rule tables
 	var groupUUID, ruleType, ruleName, ruleSource string
@@ -1840,7 +1839,7 @@ func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 		ruleName = adjustGroup.Name
 		ruleSource = "adjust"
 		found = true
-		log.Printf("[RULE-INFO] Found adjustment rule: rule_id=%s, uuid=%s, type=%s", ruleID, groupUUID, ruleType)
+		logger.Debugf("[RULE-INFO] Found adjustment rule: rule_id=%s, uuid=%s, type=%s", ruleID, groupUUID, ruleType)
 	}
 
 	// If not found in adjustment rules, try alarm rules
@@ -1853,13 +1852,13 @@ func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 			ruleName = alarmGroup.Name
 			ruleSource = "alarm"
 			found = true
-			log.Printf("[RULE-INFO] Found alarm rule: rule_id=%s, uuid=%s, type=%s", ruleID, groupUUID, ruleType)
+			logger.Debugf("[RULE-INFO] Found alarm rule: rule_id=%s, uuid=%s, type=%s", ruleID, groupUUID, ruleType)
 		}
 	}
 
 	// If still not found, return error
 	if !found {
-		log.Printf("[RULE-ERROR] Rule not found: rule_id=%s", ruleID)
+		logger.Errorf("[RULE-ERROR] Rule not found: rule_id=%s", ruleID)
 		c.JSON(http.StatusNotFound, gin.H{"error": "rule not found, please check rule_id"})
 		return
 	}
@@ -1868,7 +1867,7 @@ func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 	alarmOperator := &routes.AlarmOperator{}
 	vmLinks, err := alarmOperator.GetLinkedVMs(c.Request.Context(), groupUUID)
 	if err != nil {
-		log.Printf("[RULE-ERROR] Failed to get linked VMs: %v", err)
+		logger.Errorf("[RULE-ERROR] Failed to get linked VMs: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get linked VMs: " + err.Error()})
 		return
 	}
@@ -1879,7 +1878,7 @@ func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 		// Get domain information
 		domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 		if err != nil {
-			log.Printf("[RULE-WARN] Failed to get domain for VM %s: %v", link.VMUUID, err)
+			logger.Errorf("[RULE-WARN] Failed to get domain for VM %s: %v", link.VMUUID, err)
 			domain = "unknown"
 		}
 
@@ -1899,7 +1898,7 @@ func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 		linkedVMs = append(linkedVMs, vmInfo)
 	}
 
-	log.Printf("[RULE-INFO] Retrieved rule links: rule_id=%s, source=%s, type=%s, link_count=%d",
+	logger.Infof("[RULE-INFO] Retrieved rule links: rule_id=%s, source=%s, type=%s, link_count=%d",
 		ruleID, ruleSource, ruleType, len(linkedVMs))
 
 	c.JSON(http.StatusOK, gin.H{
@@ -1918,22 +1917,22 @@ func (a *AdjustAPI) GetRuleLinks(c *gin.Context) {
 
 // cleanupRuleMetricsOnNodes Clean up rule-related metrics on compute nodes
 func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID, ruleType string) error {
-	log.Printf("[ADJUST-INFO] Starting cleanup of %s metrics for rule group: %s", ruleType, ruleGroupUUID)
+	logger.Infof("[ADJUST-INFO] Starting cleanup of %s metrics for rule group: %s", ruleType, ruleGroupUUID)
 
 	// Get list of VMs associated with this rule group
 	alarmOperator := &routes.AlarmOperator{}
 	vmLinks, err := alarmOperator.GetLinkedVMs(ctx, ruleGroupUUID)
 	if err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to get linked VMs for rule cleanup: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to get linked VMs for rule cleanup: %v", err)
 		return fmt.Errorf("failed to get linked VMs: %v", err)
 	}
 
 	if len(vmLinks) == 0 {
-		log.Printf("[ADJUST-INFO] No VMs linked to rule group %s, no metrics to cleanup", ruleGroupUUID)
+		logger.Infof("[ADJUST-INFO] No VMs linked to rule group %s, no metrics to cleanup", ruleGroupUUID)
 		return nil
 	}
 
-	log.Printf("[ADJUST-INFO] Found %d VMs linked to rule group %s", len(vmLinks), ruleGroupUUID)
+	logger.Debugf("[ADJUST-INFO] Found %d VMs linked to rule group %s", len(vmLinks), ruleGroupUUID)
 
 	// Get compute nodes where these VMs are located
 	hyperNodes := make(map[int32]bool)
@@ -1942,7 +1941,7 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 		// Get VM instance information to determine its compute node
 		instance, err := instanceAdmin.GetInstanceByUUID(ctx, link.VMUUID)
 		if err != nil {
-			log.Printf("[ADJUST-WARNING] Failed to get instance info for VM %s: %v", link.VMUUID, err)
+			logger.Errorf("[ADJUST-WARNING] Failed to get instance info for VM %s: %v", link.VMUUID, err)
 			continue
 		}
 		if instance.Hyper > 0 {
@@ -1951,27 +1950,26 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 	}
 
 	if len(hyperNodes) == 0 {
-		log.Printf("[ADJUST-WARNING] No valid compute nodes found for rule group %s", ruleGroupUUID)
+		logger.Warningf("[ADJUST-WARNING] No valid compute nodes found for rule group %s", ruleGroupUUID)
 		return nil
 	}
 
-	log.Printf("[ADJUST-INFO] Will cleanup metrics on %d compute nodes", len(hyperNodes))
+	logger.Debugf("[ADJUST-INFO] Will cleanup metrics on %d compute nodes", len(hyperNodes))
 
 	// Execute cleanup operations on each compute node
 	var cleanupErrors []string
 	for hyperID := range hyperNodes {
-		log.Printf("[ADJUST-INFO] Cleaning up %s metrics on compute node %d for rule %s", ruleType, hyperID, ruleGroupUUID)
+		logger.Debugf("[ADJUST-INFO] Cleaning up %s metrics on compute node %d for rule %s", ruleType, hyperID, ruleGroupUUID)
 
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/cleanup_rule_metrics.sh --rule-id '%s' --type '%s'",
 			ruleGroupUUID, ruleType)
-		log.Printf("wngzhe[ADJUST-INFO] Cleaning up %s comamnd is  %s", ruleType, command)
 		err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", hyperID), command)
 		if err != nil {
 			errMsg := fmt.Sprintf("failed to cleanup metrics on node %d: %v", hyperID, err)
-			log.Printf("[ADJUST-ERROR] %s", errMsg)
+			logger.Errorf("[ADJUST-ERROR] %s", errMsg)
 			cleanupErrors = append(cleanupErrors, errMsg)
 		} else {
-			log.Printf("[ADJUST-INFO] Successfully cleaned up %s metrics on compute node %d", ruleType, hyperID)
+			logger.Infof("[ADJUST-INFO] Successfully cleaned up %s metrics on compute node %d", ruleType, hyperID)
 		}
 	}
 
@@ -1979,7 +1977,7 @@ func (a *AdjustAPI) cleanupRuleMetricsOnNodes(ctx context.Context, ruleGroupUUID
 		return fmt.Errorf("metrics cleanup failed on some nodes: %s", strings.Join(cleanupErrors, "; "))
 	}
 
-	log.Printf("[ADJUST-INFO] Successfully cleaned up %s metrics for rule group %s on all compute nodes", ruleType, ruleGroupUUID)
+	logger.Infof("[ADJUST-INFO] Successfully cleaned up %s metrics for rule group %s on all compute nodes", ruleType, ruleGroupUUID)
 	return nil
 }
 
@@ -1998,23 +1996,23 @@ func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 		// Filter by specific hyper node if provided
 		hyperID, err := strconv.Atoi(hyperIDStr)
 		if err != nil {
-			log.Printf("[ADJUST-ERROR] Invalid hyper_id parameter: %v", err)
+			logger.Errorf("[ADJUST-ERROR] Invalid hyper_id parameter: %v", err)
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid hyper_id parameter"})
 			return
 		}
 		query = query.Where("hyper = ?", hyperID)
-		log.Printf("[ADJUST-INFO] Regenerating bandwidth config metrics for hyper node %d", hyperID)
+		logger.Debugf("[ADJUST-INFO] Regenerating bandwidth config metrics for hyper node %d", hyperID)
 	} else {
-		log.Printf("[ADJUST-INFO] Regenerating bandwidth config metrics for all instances")
+		logger.Debugf("[ADJUST-INFO] Regenerating bandwidth config metrics for all instances")
 	}
 
 	if err := query.Find(&instances).Error; err != nil {
-		log.Printf("[ADJUST-ERROR] Failed to query instances: %v", err)
+		logger.Errorf("[ADJUST-ERROR] Failed to query instances: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query instances"})
 		return
 	}
 
-	log.Printf("[ADJUST-INFO] Found %d active instances to process", len(instances))
+	logger.Infof("[ADJUST-INFO] Found %d active instances to process", len(instances))
 
 	// Step 2: Group interfaces by hyper node
 	type InterfaceInfo struct {
@@ -2047,7 +2045,7 @@ func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 		}
 	}
 
-	log.Printf("[ADJUST-INFO] Grouped interfaces across %d hyper nodes", len(hyperInterfaces))
+	logger.Debugf("[ADJUST-INFO] Grouped interfaces across %d hyper nodes", len(hyperInterfaces))
 
 	// Step 3: Update metrics for each hyper node
 	results := make(map[string]interface{})
@@ -2055,7 +2053,7 @@ func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 	failedCount := 0
 
 	for hyperID, interfaces := range hyperInterfaces {
-		log.Printf("[ADJUST-INFO] Processing hyper %d with %d interfaces", hyperID, len(interfaces))
+		logger.Debugf("[ADJUST-INFO] Processing hyper %d with %d interfaces", hyperID, len(interfaces))
 
 		interfaceCount := 0
 		var lastErr error
@@ -2064,7 +2062,7 @@ func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 			// Use operator function to update metric
 			if err := a.operator.UpdateVMBandwidthMetric(ctx, hyperID, ifaceInfo.Domain, ifaceInfo.TargetDevice,
 				ifaceInfo.Inbound, ifaceInfo.Outbound); err != nil {
-				log.Printf("[ADJUST-ERROR] Failed to update metric for %s/%s on hyper %d: %v",
+				logger.Errorf("[ADJUST-ERROR] Failed to update metric for %s/%s on hyper %d: %v",
 					ifaceInfo.Domain, ifaceInfo.TargetDevice, hyperID, err)
 				lastErr = err
 			} else {
@@ -2078,7 +2076,7 @@ func (a *AdjustAPI) RegenerateBandwidthConfigMetrics(c *gin.Context) {
 				interfaceCount, len(interfaces), lastErr)
 			failedCount++
 		} else {
-			log.Printf("[ADJUST-INFO] Successfully updated bandwidth config metrics on hyper %d (%d interfaces)",
+			logger.Infof("[ADJUST-INFO] Successfully updated bandwidth config metrics on hyper %d (%d interfaces)",
 				hyperID, interfaceCount)
 			results[fmt.Sprintf("hyper_%d", hyperID)] = fmt.Sprintf("Success (%d interfaces)", interfaceCount)
 			successCount++
@@ -2129,7 +2127,7 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "CPU adjustment rule not found"})
 			return
 		}
-		log.Printf("[PATCH-ERROR] Failed to query rule group: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to query rule group: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query rule group"})
 		return
 	}
@@ -2154,7 +2152,7 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 
 	if len(updates) > 0 {
 		if err := a.operator.UpdateAdjustRuleGroupBasicInfo(c.Request.Context(), group.UUID, updates); err != nil {
-			log.Printf("[PATCH-ERROR] Failed to update rule group: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to update rule group: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
 			return
 		}
@@ -2163,12 +2161,12 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 	// 4. Query old rule details and validate count
 	oldDetails, err := a.operator.GetCPUAdjustRuleDetails(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[PATCH-ERROR] Failed to query old rule details: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to query old rule details: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query old rule details"})
 		return
 	}
 	if len(oldDetails) == 0 {
-		log.Printf("[PATCH-ERROR] Data inconsistency: rule has no details (rule_id=%s, group_uuid=%s)", group.RuleID, group.UUID)
+		logger.Errorf("[PATCH-ERROR] Data inconsistency: rule has no details (rule_id=%s, group_uuid=%s)", group.RuleID, group.UUID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":      "Data inconsistency: rule has no details",
 			"rule_id":    group.RuleID,
@@ -2177,7 +2175,7 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 		return
 	}
 	if len(oldDetails) > 1 {
-		log.Printf("[PATCH-ERROR] Data inconsistency: rule has multiple details (rule_id=%s, group_uuid=%s, count=%d)", group.RuleID, group.UUID, len(oldDetails))
+		logger.Errorf("[PATCH-ERROR] Data inconsistency: rule has multiple details (rule_id=%s, group_uuid=%s, count=%d)", group.RuleID, group.UUID, len(oldDetails))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":      "Data inconsistency: rule has multiple details",
 			"rule_id":    group.RuleID,
@@ -2221,7 +2219,7 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 
 		// Update database using identifier (supports rule_id)
 		if err := a.operator.UpdateCPUAdjustRuleDetails(c.Request.Context(), identifier, []model.CPUAdjustRuleDetail{detail}); err != nil {
-			log.Printf("[PATCH-ERROR] Failed to update rule details: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to update rule details: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule details: " + err.Error()})
 			return
 		}
@@ -2237,7 +2235,7 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 	if req.LinkedVMs != nil {
 		added, removed, toAdd, toRemove, err = a.operator.SyncVMLinks(c.Request.Context(), group.UUID, *req.LinkedVMs)
 		if err != nil {
-			log.Printf("[PATCH-ERROR] Failed to sync VM links: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to sync VM links: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync VM links"})
 			return
 		}
@@ -2268,14 +2266,14 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 
 	// Render recording rules
 	if err := routes.ProcessTemplate(CPUAdjustRuleTemplate, fmt.Sprintf("cpu-adjust-%s-%s.yml", group.Owner, group.UUID), ruleData); err != nil {
-		log.Printf("[PATCH-ERROR] Failed to render CPU adjust rule: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to render CPU adjust rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render CPU adjust rule"})
 		return
 	}
 
 	// Render alert rules
 	if err := routes.ProcessTemplate(ResourceAdjustAlertsTemplate, fmt.Sprintf("resource-adjust-alerts-%s-%s.yml", group.Owner, group.UUID), ruleData); err != nil {
-		log.Printf("[PATCH-ERROR] Failed to render resource adjustment alerts: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to render resource adjustment alerts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render resource adjustment alerts"})
 		return
 	}
@@ -2290,7 +2288,7 @@ func (a *AdjustAPI) PatchCPUAdjustRule(c *gin.Context) {
 
 	// 9. Reload Prometheus
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("[PATCH-WARNING] Failed to reload Prometheus: %v", err)
+		logger.Errorf("[PATCH-WARNING] Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload Prometheus"})
 		return
 	}
@@ -2354,7 +2352,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 			c.JSON(http.StatusNotFound, gin.H{"error": "BW adjustment rule not found"})
 			return
 		}
-		log.Printf("[PATCH-ERROR] Failed to query rule group: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to query rule group: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query rule group"})
 		return
 	}
@@ -2378,7 +2376,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 	if len(updates) > 0 {
 		if err := a.operator.UpdateAdjustRuleGroupBasicInfo(c.Request.Context(), group.UUID, updates); err != nil {
-			log.Printf("[PATCH-ERROR] Failed to update rule group: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to update rule group: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule group"})
 			return
 		}
@@ -2387,12 +2385,12 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 	// 4. Query old rule details and validate count
 	oldDetails, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 	if err != nil {
-		log.Printf("[PATCH-ERROR] Failed to query old rule details: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to query old rule details: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to query old rule details"})
 		return
 	}
 	if len(oldDetails) == 0 {
-		log.Printf("[PATCH-ERROR] Data inconsistency: rule has no details (rule_id=%s, group_uuid=%s)", group.RuleID, group.UUID)
+		logger.Errorf("[PATCH-ERROR] Data inconsistency: rule has no details (rule_id=%s, group_uuid=%s)", group.RuleID, group.UUID)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":      "Data inconsistency: rule has no details",
 			"rule_id":    group.RuleID,
@@ -2401,7 +2399,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 		return
 	}
 	if len(oldDetails) > 1 {
-		log.Printf("[PATCH-ERROR] Data inconsistency: rule has multiple details (rule_id=%s, group_uuid=%s, count=%d)", group.RuleID, group.UUID, len(oldDetails))
+		logger.Errorf("[PATCH-ERROR] Data inconsistency: rule has multiple details (rule_id=%s, group_uuid=%s, count=%d)", group.RuleID, group.UUID, len(oldDetails))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":      "Data inconsistency: rule has multiple details",
 			"rule_id":    group.RuleID,
@@ -2454,7 +2452,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 		// Update database
 		if err := a.operator.UpdateBWAdjustRuleDetails(c.Request.Context(), group.UUID, []model.BWAdjustRuleDetail{detail}); err != nil {
-			log.Printf("[PATCH-ERROR] Failed to update rule details: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to update rule details: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update rule details"})
 			return
 		}
@@ -2465,7 +2463,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 	// 6. Clean up old files if direction changed
 	if oldDirection != "" && newDirection != "" && oldDirection != newDirection {
-		log.Printf("[PATCH-INFO] Direction changed from %s to %s, cleaning up old file", oldDirection, newDirection)
+		logger.Infof("[PATCH-INFO] Direction changed from %s to %s, cleaning up old file", oldDirection, newDirection)
 
 		var oldFilename string
 		if oldDirection == "in" {
@@ -2480,7 +2478,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 			_ = routes.RemoveFile(oldLinkPath)
 			_ = routes.RemoveFile(oldRulePath)
-			log.Printf("[PATCH-INFO] Cleaned up old files: %s, %s", oldLinkPath, oldRulePath)
+			logger.Infof("[PATCH-INFO] Cleaned up old files: %s, %s", oldLinkPath, oldRulePath)
 		}
 	}
 
@@ -2502,7 +2500,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 		added, removed, toAddByDevice, toRemoveByDevice, err = a.operator.SyncVMLinksWithDevice(c.Request.Context(), group.UUID, vmLinks)
 		if err != nil {
-			log.Printf("[PATCH-ERROR] Failed to sync VM links: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to sync VM links: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to sync VM links"})
 			return
 		}
@@ -2514,7 +2512,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 		// Get updated detail from database
 		updatedDetails, err := a.operator.GetBWAdjustRuleDetails(c.Request.Context(), group.UUID)
 		if err != nil || len(updatedDetails) == 0 {
-			log.Printf("[PATCH-ERROR] Failed to get updated detail: %v", err)
+			logger.Errorf("[PATCH-ERROR] Failed to get updated detail: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get updated detail"})
 			return
 		}
@@ -2558,14 +2556,14 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 	// Render recording rules
 	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		log.Printf("[PATCH-ERROR] Failed to render BW adjust rule: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to render BW adjust rule: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render BW adjust rule"})
 		return
 	}
 
 	// Render alert rules
 	if err := routes.ProcessTemplate(ResourceAdjustAlertsTemplate, fmt.Sprintf("resource-adjust-alerts-%s-%s.yml", group.Owner, group.UUID), ruleData); err != nil {
-		log.Printf("[PATCH-ERROR] Failed to render resource adjustment alerts: %v", err)
+		logger.Errorf("[PATCH-ERROR] Failed to render resource adjustment alerts: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render resource adjustment alerts"})
 		return
 	}
@@ -2580,7 +2578,7 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 
 	// 10. Reload Prometheus
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("[PATCH-WARNING] Failed to reload Prometheus: %v", err)
+		logger.Errorf("[PATCH-WARNING] Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reload Prometheus"})
 		return
 	}

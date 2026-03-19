@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -194,7 +193,7 @@ func (o *OpenMeterAPI) getPrometheusConfig() (*PrometheusConfig, error) {
 	if err := yaml.Unmarshal(data, &config); err != nil {
 		return nil, fmt.Errorf("failed to parse prometheus config: %v", err)
 	}
-	log.Printf("Prometheus config loaded: %v", config)
+	logger.Infof("Prometheus config loaded: %v", config)
 	return &config, nil
 }
 
@@ -235,12 +234,12 @@ func (o *OpenMeterAPI) getPrometheusTargetFilter() (*PrometheusTargetFilter, err
 	for _, jobName := range nodeJobNames {
 		if targets, err := o.getTargetsFromPrometheusConfig(jobName); err == nil && len(targets) > 0 {
 			nodeTargets = targets
-			log.Printf("Found node exporter targets under job '%s': %v", jobName, targets)
+			logger.Debugf("Found node exporter targets under job '%s': %v", jobName, targets)
 			break
 		}
 	}
 	if len(nodeTargets) == 0 {
-		log.Printf("No node exporter targets found under any job name")
+		logger.Debugf("No node exporter targets found under any job name")
 	}
 
 	// Try specific job names for libvirt exporter
@@ -249,19 +248,19 @@ func (o *OpenMeterAPI) getPrometheusTargetFilter() (*PrometheusTargetFilter, err
 	for _, jobName := range libvirtJobNames {
 		if targets, err := o.getTargetsFromPrometheusConfig(jobName); err == nil && len(targets) > 0 {
 			libvirtTargets = targets
-			log.Printf("Found libvirt exporter targets under job '%s': %v", jobName, targets)
+			logger.Debugf("Found libvirt exporter targets under job '%s': %v", jobName, targets)
 			break
 		}
 	}
 	if len(libvirtTargets) == 0 {
-		log.Printf("No libvirt exporter targets found under any job name")
+		logger.Debugf("No libvirt exporter targets found under any job name")
 	}
 
 	targetFilterCache.NodeExporterTargets = nodeTargets
 	targetFilterCache.LibvirtExporterTargets = libvirtTargets
 	targetFilterCache.lastUpdated = now
 
-	log.Printf("Updated Prometheus target filter - Node targets: %d, Libvirt targets: %d",
+	logger.Infof("Updated Prometheus target filter - Node targets: %d, Libvirt targets: %d",
 		len(nodeTargets), len(libvirtTargets))
 
 	return targetFilterCache, nil
@@ -308,7 +307,7 @@ func (o *OpenMeterAPI) isValidTarget(target string, targetFilter *PrometheusTarg
 // Returns filtered events and a flag indicating if any events were filtered due to target mismatch
 func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, targetFilter *PrometheusTargetFilter) ([]OpenMeterEvent, bool) {
 	if len(targetFilter.NodeExporterTargets) == 0 && len(targetFilter.LibvirtExporterTargets) == 0 {
-		log.Printf("No Prometheus targets configured, returning all events")
+		logger.Infof("No Prometheus targets configured, returning all events")
 		return events, false
 	}
 
@@ -373,7 +372,7 @@ func (o *OpenMeterAPI) filterEventsByPrometheusTargets(events []OpenMeterEvent, 
 		}
 	}
 
-	log.Printf("Filtered events: %d kept, %d removed based on Prometheus targets",
+	logger.Infof("Filtered events: %d kept, %d removed based on Prometheus targets",
 		len(filteredEvents), filteredCount)
 
 	return filteredEvents, hasTargetMismatch
@@ -391,7 +390,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 		Limit:      100,
 	}
 
-	log.Printf("QueryOpenMeterMetrics - Request: InstanceID=%s, Subject=%s\n",
+	logger.Infof("QueryOpenMeterMetrics - Request: InstanceID=%s, Subject=%s\n",
 		req.InstanceID, req.Subject)
 
 	// Validate instance_id is required
@@ -448,12 +447,12 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	meteringPort := viper.GetString("metering.port")
 
 	if meteringHost == "" || meteringPort == "" {
-		log.Printf("OpenMeter configuration not found, using default values")
+		logger.Errorf("OpenMeter configuration not found, using default values")
 		meteringHost = "199.188.106.244"
 		meteringPort = "8123"
 	}
 
-	log.Printf(" ClickHouse connection - Host=%s, Port=%s\n", meteringHost, meteringPort)
+	logger.Infof(" ClickHouse connection - Host=%s, Port=%s\n", meteringHost, meteringPort)
 
 	// Build ClickHouse query URL
 	clickHouseURL := fmt.Sprintf("http://%s:%s/", meteringHost, meteringPort)
@@ -471,12 +470,12 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	fullURL := fmt.Sprintf("%s?%s", clickHouseURL, params.Encode())
 
 	// Debug logging
-	log.Printf("OpenMeter Debug - SQL Query: %s", sqlQuery)
-	log.Printf("OpenMeter Debug - Full URL: %s", fullURL)
+	logger.Debugf("OpenMeter Debug - SQL Query: %s", sqlQuery)
+	logger.Debugf("OpenMeter Debug - Full URL: %s", fullURL)
 
 	resp, err := http.Post(fullURL, "text/plain", strings.NewReader(sqlQuery))
 	if err != nil {
-		log.Printf("Failed to query ClickHouse: %v", err)
+		logger.Errorf("Failed to query ClickHouse: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to query metrics database",
 		})
@@ -486,7 +485,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Failed to read response body: %v", err)
+		logger.Errorf("Failed to read response body: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to read metrics response",
 		})
@@ -494,7 +493,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("ClickHouse query failed with status %d: %s", resp.StatusCode, string(body))
+		logger.Infof("ClickHouse query failed with status %d: %s", resp.StatusCode, string(body))
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "metrics query failed",
 			"details": string(body),
@@ -503,13 +502,13 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	}
 
 	// Debug logging
-	log.Printf("ClickHouse response - status: %d, body length: %d", resp.StatusCode, len(body))
-	log.Printf("OpenMeter Debug - Raw Response Body: %s", string(body))
+	logger.Debugf("ClickHouse response - status: %d, body length: %d", resp.StatusCode, len(body))
+	logger.Debugf("OpenMeter Debug - Raw Response Body: %s", string(body))
 
 	// Parse raw events
 	events, err := o.parseJSONEachRowResponse(body)
 	if err != nil {
-		log.Printf("Failed to parse ClickHouse response: %v", err)
+		logger.Errorf("Failed to parse ClickHouse response: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "failed to parse metrics response",
 		})
@@ -517,10 +516,10 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	}
 
 	// Debug logging
-	log.Printf("Parsed events count: %d\n", len(events))
+	logger.Debugf("Parsed events count: %d\n", len(events))
 
 	if len(events) == 0 {
-		log.Printf("No data found for instance_id: %s, subject: %s", req.InstanceID, req.Subject)
+		logger.Errorf("No data found for instance_id: %s, subject: %s", req.InstanceID, req.Subject)
 		c.JSON(http.StatusNotFound, gin.H{
 			"status":  "error",
 			"code":    "NO_DATA_FOUND",
@@ -540,7 +539,7 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 	if c.Query("disable_prometheus_filter") != "true" {
 		targetFilter, err := o.getPrometheusTargetFilter()
 		if err != nil {
-			log.Printf("Failed to get Prometheus target Filter err: %v, targetFilter: %v", err, targetFilter)
+			logger.Errorf("Failed to get Prometheus target Filter err: %v, targetFilter: %v", err, targetFilter)
 			// Continue without filtering rather than failing completely
 		} else {
 			filteredEvents, hasTargetMismatch := o.filterEventsByPrometheusTargets(events, targetFilter)
@@ -564,16 +563,16 @@ func (o *OpenMeterAPI) QueryOpenMeterMetrics(c *gin.Context) {
 				})
 				return
 			}
-			log.Printf("Prometheus filtering applied - filter: %v, events: %d -> %d", targetFilter, len(events), len(filteredEvents))
+			logger.Debugf("Prometheus filtering applied - filter: %v, events: %d -> %d", targetFilter, len(events), len(filteredEvents))
 		}
 	} else {
-		log.Printf("Prometheus filtering disabled by request parameter")
+		logger.Debugf("Prometheus filtering disabled by request parameter")
 	}
 
 	// Process metrics based on subject type
 	result, err := o.processMetricsBySubject(req.Subject, req.InstanceID, filteredEvents, req.Start, req.End)
 	if err != nil {
-		log.Printf("Failed to process metrics: %v", err)
+		logger.Errorf("Failed to process metrics: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error":   "failed to process metrics",
 			"details": err.Error(),
@@ -796,7 +795,7 @@ func (o *OpenMeterAPI) parseJSONEachRowResponse(body []byte) ([]OpenMeterEvent, 
 		// Parse each line as JSON
 		var rawEvent map[string]interface{}
 		if err := json.Unmarshal(line, &rawEvent); err != nil {
-			log.Printf("Failed to parse event line: %v", err)
+			logger.Errorf("Failed to parse event line: %v", err)
 			continue
 		}
 
@@ -1807,8 +1806,8 @@ func (o *OpenMeterAPI) QueryInstanceMetricsBySubject(c *gin.Context) {
 	instanceID := c.Param("instance_id")
 	subject := c.Param("subject")
 
-	// Debug logging
-	log.Printf("QueryInstanceMetricsBySubject - InstanceID=%s, Subject=%s", instanceID, subject)
+	// logging
+	logger.Infof("QueryInstanceMetricsBySubject - InstanceID=%s, Subject=%s", instanceID, subject)
 
 	if instanceID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{

@@ -20,8 +20,13 @@ func init() {
 }
 
 func AttachInterface(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| detach_nic.sh 5 101 1
-	db := DB()
+	//|:-COMMAND-:| attach_nic.sh 5 101 1
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")

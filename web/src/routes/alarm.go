@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"os"
@@ -274,13 +273,13 @@ func init() {
 		certFile := "/etc/ssl/certs/alarm_rules_manager.crt"
 		client, err := AlertRUleClient(baseURL, certFile, "")
 		if err != nil {
-			log.Printf("Failed to initialize the Prometheus client.: %v", err)
+			logger.Errorf("Failed to initialize the Prometheus client.: %v", err)
 		} else {
 			prometheusClient = client
-			log.Printf("Prometheus client initialized successfully with URL: %s", baseURL)
+			logger.Infof("Prometheus client initialized successfully with URL: %s", baseURL)
 		}
 	}
-	log.Printf("Prometheus: IP=%s, port=%d, SSHport=%d, remote_mode=%v",
+	logger.Infof("Prometheus: IP=%s, port=%d, SSHport=%d, remote_mode=%v",
 		alarmPrometheusIP, alarmPrometheusPort, alarmPrometheusSSHPort, isRemotePrometheus)
 }
 
@@ -312,12 +311,12 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		PageSize:  1,
 	})
 	if err != nil {
-		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %v", err)
 	}
 
 	if len(groups) == 0 {
-		log.Printf("rule not found: groupID=%s", groupUUID)
+		logger.Infof("rule not found: groupID=%s", groupUUID)
 		return nil, gorm.ErrRecordNotFound
 	}
 
@@ -326,7 +325,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	if ruleType == "cpu" {
 		details, err := a.GetCPURuleDetails(ctx, groupUUID)
 		if err != nil {
-			log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+			logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -341,7 +340,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 	} else if ruleType == "bw" {
 		details, err := a.GetBWRuleDetails(ctx, groupUUID)
 		if err != nil {
-			log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+			logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -354,7 +353,7 @@ func (a *AlarmOperator) GetRulesByGroupUUID(ctx context.Context, groupUUID strin
 		}
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	} else {
-		log.Printf("unsupported rule type groupID %s type %s", groupUUID, ruleType)
+		logger.Errorf("unsupported rule type groupID %s type %s", groupUUID, ruleType)
 		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
@@ -367,12 +366,12 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*m
 		PageSize: 1,
 	})
 	if err != nil {
-		log.Printf("rules query failed: ruleID=%s, error=%v", ruleID, err)
+		logger.Errorf("rules query failed: ruleID=%s, error=%v", ruleID, err)
 		return nil, fmt.Errorf("rules query failed: %v", err)
 	}
 
 	if len(groups) == 0 {
-		log.Printf("rule not found: ruleID=%s", ruleID)
+		logger.Infof("rule not found: ruleID=%s", ruleID)
 		return nil, gorm.ErrRecordNotFound
 	}
 
@@ -381,7 +380,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*m
 	if ruleType == "cpu" {
 		details, err := a.GetCPURuleDetails(ctx, groups[0].UUID)
 		if err != nil {
-			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			logger.Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -396,7 +395,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*m
 	} else if ruleType == "bw" {
 		details, err := a.GetBWRuleDetails(ctx, groups[0].UUID)
 		if err != nil {
-			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			logger.Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -411,7 +410,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*m
 	} else if ruleType == "memory" {
 		details, err := a.GetMemoryRuleDetails(ctx, groups[0].UUID)
 		if err != nil {
-			log.Printf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
+			logger.Errorf("detail rules query failed: ruleID=%s, error=%v", ruleID, err)
 			return nil, fmt.Errorf("detail rules query failed: %w", err)
 		}
 		type ResultGroup struct {
@@ -424,7 +423,7 @@ func (a *AlarmOperator) GetRulesByRuleID(ctx context.Context, ruleID string) (*m
 		}
 		return (*model.RuleGroupV2)(unsafe.Pointer(result)), nil
 	} else {
-		log.Printf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
+		logger.Errorf("unsupported rule type ruleID %s type %s", ruleID, ruleType)
 		return nil, fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
 }
@@ -437,13 +436,13 @@ func (a *AlarmOperator) GetCPURulesByGroupUUID(ctx context.Context, groupUUID st
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %w", err)
 	}
 
 	details, err := a.GetCPURuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("detail rules query failed: %w", err)
 	}
 	type ResultGroup struct {
@@ -463,13 +462,13 @@ func (a *AlarmOperator) GetMemoryRulesByGroupUUID(ctx context.Context, groupUUID
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Printf("rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %w", err)
 	}
 
 	details, err := a.GetMemoryRuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("detail rules query failed: %w", err)
 	}
 	type ResultGroup struct {
@@ -490,13 +489,13 @@ func (a *AlarmOperator) GetBWRulesByGroupUUID(ctx context.Context, groupUUID str
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Println("rules query failed:", "groupID", groupUUID, "error", err)
+		logger.Errorf("rules query failed: groupID %s error %v", groupUUID, err)
 		return nil, fmt.Errorf("rules query failed: %w", err)
 	}
 
 	details, err := a.GetBWRuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("detail rules query failed: %w", err)
 	}
 	type ResultGroup struct {
@@ -517,7 +516,7 @@ func (a *AlarmOperator) UpdateRuleGroupStatus(ctx context.Context, groupID strin
 			Where("uuid = ?", groupID).
 			Update("enabled", enabled)
 		if result.Error != nil {
-			log.Printf("update satus failed groupID %s error %v", groupID, result.Error)
+			logger.Errorf("update satus failed groupID %s error %v", groupID, result.Error)
 			return fmt.Errorf("update satus failed: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
@@ -551,7 +550,7 @@ func (a *AlarmOperator) CreateVMLink(ctx context.Context, groupUUID, vmUUID, ifa
 		Interface: iface,
 	}
 	if err := db.Create(link).Error; err != nil {
-		log.Printf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+		logger.Errorf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
 			groupUUID, vmUUID, iface, err)
 		return fmt.Errorf("create link failed: %w", err)
 	}
@@ -574,12 +573,12 @@ func (a *AlarmOperator) BatchLinkVMs(ctx context.Context, GroupUUID string, vmUU
 					Interface: iface,
 				}
 				if err := tx.Create(link).Error; err != nil {
-					log.Printf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
+					logger.Errorf("create link failed: GroupUUID=%s, vmUUID=%s, interface=%s, error=%v",
 						GroupUUID, vmUUID, iface, err)
 					return fmt.Errorf("create link failed: %w", err)
 				}
 			} else {
-				log.Printf("link already exists, skipping: GroupUUID=%s, vmUUID=%s, interface=%s",
+				logger.Debugf("link already exists, skipping: GroupUUID=%s, vmUUID=%s, interface=%s",
 					GroupUUID, vmUUID, iface)
 			}
 		}
@@ -592,7 +591,7 @@ func (a *AlarmOperator) DeleteRuleGroup(ctx context.Context, groupUUID, ruleType
 	result := db.Where("uuid = ? AND type = ?", groupUUID, ruleType).
 		Delete(&model.RuleGroupV2{})
 	if result.Error != nil {
-		log.Printf("delete rule failed: groupUUID=%s, type=%s, error=%v",
+		logger.Errorf("delete rule failed: groupUUID=%s, type=%s, error=%v",
 			groupUUID, ruleType, result.Error)
 	}
 	return result.Error
@@ -608,7 +607,7 @@ func (a *AlarmOperator) DeleteVMLink(ctx context.Context, groupUUID, vmUUID, ifa
 
 	result := query.Delete(&model.VMRuleLink{})
 	if result.Error != nil {
-		log.Printf("delete link failed groupUUID %s vmUUID %s interface %s error %v", groupUUID, vmUUID, iface, result.Error)
+		logger.Errorf("delete link failed groupUUID %s vmUUID %s interface %s error %v", groupUUID, vmUUID, iface, result.Error)
 	}
 	return result.RowsAffected, result.Error
 }
@@ -621,11 +620,11 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 	if groupUUID != "" {
 		query = query.Where("group_uuid = ?", groupUUID)
 	} else {
-		log.Printf("query all goup found, TBD")
+		logger.Infof("query all goup found, TBD")
 	}
 
 	if err := query.Find(&links).Error; err != nil {
-		log.Printf("get link data failed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Errorf("get link data failed: groupUUID=%s, error=%v", groupUUID, err)
 		return nil, err
 	}
 	return links, nil
@@ -655,7 +654,7 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 		Scan(&alarmRuleIDs).Error
 
 	if err != nil {
-		log.Printf("[GetRuleIDsByInstance] Failed to query alarm rules for instance %s: %v", instanceUUID, err)
+		logger.Errorf("[GetRuleIDsByInstance] Failed to query alarm rules for instance %s: %v", instanceUUID, err)
 		return nil, fmt.Errorf("failed to query alarm rules: %w", err)
 	}
 
@@ -672,7 +671,7 @@ func (a *AlarmOperator) GetRuleIDsByInstance(ctx context.Context, instanceUUID s
 		Scan(&adjustRuleIDs).Error
 
 	if err != nil {
-		log.Printf("[GetRuleIDsByInstance] Failed to query adjust rules for instance %s: %v", instanceUUID, err)
+		logger.Errorf("[GetRuleIDsByInstance] Failed to query adjust rules for instance %s: %v", instanceUUID, err)
 		return nil, fmt.Errorf("failed to query adjust rules: %w", err)
 	}
 
@@ -709,7 +708,7 @@ func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID stri
 		case "bandwidth":
 			return a.GetBWRulesByGroupUUID(ctx, group.UUID, group.Type)
 		default:
-			log.Printf("[GetCompleteRuleByRuleID] Unknown alarm rule type: %s for rule_id: %s", group.Type, ruleID)
+			logger.Errorf("[GetCompleteRuleByRuleID] Unknown alarm rule type: %s for rule_id: %s", group.Type, ruleID)
 			return nil, fmt.Errorf("unknown alarm rule type: %s", group.Type)
 		}
 	}
@@ -730,13 +729,13 @@ func (a *AlarmOperator) GetCompleteRuleByRuleID(ctx context.Context, ruleID stri
 		case "adjust_in_bw", "adjust_out_bw":
 			return adjustOperator.GetBWAdjustRulesByGroupUUID(ctx, group.UUID, group.Type)
 		default:
-			log.Printf("[GetCompleteRuleByRuleID] Unknown adjust rule type: %s for rule_id: %s", group.Type, ruleID)
+			logger.Errorf("[GetCompleteRuleByRuleID] Unknown adjust rule type: %s for rule_id: %s", group.Type, ruleID)
 			return nil, fmt.Errorf("unknown adjust rule type: %s", group.Type)
 		}
 	}
 
 	// Rule not found in either table
-	log.Printf("[GetCompleteRuleByRuleID] Rule not found: %s", ruleID)
+	logger.Infof("[GetCompleteRuleByRuleID] Rule not found: %s", ruleID)
 	return nil, fmt.Errorf("rule not found: %s", ruleID)
 }
 
@@ -752,7 +751,7 @@ func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs 
 	var links []model.VMRuleLink
 
 	if err := db.Where("vm_uuid IN (?)", instanceUUIDs).Find(&links).Error; err != nil {
-		log.Printf("[GetInstanceRuleLinks] Query failed: %v", err)
+		logger.Errorf("[GetInstanceRuleLinks] Query failed: %v", err)
 		return nil, fmt.Errorf("failed to query rule links: %w", err)
 	}
 
@@ -762,7 +761,7 @@ func (a *AlarmOperator) GetInstanceRuleLinks(ctx context.Context, instanceUUIDs 
 		result[link.VMUUID] = append(result[link.VMUUID], link)
 	}
 
-	log.Printf("[GetInstanceRuleLinks] Found %d links for %d instances", len(links), len(result))
+	logger.Infof("[GetInstanceRuleLinks] Found %d links for %d instances", len(links), len(result))
 	return result, nil
 }
 
@@ -781,11 +780,11 @@ func cleanRuleData(data interface{}) interface{} {
 		// Convert struct to map via JSON
 		jsonBytes, err := json.Marshal(data)
 		if err != nil {
-			log.Printf("[cleanRuleData] Failed to marshal data: %v", err)
+			logger.Errorf("[cleanRuleData] Failed to marshal data: %v", err)
 			return data
 		}
 		if err := json.Unmarshal(jsonBytes, &dataMap); err != nil {
-			log.Printf("[cleanRuleData] Failed to unmarshal data: %v", err)
+			logger.Errorf("[cleanRuleData] Failed to unmarshal data: %v", err)
 			return data
 		}
 	}
@@ -821,7 +820,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 		ctx, db := common.GetContextDB(ctx)
 		var links []model.VMRuleLink
 		if err := db.Where("vm_uuid = ? AND deleted_at IS NULL", instanceUUID).Find(&links).Error; err != nil {
-			log.Printf("[GetInstanceRuleDetails] Failed to get rule links for instance %s: %v", instanceUUID, err)
+			logger.Errorf("[GetInstanceRuleDetails] Failed to get rule links for instance %s: %v", instanceUUID, err)
 		}
 
 		// 2. Build map: group_uuid -> []interfaces (using map for deduplication)
@@ -848,7 +847,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 		// 3. Get all rule_ids for this instance
 		ruleIDs, err := a.GetRuleIDsByInstance(ctx, instanceUUID)
 		if err != nil {
-			log.Printf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
+			logger.Errorf("[GetInstanceRuleDetails] Failed to get rule IDs for instance %s: %v", instanceUUID, err)
 			// Continue with next instance instead of failing completely
 			result[instanceUUID] = map[string]interface{}{
 				"instance_id": instanceUUID,
@@ -864,7 +863,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 		for _, ruleID := range ruleIDs {
 			rule, err := a.GetCompleteRuleByRuleID(ctx, ruleID)
 			if err != nil {
-				log.Printf("[GetInstanceRuleDetails] Failed to get rule %s for instance %s: %v", ruleID, instanceUUID, err)
+				logger.Errorf("[GetInstanceRuleDetails] Failed to get rule %s for instance %s: %v", ruleID, instanceUUID, err)
 				// Continue with next rule instead of failing
 				continue
 			}
@@ -884,11 +883,11 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 					jsonBytes, err := json.Marshal(cleanedRule)
 					if err == nil {
 						if err := json.Unmarshal(jsonBytes, &ruleMap); err != nil {
-							log.Printf("[GetInstanceRuleDetails] Failed to unmarshal rule to map: %v", err)
+							logger.Errorf("[GetInstanceRuleDetails] Failed to unmarshal rule to map: %v", err)
 							ruleMap = make(map[string]interface{})
 						}
 					} else {
-						log.Printf("[GetInstanceRuleDetails] Failed to marshal rule: %v", err)
+						logger.Errorf("[GetInstanceRuleDetails] Failed to marshal rule: %v", err)
 						ruleMap = make(map[string]interface{})
 					}
 				}
@@ -913,7 +912,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 				} else {
 					// If UUID not found, set empty array
 					interfaces = []string{}
-					log.Printf("[GetInstanceRuleDetails] Warning: Could not find UUID in rule for rule_id %s", ruleID)
+					logger.Warningf("[GetInstanceRuleDetails] Warning: Could not find UUID in rule for rule_id %s", ruleID)
 				}
 
 				ruleMap["interfaces"] = interfaces
@@ -921,7 +920,7 @@ func (a *AlarmOperator) GetInstanceRuleDetails(ctx context.Context, instanceUUID
 
 				rules = append(rules, cleanedRule)
 			} else {
-				log.Printf("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
+				logger.Infof("[GetInstanceRuleDetails] Nil rule returned for rule_id %s", ruleID)
 			}
 		}
 
@@ -955,19 +954,19 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 		case "cpu":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.CPURuleDetail{}).Error; err != nil {
-				log.Printf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				logger.Errorf("CPU rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("CPU rules delete failed: %w", err)
 			}
 		case "memory":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.MemoryRuleDetail{}).Error; err != nil {
-				log.Printf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				logger.Errorf("Memory rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("Memory rules delete failed: %w", err)
 			}
 		case "bw":
 			if err := tx.Where("group_uuid = ?", groupUUID).
 				Delete(&model.BWRuleDetail{}).Error; err != nil {
-				log.Printf("bw rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				logger.Errorf("bw rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("bw rules delete failed: %w", err)
 			}
 		default:
@@ -976,13 +975,13 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 		// delete link db
 		if err := tx.Where("group_uuid = ?", groupUUID).
 			Delete(&model.VMRuleLink{}).Error; err != nil {
-			log.Printf("failed to del vm link: groupUUID=%s, error=%v", groupUUID, err)
+			logger.Errorf("failed to del vm link: groupUUID=%s, error=%v", groupUUID, err)
 			return fmt.Errorf("failed to del vm link: %w", err)
 		}
 		// delete group rule db
 		if err := tx.Where("uuid = ? AND type = ?", groupUUID, ruleType).
 			Delete(&model.RuleGroupV2{}).Error; err != nil {
-			log.Printf("group del failed: groupUUID=%s, error=%v", groupUUID, err)
+			logger.Errorf("group del failed: groupUUID=%s, error=%v", groupUUID, err)
 			return fmt.Errorf("group del failed: %w", err)
 		}
 
@@ -1001,7 +1000,7 @@ func (a *AlarmOperator) DeleteCPURulesByGroup(ctx context.Context, groupID strin
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Where("group_uuid = ?", groupID).
 		Delete(&CPURule{}).Error; err != nil {
-		log.Printf("CPU rule delete failed: groupID=%s, error=%v", groupID, err)
+		logger.Errorf("CPU rule delete failed: groupID=%s, error=%v", groupID, err)
 		return err
 	}
 	return nil
@@ -1025,12 +1024,12 @@ func (a *AlarmOperator) ListRuleGroups(ctx context.Context, params ListRuleGroup
 	}
 
 	if err := query.Count(&total).Error; err != nil {
-		log.Printf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
+		logger.Errorf("get rules count failed: ruleType=%s, error=%v", params.RuleType, err)
 		return nil, 0, fmt.Errorf("get rules count failed: %w", err)
 	}
 	if err := query.Scopes(Paginate(params.Page, params.PageSize)).
 		Find(&groups).Error; err != nil {
-		log.Printf("page query failed: ruleType=%s, page=%d, pageSize=%d, error=%v",
+		logger.Errorf("page query failed: ruleType=%s, page=%d, pageSize=%d, error=%v",
 			params.RuleType, params.Page, params.PageSize, err)
 		return nil, 0, fmt.Errorf("page query failed: %w", err)
 	}
@@ -1042,7 +1041,7 @@ func (a *AlarmOperator) GetCPURuleDetails(ctx context.Context, groupUUID string)
 	ctx, db := common.GetContextDB(ctx)
 	var details []model.CPURuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
-		log.Printf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Errorf("query CPU rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
@@ -1051,7 +1050,7 @@ func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID stri
 	ctx, db := common.GetContextDB(ctx)
 	var details []model.MemoryRuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
-		log.Printf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Errorf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
 }
@@ -1076,7 +1075,7 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 				DownTo:       rules[i].DownTo,
 			}
 			if err := tx.Create(rule).Error; err != nil {
-				log.Printf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)
+				logger.Errorf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)
 				return fmt.Errorf("create cpu rule failed: %w", err)
 			}
 		}
@@ -1087,7 +1086,7 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 func (a *AlarmOperator) CreateBWRuleDetail(ctx context.Context, detail *model.BWRuleDetail) error {
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Create(detail).Error; err != nil {
-		log.Printf("create bw rule detail failed: groupUUID=%s, name=%s, error=%v",
+		logger.Errorf("create bw rule detail failed: groupUUID=%s, name=%s, error=%v",
 			detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create bw rule detail failed: %w", err)
 	}
@@ -1098,7 +1097,7 @@ func (a *AlarmOperator) GetBWRuleDetails(ctx context.Context, groupUUID string) 
 	ctx, db := common.GetContextDB(ctx)
 	var details []model.BWRuleDetail
 	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
-		log.Printf("query db BW rules detailed: groupUUID=%s, error=%v", groupUUID, err)
+		logger.Infof("query db BW rules detailed: groupUUID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("query db BW rules detailed: %w", err)
 	}
 	return details, nil
@@ -1107,7 +1106,7 @@ func (a *AlarmOperator) GetBWRuleDetails(ctx context.Context, groupUUID string) 
 func (a *AlarmOperator) CreateRuleGroup(ctx context.Context, group *model.RuleGroupV2) error {
 	ctx, db := common.GetContextDB(ctx)
 	if err := db.Create(group).Error; err != nil {
-		log.Printf("failed to create rule: UUID=%s, GroupUUID=%s, error=%v", uuid.New().String(), group.UUID, err)
+		logger.Errorf("failed to create rule: UUID=%s, GroupUUID=%s, error=%v", uuid.New().String(), group.UUID, err)
 		return fmt.Errorf("failed to create rule: %w", err)
 	}
 	return nil
@@ -1117,7 +1116,7 @@ func (a *AlarmOperator) CreateCPURuleDetail(ctx context.Context, detail *model.C
 	ctx, db := common.GetContextDB(ctx)
 	detail.UUID = uuid.NewString()
 	if err := db.Create(detail).Error; err != nil {
-		log.Printf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		logger.Errorf("create cpu rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create cpu rule detail failed: %w", err)
 	}
 	return nil
@@ -1127,7 +1126,7 @@ func (a *AlarmOperator) CreateMemoryRuleDetail(ctx context.Context, detail *mode
 	ctx, db := common.GetContextDB(ctx)
 	detail.UUID = uuid.NewString()
 	if err := db.Create(detail).Error; err != nil {
-		log.Printf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		logger.Errorf("create memory rule detail failed: groupUUID=%s, ruleName=%s, error=%v", detail.GroupUUID, detail.Name, err)
 		return fmt.Errorf("create memory rule detail failed: %w", err)
 	}
 	return nil
@@ -1140,7 +1139,7 @@ func isLocalIP(ip string) bool {
 
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
-		log.Printf("get local network configuration failed: %v", err)
+		logger.Errorf("get local network configuration failed: %v", err)
 		return false
 	}
 
@@ -1264,14 +1263,14 @@ func (c *PrometheusClient) ClientReadRuleFile(path string) ([]byte, error) {
 
 	respBody, err := c.sendRequest("/api/v1/rules/file", req)
 	if err != nil {
-		log.Printf("prometheus server read file failed: %v", err)
+		logger.Errorf("prometheus server read file failed: %v", err)
 		return nil, err
 	}
 
 	// Parse response
 	var response RuleFileResponse
 	if err := json.Unmarshal(respBody, &response); err != nil {
-		log.Printf("parse response failed: %v", err)
+		logger.Errorf("parse response failed: %v", err)
 		return nil, fmt.Errorf("parse response failed: %v", err)
 	}
 
@@ -1290,7 +1289,7 @@ func (c *PrometheusClient) ClientWriteRuleFile(path string, content []byte, perm
 	}
 	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
 	if err != nil {
-		log.Printf("prometheus server create file failed: %v", err)
+		logger.Errorf("prometheus server create file failed: %v", err)
 	}
 	return err
 }
@@ -1305,7 +1304,7 @@ func (c *PrometheusClient) ClientCreateSymlink(target, link string) error {
 
 	err := c.sendRequestNoResponse("/api/v1/rules/symlink", req)
 	if err != nil {
-		log.Printf("prometheus server create link failed: %v", err)
+		logger.Errorf("prometheus server create link failed: %v", err)
 	}
 	return err
 }
@@ -1319,7 +1318,7 @@ func (c *PrometheusClient) ClientSetFileOwner(path string) error {
 
 	err := c.sendRequestNoResponse("/api/v1/rules/chown", req)
 	if err != nil {
-		log.Printf("prometheus server create link failed: %v", err)
+		logger.Errorf("prometheus server create link failed: %v", err)
 	}
 	return err
 }
@@ -1333,7 +1332,7 @@ func (c *PrometheusClient) ClientSetSymlinkOwner(path string) error {
 
 	err := c.sendRequestNoResponse("/api/v1/rules/chown", req)
 	if err != nil {
-		log.Printf("prometheus server set link owner failed: %v", err)
+		logger.Errorf("prometheus server set link owner failed: %v", err)
 	}
 	return err
 }
@@ -1346,7 +1345,7 @@ func (c *PrometheusClient) ClientRemoveRuleFile(path string) error {
 
 	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
 	if err != nil {
-		log.Printf("prometheus server remove file failed: %v", err)
+		logger.Errorf("prometheus server remove file failed: %v", err)
 	}
 	return err
 }
@@ -1358,7 +1357,7 @@ func (c *PrometheusClient) ClientCheckFileExists(path string) (bool, error) {
 	}
 	respBody, err := c.sendRequest("/api/v1/rules/file", req)
 	if err != nil {
-		log.Printf("server check file failed: %v", err)
+		logger.Errorf("server check file failed: %v", err)
 		return false, err
 	}
 	var resp RuleFileResponse
@@ -1376,7 +1375,7 @@ func (c *PrometheusClient) ClientRemoveSymlink(linkPath string) error {
 
 	err := c.sendRequestNoResponse("/api/v1/rules/file", req)
 	if err != nil {
-		log.Printf("prometheus server remove symlink failed: %v", err)
+		logger.Errorf("prometheus server remove symlink failed: %v", err)
 	}
 	return err
 }
@@ -1444,7 +1443,7 @@ func ReadFile(path string) ([]byte, error) {
 	if isRemotePrometheus {
 		fmt.Printf("wngzhe ReadFile remote")
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return nil, fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 		return prometheusClient.ClientReadRuleFile(path)
@@ -1457,7 +1456,7 @@ func ReadFile(path string) ([]byte, error) {
 func WriteFile(path string, content []byte, perm os.FileMode) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 		return prometheusClient.ClientWriteRuleFile(path, content, perm)
@@ -1474,7 +1473,7 @@ func WriteFile(path string, content []byte, perm os.FileMode) error {
 func SetFileOwner(path string, uid, gid int) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
@@ -1487,7 +1486,7 @@ func SetFileOwner(path string, uid, gid int) error {
 func SetSymlinkOwner(path string, uid, gid int) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
@@ -1497,7 +1496,7 @@ func SetSymlinkOwner(path string, uid, gid int) error {
 		if err != nil {
 			return os.Lchown(path, uid, gid)
 		} else {
-			log.Printf("Prometheus server set link owenr failed with %s", err)
+			logger.Errorf("Prometheus server set link owenr failed with %s", err)
 			return err
 		}
 	}
@@ -1506,7 +1505,7 @@ func SetSymlinkOwner(path string, uid, gid int) error {
 func CreateSymlink(target, link string) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
@@ -1528,7 +1527,7 @@ func CreateSymlink(target, link string) error {
 func RemoveSymlink(link string) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
@@ -1544,7 +1543,7 @@ func RemoveSymlink(link string) error {
 func ReloadPrometheus() error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
@@ -1568,11 +1567,11 @@ func ReloadPrometheusViaHTTP() error {
 		prometheusIP := GetPrometheusIP()
 		prometheusPort := GetPrometheusPort()
 		reloadURL = fmt.Sprintf("http://%s:%d/-/reload", prometheusIP, prometheusPort)
-		log.Printf("Reloading remote Prometheus via HTTP: %s", reloadURL)
+		logger.Infof("Reloading remote Prometheus via HTTP: %s", reloadURL)
 	} else {
 		// Local scenario: use localhost
 		reloadURL = "http://localhost:9090/-/reload"
-		log.Printf("Reloading local Prometheus via HTTP: %s", reloadURL)
+		logger.Infof("Reloading local Prometheus via HTTP: %s", reloadURL)
 	}
 
 	// Step 2: Create HTTP client with timeout
@@ -1584,7 +1583,7 @@ func ReloadPrometheusViaHTTP() error {
 	// Step 3: Send POST request
 	resp, err := client.Post(reloadURL, "", nil)
 	if err != nil {
-		log.Printf("Failed to send reload request to Prometheus: %v", err)
+		logger.Errorf("Failed to send reload request to Prometheus: %v", err)
 		return fmt.Errorf("failed to reload Prometheus via HTTP: %v", err)
 	}
 	defer resp.Body.Close()
@@ -1593,7 +1592,7 @@ func ReloadPrometheusViaHTTP() error {
 	if resp.StatusCode != 200 {
 		// Read response body for detailed error information
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("Prometheus reload failed with status %d: %s", resp.StatusCode, string(body))
+		logger.Errorf("Prometheus reload failed with status %d: %s", resp.StatusCode, string(body))
 
 		// Handle 403 error specifically (lifecycle API not enabled)
 		if resp.StatusCode == 403 {
@@ -1605,9 +1604,9 @@ func ReloadPrometheusViaHTTP() error {
 
 	// Step 5: Success log
 	if isRemotePrometheus {
-		log.Printf("Successfully reloaded remote Prometheus configuration via HTTP API")
+		logger.Infof("Successfully reloaded remote Prometheus configuration via HTTP API")
 	} else {
-		log.Printf("Successfully reloaded local Prometheus configuration via HTTP API")
+		logger.Infof("Successfully reloaded local Prometheus configuration via HTTP API")
 	}
 
 	return nil
@@ -1616,7 +1615,7 @@ func ReloadPrometheusViaHTTP() error {
 func RemoveFile(path string) error {
 	if isRemotePrometheus {
 		if prometheusClient == nil {
-			log.Printf("The Prometheus client has not been initialized.")
+			logger.Errorf("The Prometheus client has not been initialized.")
 			return fmt.Errorf("The Prometheus client has not been initialized.")
 		}
 
@@ -1678,13 +1677,13 @@ func (a *AlarmOperator) GetNodeAlarmRules(ctx context.Context, uuid string) ([]m
 	ctx, db := common.GetContextDB(ctx)
 	var rules []model.NodeAlarmRule
 	if err := db.Where("uuid = ?", uuid).Find(&rules).Error; err != nil {
-		log.Printf("query db node alarm rules: uuid=%s, error=%v", uuid, err)
+		logger.Infof("query db node alarm rules: uuid=%s, error=%v", uuid, err)
 		return nil, fmt.Errorf("query db node alarm rules: %w", err)
 	}
 	if uuid == "" {
 		var allRules []model.NodeAlarmRule
 		if err := db.Find(&allRules).Error; err != nil {
-			log.Printf("query all node alarm rules: error=%v", err)
+			logger.Infof("query all node alarm rules: error=%v", err)
 			return nil, fmt.Errorf("query all node alarm rules: %w", err)
 		}
 		return allRules, nil
@@ -1697,7 +1696,7 @@ func (a *AlarmOperator) CreateNodeAlarmRules(ctx context.Context, rule *model.No
 	ctx, db := common.GetContextDB(ctx)
 	rule.UUID = uuid.NewString()
 	if err := db.Create(rule).Error; err != nil {
-		log.Printf("Failed to create node alarm rule: ruleType=%s, name=%s, error=%v",
+		logger.Errorf("Failed to create node alarm rule: ruleType=%s, name=%s, error=%v",
 			rule.RuleType,
 			rule.Name,
 			err)
@@ -1710,7 +1709,7 @@ func (a *AlarmOperator) DeleteNodeAlarmRules(ctx context.Context, uuid string) e
 	ctx, db := common.GetContextDB(ctx)
 	result := db.Where("uuid = ?", uuid).Delete(&model.NodeAlarmRule{})
 	if result.Error != nil {
-		log.Printf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, result.Error)
+		logger.Errorf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, result.Error)
 		return fmt.Errorf("failed to delete node alarm rule: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
@@ -1747,7 +1746,7 @@ func (a *AlarmOperator) GetNodeAlarmRulesByType(ctx context.Context, ruleType st
 	var rules []model.NodeAlarmRule
 
 	if err := db.Where("rule_type = ?", ruleType).Find(&rules).Error; err != nil {
-		log.Printf("Failed to get node alarm rules by type: ruleType=%s, error=%v", ruleType, err)
+		logger.Errorf("Failed to get node alarm rules by type: ruleType=%s, error=%v", ruleType, err)
 		return nil, fmt.Errorf("failed to get node alarm rules by type: %w", err)
 	}
 
@@ -1763,10 +1762,10 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	// Read template content
 	templateContent, err := ReadFile(templatePath)
 	if err != nil {
-		log.Printf("Failed to read template file: path=%s, error=%v", templatePath, err)
+		logger.Errorf("Failed to read template file: path=%s, error=%v", templatePath, err)
 		return fmt.Errorf("failed to read template file %s: %w", templatePath, err)
 	}
-	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
+	logger.Debugf("ProcessTemplate templateContent: %s,  templatePath: %s", templateContent, templatePath)
 
 	var renderedContent string
 	if strings.Contains(string(templateContent), "name: compute-network-resources") {
@@ -1774,22 +1773,22 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 	} else {
 		renderedContent, err = renderTemplateContent(string(templateContent), data, templateFile)
 	}
-	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
+	logger.Debugf("ProcessTemplate templateContent: %s,  err: %s", templateContent, err)
 	if err != nil {
-		log.Printf("Failed to render template: template=%s, error=%v", templateFile, err)
+		logger.Errorf("Failed to render template: template=%s, error=%v", templateFile, err)
 		return fmt.Errorf("failed to render template %s: %w", templateFile, err)
 	}
-	fmt.Printf("wngzhe ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
+	logger.Debugf("ProcessTemplate templateContent: %s,  outputPath: %s", templateContent, outputPath)
 	// Write rendered content to output file
 	if err := WriteFile(outputPath, []byte(renderedContent), 0640); err != nil {
-		log.Printf("Failed to write output file: path=%s, error=%v", outputPath, err)
+		logger.Errorf("Failed to write output file: path=%s, error=%v", outputPath, err)
 		return fmt.Errorf("failed to write output file %s: %w", outputPath, err)
 	}
 
 	// Create symlink to RulesEnabled directory
 	enabledPath := filepath.Join(RulesEnabled, filepath.Base(outputPath))
 	if err := CreateSymlink(outputPath, enabledPath); err != nil {
-		log.Printf("Failed to create symlink: source=%s, target=%s, error=%v",
+		logger.Errorf("Failed to create symlink: source=%s, target=%s, error=%v",
 			outputPath, enabledPath, err)
 		return fmt.Errorf("failed to create symlink: %w", err)
 	}
@@ -2036,7 +2035,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 	}
 
 	if err := ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
+		logger.Errorf("Failed to reload Prometheus: %v", err)
 	}
 
 	return newRule, nil
@@ -2064,7 +2063,7 @@ func (v *AlarmView) CreateNodeAlarmRule(c *macaron.Context) {
 		enabled, parseErr = strconv.ParseBool(enabledStr)
 		if parseErr != nil {
 			// Handle parse error if necessary, or just use default true
-			log.Printf("Failed to parse enabled status: %v, using default true", parseErr)
+			logger.Errorf("Failed to parse enabled status: %v, using default true", parseErr)
 			enabled = true // Ensure it's true on parse error
 		}
 	}
@@ -2133,7 +2132,7 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 
 	rules, err := getNodeAlarmRulesInternal(c.Req.Context(), uuid, ruleType)
 	if err != nil {
-		log.Printf("Failed to get node alarm rules: error=%v", err)
+		logger.Errorf("Failed to get node alarm rules: error=%v", err)
 		c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "failed to get node alarm rules"})
 		return
 	}
@@ -2159,7 +2158,7 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 			// Use json.Indent for pretty printing
 			err := json.Indent(&js, rule.Config.RawMessage, "", "  ")
 			if err != nil {
-				log.Printf("Failed to format config JSON for rule %s: %v", rule.UUID, err)
+				logger.Errorf("Failed to format config JSON for rule %s: %v", rule.UUID, err)
 				ruleMap["ConfigFormatted"] = string(rule.Config.RawMessage) // Fallback to raw
 			} else {
 				ruleMap["ConfigFormatted"] = js.String()
@@ -2181,7 +2180,7 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 	if c.Locale != nil {
 		c.Data["i18n"] = c.Locale
 	} else {
-		log.Printf("Warning: i18n object is nil")
+		logger.Warningf("Warning: i18n object is nil")
 		c.Data["i18n"] = &i18n.Locale{} // Provide an empty i18n object as fallback
 	}
 
@@ -2249,20 +2248,20 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		enabledPath := filepath.Join(RulesEnabled, templateFile)
 
 		if err := RemoveFile(enabledPath); err != nil {
-			log.Printf("Failed to remove symlink: path=%s, error=%v", enabledPath, err)
+			logger.Errorf("Failed to remove symlink: path=%s, error=%v", enabledPath, err)
 		} else {
 			deletedFiles = append(deletedFiles, enabledPath)
 		}
 
 		if err := RemoveFile(outputPath); err != nil {
-			log.Printf("Failed to remove rule file: path=%s, error=%v", outputPath, err)
+			logger.Errorf("Failed to remove rule file: path=%s, error=%v", outputPath, err)
 		} else {
 			deletedFiles = append(deletedFiles, outputPath)
 		}
 	}
 
 	if err := ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Failed to reload Prometheus configuration: error=%v", err)
+		logger.Errorf("Failed to reload Prometheus configuration: error=%v", err)
 	}
 
 	return deletedFiles, nil
@@ -2281,7 +2280,7 @@ func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
 
 	deletedFiles, err := deleteNodeAlarmRuleInternal(c.Req.Context(), uuid)
 	if err != nil {
-		log.Printf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, err)
+		logger.Errorf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, err)
 		c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": fmt.Sprintf("failed to delete node alarm rule: %v", err)})
 		return
 	}
@@ -2310,13 +2309,13 @@ func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, 
 	// Send notification directly to notify_url (no authentication)
 	jsonData, err := json.Marshal(params)
 	if err != nil {
-		log.Printf("[SendNotification] Failed to marshal params: %v", err)
+		logger.Errorf("[SendNotification] Failed to marshal params: %v", err)
 		return fmt.Errorf("failed to marshal params: %w", err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, "POST", notifyURL, bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Printf("[SendNotification] Failed to create request: %v", err)
+		logger.Errorf("[SendNotification] Failed to create request: %v", err)
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -2325,18 +2324,18 @@ func (a *AlarmOperator) SendNotification(ctx context.Context, notifyURL string, 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[SendNotification] HTTP request failed: %v", err)
+		logger.Errorf("[SendNotification] HTTP request failed: %v", err)
 		return fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		log.Printf("[SendNotification] Request failed with status %d, response: %s", resp.StatusCode, string(body))
+		logger.Errorf("[SendNotification] Request failed with status %d, response: %s", resp.StatusCode, string(body))
 		return fmt.Errorf("notification service returned status %d", resp.StatusCode)
 	}
 
-	log.Printf("[SendNotification] Successfully sent notification to %s", notifyURL)
+	logger.Infof("[SendNotification] Successfully sent notification to %s", notifyURL)
 	return nil
 }
 
@@ -2351,25 +2350,25 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 	existingData, err := ReadFile(matchedVMsFile)
 	if err == nil && len(existingData) > 0 {
 		if err := json.Unmarshal(existingData, &matchedVMs); err != nil {
-			log.Printf("Failed to parse existing matched_vms.json: %v", err)
+			logger.Errorf("Failed to parse existing matched_vms.json: %v", err)
 			// Even if parsing fails, initialize an empty array to avoid losing operations
 			matchedVMs = []map[string]interface{}{}
 		}
 	} else {
 		// File doesn't exist or is empty, create new array
 		matchedVMs = []map[string]interface{}{}
-		log.Printf("Creating new matched_vms.json file")
+		logger.Infof("Creating new matched_vms.json file")
 	}
 
 	// Process based on operation type
 	if operation == "add" {
-		log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
+		logger.Infof("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(vmUUIDs))
 		// Add or update VM entries
 		var notFoundVMs []string
 		for _, instanceid := range vmUUIDs {
 			domain, err := GetDomainByInstanceUUID(ctx, instanceid)
 			if err != nil {
-				log.Printf("Failed to get domain for instanceid=%s: %v", instanceid, err)
+				logger.Errorf("Failed to get domain for instanceid=%s: %v", instanceid, err)
 				notFoundVMs = append(notFoundVMs, instanceid)
 				continue
 			}
@@ -2409,7 +2408,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 					// Update existing entry
 					entryExists = true
 					matchedVMs[i] = newEntry
-					log.Printf("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
+					logger.Infof("Updating existing mapping: domain=%s, rule_id=%s, instance_id=%s", domain, expectedRuleID, instanceid)
 					break
 				}
 			}
@@ -2417,7 +2416,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 			// If it doesn't exist, add a new entry
 			if !entryExists {
 				matchedVMs = append(matchedVMs, newEntry)
-				log.Printf("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
+				logger.Infof("Adding new mapping: domain=%s, rule_id=%s-%s, instance_id=%s", domain, domain, groupUUID, instanceid)
 			}
 		}
 
@@ -2464,7 +2463,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 					if len(vmUUIDs) == 0 {
 						domain, _ := labels["domain"].(string)
 						instanceID, _ := labels["instance_id"].(string)
-						log.Printf("Removing mapping by group(all): domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						logger.Infof("Removing mapping by group(all): domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
 						removedCount++
 						continue
 					}
@@ -2479,7 +2478,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 					}
 					if inVM {
 						domain, _ := labels["domain"].(string)
-						log.Printf("Removing mapping by group: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
+						logger.Infof("Removing mapping by group: domain=%s, rule_id=%s, instance_id=%s", domain, ruleID, instanceID)
 						removedCount++
 						continue
 					}
@@ -2515,7 +2514,7 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 
 			if inVM && inDev {
 				domain, _ := labels["domain"].(string)
-				log.Printf("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
+				logger.Infof("Removing mapping by triple: domain=%s, rule_id=%s, instance_id=%s, target_device=%s",
 					domain, ruleID, instanceID, labels["target_device"])
 				removedCount++
 				continue
@@ -2526,28 +2525,28 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 		}
 
 		matchedVMs = filteredVMs
-		log.Printf("Removed %d mappings for rule group %s", removedCount, groupUUID)
+		logger.Infof("Removed %d mappings for rule group %s", removedCount, groupUUID)
 	}
 
 	// Save updated matched_vms.json
 	matchedVMsData, err := json.MarshalIndent(matchedVMs, "", "  ")
 	if err != nil {
-		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		logger.Errorf("Failed to marshal matched_vms.json: %v", err)
 		return err
 	}
 
 	err = WriteFile(matchedVMsFile, matchedVMsData, 0644)
 	if err != nil {
-		log.Printf("Failed to write matched_vms.json: %v", err)
+		logger.Errorf("Failed to write matched_vms.json: %v", err)
 		return err
 	}
 
 	// Force reload Prometheus configuration
 	if err := ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
+		logger.Errorf("Warning: Failed to reload Prometheus after updating matched_vms.json: %v", err)
 		// Don't return error as the file update was successful
 	} else {
-		log.Printf("Successfully reloaded Prometheus configuration after updating matched_vms.json")
+		logger.Infof("Successfully reloaded Prometheus configuration after updating matched_vms.json")
 	}
 
 	return nil
