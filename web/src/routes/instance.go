@@ -1433,6 +1433,97 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	return
 }
 
+// List4View lists instances with structured search params for Web Console.
+// It does not modify the original List method used by the API layer.
+func (a *InstanceAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *InstanceSearchParams) (total int64, instances []*model.Instance, err error) {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
+	if params == nil {
+		params = &InstanceSearchParams{}
+	}
+	db := DB()
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	where := memberShip.GetWhere()
+
+	// Count with parameterized filters
+	countDB := ApplyInstanceSearch(db.Model(&model.Instance{}).Where(where), params)
+	if params.IP != "" {
+		countDB = countDB.
+			Joins("LEFT JOIN interfaces ON interfaces.instance = instances.id").
+			Joins("LEFT JOIN addresses ON addresses.interface = interfaces.id").
+			Where("addresses.address LIKE ?", "%"+params.IP+"%").
+			Group("instances.id")
+	}
+	if err = countDB.Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count instance(s)", err)
+		return
+	}
+
+	// Find with same filters + pagination
+	findDB := ApplyInstanceSearch(db.Where(where), params)
+	if params.IP != "" {
+		findDB = findDB.
+			Joins("LEFT JOIN interfaces ON interfaces.instance = instances.id").
+			Joins("LEFT JOIN addresses ON addresses.interface = interfaces.id").
+			Where("addresses.address LIKE ?", "%"+params.IP+"%").
+			Group("instances.id")
+	}
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	instances = []*model.Instance{}
+	if err = findDB.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Find(&instances).Error; err != nil {
+		logger.Errorf("Failed to query instance(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query instance(s)", err)
+		return
+	}
+	db = db.Offset(0).Limit(-1)
+	for _, instance := range instances {
+		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+			return db.Order("addresses.updated_at")
+		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+			logger.Errorf("Failed to query interfaces %v", err)
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
+			return
+		}
+
+		if err = db.Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+			logger.Errorf("Failed to query floating ip(s), %v", err)
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
+			return
+		}
+
+		if instance.RouterID > 0 {
+			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
+			if err = db.Take(instance.Router).Error; err != nil {
+				logger.Errorf("Failed to query router, %v", err)
+				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
+				return
+			}
+		}
+		permit := memberShip.CheckPermission(model.Admin)
+		if permit {
+			instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
+			if err = db.Take(instance.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info for instance", err)
+				return
+			}
+		}
+	}
+
+	return
+}
+
 func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 
@@ -1445,21 +1536,16 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	queryStr := c.QueryTrim("q")
-	query := queryStr
-	if query != "" {
-		query = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
-	}
-	hostname := c.QueryTrim("hostname")
-	router_id := c.QueryTrim("router_id")
-	if router_id != "" {
-		routerID, err := strconv.Atoi(router_id)
-		if err != nil {
-			logger.Debugf("Error to convert router_id to integer: %+v ", err)
+	params := &InstanceSearchParams{}
+	params.Name = queryStr
+	routerIDStr := c.QueryTrim("router_id")
+	if routerIDStr != "" {
+		if routerID, err := strconv.Atoi(routerIDStr); err == nil {
+			params.RouterID = int64(routerID)
 		}
-		query = fmt.Sprintf("router_id = %d", routerID)
 	}
-	// Fetch instances from database (call existing instanceAdmin.List function)
-	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
+	// Fetch instances from database
+	total, instances, err := instanceAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		logger.Debugf("Failed to get instances, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -1472,9 +1558,9 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 
 	// Set template data
 	c.Data["Instances"] = instances
-	c.Data["Query"] = queryStr
+	c.Data["Query"] = params.Name
 	c.Data["IsAdmin"] = isAdmin
-	c.Data["HostName"] = hostname
+	c.Data["HostName"] = c.QueryTrim("hostname")
 	SetPaginationData(c, "instances", total, limit, offset, listConfig,
 		`["ID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"]`,
 		[]string{"ID", "UUID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"})
@@ -1501,7 +1587,9 @@ func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	_, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
+	params := &InstanceSearchParams{}
+	params.Name = query
+	_, instances, err := instanceAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")

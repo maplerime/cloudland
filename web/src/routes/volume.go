@@ -564,6 +564,56 @@ func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return a.ListVolume(ctx, offset, limit, order, query, "all")
 }
 
+// List4View lists volumes with structured search params for Web Console.
+func (a *VolumeAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *VolumeSearchParams) (total int64, volumes []*model.Volume, err error) {
+	memberShip := GetMemberShip(ctx)
+	ctx, db := GetContextDB(ctx)
+	if params == nil {
+		params = &VolumeSearchParams{}
+	}
+	if params.VolumeType == "" {
+		params.VolumeType = "all"
+	}
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	where := memberShip.GetWhere()
+
+	// Count with parameterized filters
+	countDB := ApplyVolumeSearch(db.Model(&model.Volume{}).Where(where), params)
+	if err = countDB.Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
+		return
+	}
+
+	// Find with same filters + pagination
+	findDB := ApplyVolumeSearch(db.Where(where), params)
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	volumes = []*model.Volume{}
+	if err = findDB.Preload("Instance").Find(&volumes).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
+		return
+	}
+	permit := memberShip.CheckPermission(model.Admin)
+	if permit {
+		db = db.Offset(0).Limit(-1)
+		for _, vol := range volumes {
+			vol.OwnerInfo = &model.Organization{Model: model.Model{ID: vol.Owner}}
+			if err = db.Take(vol.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Owner organization not found", err)
+				return
+			}
+		}
+	}
+
+	return
+}
+
 func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
@@ -640,8 +690,10 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
-	query := c.QueryTrim("q")
-	total, volumes, err := volumeAdmin.ListVolume(c.Req.Context(), offset, limit, order, query, "all")
+	params := &VolumeSearchParams{}
+	params.Name = c.QueryTrim("q")
+	params.VolumeType = "all"
+	total, volumes, err := volumeAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
@@ -649,7 +701,7 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Volumes"] = volumes
-	c.Data["Query"] = query
+	c.Data["Query"] = params.Name
 	SetPaginationData(c, "volumes", total, limit, offset, listConfig,
 		`["ID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"]`,
 		[]string{"ID", "UUID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"})

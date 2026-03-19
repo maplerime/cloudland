@@ -302,6 +302,33 @@ func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query
 	return
 }
 
+// List4View lists images with structured search params for Web Console.
+func (a *ImageAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *ImageSearchParams) (total int64, images []*model.Image, err error) {
+	ctx, db := GetContextDB(ctx)
+	if params == nil {
+		params = &ImageSearchParams{}
+	}
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	images = []*model.Image{}
+	countDB := ApplyImageSearch(db.Model(&model.Image{}), params)
+	if err = countDB.Count(&total).Error; err != nil {
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count images", err)
+	}
+	findDB := ApplyImageSearch(db, params)
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	if err = findDB.Find(&images).Error; err != nil {
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to find images", err)
+	}
+
+	return
+}
+
 func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -421,7 +448,9 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	total, images, err := imageAdmin.List(c.Req.Context(), offset, limit, order, query)
+	params := &ImageSearchParams{}
+	params.Name = query
+	total, images, err := imageAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)
