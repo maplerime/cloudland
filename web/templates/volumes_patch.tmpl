@@ -25,11 +25,13 @@
                     </div>
                     <div class="inline field">
                         <label for="instance">{{.i18n.Tr "Attached to Instance"}}</label>
+                        {{ if eq .Volume.Status.String "available" }}
                         <div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
                             <input type="text" id="instanceSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
                             <i class="search icon link" onclick="$('#instanceSearch').trigger('input')"></i>
                         </div>
-						<div class="ui selection dropdown" id="instanceDropdown">
+                        {{ end }}
+						<div class="ui selection dropdown{{ if not (eq .Volume.Status.String "available") }} disabled{{ end }}" id="instanceDropdown">
 						  <input id="instance" name="instance" type="hidden">
 						  <i class="dropdown icon"></i>
 						  {{ if .Volume.Instance }}
