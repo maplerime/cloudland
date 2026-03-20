@@ -647,11 +647,10 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, secgroups, err := secgroupAdmin.List(c.Req.Context(), 0, -1, "", fmt.Sprintf("router_id = %d", iface.SecurityGroups[0].RouterID))
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(500, "500")
-		return
+	// Security groups are loaded via AJAX search; pass RouterID for the query constraint
+	var sgRouterID int64
+	if len(iface.SecurityGroups) > 0 {
+		sgRouterID = iface.SecurityGroups[0].RouterID
 	}
 	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "updated_at", "", fmt.Sprintf("(instance_id = 0 and type = '%s') or (instance_id = %d and type = '%s')", PublicFloating, iface.Instance, PublicReserved))
 	if err != nil {
@@ -663,7 +662,7 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		logger.Error("floating ips: %+v", fip)
 	}
 	c.Data["Interface"] = iface
-	c.Data["Secgroups"] = secgroups
+	c.Data["RouterID"] = sgRouterID
 	c.Data["PublicIps"] = floatingIps
 	c.Data["IfaceSubnets"] = ifaceSubnets
 	c.Data["IpCount"] = len(iface.SecondAddresses) + 1

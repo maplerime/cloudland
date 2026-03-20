@@ -57,6 +57,12 @@ type FloatingIpSearchParams struct {
 	RawCondition string
 }
 
+// SecgroupSearchParams extends BaseSearchParams with security group-specific filters.
+type SecgroupSearchParams struct {
+	BaseSearchParams
+	RouterID int64 // filter by router ID (exact)
+}
+
 // --- Apply helpers (one per resource, avoids duplicating filter logic) ---
 
 // applyBaseSearch applies BaseSearchParams filters to a GORM query.
@@ -180,6 +186,18 @@ func ApplyFloatingIpSearch(db *gorm.DB, params *FloatingIpSearchParams) *gorm.DB
 	}
 	if params.RawCondition != "" {
 		db = db.Where(params.RawCondition)
+	}
+	return db
+}
+
+// ApplySecgroupSearch applies all SecgroupSearchParams filters.
+func ApplySecgroupSearch(db *gorm.DB, params *SecgroupSearchParams) *gorm.DB {
+	if params == nil {
+		return db
+	}
+	db = applyBaseSearch(db, &params.BaseSearchParams, "name")
+	if params.RouterID > 0 {
+		db = db.Where("router_id = ?", params.RouterID)
 	}
 	return db
 }

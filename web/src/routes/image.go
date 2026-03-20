@@ -537,12 +537,7 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.Error(http.StatusInternalServerError)
-		return
-	}
+	// Instances are loaded via AJAX search instead of pre-loading all
 
 	// Query OS Family options from Dictionary
 	db := DB()
@@ -555,7 +550,6 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	c.Data["Instances"] = instances
 	c.Data["OsFamilies"] = osFamilies
 	c.HTML(200, "images_new")
 }

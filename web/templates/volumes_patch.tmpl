@@ -25,7 +25,11 @@
                     </div>
                     <div class="inline field">
                         <label for="instance">{{.i18n.Tr "Attached to Instance"}}</label>
-						<div class="ui selection dropdown">
+                        <div class="ui mini icon input" style="margin-bottom:5px;width:100%">
+                            <input type="text" id="instanceSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off">
+                            <i class="search icon"></i>
+                        </div>
+						<div class="ui selection dropdown" id="instanceDropdown">
 						  <input id="instance" name="instance" type="hidden">
 						  <i class="dropdown icon"></i>
 						  {{ if .Volume.Instance }}
@@ -33,11 +37,11 @@
 						  {{ else }}
 						  <div data-value=0 class="default text">{{.i18n.Tr "Not Attached at All"}}</div>
 						  {{ end }}
-						  <div class="menu">
+						  <div class="menu" id="instanceMenu">
 							<div class="item" data-value=0 data-text="Not Attached at All">{{.i18n.Tr "Not Attached at All"}}</div>
-                            {{ range .Instances }}
-							<div class="item" data-value={{.ID}} data-text={{.ID}}-{{.Hostname}}>
-							  {{.ID}}-{{.Hostname}}
+                            {{ if .Volume.Instance }}
+							<div class="item" data-value={{.Volume.Instance.ID}} data-text="{{.Volume.Instance.ID}}-{{.Volume.Instance.Hostname}}">
+							  {{.Volume.Instance.ID}}-{{.Volume.Instance.Hostname}}
 							</div>
                             {{ end }}
 						  </div>
@@ -52,5 +56,30 @@
         </div>
 	</div>
 </div>
+<script>
+(function(){
+    var timer;
+    $('#instanceSearch').on('input', function(){
+        var q = $(this).val();
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+            $.getJSON('/instances/search.json', {q: q}, function(data){
+                var menu = document.getElementById('instanceMenu');
+                var currentVal = $('#instanceDropdown').dropdown('get value');
+                var html = '<div class="item" data-value="0">Not Attached at All</div>';
+                if (data.results) {
+                    for (var i = 0; i < data.results.length; i++) {
+                        var r = data.results[i];
+                        html += '<div class="item" data-value="' + r.value + '">' + r.name + '</div>';
+                    }
+                }
+                menu.innerHTML = html;
+                $('#instanceDropdown').dropdown('refresh');
+                if (currentVal) $('#instanceDropdown').dropdown('set selected', currentVal);
+            });
+        }, 300);
+    });
+})();
+</script>
 {{template "_footer" .}}
 

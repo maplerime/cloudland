@@ -1623,6 +1623,34 @@ func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
 	return
 }
 
+// SearchJSON returns instances as JSON for AJAX dropdown search.
+func (v *InstanceView) SearchJSON(c *macaron.Context, store session.Store) {
+	q := c.QueryTrim("q")
+	params := &InstanceSearchParams{}
+	if id, err := strconv.Atoi(q); err == nil && q != "" {
+		params.ID = int64(id)
+	} else if q != "" {
+		params.Name = q
+	}
+	_, instances, err := instanceAdmin.List4View(c.Req.Context(), 0, 20, "-created_at", params)
+	if err != nil {
+		c.JSON(500, map[string]interface{}{"success": false, "message": err.Error()})
+		return
+	}
+	type Result struct {
+		Name  string `json:"name"`
+		Value int64  `json:"value"`
+	}
+	results := make([]Result, 0, len(instances))
+	for _, inst := range instances {
+		results = append(results, Result{
+			Name:  fmt.Sprintf("%d-%s", inst.ID, inst.Hostname),
+			Value: inst.ID,
+		})
+	}
+	c.JSON(200, map[string]interface{}{"success": true, "results": results})
+}
+
 func (v *InstanceView) Status(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
