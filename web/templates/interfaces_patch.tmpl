@@ -151,19 +151,20 @@
                         </select>
                     </div>
                     <div class="inline field">
-                        <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>
-                        <div style="display:inline-block;vertical-align:middle;width:calc(100% - 150px)">
-                            <div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
-                                <input type="text" id="secgroupSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
-                                <i class="search icon link" onclick="$('#secgroupSearch').trigger('input')"></i>
-                            </div>
-                            <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">
-                                {{ range .IfaceSecgroups }}
-                                  <option value="{{ .ID }}" selected>{{ .ID }}-{{ .Name }}</option>
-                                {{ end }}
-                            </select>
+                        <label for="secgroupSearch">{{.i18n.Tr "Security Groups"}}</label>
+                        <div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
+                            <input type="text" id="secgroupSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
+                            <i class="search icon link" onclick="$('#secgroupSearch').trigger('input')"></i>
                         </div>
-		    </div>
+		                </div>
+                    <div class="inline field">
+                        <label for="secgroups">&nbsp;&nbsp;</label>
+                        <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">
+                            {{ range .IfaceSecgroups }}
+                              <option value="{{ .ID }}" selected>{{ .ID }}-{{ .Name }}</option>
+                            {{ end }}
+                        </select>
+		                </div>
                     <div class="inline field">
                         <label></label>
                         <button class="ui green button">{{.i18n.Tr "Update Interface"}}</button>

@@ -31,7 +31,7 @@
                             <i class="search icon link" onclick="$('#instanceSearch').trigger('input')"></i>
                         </div>
                         {{ end }}
-						<div class="ui selection dropdown{{ if not (eq .Volume.Status.String "available") }} disabled{{ end }}" id="instanceDropdown">
+						<div class="ui selection dropdown" id="instanceDropdown">
 						  <input id="instance" name="instance" type="hidden">
 						  <i class="dropdown icon"></i>
 						  {{ if .Volume.Instance }}
