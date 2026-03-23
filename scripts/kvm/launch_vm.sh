@@ -3,23 +3,20 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 12 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <pool_ID> <instance_uuid> <image_volume_id>"
+[ $# -lt 9 ] && die "$0 <vm_ID> <image> <qa_enabled> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <instance_uuid>"
 
 ID=$1
 vm_ID=inst-$ID
 img_name=$2
 qa_enabled=$3
-snapshot=$4
-vm_name=$5
-vm_cpu=$6
-vm_mem=$7
-disk_size=$8
-vol_ID=$9
-nested_enable=${10}
-boot_loader=${11}
-pool_ID=${12}
-instance_uuid=${13:-$ID}
-image_volume_id=${14}
+vm_name=$4
+vm_cpu=$5
+vm_mem=$6
+disk_size=$7
+vol_ID=$8
+nested_enable=$9
+boot_loader=${10}
+instance_uuid=${11:-$ID}
 state=error
 vm_vnc=""
 vol_state=error
@@ -27,6 +24,7 @@ vol_state=error
 md=$(cat)
 metadata=$(echo $md | base64 -d)
 read -d'\n' -r sysdisk_iops_limit sysdisk_bps_limit < <(jq -r ".disk_iops_limit, .disk_bps_limit" <<<$metadata)
+storage_pool_relation=$(jq -c '.storage_pool_relation // {}' <<<$metadata)
 
 let fsize=$disk_size*1024*1024*1024
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
@@ -58,6 +56,21 @@ if [ -z "$wds_address" ]; then
     fi
 else
     get_wds_token
+    if [ -n "$storage_pool_relation" ] && [ "$storage_pool_relation" != "{}" ]; then
+        pool_list=$(jq -r 'keys | join(",")' <<<$storage_pool_relation)
+        if [ -n "$pool_list" ]; then
+            selected_pool=$(select_pool_lowest_usage "$pool_list")
+            if [ -n "$selected_pool" ]; then
+                img_vol_from_rel=$(jq -r ".\"$selected_pool\".image_volume_id // empty" <<<$storage_pool_relation)
+                snap_from_rel=$(jq -r ".\"$selected_pool\".snapshot // empty" <<<$storage_pool_relation)
+                if [ -n "$img_vol_from_rel" ] && [ -n "$snap_from_rel" ]; then
+                    pool_ID=$selected_pool
+                    image_volume_id=$img_vol_from_rel
+                    snapshot=$snap_from_rel
+                fi
+            fi
+        fi
+    fi
     if [ -z "$pool_ID" ]; then
         pool_ID=$wds_pool_id
     fi
@@ -179,7 +192,7 @@ virsh autostart $vm_ID --disable
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init' '$snapshot'"
 
 # check if the vm is windows and whether to change the rdp port
 if [ "$os_code" = "windows" ]; then

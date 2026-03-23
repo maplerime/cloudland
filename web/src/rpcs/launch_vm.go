@@ -141,7 +141,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		}
 	}()
 	argn := len(args)
-	if argn < 4 {
+	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -179,14 +179,15 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	serverStatus := args[2]
-	hyperID, err := strconv.Atoi(args[3])
+	hyperID64, err := strconv.ParseInt(args[3], 10, 32)
 	if err != nil {
 		logger.Error("Invalid hyper ID", err)
 		reason = err.Error()
 		return
 	}
+	hyperID := int32(hyperID64)
 	reason = args[4]
-	instance.Hyper = int32(hyperID)
+	instance.Hyper = hyperID
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 	if err != nil {
@@ -194,17 +195,24 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	instance.ZoneID = hyper.ZoneID
+	updates := map[string]interface{}{
+		"status": serverStatus,
+		"hyper":  hyperID,
+		"zoneID": hyper.ZoneID,
+		"reason": reason,
+	}
+	if argn >= 6 && args[5] != "" {
+		if snapshotVal, parseErr := strconv.ParseInt(args[5], 10, 64); parseErr == nil {
+			updates["snapshot"] = snapshotVal
+		}
+	}
 	if instance.Status != model.InstanceStatusMigrating {
-		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{
-			"status": serverStatus,
-			"hyper":  int32(hyperID),
-			"zoneID": hyper.ZoneID,
-			"reason": reason}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(updates).Error
 		if err != nil {
 			logger.Error("Failed to update instance", err)
 			return
 		}
-		err = db.Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{"hyper": int32(hyperID)}).Error
+		err = db.Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{"hyper": hyperID}).Error
 		if err != nil {
 			logger.Error("Failed to update interface", err)
 			return

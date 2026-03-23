@@ -31,6 +31,12 @@ if [ -z "$pool_ID" ]; then
 fi
 
 get_wds_token
+if [[ "$pool_ID" == *","* ]] && [ "$pool_ID" != "$wds_pool_id" ]; then
+    selected_pool=$(select_pool_lowest_usage "$pool_ID")
+    if [ -n "$selected_pool" ]; then
+        pool_ID=$selected_pool
+    fi
+fi
 state="creating"
 let size=$size*1024*1024*1024 # GB to Bytes
 # fix wds said: "The volume name cannot start with a number"

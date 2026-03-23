@@ -111,6 +111,14 @@ func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 		logger.Error("Update volume status failed", err)
 		return
 	}
+	poolID := volume.GetVolumePoolID()
+	if poolID != "" {
+		err = db.Model(&volume).Updates(map[string]interface{}{"pool_id": poolID}).Error
+		if err != nil {
+			logger.Error("Update volume pool ID failed", err)
+			return
+		}
+	}
 	if err = updateInstance(ctx, volume, status, args[4]); err != nil {
 		logger.Error("Update instance status failed", err)
 		return

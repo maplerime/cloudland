@@ -83,7 +83,7 @@ func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume 
 }
 
 func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32, instanceID int64, booting bool,
-	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
+	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32) (volume *model.Volume, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -101,9 +101,6 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	}
 	if bpsBurst == 0 {
 		bpsBurst = viper.GetInt32("volume.default_bps_burst")
-	}
-	if poolID == "" {
-		poolID = viper.GetString("volume.default_wds_pool_id")
 	}
 	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
 		logger.Error("Invalid bps limit: %d", bpsLimit)
@@ -136,7 +133,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 		BpsLimit:   bpsLimit,
 		BpsBurst:   bpsBurst,
 		Status:     "pending",
-		PoolID:     poolID,
+		PoolID:     "",
 	}
 	err = db.Create(volume).Error
 	if err != nil {
@@ -158,7 +155,17 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
-	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+	newPoolID := poolID
+	if poolID != "" {
+		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
+		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+			if dictionary.Value != "" {
+				newPoolID = dictionary.Value
+			}
+		}
+	}
+
+	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst)
 	if err != nil {
 		logger.Error("DB create volume failed", err)
 		return
@@ -167,7 +174,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	control := fmt.Sprintf("inter=")
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)
