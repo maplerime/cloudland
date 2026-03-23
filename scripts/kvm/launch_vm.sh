@@ -3,23 +3,20 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 12 ] && die "$0 <vm_ID> <image> <qa_enabled> <snapshot> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <pool_ID> <instance_uuid> <image_volume_id>"
+[ $# -lt 9 ] && die "$0 <vm_ID> <image> <qa_enabled> <name> <cpu> <memory> <disk_size> <volume_id> <nested_enable> <boot_loader> <instance_uuid>"
 
 ID=$1
 vm_ID=inst-$ID
 img_name=$2
 qa_enabled=$3
-snapshot=$4
-vm_name=$5
-vm_cpu=$6
-vm_mem=$7
-disk_size=$8
-vol_ID=$9
-nested_enable=${10}
-boot_loader=${11}
-pool_ID=${12}
-instance_uuid=${13:-$ID}
-image_volume_id=${14}
+vm_name=$4
+vm_cpu=$5
+vm_mem=$6
+disk_size=$7
+vol_ID=$8
+nested_enable=$9
+boot_loader=${10}
+instance_uuid=${11:-$ID}
 state=error
 vm_vnc=""
 vol_state=error
@@ -195,7 +192,7 @@ virsh autostart $vm_ID --disable
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 virsh start $vm_ID
 [ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'init' '$snapshot'"
 
 # check if the vm is windows and whether to change the rdp port
 if [ "$os_code" = "windows" ]; then

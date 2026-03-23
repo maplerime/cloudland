@@ -136,7 +136,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| launch_vm.sh '127' 'running' '3' 'reason'
 	db := DB()
 	argn := len(args)
-	if argn < 4 {
+	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -189,12 +189,19 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	instance.ZoneID = hyper.ZoneID
+	updates := map[string]interface{}{
+		"status": serverStatus,
+		"hyper":  int32(hyperID),
+		"zoneID": hyper.ZoneID,
+		"reason": reason,
+	}
+	if argn >= 6 && args[5] != "" {
+		if snapshotVal, parseErr := strconv.ParseInt(args[5], 10, 64); parseErr == nil {
+			updates["snapshot"] = snapshotVal
+		}
+	}
 	if instance.Status != model.InstanceStatusMigrating {
-		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{
-			"status": serverStatus,
-			"hyper":  int32(hyperID),
-			"zoneID": hyper.ZoneID,
-			"reason": reason}).Error
+		err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(updates).Error
 		if err != nil {
 			logger.Error("Failed to update instance", err)
 			return

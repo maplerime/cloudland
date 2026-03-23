@@ -149,8 +149,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 
 	driver := GetVolumeDriver()
 	var poolRelation map[string]PoolRelationItem
-	var firstPoolID, firstImageVolumeID string
-	firstPoolID = poolID
 	if driver != "local" {
 		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 		if poolID == "" {
@@ -179,8 +177,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			}
 			poolRelation[pid] = PoolRelationItem{ImageVolumeID: storage.VolumeID, Snapshot: 0}
 		}
-		firstPoolID = poolIDs[0]
-		firstImageVolumeID = poolRelation[firstPoolID].ImageVolumeID
 		logger.Debugf("Using volume driver %s with pool IDs %v, relation %+v", driver, poolIDs, poolRelation)
 	}
 
@@ -192,14 +188,12 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			hostname = fmt.Sprintf("%s-%d", prefix, i+1)
 		}
 		total := 0
-		var snapshotForInstance int64
 
 		if driver == "local" {
 			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 				logger.Error("Failed to query total instances with the image", err)
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
 			}
-			snapshotForInstance = int64(total/MaxmumSnapshot + 1)
 		} else {
 			for pid, rel := range poolRelation {
 				var poolTotal int
@@ -214,9 +208,6 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 				}
 				poolSnap := poolTotal/MaxmumSnapshot + 1
 				poolRelation[pid] = PoolRelationItem{ImageVolumeID: rel.ImageVolumeID, Snapshot: int64(poolSnap)}
-				if pid == firstPoolID {
-					snapshotForInstance = int64(poolSnap)
-				}
 			}
 		}
 		instance := &model.Instance{
@@ -224,7 +215,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			Owner:          memberShip.OrgID,
 			Hostname:       hostname,
 			ImageID:        image.ID,
-			Snapshot:       snapshotForInstance,
+			Snapshot:       0,
 			Keys:           keys,
 			PasswdLogin:    passwdLogin,
 			LoginPort:      int32(loginPort),
@@ -249,7 +240,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0, firstPoolID)
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0)
 		if err != nil {
 			logger.Error("Failed to create boot volume", err)
 			return
@@ -283,7 +274,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshotForInstance, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, firstPoolID, instance.UUID, firstImageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
