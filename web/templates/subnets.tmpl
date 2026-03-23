@@ -7,6 +7,7 @@
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "Subnet_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
+				            {{template "_column_selector" .}}
 				            <a class="ui green tiny button" href="subnets/new">{{.i18n.Tr "Create"}}</a>
 			            </div>
 		            </h4>
@@ -23,21 +24,21 @@
 	                        <thead>
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "ID"}}</th>
+			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
-									<th>{{.i18n.Tr "UUID"}}</th>
-			                        <th>{{.i18n.Tr "Name"}}</th>
-			                        <th>{{.i18n.Tr "Type"}}</th>
-			                        <th>{{.i18n.Tr "Group"}}</th>
-			                        <th>{{.i18n.Tr "Network"}}</th>
-			                        <th>{{.i18n.Tr "Netmask"}}</th>
-			                        <th>{{.i18n.Tr "Priority"}}</th>
-			                        <th>{{.i18n.Tr "VPC"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+			                        <th data-column="Name">{{.i18n.Tr "Name"}}</th>
+			                        <th data-column="Type">{{.i18n.Tr "Type"}}</th>
+			                        <th data-column="Group">{{.i18n.Tr "Group"}}</th>
+			                        <th data-column="Network">{{.i18n.Tr "Network"}}</th>
+			                        <th data-column="Netmask">{{.i18n.Tr "Netmask"}}</th>
+			                        <th data-column="Priority">{{.i18n.Tr "Priority"}}</th>
+			                        <th data-column="VPC">{{.i18n.Tr "VPC"}}</th>
 						{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "Vlan"}}</th>
-			                        <th>{{.i18n.Tr "Owner"}}</th>
+			                        <th data-column="Vlan">{{.i18n.Tr "Vlan"}}</th>
+			                        <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
 						{{ end }}
-                                    <th>{{.i18n.Tr "Delete"}}</th>
+                                    <th data-column="Action">{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -46,34 +47,34 @@
 								{{ if or $.IsAdmin (eq $.UserID .Creater) }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+			                        <td data-column="ID"><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td>{{.UUID}}</td>
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.Type}}
+									<td data-column="UUID">{{.UUID}}</td>
+			                        <td data-column="Name"><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
+			                        <td data-column="Type">{{.Type}}
 										{{ if ne .Type "internal" }}
 											({{.IdleCount}})
 										{{ end }}
 									</td>
-									<td>
+									<td data-column="Group">
                         {{ if .Group }}
                         {{ .Group.Name }}
                         {{ end }}
                                             </td>
-			                        <td>{{.Network}}</td>
-			                        <td>{{.Netmask}}</td>
-			                        <td>{{.Priority}}</td>
-			                        <td>
+			                        <td data-column="Network">{{.Network}}</td>
+			                        <td data-column="Netmask">{{.Netmask}}</td>
+			                        <td data-column="Priority">{{.Priority}}</td>
+			                        <td data-column="VPC">
 						{{ if .Router }}
 						{{ .Router.Name }}
 						{{ end }}
                                     		</td>
 
 						{{ if $.IsAdmin }}
-			                        <td>{{.Vlan}}</td>
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Vlan">{{.Vlan}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
-                                    <td><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+                                    <td data-column="Action"><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
 				{{ end }}
 				{{ end }}
@@ -81,15 +82,7 @@
                         </table>
 		            </div>
 		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu">
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
+                                 {{template "_pagination" .}}
 	                    </div>
 	            </div>
             </div>

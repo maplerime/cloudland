@@ -21,7 +21,12 @@ func init() {
 
 func SystemRouter(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| system_router.sh '1' 'hyper-1'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 2 {
 		err = fmt.Errorf("Wrong params")

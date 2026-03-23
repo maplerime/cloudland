@@ -381,11 +381,9 @@ func (v *UserView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "users")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -398,11 +396,17 @@ func (v *UserView) List(c *macaron.Context, store session.Store) {
 		c.Error(500)
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Check if user is admin
+	isAdmin := memberShip.CheckPermission(model.Admin)
+
 	c.Data["Users"] = users
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	c.Data["IsAdmin"] = isAdmin
+	SetPaginationData(c, "users", total, limit, offset, listConfig,
+		`["ID", "Name", "CreatedAt", "Action"]`,
+		[]string{"ID", "UUID", "Name", "CreatedAt", "Action"})
+
 	c.HTML(200, "users")
 }
 

@@ -20,7 +20,12 @@ func init() {
 
 func CreateImage(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| create_image.sh '5' 'available' 'qcow2' '1024000' 'volume_ID' 'storage_ID'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 5 {
 		err = fmt.Errorf("Wrong params")

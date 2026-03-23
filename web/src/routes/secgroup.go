@@ -556,12 +556,10 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 }
 
 func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "secgroups")
+
 	router_id := c.QueryTrim("router_id")
-	if limit == 0 {
-		limit = 16
-	}
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -585,11 +583,12 @@ func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["SecurityGroups"] = secgroups
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "secgroups", total, limit, offset, listConfig,
+		`["ID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"]`,
+		[]string{"ID", "UUID", "Name", "IsDefault", "VPC", "Owner", "Edit", "Delete"})
+
 	c.HTML(200, "secgroups")
 }
 

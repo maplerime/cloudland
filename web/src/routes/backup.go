@@ -573,11 +573,9 @@ func (v *BackupView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "backups")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -591,11 +589,12 @@ func (v *BackupView) List(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	pages := GetPages(total, limit)
 	c.Data["Backups"] = backups
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "backups", total, limit, offset, listConfig,
+		`["ID", "Path", "Type", "Name", "Size", "Status", "Volume", "Owner", "Running Task", "Delete", "Restore"]`,
+		[]string{"ID", "UUID", "Path", "Type", "Name", "Size", "Status", "Volume", "Owner", "Running Task", "Delete", "Restore"})
+
 	c.HTML(200, "backups")
 }
 

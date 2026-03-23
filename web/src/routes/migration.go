@@ -32,7 +32,7 @@ type MigrationAdmin struct{}
 type MigrationView struct{}
 
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
-	logger.Debugf("Start migrating instances to %d", tgtHyper)
+	logger.Debugf("Start migrating instances to %d, migration type %t", tgtHyper, force)
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if !permit {
@@ -287,11 +287,9 @@ func (v *MigrationView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "migrations")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -303,11 +301,12 @@ func (v *MigrationView) List(c *macaron.Context, store session.Store) {
 		c.Error(http.StatusInternalServerError)
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["Migrations"] = migrations
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "migrations", total, limit, offset, listConfig,
+		`["ID", "Name", "CreatedAt", "UpdatedAt", "Instance", "Source Hyper", "Target Hyper", "Force", "Phases", "Status"]`,
+		[]string{"ID", "UUID", "Name", "CreatedAt", "UpdatedAt", "Instance", "Source Hyper", "Target Hyper", "Force", "Phases", "Status"})
+
 	c.HTML(200, "migrations")
 }
 

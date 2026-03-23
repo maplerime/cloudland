@@ -40,7 +40,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		logger.Error("No need to send fdb for classic")
 		return
 	}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	localRules := []*FdbRule{}
 	spreadRules := []*FdbRule{}
 	hyperNode := int32(-1)
@@ -134,7 +134,12 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 
 func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| launch_vm.sh '127' 'running' '3' 'reason'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
@@ -174,14 +179,15 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		return
 	}
 	serverStatus := args[2]
-	hyperID, err := strconv.Atoi(args[3])
+	hyperID64, err := strconv.ParseInt(args[3], 10, 32)
 	if err != nil {
 		logger.Error("Invalid hyper ID", err)
 		reason = err.Error()
 		return
 	}
+	hyperID := int32(hyperID64)
 	reason = args[4]
-	instance.Hyper = int32(hyperID)
+	instance.Hyper = hyperID
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 	if err != nil {
@@ -191,7 +197,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	instance.ZoneID = hyper.ZoneID
 	updates := map[string]interface{}{
 		"status": serverStatus,
-		"hyper":  int32(hyperID),
+		"hyper":  hyperID,
 		"zoneID": hyper.ZoneID,
 		"reason": reason,
 	}
@@ -206,7 +212,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to update instance", err)
 			return
 		}
-		err = db.Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{"hyper": int32(hyperID)}).Error
+		err = db.Model(&model.Interface{}).Where("instance = ?", instance.ID).Update(map[string]interface{}{"hyper": hyperID}).Error
 		if err != nil {
 			logger.Error("Failed to update interface", err)
 			return
@@ -233,7 +239,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	migration := &model.Migration{}
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	err = db.Preload("Phases", "name = 'Prepare_Source' and status = 'failed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
@@ -280,7 +286,7 @@ func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 }
 
 func syncFloatingIp(ctx context.Context, instance *model.Instance) (err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	var primaryIface *model.Interface
 	for i, iface := range instance.Interfaces {
 		if iface.PrimaryIf {

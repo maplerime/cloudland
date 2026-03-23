@@ -7,6 +7,19 @@ definitions:
       subnet:
         $ref: '#/definitions/common.ResourceReference'
     type: object
+  apis.AddressListResponse:
+    properties:
+      addresses:
+        items:
+          $ref: '#/definitions/apis.AddressResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
   apis.AddressRemarkPayload:
     properties:
       addresses:
@@ -1782,6 +1795,10 @@ definitions:
     type: object
   apis.SubnetResponse:
     properties:
+      allocated_count:
+        type: integer
+      available_count:
+        type: integer
       created_at:
         type: string
       dns:
@@ -1806,8 +1823,12 @@ definitions:
         type: string
       priority:
         type: integer
+      reserved_count:
+        type: integer
       start:
         type: string
+      total_count:
+        type: integer
       type:
         $ref: '#/definitions/common.SubnetType'
       updated_at:
@@ -2292,6 +2313,29 @@ info:
   title: CloudLand API
   version: "1.0"
 paths:
+  /addresses/{uuid}:
+    get:
+      consumes:
+      - application/json
+      description: list all IP addresses for a subnet identified by UUID
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.AddressListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list IP addresses by subnet UUID
+      tags:
+      - Network
   /addresses/remark:
     patch:
       consumes:

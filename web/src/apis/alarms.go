@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"net/http"
 	"path/filepath"
@@ -89,7 +88,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
 				return
 			} else if adjErr != nil {
-				log.Printf("Error retrieving adjust rule group: %v", adjErr)
+				logger.Errorf("Error retrieving adjust rule group: %v", adjErr)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 				return
 			}
@@ -113,7 +112,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
 				return
 			} else if err != nil {
-				log.Printf("Error retrieving rule group: %v", err)
+				logger.Errorf("Error retrieving rule group: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 				return
 			}
@@ -141,9 +140,9 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 		var notFoundInstances []string          // VMs that don't exist in instance table
 		var successfullyAdded []VMInterfacePair // VMs that were successfully added
 
-		log.Printf("Attempting to link VMs to %s rule, ruleID: %s", ruleCategory, ruleID)
-		log.Printf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, groupType, ruleID)
-		log.Printf("Processing VM links for %s rule: groupUUID=%s, vmCount=%d", ruleCategory, groupUUID, len(req.VMLinks))
+		logger.Debugf("Attempting to link VMs to %s rule, ruleID: %s", ruleCategory, ruleID)
+		logger.Debugf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, groupType, ruleID)
+		logger.Debugf("Processing VM links for %s rule: groupUUID=%s, vmCount=%d", ruleCategory, groupUUID, len(req.VMLinks))
 
 		for _, link := range req.VMLinks {
 			// Check if already linked
@@ -156,7 +155,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 
 			if exists {
 				alreadyLinked = append(alreadyLinked, link.VMUUID)
-				log.Printf("VM already linked: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
+				logger.Debugf("VM already linked: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
 				continue
 			}
 
@@ -164,7 +163,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 			_, err := routes.GetDomainByInstanceUUID(c.Request.Context(), link.VMUUID)
 			if err != nil {
 				notFoundInstances = append(notFoundInstances, link.VMUUID)
-				log.Printf("Instance not found: vm_uuid=%s, error=%v", link.VMUUID, err)
+				logger.Errorf("Instance not found: vm_uuid=%s, error=%v", link.VMUUID, err)
 				continue
 			}
 
@@ -176,7 +175,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 				link.Interface,
 			)
 			if err != nil {
-				log.Printf("Failed to create VM link in database: vm_uuid=%s, error=%v", link.VMUUID, err)
+				logger.Errorf("Failed to create VM link in database: vm_uuid=%s, error=%v", link.VMUUID, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"error": "Failed to create VM link",
 					"code":  "DATABASE_ERROR",
@@ -192,7 +191,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 				VMUUID:    link.VMUUID,
 				Interface: link.Interface,
 			})
-			log.Printf("Successfully created VM link: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
+			logger.Infof("Successfully created VM link: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
 		}
 
 		// If there are validation errors, return error response
@@ -246,7 +245,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 				interfaceGroups[pair.Interface] = append(interfaceGroups[pair.Interface], pair.VMUUID)
 			}
 
-			log.Printf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(successfullyAdded))
+			logger.Debugf("Adding/updating VM mappings for rule group %s, VM count: %d", groupUUID, len(successfullyAdded))
 			for iface, vmUUIDs := range interfaceGroups {
 				err := a.UpdateMatchedVMsJSON(
 					c.Request.Context(),
@@ -257,7 +256,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 					iface,
 				)
 				if err != nil {
-					log.Printf("Failed to update matched_vms.json: %v", err)
+					logger.Errorf("Failed to update matched_vms.json: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error": "Failed to update Prometheus configuration",
 						"code":  "PROMETHEUS_CONFIG_UPDATE_FAILED",
@@ -268,7 +267,7 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 					return
 				}
 			}
-			log.Printf("VM links saved successfully: groupUUID=%s", groupUUID)
+			logger.Infof("VM links saved successfully: groupUUID=%s", groupUUID)
 		}
 
 		// Query final linked VMs for response
@@ -283,10 +282,10 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 
 		// Force reload Prometheus configuration
 		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-			log.Printf("Warning: Failed to reload Prometheus: %v", err)
+			logger.Errorf("Warning: Failed to reload Prometheus: %v", err)
 		}
 
-		log.Printf("Successfully linked VMs to %s rule, rule_category: %s, group_uuid: %s", ruleCategory, ruleCategory, groupUUID)
+		logger.Infof("Successfully linked VMs to %s rule, rule_category: %s, group_uuid: %s", ruleCategory, ruleCategory, groupUUID)
 
 		// Build response with details
 		responseData := gin.H{
@@ -354,7 +353,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
 				return
 			} else if adjErr != nil {
-				log.Printf("Error retrieving adjust rule group: %v", adjErr)
+				logger.Errorf("Error retrieving adjust rule group: %v", adjErr)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 				return
 			}
@@ -377,7 +376,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 				c.JSON(http.StatusNotFound, gin.H{"error": "Rule group not found"})
 				return
 			} else if err != nil {
-				log.Printf("Error retrieving rule group: %v", err)
+				logger.Errorf("Error retrieving rule group: %v", err)
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve rule group"})
 				return
 			}
@@ -386,8 +385,8 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			groupType = group.Type
 		}
 
-		log.Printf("Attempting to unlink VMs from %s rule, ruleID: %s", ruleCategory, ruleID)
-		log.Printf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, groupType, ruleID)
+		logger.Debugf("Attempting to unlink VMs from %s rule, ruleID: %s", ruleCategory, ruleID)
+		logger.Debugf("Found rule group: %s, Type: %s, RuleID: %s", groupUUID, groupType, ruleID)
 
 		// Check if this is batch delete (all interfaces are empty) or specific delete
 		isBatchDelete := len(req.VMLinks) > 0 && req.VMLinks[0].Interface == ""
@@ -400,7 +399,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		var notLinkedVMs []map[string]interface{} // VMs that were not linked
 		totalDeleted := int64(0)
 
-		log.Printf("Processing VM unlinks for %s rule: groupUUID=%s, vmCount=%d, batchDelete=%v",
+		logger.Debugf("Processing VM unlinks for %s rule: groupUUID=%s, vmCount=%d, batchDelete=%v",
 			ruleCategory, groupUUID, len(req.VMLinks), isBatchDelete)
 
 		if isBatchDelete {
@@ -408,7 +407,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 			for _, link := range req.VMLinks {
 				deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, link.VMUUID, "")
 				if err != nil {
-					log.Printf("VM unlinking database operation failed for %s: %v", link.VMUUID, err)
+					logger.Debugf("VM unlinking database operation failed for %s: %v", link.VMUUID, err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error": "Failed to delete VM link from database",
 						"code":  "DATABASE_ERROR",
@@ -425,7 +424,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 					notLinkedVMs = append(notLinkedVMs, map[string]interface{}{
 						"vm_uuid": link.VMUUID,
 					})
-					log.Printf("VM was not linked to this rule: vm_uuid=%s", link.VMUUID)
+					logger.Debugf("VM was not linked to this rule: vm_uuid=%s", link.VMUUID)
 					continue
 				}
 
@@ -434,14 +433,14 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 					Interface: "",
 				})
 				totalDeleted += deletedCount
-				log.Printf("Successfully unlinked VM (batch): vm_uuid=%s, deleted_count=%d", link.VMUUID, deletedCount)
+				logger.Debugf("Successfully unlinked VM (batch): vm_uuid=%s, deleted_count=%d", link.VMUUID, deletedCount)
 			}
 		} else {
 			// Specific delete: delete specific (vm_uuid, interface) pairs
 			for _, link := range req.VMLinks {
 				deletedCount, err := a.operator.DeleteVMLink(c.Request.Context(), groupUUID, link.VMUUID, link.Interface)
 				if err != nil {
-					log.Printf("VM unlinking database operation failed for %s (interface: %s): %v", link.VMUUID, link.Interface, err)
+					logger.Debugf("VM unlinking database operation failed for %s (interface: %s): %v", link.VMUUID, link.Interface, err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error": "Failed to delete VM link from database",
 						"code":  "DATABASE_ERROR",
@@ -460,7 +459,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 						"vm_uuid":   link.VMUUID,
 						"interface": link.Interface,
 					})
-					log.Printf("VM was not linked to this rule: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
+					logger.Debugf("VM was not linked to this rule: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
 					continue
 				}
 
@@ -469,7 +468,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 					Interface: link.Interface,
 				})
 				totalDeleted += deletedCount
-				log.Printf("Successfully unlinked VM: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
+				logger.Debugf("Successfully unlinked VM: vm_uuid=%s, interface=%s", link.VMUUID, link.Interface)
 			}
 		}
 
@@ -505,11 +504,11 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 				interfaceGroups[deleted.Interface] = append(interfaceGroups[deleted.Interface], deleted.VMUUID)
 			}
 
-			log.Printf("Removing VM mappings from matched_vms.json for rule group %s, VM count: %d", groupUUID, len(successfulDeletes))
+			logger.Debugf("Removing VM mappings from matched_vms.json for rule group %s, VM count: %d", groupUUID, len(successfulDeletes))
 			for iface, vmUUIDs := range interfaceGroups {
 				err := a.UpdateMatchedVMsJSON(c.Request.Context(), vmUUIDs, groupUUID, "remove", alarmType, iface)
 				if err != nil {
-					log.Printf("Failed to update matched_vms.json: %v", err)
+					logger.Errorf("Failed to update matched_vms.json: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"error": "Failed to update Prometheus configuration",
 						"code":  "PROMETHEUS_CONFIG_UPDATE_FAILED",
@@ -520,7 +519,7 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 					return
 				}
 			}
-			log.Printf("VM unlinks saved successfully: groupUUID=%s", groupUUID)
+			logger.Infof("VM unlinks saved successfully: groupUUID=%s", groupUUID)
 		}
 
 		// Query remaining linked VMs for response
@@ -535,10 +534,10 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 
 		// Force reload Prometheus configuration
 		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-			log.Printf("Warning: Failed to reload Prometheus: %v", err)
+			logger.Errorf("Warning: Failed to reload Prometheus: %v", err)
 		}
 
-		log.Printf("Successfully unlinked VMs from %s rule, rule_category: %s, group_uuid: %s, unlinked_count: %d",
+		logger.Infof("Successfully unlinked VMs from %s rule, rule_category: %s, group_uuid: %s, unlinked_count: %d",
 			ruleCategory, ruleCategory, groupUUID, totalDeleted)
 
 		// Build response data
@@ -668,7 +667,7 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 	templateFile := "VM-cpu-rule.yml.j2"
 	outputFile := fmt.Sprintf("cpu-%s-%s.yml", req.Owner, group.UUID)
 	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		log.Printf("Failed to render cpu rule template: %v", err)
+		logger.Errorf("Failed to render cpu rule template: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render cpu rule template"})
 		return
 	}
@@ -760,7 +759,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	if len(req.LinkedVMs) > 0 {
 		// Full overwrite of VMRuleLink
 		if _, err := a.operator.DeleteVMLink(c.Request.Context(), group.UUID, "", ""); err != nil {
-			log.Printf("Failed to delete old VM links: %v", err)
+			logger.Errorf("Failed to delete old VM links: %v", err)
 		}
 		if err := a.operator.BatchLinkVMs(c.Request.Context(), group.UUID, req.LinkedVMs, ""); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to link VMs: " + err.Error()})
@@ -769,7 +768,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 
 		// Update matched_vms.json with VM information
 		if err := a.UpdateMatchedVMsJSON(c.Request.Context(), req.LinkedVMs, group.UUID, "add", "alarm-memory"); err != nil {
-			log.Printf("Failed to update matched_vms.json: %v", err)
+			logger.Errorf("Failed to update matched_vms.json: %v", err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update VM metadata: " + err.Error()})
 			return
 		}
@@ -808,7 +807,7 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 	templateFile := "VM-memory-rule.yml.j2"
 	outputFile := fmt.Sprintf("memory-%s-%s.yml", req.Owner, group.UUID)
 	if err := routes.ProcessTemplate(templateFile, outputFile, ruleData); err != nil {
-		log.Printf("Failed to render memory rule template: %v", err)
+		logger.Errorf("Failed to render memory rule template: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to render memory rule template"})
 		return
 	}
@@ -1080,7 +1079,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	}
 
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
+		logger.Errorf("Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to reload Prometheus",
 			"code":  "PROMETHEUS_RELOAD_FAILED",
@@ -1177,18 +1176,18 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	linkPath := filepath.Join(routes.RulesEnabled, fileName)
 	if err := routes.RemoveFile(linkPath); err == nil {
 		deletedFiles = append(deletedFiles, linkPath)
-		log.Printf("[MEMORY-DELETE-INFO] Deleted symlink: %s", linkPath)
+		logger.Infof("[MEMORY-DELETE-INFO] Deleted symlink: %s", linkPath)
 	} else {
-		log.Printf("[MEMORY-DELETE-WARNING] Failed to delete symlink: %s, error: %v", linkPath, err)
+		logger.Errorf("[MEMORY-DELETE-WARNING] Failed to delete symlink: %s, error: %v", linkPath, err)
 	}
 
 	// Delete actual rule file in rules_general directory
 	rulePath := filepath.Join(routes.RulesGeneral, fileName)
 	if err := routes.RemoveFile(rulePath); err == nil {
 		deletedFiles = append(deletedFiles, rulePath)
-		log.Printf("[MEMORY-DELETE-INFO] Deleted rule file: %s", rulePath)
+		logger.Infof("[MEMORY-DELETE-INFO] Deleted rule file: %s", rulePath)
 	} else {
-		log.Printf("[MEMORY-DELETE-WARNING] Failed to delete rule file: %s, error: %v", rulePath, err)
+		logger.Errorf("[MEMORY-DELETE-WARNING] Failed to delete rule file: %s, error: %v", rulePath, err)
 	}
 
 	// Delete rule-related table data
@@ -1201,7 +1200,7 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	}
 
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
+		logger.Errorf("Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to reload Prometheus",
 			"code":  "PROMETHEUS_RELOAD_FAILED",
@@ -1250,7 +1249,7 @@ func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 						if domain, ok := labels["domain"].(string); ok {
 							uuid, err := routes.GetInstanceUUIDByDomain(c.Request.Context(), domain)
 							if err != nil {
-								log.Printf("Domain conversion failed domain=%s error=%v", domain, err)
+								logger.Errorf("Domain conversion failed domain=%s error=%v", domain, err)
 								labels["instance_uuid"] = "" // Ensure empty value
 							} else {
 								labels["instance_uuid"] = uuid
@@ -1261,7 +1260,7 @@ func (a *AlarmAPI) GetCurrentAlarms(c *gin.Context) {
 				result["data"] = map[string]interface{}{"alerts": filtered}
 			}
 		} else {
-			log.Printf("Unexpected data format: %T", data)
+			logger.Errorf("Unexpected data format: %T", data)
 			result["data"] = map[string]interface{}{"alerts": []interface{}{}}
 		}
 	}
@@ -1333,7 +1332,7 @@ func (a *AlarmAPI) GetHistoryAlarm(c *gin.Context) {
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&promResp); err != nil {
-		log.Printf("[GetHistoryAlarm] error Prometheus resp status: %s (StatusCode: %d)\n", resp.Status, resp.StatusCode)
+		logger.Infof("[GetHistoryAlarm] error Prometheus resp status: %s (StatusCode: %d)\n", resp.Status, resp.StatusCode)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to parse response"})
 		return
 	}
@@ -1341,7 +1340,7 @@ func (a *AlarmAPI) GetHistoryAlarm(c *gin.Context) {
 	for _, result := range promResp.Data.Result {
 		instanceUUID, err := routes.GetInstanceUUIDByDomain(c.Request.Context(), result.Metric.Domain)
 		if err != nil {
-			log.Printf("Domain to UUID convert failed : domain=%s error=%v", result.Metric.Domain, err)
+			logger.Errorf("Domain to UUID convert failed : domain=%s error=%v", result.Metric.Domain, err)
 			instanceUUID = ""
 		}
 		events := make([]gin.H, 0)
@@ -1409,18 +1408,18 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 	c.Request.Body = io.NopCloser(bytes.NewReader(body))
 
 	if err := c.ShouldBindJSON(&notification); err != nil {
-		log.Printf("Alert webhook parsing failed: %v", err)
+		logger.Errorf("Alert webhook parsing failed: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid warning msg format"})
 		return
 	}
 
 	status := notification.Status
-	log.Printf("Processing %d alert(s) with status: %s", len(notification.Alerts), status)
-	log.Printf("Notification Alerts: %+v", notification.Alerts)
+	logger.Infof("Processing %d alert(s) with status: %s", len(notification.Alerts), status)
+	logger.Debugf("Notification Alerts: %+v", notification.Alerts)
 
 	for _, alert := range notification.Alerts {
 		if alert.Status != "firing" {
-			log.Printf("Alert status is %s, skipping Switch API request for IP: %s", alert.Status, alert.Labels["ip"])
+			logger.Debugf("Alert status is %s, skipping Switch API request for IP: %s", alert.Status, alert.Labels["ip"])
 			continue
 		}
 		alert_type := alert.Labels["alert_type"]
@@ -1440,11 +1439,11 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 			}
 
 			// Send request asynchronously
-			log.Printf("Switch API Request Body: %+v", reqBody)
+			logger.Debugf("Switch API Request Body: %+v", reqBody)
 			go a.sendSwitchAPIRequest(reqBody)
-			log.Printf("Triggered Switch API request for IP Block: %s", ip)
+			logger.Infof("Triggered Switch API request for IP Block: %s", ip)
 		} else {
-			log.Printf("Ignored alert (not ip_blocked or Switch API not configured): type=%s", alert_type)
+			logger.Infof("Ignored alert (not ip_blocked or Switch API not configured): type=%s", alert_type)
 		}
 	}
 
@@ -1464,7 +1463,7 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest("GET", apiURL, nil)
 	if err != nil {
-		log.Printf("Create request failed: %v", err)
+		logger.Errorf("Create request failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create API request"})
 		return
 	}
@@ -1472,7 +1471,7 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("API request failed: %v", err)
+		logger.Errorf("API request failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to connect to Prometheus"})
 		return
 	}
@@ -1480,7 +1479,7 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 
 	// Validate response status
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Unexpected status code: %d", resp.StatusCode)
+		logger.Errorf("Unexpected status code: %d", resp.StatusCode)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Prometheus API returned non-200 status"})
 		return
 	}
@@ -1488,7 +1487,7 @@ func (a *AlarmAPI) GetActiveRules(c *gin.Context) {
 	// Parse JSON response
 	var result map[string]interface{}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		log.Printf("JSON decode error: %v", err)
+		logger.Errorf("JSON decode error: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to parse response data"})
 		return
 	}
@@ -1620,7 +1619,7 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		}
 
 		if err := routes.ProcessTemplate(templateFile, outputFile, data); err != nil {
-			log.Printf("Failed to render %s-bw rule template: %v", rule.Direction, err)
+			logger.Errorf("Failed to render %s-bw rule template: %v", rule.Direction, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to render %s-bw rule template", rule.Direction)})
 			return
 		}
@@ -1789,7 +1788,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	// Get BW rule details to determine which files to delete
 	details, err := a.operator.GetBWRuleDetails(c.Request.Context(), groupUUID)
 	if err != nil {
-		log.Printf("[BW-WARNING] Failed to get rule details for file cleanup: %v", err)
+		logger.Errorf("[BW-WARNING] Failed to get rule details for file cleanup: %v", err)
 		details = []model.BWRuleDetail{}
 	}
 
@@ -1806,7 +1805,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		case "out":
 			filename = fmt.Sprintf("bw-out-%s-%s.yml", owner, groupUUID)
 		default:
-			log.Printf("[BW-WARNING] Unknown direction: %s", detail.Direction)
+			logger.Errorf("[BW-WARNING] Unknown direction: %s", detail.Direction)
 			continue
 		}
 
@@ -1833,7 +1832,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	}
 
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Failed to reload Prometheus: %v", err)
+		logger.Errorf("Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to reload Prometheus",
 			"code":  "PROMETHEUS_RELOAD_FAILED",
@@ -1901,7 +1900,7 @@ func (a *AlarmAPI) GetNodeAlarmRules(c *gin.Context) {
 
 	rules, err := a.alarmAdmin.GetNodeAlarmRules(c.Request.Context(), uuid, ruleType)
 	if err != nil {
-		log.Printf("Failed to get node alarm rules: error=%v", err)
+		logger.Errorf("Failed to get node alarm rules: error=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get node alarm rules"})
 		return
 	}
@@ -1960,14 +1959,14 @@ func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, 
 	for _, group := range groupList {
 		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
 		if err != nil {
-			log.Printf("Failed to get linked VMs for %s group %s: %v", ruleType, group.UUID, err)
+			logger.Errorf("Failed to get linked VMs for %s group %s: %v", ruleType, group.UUID, err)
 			continue
 		}
 
 		for _, link := range vmLinks {
 			domain, err := routes.GetDomainByInstanceUUID(ctx, link.VMUUID)
 			if err != nil {
-				log.Printf("Failed to get domain for instance %s: %v", link.VMUUID, err)
+				logger.Errorf("Failed to get domain for instance %s: %v", link.VMUUID, err)
 				continue
 			}
 
@@ -1998,7 +1997,7 @@ func (a *AlarmAPI) processRuleMappings(ctx context.Context, groups interface{}, 
 // @Failure 500 {object} map[string]interface{} "Internal server error"
 // @Router /api/v1/metrics/alarm/sync-mappings [post]
 func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
-	log.Printf("Starting full synchronization of VM rule mappings")
+	logger.Infof("Starting full synchronization of VM rule mappings")
 	ctx := c.Request.Context()
 
 	// Define all rule types to process
@@ -2034,7 +2033,7 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 				PageSize: 1000,
 			})
 			if err != nil {
-				log.Printf("Failed to get %s rule groups: %v", cfg.name, err)
+				logger.Errorf("Failed to get %s rule groups: %v", cfg.name, err)
 				continue
 			}
 			groups = g
@@ -2046,7 +2045,7 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 				PageSize: 1000,
 			})
 			if err != nil {
-				log.Printf("Failed to get %s rule groups: %v", cfg.name, err)
+				logger.Errorf("Failed to get %s rule groups: %v", cfg.name, err)
 				continue
 			}
 			groups = g
@@ -2061,25 +2060,25 @@ func (a *AlarmAPI) SyncAllVMRuleMappings(c *gin.Context) {
 	// Write mappings to file
 	mappingData, err := json.MarshalIndent(allMappings, "", "  ")
 	if err != nil {
-		log.Printf("Failed to marshal matched_vms.json: %v", err)
+		logger.Errorf("Failed to marshal matched_vms.json: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to marshal mapping data"})
 		return
 	}
 
 	if err := routes.WriteFile("/etc/prometheus/lists/matched_vms.json", mappingData, 0644); err != nil {
-		log.Printf("Failed to write matched_vms.json: %v", err)
+		logger.Errorf("Failed to write matched_vms.json: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"status": "error", "error": "Failed to write mapping file"})
 		return
 	}
 
 	// Reload Prometheus
 	if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-		log.Printf("Warning: Failed to reload Prometheus: %v", err)
+		logger.Errorf("Warning: Failed to reload Prometheus: %v", err)
 		c.JSON(http.StatusOK, gin.H{"status": "partial_success", "message": "Mappings synchronized but failed to reload Prometheus", "count": len(allMappings), "stats": stats})
 		return
 	}
 
-	log.Printf("Successfully synchronized VM mappings: total=%d, stats=%+v", len(allMappings), stats)
+	logger.Infof("Successfully synchronized VM mappings: total=%d, stats=%+v", len(allMappings), stats)
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "VM rule mappings synchronized successfully", "count": len(allMappings), "stats": stats})
 }
 
@@ -2124,7 +2123,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			adjustOperator := &routes.AdjustOperator{}
 			adjustGroup, err := adjustOperator.GetAdjustRulesByIdentifier(c.Request.Context(), uuid)
 			if err != nil {
-				log.Printf("[%s-%s-ERROR] Adjust rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
+				logger.Errorf("[%s-%s-ERROR] Adjust rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
 				c.JSON(http.StatusNotFound, gin.H{
 					"status": "error",
 					"error":  "Adjust rule group not found",
@@ -2143,7 +2142,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				// If not found by rule_id, try as group_uuid
 				group, err = a.operator.GetRulesByGroupUUID(c.Request.Context(), uuid)
 				if err != nil {
-					log.Printf("[%s-%s-ERROR] Alarm rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
+					logger.Errorf("[%s-%s-ERROR] Alarm rule not found: %s, error=%v", strings.ToUpper(ruleType), strings.ToUpper(action), uuid, err)
 					c.JSON(http.StatusNotFound, gin.H{
 						"status": "error",
 						"error":  "Alarm rule group not found",
@@ -2208,7 +2207,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				// Need to query BWRuleDetail to get all directions
 				details, err := a.operator.GetBWRuleDetails(c.Request.Context(), groupUUID)
 				if err != nil {
-					log.Printf("[BW-ERROR] Failed to get BW rule details: %v", err)
+					logger.Errorf("[BW-ERROR] Failed to get BW rule details: %v", err)
 					c.JSON(http.StatusInternalServerError, gin.H{
 						"status": "error",
 						"error":  "Failed to get BW rule details: " + err.Error(),
@@ -2231,7 +2230,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 					case "out":
 						filename = fmt.Sprintf("bw-out-%s-%s.yml", groupOwner, groupUUID)
 					default:
-						log.Printf("[BW-WARNING] Unknown direction: %s, skipping", detail.Direction)
+						logger.Errorf("[BW-WARNING] Unknown direction: %s, skipping", detail.Direction)
 						continue
 					}
 					rulePath := fmt.Sprintf("%s/%s", routes.RulesGeneral, filename)
@@ -2278,7 +2277,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		for _, fp := range filePaths {
 			exists, err := routes.CheckFileExists(fp.source)
 			if err != nil {
-				log.Printf("[%s-%s-ERROR] Failed to check file existence: %s, error: %v",
+				logger.Errorf("[%s-%s-ERROR] Failed to check file existence: %s, error: %v",
 					strings.ToUpper(ruleType), strings.ToUpper(action), fp.source, err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"status": "error",
@@ -2287,7 +2286,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				return
 			}
 			if !exists {
-				log.Printf("[%s-%s-ERROR] Rule file not found: %s",
+				logger.Errorf("[%s-%s-ERROR] Rule file not found: %s",
 					strings.ToUpper(ruleType), strings.ToUpper(action), fp.source)
 				c.JSON(http.StatusNotFound, gin.H{
 					"status": "error",
@@ -2304,7 +2303,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			for _, fp := range filePaths {
 				// Create symlink (CreateSymlink will overwrite if already exists)
 				if err := routes.CreateSymlink(fp.source, fp.link); err != nil {
-					log.Printf("[%s-%s-ERROR] Failed to create symlink: %s -> %s, error: %v",
+					logger.Errorf("[%s-%s-ERROR] Failed to create symlink: %s -> %s, error: %v",
 						strings.ToUpper(ruleType), strings.ToUpper(action), fp.link, fp.source, err)
 					// Rollback: Remove already created symlinks
 					for _, link := range createdLinks {
@@ -2317,7 +2316,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 					return
 				}
 				createdLinks = append(createdLinks, fp.link)
-				log.Printf("[%s-%s-INFO] Created symlink: %s -> %s",
+				logger.Infof("[%s-%s-INFO] Created symlink: %s -> %s",
 					strings.ToUpper(ruleType), strings.ToUpper(action), fp.link, fp.source)
 			}
 		} else {
@@ -2329,14 +2328,14 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				// Check if link exists
 				linkExists, err := routes.CheckFileExists(fp.link)
 				if err != nil {
-					log.Printf("[%s-%s-ERROR] Failed to check symlink existence: %s, error: %v",
+					logger.Errorf("[%s-%s-ERROR] Failed to check symlink existence: %s, error: %v",
 						strings.ToUpper(ruleType), strings.ToUpper(action), fp.link, err)
 					failedLinks = append(failedLinks, fp.link)
 					continue
 				}
 
 				if !linkExists {
-					log.Printf("[%s-%s-WARNING] Symlink does not exist (already removed?): %s",
+					logger.Debugf("[%s-%s-WARNING] Symlink does not exist (already removed?): %s",
 						strings.ToUpper(ruleType), strings.ToUpper(action), fp.link)
 					continue
 				}
@@ -2344,11 +2343,11 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 				// Remove symlink
 				if err := routes.RemoveSymlink(fp.link); err != nil {
 					failedLinks = append(failedLinks, fp.link)
-					log.Printf("[%s-%s-ERROR] Failed to remove symlink: %s, error: %v",
+					logger.Errorf("[%s-%s-ERROR] Failed to remove symlink: %s, error: %v",
 						strings.ToUpper(ruleType), strings.ToUpper(action), fp.link, err)
 				} else {
 					removedLinks = append(removedLinks, fp.link)
-					log.Printf("[%s-%s-INFO] Removed symlink: %s",
+					logger.Debugf("[%s-%s-INFO] Removed symlink: %s",
 						strings.ToUpper(ruleType), strings.ToUpper(action), fp.link)
 				}
 			}
@@ -2364,15 +2363,15 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 
 			// If no symlinks were removed, give a warning (but still succeed)
 			if len(removedLinks) == 0 {
-				log.Printf("[%s-%s-WARNING] No symlinks were removed (rule may already be disabled)",
+				logger.Debugf("[%s-%s-WARNING] No symlinks were removed (rule may already be disabled)",
 					strings.ToUpper(ruleType), strings.ToUpper(action))
 			}
 		}
 
 		// Step 8: Reload Prometheus
-		log.Printf("[%s-%s-INFO] Reloading Prometheus configuration", strings.ToUpper(ruleType), strings.ToUpper(action))
+		logger.Infof("[%s-%s-INFO] Reloading Prometheus configuration", strings.ToUpper(ruleType), strings.ToUpper(action))
 		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
-			log.Printf("[%s-%s-ERROR] Failed to reload Prometheus: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+			logger.Errorf("[%s-%s-ERROR] Failed to reload Prometheus: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status": "error",
 				"error":  "Failed to reload Prometheus configuration",
@@ -2385,7 +2384,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 			// Update adjust_rule_group table
 			adjustOperator := &routes.AdjustOperator{}
 			if err := adjustOperator.UpdateAdjustRuleGroupStatus(c.Request.Context(), groupUUID, isEnable); err != nil {
-				log.Printf("[%s-%s-ERROR] Failed to update adjust group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+				logger.Errorf("[%s-%s-ERROR] Failed to update adjust group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"status": "error",
 					"error":  "Failed to update adjust rule status in database",
@@ -2395,7 +2394,7 @@ func (a *AlarmAPI) ToggleRuleStatus(ruleType, action string) gin.HandlerFunc {
 		} else {
 			// Update rule_group_v2 table
 			if err := a.operator.UpdateRuleGroupStatus(c.Request.Context(), groupUUID, isEnable); err != nil {
-				log.Printf("[%s-%s-ERROR] Failed to update alarm group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
+				logger.Errorf("[%s-%s-ERROR] Failed to update alarm group status: %v", strings.ToUpper(ruleType), strings.ToUpper(action), err)
 				c.JSON(http.StatusInternalServerError, gin.H{
 					"status": "error",
 					"error":  "Failed to update alarm rule status in database",
@@ -2469,7 +2468,7 @@ func (a *AlarmAPI) BatchGetRules(c *gin.Context) {
 	for _, identifier := range req.Identifiers {
 		ruleData, err := a.getSingleRuleByIdentifier(ctx, identifier, includeDetails, includeLinkedVMs)
 		if err != nil {
-			log.Printf("[BatchGetRules] Failed to get rule: identifier=%s, error=%v", identifier, err)
+			logger.Errorf("[BatchGetRules] Failed to get rule: identifier=%s, error=%v", identifier, err)
 			notFoundIDs = append(notFoundIDs, identifier)
 			continue
 		}
@@ -2583,7 +2582,7 @@ func (a *AlarmAPI) buildAlarmRuleResponse(ctx context.Context, group *model.Rule
 	if includeDetails {
 		details, err := a.getRuleDetails(ctx, group.UUID, group.Type)
 		if err != nil {
-			log.Printf("[buildAlarmRuleResponse] Failed to get details: uuid=%s, error=%v", group.UUID, err)
+			logger.Errorf("[buildAlarmRuleResponse] Failed to get details: uuid=%s, error=%v", group.UUID, err)
 			response["rules"] = []gin.H{}
 		} else {
 			response["rules"] = details
@@ -2594,7 +2593,7 @@ func (a *AlarmAPI) buildAlarmRuleResponse(ctx context.Context, group *model.Rule
 	if includeLinkedVMs {
 		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
 		if err != nil {
-			log.Printf("[buildAlarmRuleResponse] Failed to get linked VMs: uuid=%s, error=%v", group.UUID, err)
+			logger.Errorf("[buildAlarmRuleResponse] Failed to get linked VMs: uuid=%s, error=%v", group.UUID, err)
 			response["linked_vms"] = []gin.H{}
 		} else {
 			linkedVMs := make([]gin.H, 0, len(vmLinks))
@@ -2693,7 +2692,7 @@ func (a *AlarmAPI) buildAdjustRuleResponse(ctx context.Context, group *model.Adj
 	if includeDetails {
 		details, err := a.getAdjustRuleDetails(ctx, group.UUID, group.Type, adjustOperator)
 		if err != nil {
-			log.Printf("[buildAdjustRuleResponse] Failed to get details: uuid=%s, error=%v", group.UUID, err)
+			logger.Errorf("[buildAdjustRuleResponse] Failed to get details: uuid=%s, error=%v", group.UUID, err)
 			response["rules"] = []gin.H{}
 		} else {
 			response["rules"] = details
@@ -2704,7 +2703,7 @@ func (a *AlarmAPI) buildAdjustRuleResponse(ctx context.Context, group *model.Adj
 	if includeLinkedVMs {
 		vmLinks, err := a.operator.GetLinkedVMs(ctx, group.UUID)
 		if err != nil {
-			log.Printf("[buildAdjustRuleResponse] Failed to get linked VMs: uuid=%s, error=%v", group.UUID, err)
+			logger.Errorf("[buildAdjustRuleResponse] Failed to get linked VMs: uuid=%s, error=%v", group.UUID, err)
 			response["linked_vms"] = []gin.H{}
 		} else {
 			linkedVMs := make([]gin.H, 0, len(vmLinks))
@@ -2769,18 +2768,18 @@ func (a *AlarmAPI) getAdjustRuleDetails(ctx context.Context, groupUUID, ruleType
 func (a *AlarmAPI) sendSwitchAPIRequest(data map[string]interface{}) {
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		log.Printf("Failed to marshal switch api request: %v", err)
+		logger.Errorf("Failed to marshal switch api request: %v", err)
 		return
 	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(SwitchAPIEndpoint, "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Printf("Failed to send request to Switch API: %v", err)
+		logger.Errorf("Failed to send request to Switch API: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(resp.Body)
-	log.Printf("Switch API response status: %s, body: %s", resp.Status, string(body))
+	logger.Infof("Switch API response status: %s, body: %s", resp.Status, string(body))
 }

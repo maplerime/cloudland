@@ -7,6 +7,7 @@
 		            <h4 class="ui top attached header">
 			            {{.i18n.Tr "Volume_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}})
 			            <div class="ui right">
+				            {{template "_column_selector" .}}
 				            <a class="ui green tiny button" href="volumes/new">{{.i18n.Tr "Create"}}</a>
 			            </div>
 		            </h4>
@@ -23,21 +24,21 @@
 	                        <thead>
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "ID"}}</th>
+			                        <th data-column="ID">{{.i18n.Tr "ID"}}</th>
 									{{ end }}
-									<th>{{.i18n.Tr "UUID"}}</th>
-									<th>{{.i18n.Tr "Path"}}</th>
-			                        <th>{{.i18n.Tr "Name"}}</th>
-			                        <th>{{.i18n.Tr "Size"}} (G)</th>
-			                        <th>{{.i18n.Tr "IOPS_Limit"}}</th>
-			                        <th>{{.i18n.Tr "BPS_Limit"}}</th>
-			                        <th>{{.i18n.Tr "Status"}}</th>
-									<th>{{.i18n.Tr "Bootable"}}</th>
-			                        <th>{{.i18n.Tr "Attached_as"}}</th>
+									<th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
+									<th data-column="Path">{{.i18n.Tr "Path"}}</th>
+			                        <th data-column="Name">{{.i18n.Tr "Name"}}</th>
+			                        <th data-column="Size">{{.i18n.Tr "Size"}} (G)</th>
+			                        <th data-column="IopsLimit">{{.i18n.Tr "IOPS_Limit"}}</th>
+			                        <th data-column="BpsLimit">{{.i18n.Tr "BPS_Limit"}}</th>
+			                        <th data-column="Status">{{.i18n.Tr "Status"}}</th>
+									<th data-column="Bootable">{{.i18n.Tr "Bootable"}}</th>
+			                        <th data-column="AttachedAs">{{.i18n.Tr "Attached_as"}}</th>
 						{{ if $.IsAdmin }}
-			                        <th>{{.i18n.Tr "Owner"}}</th>
+			                        <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
 						{{ end }}
-                                    <th>{{.i18n.Tr "Action"}}</th>
+                                    <th data-column="Action">{{.i18n.Tr "Action"}}</th>
 		                        </tr>
 	                        </thead>
 	                        <tbody>
@@ -45,21 +46,21 @@
                                 {{ range .Volumes }}
 		                        <tr>
 									{{ if $.IsAdmin }}
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
+			                        <td data-column="ID"><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
-									<td><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
-									<td>{{.Path}}</td>
-			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.Size}}</td>
-									<td>{{.IopsLimit}}</td>
-			                        <td>{{.BpsLimit}}</td>
-			                        <td>{{.Status}}</td>
-									<td>{{.Booting}}</td>
-			                        <td>{{ if .Instance }} {{.Instance.ID}}-{{.Instance.Hostname}}:{{.Target}} {{ end }}</td>
+									<td data-column="UUID"><a href="{{$Link}}/{{.ID}}">{{.UUID}}</a></td>
+									<td data-column="Path">{{.Path}}</td>
+			                        <td data-column="Name"><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
+			                        <td data-column="Size">{{.Size}}</td>
+									<td data-column="IopsLimit">{{.IopsLimit}}</td>
+			                        <td data-column="BpsLimit">{{.BpsLimit}}</td>
+			                        <td data-column="Status">{{.Status}}</td>
+									<td data-column="Bootable">{{.Booting}}</td>
+			                        <td data-column="AttachedAs">{{ if .Instance }} {{.Instance.ID}}-{{.Instance.Hostname}}:{{.Target}} {{ end }}</td>
 						{{ if $.IsAdmin }}
-			                        <td>{{.OwnerInfo.Name}}</td>
+			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
-						            <td>
+						            <td data-column="Action">
                                         <div class="ui selection dropdown">
                                             <input id="action" name="action" type="hidden">
                                             <i class="dropdown icon"></i>
@@ -83,17 +84,7 @@
 	                        </tbody>
                         </table>
 		            </div>
-		            <div class="ui attached segment">
-                                 {{ if .Pages}}
-                                 <div class="ui pagination menu">
-                                     {{ range  $index, $element := .Pages }}
-                                         <a class="active item">
-                                             <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                         </a>
-                                     {{ end }}
-                                 </div>
-                                 {{ end }}
-	                    </div>
+		            {{template "_pagination" .}}
 	            </div>
             </div>
         </div>

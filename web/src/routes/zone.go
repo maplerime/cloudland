@@ -208,27 +208,34 @@ func (v *ZoneView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "zones")
+
+	// Get sort order
 	order := c.Query("order")
 	if order == "" {
 		order = "name"
 	}
+
+	// Get search query
 	query := c.QueryTrim("q")
+
+	// Fetch zones from database
 	total, zones, err := zoneAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
+
+	// Set template data
 	c.Data["Zones"] = zones
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "zones", total, limit, offset, listConfig,
+		`["ID", "Name", "CreatedAt", "UpdatedAt", "Remark", "Action"]`,
+		[]string{"ID", "Name", "CreatedAt", "UpdatedAt", "Remark", "Action"})
+
 	c.HTML(200, "zones")
 }
 

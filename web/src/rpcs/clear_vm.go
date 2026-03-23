@@ -79,6 +79,19 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 	}
 	for _, iface := range interfaces {
 		if iface.FloatingIp == 0 {
+			err = db.Delete(iface).Error
+			if err != nil {
+				logger.Error("Failed to delete interface", err)
+				return
+			}
+		} else {
+			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
+			if err != nil {
+				logger.Error("Failed to Update addresses, %v", err)
+				return
+			}
+		}
+		if iface.FloatingIp == 0 {
 			err = db.Model(&model.Address{}).Where("interface = ?", iface.ID).Update(map[string]interface{}{"allocated": false, "interface": 0}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
@@ -94,19 +107,6 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 		if err != nil {
 			logger.Error("Failed to Update addresses, %v", err)
 			return
-		}
-		if iface.FloatingIp == 0 {
-			err = db.Delete(iface).Error
-			if err != nil {
-				logger.Error("Failed to delete interface", err)
-				return
-			}
-		} else {
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
-			if err != nil {
-				logger.Error("Failed to Update addresses, %v", err)
-				return
-			}
 		}
 		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
 			"interface": 0}).Error
