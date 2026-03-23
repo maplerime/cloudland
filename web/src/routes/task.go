@@ -152,11 +152,9 @@ func (v *TaskView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "tasks")
+
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -169,11 +167,12 @@ func (v *TaskView) List(c *macaron.Context, store session.Store) {
 		c.Error(http.StatusInternalServerError, err.Error())
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["Tasks"] = tasks
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
 	c.Data["Source"] = source
+	SetPaginationData(c, "tasks", total, limit, offset, listConfig,
+		`["ID", "Source", "Name", "Summary", "Status", "Message", "Action", "Resources", "Cron", "Owner"]`,
+		[]string{"ID", "UUID", "Source", "Name", "Summary", "Status", "Message", "Action", "Resources", "Cron", "Owner"})
+
 	c.HTML(http.StatusOK, "tasks")
 }

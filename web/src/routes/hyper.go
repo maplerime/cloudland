@@ -199,11 +199,9 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	// Get pagination parameters
+	listConfig, offset, limit := GetPaginationParams(c, "hypers")
+
 	order := c.Query("order")
 	if order == "" {
 		order = "hostid"
@@ -222,11 +220,13 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 		hyper.Resource.Disk /= 1024 * 1024 * 1024      // Convert from B to GB
 		hyper.Resource.DiskTotal /= 1024 * 1024 * 1024 // Convert from B to GB
 	}
-	pages := GetPages(total, limit)
+
 	c.Data["Hypers"] = hypers
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "hypers", total, limit, offset, listConfig,
+		`["Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"]`,
+		[]string{"Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"})
+
 	c.HTML(200, "hypers")
 }
 
