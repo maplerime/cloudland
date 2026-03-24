@@ -25,6 +25,7 @@ const (
 	InstanceStatusResizing     InstanceStatus = "resizing"
 	InstanceStatusDeleting     InstanceStatus = "deleting"
 	InstanceStatusDeleted      InstanceStatus = "deleted"
+	InstanceStatusRescuing     InstanceStatus = "rescuing"
 )
 
 func (s InstanceStatus) String() string {
