@@ -51,10 +51,6 @@ func DetachVolume(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Failed to query volume", err)
 		return
 	}
-	//volume.InstanceID = 0
-	//volume.Target = ""
-	//volume.Status = model.VolumeStatusAvailable
-	//err = db.Save(volume).Error
 
 	volume.Status = model.VolumeStatus(args[3])
 	if volume.Status == model.VolumeStatusAvailable {

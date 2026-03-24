@@ -30,7 +30,11 @@ func updateInstance(ctx context.Context, volume *model.Volume, status string, re
 
 		instance.Status = model.InstanceStatus(status)
 		instance.Reason = reason
-		if err = db.Save(&instance).Error; err != nil {
+		err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+			"status": instance.Status,
+			"reason": instance.Reason,
+		}).Error
+		if err != nil {
 			logger.Error("Update instance status failed", err)
 			return err
 		}

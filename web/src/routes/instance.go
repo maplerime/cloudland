@@ -501,12 +501,12 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	if instance.Disk == 0 {
 		instance.Disk = bootVolume.Size
 	}
-	if err = db.Save(&instance).Error; err != nil {
-		logger.Error("Failed to save instance", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
-	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
 		"flavor_id": 0,
+		"status":    instance.Status,
+		"memory":    instance.Memory,
+		"cpu":       instance.Cpu,
+		"disk":      instance.Disk,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
@@ -642,12 +642,15 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	instance.Memory = memory
 	instance.Disk = disk
 	instance.Keys = keys
-	if err = db.Save(&instance).Error; err != nil {
-		logger.Error("Failed to save instance", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
-	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
-		"flavor_id": 0,
+		"flavor_id":    0,
+		"status":       instance.Status,
+		"login_port":   instance.LoginPort,
+		"passwd_login": instance.PasswdLogin,
+		"image_id":     instance.ImageID,
+		"cpu":          instance.Cpu,
+		"memory":       instance.Memory,
+		"disk":         instance.Disk,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
@@ -661,7 +664,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	// change volume status to reinstalling
 	bootVolume.Status = "reinstalling"
 	bootVolume.Size = disk
-	if err = db.Save(&bootVolume).Error; err != nil {
+	err = db.Model(&model.Volume{}).Where("id = ?", bootVolume.ID).Updates(map[string]interface{}{
+		"status": bootVolume.Status,
+		"size":   bootVolume.Size,
+	}).Error
+	if err != nil {
 		logger.Error("Failed to save volume", err)
 		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to save volume", err)
 	}
