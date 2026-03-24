@@ -5,18 +5,6 @@ source ../cloudrc
 
 [ $# -lt 2 ] && die "$0 <vm_ID> <action>"
 
-function wait_vm_status()
-{
-    vm_ID=$1
-    status=$2
-    # wait for 30 seconds
-    for i in {1..60}; do
-        state=$(virsh domstate $vm_ID | sed 's/shut off/shut_off/g')
-        [ "$state" = "$status" ] && break
-        sleep 0.5
-    done
-}
-
 vm_ID=inst-$1
 action=$2
 if [ "$action" = "restart" ]; then
