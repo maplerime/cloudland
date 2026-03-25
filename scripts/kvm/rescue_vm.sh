@@ -179,7 +179,7 @@ for vol_xml in $xml_dir/$vm_ID/disk-*.xml; do
     sed -i "s/<target dev='[^']*'/<target dev='$new_target'/g" "$rescue_xml"
     log_debug $ID "Created rescue copy disk-${vid}-rescue.xml with target remapped to $new_target"
 
-    virsh attach-device $vm_rescue "$rescue_xml" --config --persistent
+    virsh attach-device $vm_rescue "$rescue_xml"
     if [ $? -eq 0 ]; then
         log_debug $ID "Successfully attached data volume $vid as $new_target to rescue VM $vm_rescue"
     else
