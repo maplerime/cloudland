@@ -1,0 +1,17 @@
+global:
+  scrape_interval: {{ process_vmagent_scrape_interval }}
+  scrape_timeout: {{ process_vmagent_scrape_timeout }}
+
+scrape_configs:
+  - job_name: 'systemd_exporter'
+    file_sd_configs:
+      - files: ['{{ process_vmagent_base_dir }}/sd_configs/systemd_nodes.json']
+
+  - job_name: 'cadvisor'
+    metrics_path: /metrics
+    file_sd_configs:
+      - files: ['{{ process_vmagent_base_dir }}/sd_configs/cadvisor_nodes.json']
+
+  - job_name: 'vmagent_process'
+    static_configs:
+      - targets: ['localhost:{{ process_vmagent_port }}']

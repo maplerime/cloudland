@@ -78,6 +78,20 @@
   roles:
     - {role: monitor_hyper, become: yes, tags: [monitor]}
 
+# deploy process monitor exporters for cland and hyper nodes
+- name: install process monitor exporters
+  hosts: cland:hyper
+  become_user: root
+  roles:
+    - {role: process_monitor_exporter, become: yes}
+
+# deploy process monitor vmagent on dedicated vmagent server
+- name: install process monitor vmagent
+  hosts: vmagent
+  become_user: root
+  roles:
+    - {role: process_monitor_vmagent_collector, become: yes}
+
 # add  monitor nginx rule for cland nodes
 - name: add  monitor nginx rule for cland nodes
   hosts: cland
