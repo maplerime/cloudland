@@ -414,6 +414,39 @@ func (a *ConsistencyGroupAdmin) Delete(ctx context.Context, id int64) (err error
 	return
 }
 
+// GetVolumes get volumes of a consistency group
+func (a *ConsistencyGroupAdmin) GetVolumes(ctx context.Context, id int64) (volumes []*model.Volume, err error) {
+	logger.Debugf("Get volumes of consistency group ID: %d", id)
+	memberShip := GetMemberShip(ctx)
+	ctx, db := GetContextDB(ctx)
+	// Retrieve consistency group
+	// 获取一致性组
+	cg := &model.ConsistencyGroup{Model: model.Model{ID: id}}
+	if err = db.Take(cg).Error; err != nil {
+		logger.Errorf("Failed to get consistency group by ID %d: %+v", id, err)
+		err = NewCLError(ErrCGNotFound, "Consistency group not found", err)
+		return
+	}
+
+	// Permission check
+	// 权限检查
+	permit := memberShip.ValidateOwner(model.Reader, cg.Owner)
+	if !permit {
+		logger.Errorf("Not authorized to get volumes of consistency group ID %d", id)
+		err = NewCLError(ErrPermissionDenied, "Not authorized to get volumes of consistency group", nil)
+		return
+	}
+	// Get volumes in the CG
+	// 获取一致性组中的卷
+	var cgVolumes []*model.ConsistencyGroupVolume
+	db.Preload("Volume").Where("cg_id = ?", cg.ID).Find(&cgVolumes)
+	volumes = make([]*model.Volume, 0, len(cgVolumes))
+	for _, cgv := range cgVolumes {
+		volumes = append(volumes, cgv.Volume)
+	}
+	return
+}
+
 // AddVolumes adds volumes to a consistency group
 // 向一致性组添加卷
 func (a *ConsistencyGroupAdmin) AddVolumes(ctx context.Context, id int64, volumeUUIDs []string) (cg *model.ConsistencyGroup, err error) {
