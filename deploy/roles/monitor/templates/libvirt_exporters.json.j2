@@ -1,0 +1,13 @@
+[
+{% set comma = joiner(",") %}
+{% for host in groups['hyper'] | default([]) %}
+  {{ comma() }}
+  {
+    "targets": ["{{ hostvars[host]['ansible_host'] | default(hostvars[host]['ansible_ssh_host']) | default(host) }}:9177"],
+    "labels": {
+      "host": "{{ host }}",
+      "node_type": "compute"
+    }
+  }
+{% endfor %}
+]

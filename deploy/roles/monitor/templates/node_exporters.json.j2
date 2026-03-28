@@ -1,0 +1,26 @@
+[
+{% set comma = joiner(",") %}
+{% for host in groups['hyper'] | default([]) %}
+  {{ comma() }}
+  {
+    "targets": ["{{ hostvars[host]['ansible_host'] | default(hostvars[host]['ansible_ssh_host']) | default(host) }}:9101"],
+    "labels": {
+      "host": "{{ host }}",
+      "node_type": "compute"
+    }
+  }
+{% endfor %}
+{% for host in groups['cland'] | default([]) %}
+  {% set host_ip = hostvars[host]['ansible_host'] | default(hostvars[host]['ansible_ssh_host']) | default(host) %}
+  {% if host_ip not in (hyper_ips | default([])) %}
+  {{ comma() }}
+  {
+    "targets": ["{{ host_ip }}:9101"],
+    "labels": {
+      "host": "{{ host }}",
+      "node_type": "management"
+    }
+  }
+  {% endif %}
+{% endfor %}
+]
