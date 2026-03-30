@@ -56,7 +56,7 @@ type ImagePayload struct {
 	User         string         `json:"user" binding:"required,min=2,max=32"`
 	InstanceUUID string         `json:"instance_uuid"`
 	BootLoader   string         `json:"boot_loader" binding:"required,oneof=bios uefi"`
-	IsRescue     bool           `json:"is_resque"`
+	IsRescue     bool           `json:"is_rescue"`
 	RescueImage  *BaseReference `json:"rescue_image" binding:"omitempty"`
 	OsFamily     string         `json:"os_family" binding:"required"`
 }
