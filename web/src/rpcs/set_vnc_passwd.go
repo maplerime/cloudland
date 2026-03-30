@@ -21,12 +21,7 @@ func init() {
 
 func SetVncPasswd(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| enable_vm_vnc.sh 6 5909 password 192.168.10.100
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
-		}
-	}()
+	db := DB()
 	argn := len(args)
 	if argn < 3 {
 		err = fmt.Errorf("Wrong params")
