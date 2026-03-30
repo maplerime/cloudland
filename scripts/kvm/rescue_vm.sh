@@ -151,6 +151,44 @@ sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vh
 
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
+# Attach data volumes that are currently attached to the original VM
+original_xml=$(virsh dumpxml $vm_ID 2>/dev/null)
+# ASCII 'c' -> vdc (vda=rescue image, vdb=boot volume)
+next_rescue_letter=99
+
+for vol_xml in $xml_dir/$vm_ID/disk-*.xml; do
+    [ ! -f "$vol_xml" ] && continue
+    [[ "$(basename $vol_xml)" == *-rescue* ]] && continue
+    vid=$(basename "$vol_xml" .xml | sed 's/disk-//')
+    [ "$vid" = "$disk_ID" ] && continue
+    # Extract source path: WDS disks use path=, local disks use file=
+    if [ -n "$wds_address" ]; then
+        src_path=$(grep -oP "path='[^']+'" "$vol_xml" | head -1 | cut -d"'" -f2)
+    else
+        src_path=$(grep -oP "file='[^']+'" "$vol_xml" | head -1 | cut -d"'" -f2)
+    fi
+    if [ -z "$src_path" ] || ! echo "$original_xml" | grep -q "$src_path"; then
+        log_debug $ID "Data volume $vid not found in dumpxml, skipping (likely detached)"
+        continue
+    fi
+    log_debug $ID "Data volume $vid verified attached, source: $src_path"
+
+    rescue_xml=$xml_dir/$vm_ID/disk-${vid}-rescue.xml
+    cp "$vol_xml" "$rescue_xml"
+    new_target=vd$(printf "\\$(printf '%03o' "$next_rescue_letter")")
+    sed -i "s/<target dev='[^']*'/<target dev='$new_target'/g" "$rescue_xml"
+    log_debug $ID "Created rescue copy disk-${vid}-rescue.xml with target remapped to $new_target"
+
+    virsh attach-device $vm_rescue "$rescue_xml" --config --persistent
+    if [ $? -eq 0 ]; then
+        log_debug $ID "Successfully attached data volume $vid as $new_target to rescue VM $vm_rescue"
+    else
+        log_debug $ID "Failed to attach data volume $vid as $new_target to rescue VM $vm_rescue"
+    fi
+    let next_rescue_letter=$next_rescue_letter+1
+done
+log_debug $ID "Data volume attachment for rescue VM $vm_rescue completed"
+
 vlans=$(jq .vlans <<< $metadata)
 nvlan=$(jq length <<< $vlans)
 i=0
