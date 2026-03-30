@@ -73,12 +73,7 @@ func ResolveToken(ctx context.Context, tokenString string) (int, *MemberShip, er
 func (a *ConsoleAdmin) ConsoleResolve(c *macaron.Context) {
 	var err error
 	ctx := c.Req.Context()
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
-		}
-	}()
+	db := DB()
 	token := c.Params("token")
 	logger.Debug("Get JWT token", token)
 	instanceID, memberShip, err := ResolveToken(ctx, token)

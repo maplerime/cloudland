@@ -31,77 +31,6 @@ var (
 type LoadBalancerAdmin struct{}
 type LoadBalancerView struct{}
 
-type BackendConfig struct {
-	BackendURL string `json:"backend_url"`
-	Status     string `json:"status"`
-}
-
-type ListenerConfig struct {
-	Name     string           `json:"name"`
-	Mode     string           `json:"mode"`
-	Key      string           `json:"key"`
-	Cert     string           `json:"cert"`
-	Port     int32            `json:"port"`
-	Backends []*BackendConfig `json:"backends"`
-}
-
-type LoadBalancerConfig struct {
-	Listeners   []*ListenerConfig `json:"listeners"`
-	FloatingIps []string          `json:"floating_ips"`
-}
-
-type LoadBalancerFloatingIp struct {
-	Address  string `json:"address"`
-	Vlan     int64  `json:"vlan"`
-	Gateway  string `json:"gateway"`
-	MarkID   int64  `json:"mark_id"`
-	Inbound  int32  `json:"inbound"`
-	Outbound int32  `json:"outbound"`
-}
-
-type LoadBalancerFloatingIpConfig struct {
-	FloatingIps []*LoadBalancerFloatingIp `json:"floating_ips"`
-	Ports       []int32                   `json:"ports"`
-}
-
-func GetVrrpInterfaces(ctx context.Context, vrrpInstance *model.VrrpInstance) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
-	ctx, db := GetContextDB(ctx)
-	vrrpID := vrrpInstance.ID
-	vrrpIface1 = &model.Interface{}
-	vrrpIface2 = &model.Interface{}
-	err = db.Preload("Address").Where("type = 'vrrp' and name = 'MASTER' and device = ?", vrrpID).Take(vrrpIface1).Error
-	if err != nil {
-		logger.Error("Failed to query vrrp interface 1", err)
-		return
-	}
-	err = db.Preload("Address").Where("type = 'vrrp' and name = 'BACKUP' and device = ?", vrrpID).Take(vrrpIface2).Error
-	if err != nil {
-		logger.Error("Failed to query vrrp interface 2", err)
-		return
-	}
-	return
-}
-
-func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (hyperGroup string, vrrpIface1, vrrpIface2 *model.Interface, err error) {
-	hyperList := ""
-	vrrpIface1, vrrpIface2, err = GetVrrpInterfaces(ctx, vrrpInstance)
-	if err != nil {
-		return
-	}
-	if vrrpIface1.Hyper >= 0 {
-		hyperList = fmt.Sprintf("%d,", vrrpIface1.Hyper)
-	}
-	if vrrpIface2.Hyper >= 0 {
-		hyperList = fmt.Sprintf("%s%d", hyperList, vrrpIface2.Hyper)
-	}
-	if hyperList == "" {
-		err = fmt.Errorf("No valid hyper for vrrp interfaces")
-		return
-	}
-	hyperGroup = fmt.Sprintf("group-vrrp-%d:%s", vrrpInstance.ID, hyperList)
-	return
-}
-
 func GetLBFloatingIpJson(ctx context.Context, loadBalancer *model.LoadBalancer) (jsonData []byte, err error) {
 	intQuery := fmt.Sprintf("load_balancer_id = %d", loadBalancer.ID)
 	_, floatingIps, err := floatingIpAdmin.List(ctx, 0, -1, "", "", intQuery)
@@ -145,7 +74,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 		logger.Errorf("Failed to get load balancer floating ip json data, %v", err)
 		return
 	}
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance)
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, loadBalancer.VrrpInstance.ID)
 	if err != nil {
 		logger.Error("No valid hypervisor", err)
 		return
@@ -406,7 +335,7 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 	vrrpInstance := loadBalancer.VrrpInstance
 	vrrpSubnet := vrrpInstance.VrrpSubnet
 	routerID := loadBalancer.RouterID
-	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance)
+	vrrpIface1, vrrpIface2, err := GetVrrpInterfaces(ctx, vrrpInstance.ID)
 	if err != nil {
 		logger.Error("Failed to get vrrp interfaces", err)
 		err = NewCLError(ErrInterfaceDeleteFailed, "Failed to delete vrrp interface 2", err)
