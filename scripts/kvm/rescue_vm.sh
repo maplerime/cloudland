@@ -151,6 +151,24 @@ sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vh
 
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
+vlans=$(jq .vlans <<< $metadata)
+nvlan=$(jq length <<< $vlans)
+i=0
+while [ $i -lt $nvlan ]; do
+    read -d'\n' -r vlan mac < <(jq -r ".[$i].vlan, .[$i].mac_address" <<<$vlans)
+    nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
+    interface_xml=$xml_dir/$vm_ID/$nic_name.xml
+    if [ ! -f "$interface_xml" ]; then
+        template=$template_dir/interface.xml
+        cp $template $interface_xml
+        sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/1/g" $interface_xml
+    fi
+    virsh attach-device $vm_rescue $interface_xml --config --persistent
+    let i=$i+1
+done
+virsh start $vm_rescue
+[ $? -eq 0 ] && state=rescuing
+
 # Attach data volumes that are currently attached to the original VM
 original_xml=$(virsh dumpxml $vm_ID 2>/dev/null)
 # ASCII 'c' -> vdc (vda=rescue image, vdb=boot volume)
@@ -189,23 +207,6 @@ for vol_xml in $xml_dir/$vm_ID/disk-*.xml; do
 done
 log_debug $ID "Data volume attachment for rescue VM $vm_rescue completed"
 
-vlans=$(jq .vlans <<< $metadata)
-nvlan=$(jq length <<< $vlans)
-i=0
-while [ $i -lt $nvlan ]; do
-    read -d'\n' -r vlan mac < <(jq -r ".[$i].vlan, .[$i].mac_address" <<<$vlans)
-    nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
-    interface_xml=$xml_dir/$vm_ID/$nic_name.xml
-    if [ ! -f "$interface_xml" ]; then
-        template=$template_dir/interface.xml
-        cp $template $interface_xml
-        sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/br$vlan/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/1/g" $interface_xml
-    fi
-    virsh attach-device $vm_rescue $interface_xml --config --persistent
-    let i=$i+1
-done
-virsh start $vm_rescue
-[ $? -eq 0 ] && state=rescuing
 echo "|:-COMMAND-:| $(basename $0) '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port
