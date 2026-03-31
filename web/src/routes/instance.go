@@ -20,6 +20,7 @@ import (
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
+	"web/src/scheduler"
 	"web/src/utils/encrpt"
 
 	"github.com/spf13/viper"
@@ -136,10 +137,23 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			loginPort = 3389
 		}
 	}
+	// Use placement scheduler to select the best hyper node
+	selectedHyperID := int32(-1)
+	if hyperID < 0 {
+		selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+			VCPUs:  cpu,
+			MemMB:  int64(memory),
+			DiskGB: int64(disk),
+			ZoneID: zoneID,
+		})
+		if err != nil {
+			logger.Error("Scheduler failed to select host", err)
+			return nil, NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", err)
+		}
+	}
 	hyperGroup, err := GetHyperGroup(ctx, zoneID, -1)
 	if err != nil {
-		logger.Error("No valid hypervisor", err)
-		return
+		logger.Warning("GetHyperGroup fallback failed", err)
 	}
 	passwdLogin := false
 	if rootPasswd != "" {
@@ -270,9 +284,16 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		instance.Interfaces = ifaces
 		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-		control := "select=" + hyperGroup + " " + rcNeeded
+		var control string
 		if i == 0 && hyperID >= 0 {
+			// Admin-specified hyper takes precedence
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
+		} else if selectedHyperID >= 0 {
+			// Scheduler-selected hyper
+			control = fmt.Sprintf("inter=%d %s", selectedHyperID, rcNeeded)
+		} else {
+			// Fallback to hyper group selection
+			control = "select=" + hyperGroup + " " + rcNeeded
 		}
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{

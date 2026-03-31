@@ -1,0 +1,101 @@
+{{template "_head" .}}
+    <div class="admin user">
+        <div class="ui container">
+            <div class="ui grid">
+                {{template "_left" .}}
+                <div class="twelve wide column content">
+                    <h4 class="ui top attached header">
+                        {{.i18n.Tr "Placement"}} Scheduler Configuration
+                    </h4>
+                    <div class="ui attached segment">
+                        <div class="ui info message">
+                            <p><strong>Config File:</strong> conf/placement.toml</p>
+                            <p><strong>Last Loaded:</strong> {{.LoadedAt}}</p>
+                        </div>
+                        <form action="/placement/reload" method="POST" style="margin-bottom: 20px;">
+                            <button type="submit" class="ui blue button" onclick="return confirm('Reload placement configuration from file?')">
+                                Reload Configuration
+                            </button>
+                        </form>
+                    </div>
+
+                    <h4 class="ui attached header">Active Filter Chain</h4>
+                    <div class="ui attached table segment">
+                        <table class="ui very basic striped table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Filter Name</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range $i, $name := .PlacementConfig.FilterChain}}
+                                <tr>
+                                    <td>{{$i}}</td>
+                                    <td>{{$name}}</td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 class="ui attached header">Active Weigher Chain</h4>
+                    <div class="ui attached table segment">
+                        <table class="ui very basic striped table">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Weigher Name</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range $i, $name := .PlacementConfig.WeigherChain}}
+                                <tr>
+                                    <td>{{$i}}</td>
+                                    <td>{{$name}}</td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 class="ui attached header">Overcommit Settings</h4>
+                    <div class="ui attached table segment">
+                        <table class="ui very basic definition table">
+                            <tbody>
+                                <tr><td>Enabled</td><td>{{.PlacementConfig.Overcommit.Enabled}}</td></tr>
+                                <tr><td>Memory Delta Ratio</td><td>{{.PlacementConfig.Overcommit.MemDeltaRatioPct}}%</td></tr>
+                                <tr><td>vCPU Overcommit Ratio</td><td>{{.PlacementConfig.Overcommit.VCPUOvercommitRatio}}x</td></tr>
+                                <tr><td>CPU Idle Fallback</td><td>{{.PlacementConfig.Overcommit.CPUIdleFallbackPct}}%</td></tr>
+                                <tr><td>Hugepage Delta Ratio</td><td>{{.PlacementConfig.Overcommit.HugepageDeltaRatioPct}}%</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 class="ui attached header">Weigher Multipliers</h4>
+                    <div class="ui attached table segment">
+                        <table class="ui very basic definition table">
+                            <tbody>
+                                <tr><td>Hugepage</td><td>{{.PlacementConfig.Weighers.HugepageMultiplier}}</td></tr>
+                                <tr><td>RAM</td><td>{{.PlacementConfig.Weighers.RAMMultiplier}}</td></tr>
+                                <tr><td>CPU Load</td><td>{{.PlacementConfig.Weighers.CPULoadMultiplier}}</td></tr>
+                                <tr><td>Overcommit Penalty</td><td>{{.PlacementConfig.Weighers.OvercommitPenaltyMultiplier}}</td></tr>
+                                <tr><td>Spread</td><td>{{.PlacementConfig.Weighers.SpreadMultiplier}}</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h4 class="ui attached header">Available (Registered)</h4>
+                    <div class="ui bottom attached segment">
+                        <p><strong>Filters:</strong>
+                            {{range .AvailableFilters}}<span class="ui label">{{.}}</span> {{end}}
+                        </p>
+                        <p><strong>Weighers:</strong>
+                            {{range .AvailableWeighers}}<span class="ui label">{{.}}</span> {{end}}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+{{template "_footer" .}}

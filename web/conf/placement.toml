@@ -1,0 +1,42 @@
+# Cloudland Placement Scheduler Configuration
+# Reload via Admin UI (/placement) or API (POST /placement/reload)
+
+[placement]
+# Hyper heartbeat report interval (seconds). Alive threshold = 2 * this value.
+host_report_interval_sec = 60
+
+# Filter chain: executed in order. Names correspond to registered filters.
+# Available: compute_alive, zone, hugepage, resource, cpu_load, overcommit
+filter_chain = ["compute_alive", "zone", "hugepage", "resource", "cpu_load"]
+
+# Weigher chain: scored in order. Names correspond to registered weighers.
+# Available: hugepage, ram, cpu_load, overcommit_penalty, spread
+weigher_chain = ["hugepage", "ram", "cpu_load"]
+
+# Fallback filter name, triggered when standard filter chain eliminates all candidates.
+# Set to "overcommit" to enable overcommit tolerance, or "" to disable.
+fallback_filter = ""
+
+[placement.filters.cpu_load]
+# Standard path: nodes with CPU idle below this percentage are filtered out.
+idle_threshold_pct = 15.0
+
+[placement.overcommit]
+# Enable overcommit tolerance fallback
+enabled = false
+# Memory gap tolerance: gap / requested <= this percentage
+mem_delta_ratio_pct = 10.0
+# vCPU overcommit ratio limit (relative to physical cores)
+vcpu_overcommit_ratio = 1.5
+# Relaxed CPU idle threshold for overcommit path
+cpu_idle_fallback_pct = 5.0
+# Hugepage gap tolerance (stricter than regular memory)
+hugepage_delta_ratio_pct = 5.0
+
+[placement.weighers]
+# Multiplier for each weigher. Higher = more influence on host selection.
+overcommit_penalty_multiplier = 3.0
+hugepage_multiplier = 1.5
+ram_multiplier = 1.0
+cpu_load_multiplier = 1.0
+spread_multiplier = 1.0
