@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -22,7 +21,7 @@ import (
 // Example: tapdb4c44 corresponds to MAC 52:54:21:db:4c:44
 func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) *model.Interface {
 	if !strings.HasPrefix(targetDevice, "tap") || len(targetDevice) != 9 {
-		log.Printf("Invalid target_device format: %s, expected tapXXXXXX", targetDevice)
+		logger.Errorf("Invalid target_device format: %s, expected tapXXXXXX", targetDevice)
 		return nil
 	}
 
@@ -40,13 +39,13 @@ func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) 
 			// Take last 3 parts, remove colons
 			lastThreeParts := strings.Join(macParts[len(macParts)-3:], "")
 			if strings.EqualFold(lastThreeParts, macSuffix) {
-				log.Printf("Found matching interface: MAC=%s, targetDevice=%s", iface.MacAddr, targetDevice)
+				logger.Debugf("Found matching interface: MAC=%s, targetDevice=%s", iface.MacAddr, targetDevice)
 				return iface
 			}
 		}
 	}
 
-	log.Printf("No matching interface found for target_device: %s", targetDevice)
+	logger.Infof("No matching interface found for target_device: %s", targetDevice)
 	return nil
 }
 
@@ -54,7 +53,7 @@ func findInterfaceByTargetDevice(instance *model.Instance, targetDevice string) 
 func getAdminPassword() string {
 	viper.SetConfigFile("conf/config.toml")
 	if err := viper.ReadInConfig(); err != nil {
-		log.Printf("Failed to read config file, using default password: %v", err)
+		logger.Errorf("Failed to read config file, using default password: %v", err)
 		return "passw0rd"
 	}
 
@@ -74,21 +73,21 @@ func CreateAdminContext(ctx context.Context) (context.Context, error) {
 	// Validate admin user and password
 	user, err := userAdmin.Validate(ctx, "admin", adminPassword)
 	if err != nil {
-		log.Printf("Failed to validate admin user: %v", err)
+		logger.Errorf("Failed to validate admin user: %v", err)
 		return ctx, fmt.Errorf("failed to validate admin user: %v", err)
 	}
 
 	// Get admin organization
 	org, err := orgAdmin.GetOrgByName(ctx, "admin")
 	if err != nil {
-		log.Printf("Failed to get admin org: %v", err)
+		logger.Errorf("Failed to get admin org: %v", err)
 		return ctx, fmt.Errorf("failed to get admin org: %v", err)
 	}
 
 	// Get membership
 	memberShip, err := common.GetDBMemberShip(user.ID, org.ID)
 	if err != nil {
-		log.Printf("Failed to get admin membership: %v", err)
+		logger.Errorf("Failed to get admin membership: %v", err)
 		return ctx, fmt.Errorf("failed to get admin membership: %v", err)
 	}
 
@@ -113,7 +112,7 @@ func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string) (*model.I
 	// Get instance with admin context
 	instance, err := instanceAdmin.GetInstanceByUUID(adminCtx, instanceID)
 	if err != nil {
-		log.Printf("Failed to get instance: %v", err)
+		logger.Errorf("Failed to get instance: %v", err)
 		return nil, fmt.Errorf("failed to get instance: %v", err)
 	}
 
@@ -303,13 +302,13 @@ func (o *AdjustOperator) GetCPUAdjustRulesByGroupUUID(ctx context.Context, group
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Printf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("adjust rules query failed: %w", err)
 	}
 
 	details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("CPU adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("CPU adjust detail rules query failed: %w", err)
 	}
 
@@ -333,13 +332,13 @@ func (o *AdjustOperator) GetBWAdjustRulesByGroupUUID(ctx context.Context, groupU
 		PageSize:  1,
 	})
 	if err != nil || len(groups) == 0 {
-		log.Printf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("adjust rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("adjust rules query failed: %w", err)
 	}
 
 	details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
 	if err != nil {
-		log.Printf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
+		logger.Errorf("bandwidth adjust detail rules query failed: groupID=%s, error=%v", groupUUID, err)
 		return nil, fmt.Errorf("bandwidth adjust detail rules query failed: %w", err)
 	}
 
@@ -356,7 +355,7 @@ func (o *AdjustOperator) UpdateAdjustRuleGroupStatus(ctx context.Context, groupU
 		Update("enabled", enabled)
 
 	if result.Error != nil {
-		log.Printf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
+		logger.Errorf("update adjust rule group status failed groupUUID %s error %v", groupUUID, result.Error)
 		return fmt.Errorf("update adjust rule group status failed: %w", result.Error)
 	}
 
@@ -462,19 +461,19 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -487,7 +486,7 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 		// Get limit value from rule group
 		details, err := o.GetCPUAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get CPU adjustment rule details: %v", err)
+			logger.Errorf("Failed to get CPU adjustment rule details: %v", err)
 			return fmt.Errorf("failed to get CPU adjustment rule details: %v", err)
 		}
 
@@ -505,7 +504,7 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 	// Execute command
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
-		log.Printf("Failed to adjust CPU: %v", err)
+		logger.Errorf("Failed to adjust CPU: %v", err)
 		return fmt.Errorf("failed to adjust CPU resources: %v", err)
 	}
 
@@ -519,10 +518,10 @@ func (o *AdjustOperator) AdjustCPUResource(ctx context.Context, record *Adjustme
 
 	err = common.HyperExecute(ctx, control, updateCommand)
 	if err != nil {
-		log.Printf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
+		logger.Errorf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
 	}
 
-	log.Printf("Successfully adjusted CPU resources: domain=%s, limit=%v", domain, limit)
+	logger.Infof("Successfully adjusted CPU resources: domain=%s, limit=%v", domain, limit)
 	return nil
 }
 
@@ -536,20 +535,20 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -564,7 +563,7 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 	// Execute command
 	err = common.HyperExecute(ctx, control, command)
 	if err != nil {
-		log.Printf("Failed to restore CPU: %v", err)
+		logger.Errorf("Failed to restore CPU: %v", err)
 		return fmt.Errorf("failed to restore CPU resources: %v", err)
 	}
 
@@ -575,10 +574,10 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 
 	err = common.HyperExecute(ctx, control, updateCommand)
 	if err != nil {
-		log.Printf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
+		logger.Errorf("Warning: Failed to update CPU adjustment metric for domain %s: %v", domain, err)
 	}
 
-	log.Printf("Successfully restored CPU resources: domain=%s", domain)
+	logger.Infof("Successfully restored CPU resources: domain=%s", domain)
 	return nil
 }
 
@@ -592,20 +591,20 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -621,7 +620,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	}
 
 	if targetDevice == "" {
-		log.Printf("Target device not specified for instance %s", instanceID)
+		logger.Infof("Target device not specified for instance %s", instanceID)
 		return fmt.Errorf("target device not specified")
 	}
 
@@ -630,7 +629,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	originalInBw := totalInBw
 	originalOutBw := totalOutBw
 
-	log.Printf("[BW-ADJUST] Total bandwidth from alert: domain=%s, device=%s, inBw=%d Mbps, outBw=%d Mbps",
+	logger.Debugf("[BW-ADJUST] Total bandwidth from alert: domain=%s, device=%s, inBw=%d Mbps, outBw=%d Mbps",
 		domain, targetDevice, originalInBw, originalOutBw)
 
 	// Set bandwidth limit values
@@ -645,7 +644,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		// Get bandwidth adjustment rule details to calculate limit values
 		details, err := o.GetBWAdjustRuleDetails(ctx, record.RuleGroupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
+			logger.Errorf("Failed to get bandwidth adjustment rule details: %v", err)
 			return fmt.Errorf("failed to get bandwidth adjustment rule details: %v", err)
 		}
 
@@ -663,10 +662,10 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 						// Use unidirectional setting, don't affect outbound bandwidth
 						outBw = 0 // Placeholder, not actually used
 
-						log.Printf("[BW-ADJUST] Calculated inbound limit: %d%% of %d Mbps = %d Mbps",
+						logger.Debugf("[BW-ADJUST] Calculated inbound limit: %d%% of %d Mbps = %d Mbps",
 							detail.LimitValuePct, originalInBw, inBw)
 					} else {
-						log.Printf("[BW-ADJUST] Skip inbound limit: interface has unlimited bandwidth (0)")
+						logger.Debugf("[BW-ADJUST] Skip inbound limit: interface has unlimited bandwidth (0)")
 					}
 					break
 				}
@@ -684,10 +683,10 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 						// Use unidirectional setting, don't affect inbound bandwidth
 						inBw = 0 // Placeholder, not actually used
 
-						log.Printf("[BW-ADJUST] Calculated outbound limit: %d%% of %d Mbps = %d Mbps",
+						logger.Debugf("[BW-ADJUST] Calculated outbound limit: %d%% of %d Mbps = %d Mbps",
 							detail.LimitValuePct, originalOutBw, outBw)
 					} else {
-						log.Printf("[BW-ADJUST] Skip outbound limit: interface has unlimited bandwidth (0)")
+						logger.Debugf("[BW-ADJUST] Skip outbound limit: interface has unlimited bandwidth (0)")
 					}
 					break
 				}
@@ -725,7 +724,7 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 		// Execute command
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
-			log.Printf("Failed to adjust bandwidth: %v", err)
+			logger.Errorf("Failed to adjust bandwidth: %v", err)
 			return fmt.Errorf("failed to adjust bandwidth resources: %v", err)
 		}
 	}
@@ -739,19 +738,19 @@ func (o *AdjustOperator) AdjustBandwidthResource(ctx context.Context, record *Ad
 	if bwType != "" {
 		// Generate proper rule_id format: adjust-bw-$DOMAIN-$UUID
 		ruleID := fmt.Sprintf("adjust-bw-%s-%s", domain, record.RuleGroupUUID)
-		log.Printf("[BW-STATUS-UPDATE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s", domain, ruleID, bwType, status, nicName)
+		logger.Debugf("[BW-STATUS-UPDATE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s", domain, ruleID, bwType, status, nicName)
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)
 
-		log.Printf("[BW-STATUS-UPDATE] Full command: %s", updateCommand)
+		logger.Debugf("[BW-STATUS-UPDATE] Full command: %s", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
 		if err != nil {
-			log.Printf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
+			logger.Errorf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
 		}
 	}
 
-	log.Printf("Successfully adjusted bandwidth resources: domain=%s, device=%s, nicName=%s, limit=%v, inBw=%d, outBw=%d",
+	logger.Infof("Successfully adjusted bandwidth resources: domain=%s, device=%s, nicName=%s, limit=%v, inBw=%d, outBw=%d",
 		domain, device, nicName, limit, inBw, outBw)
 	return nil
 }
@@ -765,20 +764,20 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	if instanceID != "" {
 		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	} else {
 		// Otherwise query by domain
 		uuid, err := GetInstanceUUIDByDomain(ctx, domain)
 		if err != nil {
-			log.Printf("Failed to get instance UUID: %v", err)
+			logger.Errorf("Failed to get instance UUID: %v", err)
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
 		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
 		if err != nil {
-			log.Printf("Failed to get instance: %v", err)
+			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
 		}
 	}
@@ -796,7 +795,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	}
 
 	if targetInterface == nil {
-		log.Printf("Interface not found: device=%s, instanceID=%s", device, instanceID)
+		logger.Infof("Interface not found: device=%s, instanceID=%s", device, instanceID)
 		return fmt.Errorf("interface not found: device=%s", device)
 	}
 
@@ -804,7 +803,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	originalInBw := int(targetInterface.Inbound)   // Original inbound bandwidth (Mbps)
 	originalOutBw := int(targetInterface.Outbound) // Original outbound bandwidth (Mbps)
 
-	log.Printf("Restoring interface bandwidth: name=%s, inBw=%d, outBw=%d",
+	logger.Infof("Restoring interface bandwidth: name=%s, inBw=%d, outBw=%d",
 		targetInterface.Name, originalInBw, originalOutBw)
 
 	// Check if actual bandwidth restoration is needed
@@ -846,7 +845,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		// Execute command
 		err = common.HyperExecute(ctx, control, command)
 		if err != nil {
-			log.Printf("Failed to restore bandwidth: %v", err)
+			logger.Errorf("Failed to restore bandwidth: %v", err)
 			return fmt.Errorf("failed to restore bandwidth resources: %v", err)
 		}
 	}
@@ -861,17 +860,17 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_bandwidth_adjustment_status.sh --domain '%s' --rule-id '%s' --type '%s' --status %d --target-device '%s'",
 			domain, ruleID, bwType, status, nicName)
 
-		log.Printf("[BW-STATUS-RESTORE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s",
+		logger.Debugf("[BW-STATUS-RESTORE] Calling update script: domain=%s, rule_id=%s, type=%s, status=%d, target_device=%s",
 			domain, ruleID, bwType, status, nicName)
-		log.Printf("[BW-STATUS-RESTORE] Full command: %s", updateCommand)
+		logger.Debugf("[BW-STATUS-RESTORE] Full command: %s", updateCommand)
 
 		err = common.HyperExecute(ctx, control, updateCommand)
 		if err != nil {
-			log.Printf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
+			logger.Errorf("Warning: Failed to update bandwidth adjustment metric for domain %s: %v", domain, err)
 		}
 	}
 
-	log.Printf("Successfully restored bandwidth resources: domain=%s, device=%s, nicName=%s, originalInBw=%d, originalOutBw=%d",
+	logger.Infof("Successfully restored bandwidth resources: domain=%s, device=%s, nicName=%s, originalInBw=%d, originalOutBw=%d",
 		domain, device, nicName, originalInBw, originalOutBw)
 	return nil
 }
@@ -887,7 +886,7 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 		// Query CPU adjustment rule details
 		details, err := o.GetCPUAdjustRuleDetails(ctx, groupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get CPU adjustment rule details: %v", err)
+			logger.Errorf("Failed to get CPU adjustment rule details: %v", err)
 			return defaultCooldown
 		}
 		// Use limit duration as cooldown period
@@ -896,13 +895,13 @@ func (o *AdjustOperator) GetAdjustmentCooldownConfig(ctx context.Context, adjust
 		// Query bandwidth adjustment rule details
 		details, err := o.GetBWAdjustRuleDetails(ctx, groupUUID)
 		if err != nil || len(details) == 0 {
-			log.Printf("Failed to get bandwidth adjustment rule details: %v", err)
+			logger.Errorf("Failed to get bandwidth adjustment rule details: %v", err)
 			return defaultCooldown
 		}
 		// Use first rule's limit duration as cooldown period
 		return details[0].LimitDuration
 	default:
-		log.Printf("Unknown adjustment type: %s, using default cooldown", adjustType)
+		logger.Infof("Unknown adjustment type: %s, using default cooldown", adjustType)
 		return defaultCooldown
 	}
 }
@@ -918,7 +917,7 @@ func (o *AdjustOperator) UpdateVMBandwidthMetric(ctx context.Context, hyperID in
 		return fmt.Errorf("failed to update bandwidth metric: %v", err)
 	}
 
-	log.Printf("[BW-METRIC] Updated bandwidth metric: hyper=%d, domain=%s, device=%s, in=%d, out=%d",
+	logger.Infof("[BW-METRIC] Updated bandwidth metric: hyper=%d, domain=%s, device=%s, in=%d, out=%d",
 		hyperID, domain, targetDevice, inBw, outBw)
 	return nil
 }
@@ -971,7 +970,7 @@ func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newV
 	// Add new VMs
 	for _, vmUUID := range toAdd {
 		if err := alarmOperator.CreateVMLink(ctx, groupUUID, vmUUID, ""); err != nil {
-			log.Printf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
+			logger.Errorf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
 		} else {
 			added++
 		}
@@ -980,13 +979,13 @@ func (o *AdjustOperator) SyncVMLinks(ctx context.Context, groupUUID string, newV
 	// Remove old VMs
 	for _, vmUUID := range toRemove {
 		if deletedCount, err := alarmOperator.DeleteVMLink(ctx, groupUUID, vmUUID, ""); err != nil {
-			log.Printf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
+			logger.Errorf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, error=%v", groupUUID, vmUUID, err)
 		} else {
 			removed += int(deletedCount)
 		}
 	}
 
-	log.Printf("[SYNC-INFO] VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
+	logger.Infof("[SYNC-INFO] VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
 	return added, removed, toAdd, toRemove, nil
 }
 
@@ -1047,7 +1046,7 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 	for device, vmUUIDs := range toAddByDevice {
 		for _, vmUUID := range vmUUIDs {
 			if err := alarmOperator.CreateVMLink(ctx, groupUUID, vmUUID, device); err != nil {
-				log.Printf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
+				logger.Errorf("[SYNC-WARNING] Failed to add VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
 					groupUUID, vmUUID, device, err)
 			} else {
 				added++
@@ -1059,7 +1058,7 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 	for device, vmUUIDs := range toRemoveByDevice {
 		for _, vmUUID := range vmUUIDs {
 			if deletedCount, err := alarmOperator.DeleteVMLink(ctx, groupUUID, vmUUID, device); err != nil {
-				log.Printf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
+				logger.Errorf("[SYNC-WARNING] Failed to remove VM link: groupUUID=%s, vmUUID=%s, device=%s, error=%v",
 					groupUUID, vmUUID, device, err)
 			} else {
 				removed += int(deletedCount)
@@ -1067,7 +1066,7 @@ func (o *AdjustOperator) SyncVMLinksWithDevice(ctx context.Context, groupUUID st
 		}
 	}
 
-	log.Printf("[SYNC-INFO] BW VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
+	logger.Infof("[SYNC-INFO] BW VM links synchronized: groupUUID=%s, added=%d, removed=%d", groupUUID, added, removed)
 	return added, removed, toAddByDevice, toRemoveByDevice, nil
 }
 
@@ -1122,11 +1121,11 @@ func (o *AdjustOperator) UpdateCPUAdjustRuleDetails(ctx context.Context, identif
 				"limit_percent":    updateDetail.LimitPercent,
 				"updated_at":       updateDetail.UpdatedAt,
 			}).Error; err != nil {
-			log.Printf("[UPDATE-ERROR] Failed to update CPU detail: rule_id=%s, group_uuid=%s, error=%v", group.RuleID, groupUUID, err)
+			logger.Errorf("[UPDATE-ERROR] Failed to update CPU detail: rule_id=%s, group_uuid=%s, error=%v", group.RuleID, groupUUID, err)
 			return fmt.Errorf("failed to update CPU detail: %w", err)
 		}
 
-		log.Printf("[UPDATE-INFO] CPU adjustment rule details updated: rule_id=%s, group_uuid=%s", group.RuleID, groupUUID)
+		logger.Infof("[UPDATE-INFO] CPU adjustment rule details updated: rule_id=%s, group_uuid=%s", group.RuleID, groupUUID)
 		return nil
 	})
 }
@@ -1172,11 +1171,11 @@ func (o *AdjustOperator) UpdateBWAdjustRuleDetails(ctx context.Context, groupUUI
 				"limit_value_pct":    updateDetail.LimitValuePct,
 				"updated_at":         updateDetail.UpdatedAt,
 			}).Error; err != nil {
-			log.Printf("[UPDATE-ERROR] Failed to update BW detail: group_uuid=%s, error=%v", groupUUID, err)
+			logger.Errorf("[UPDATE-ERROR] Failed to update BW detail: group_uuid=%s, error=%v", groupUUID, err)
 			return fmt.Errorf("failed to update BW detail: %w", err)
 		}
 
-		log.Printf("[UPDATE-INFO] BW adjustment rule details updated: groupUUID=%s", groupUUID)
+		logger.Infof("[UPDATE-INFO] BW adjustment rule details updated: groupUUID=%s", groupUUID)
 		return nil
 	})
 }
@@ -1194,15 +1193,15 @@ func (o *AdjustOperator) UpdateAdjustRuleGroupBasicInfo(ctx context.Context, gro
 		Updates(updates)
 
 	if result.Error != nil {
-		log.Printf("[UPDATE-ERROR] Failed to update rule group basic info: groupUUID=%s, error=%v", groupUUID, result.Error)
+		logger.Errorf("[UPDATE-ERROR] Failed to update rule group basic info: groupUUID=%s, error=%v", groupUUID, result.Error)
 		return fmt.Errorf("failed to update rule group: %w", result.Error)
 	}
 
 	if result.RowsAffected == 0 {
-		log.Printf("[UPDATE-WARNING] No rule group found with uuid: %s", groupUUID)
+		logger.Errorf("[UPDATE-WARNING] No rule group found with uuid: %s", groupUUID)
 		return fmt.Errorf("no rule group found with uuid: %s", groupUUID)
 	}
 
-	log.Printf("[UPDATE-INFO] Rule group basic info updated: groupUUID=%s, fields=%v", groupUUID, updates)
+	logger.Infof("[UPDATE-INFO] Rule group basic info updated: groupUUID=%s, fields=%v", groupUUID, updates)
 	return nil
 }

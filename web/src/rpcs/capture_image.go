@@ -22,6 +22,12 @@ func init() {
 
 func CaptureImage(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| capture_image.sh '5' 'available' 'qcow2' 'message' 'volume_ID' 'storage_ID'
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 6 {
 		err = fmt.Errorf("Wrong params")
@@ -33,7 +39,6 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		logger.Error("Invalid image ID", err)
 		return
 	}
-	db := DB()
 	image := &model.Image{Model: model.Model{ID: imgID}}
 	err = db.Take(image).Error
 	if err != nil {
@@ -58,7 +63,11 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		}
 		image.Size = int64(imageSize)
 	}
-	err = db.Save(image).Error
+	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(map[string]interface{}{
+		"status": image.Status,
+		"format": image.Format,
+		"size":   image.Size,
+	}).Error
 	if err != nil {
 		logger.Error("Update image failed", err)
 		return
@@ -82,7 +91,10 @@ func CaptureImage(ctx context.Context, args []string) (status string, err error)
 		} else {
 			storage.Status = model.StorageStatusError
 		}
-		err = db.Save(storage).Error
+		err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{
+			"status":    storage.Status,
+			"volume_id": storage.VolumeID,
+		}).Error
 		if err != nil {
 			logger.Error("Update image storage failed", err)
 			return

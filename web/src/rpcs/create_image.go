@@ -20,7 +20,12 @@ func init() {
 
 func CreateImage(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| create_image.sh '5' 'available' 'qcow2' '1024000' 'volume_ID' 'storage_ID'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
@@ -47,7 +52,11 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		return
 	}
 	image.Size = int64(imageSize)
-	err = db.Save(image).Error
+	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(map[string]interface{}{
+		"status": image.Status,
+		"format": image.Format,
+		"size":   image.Size,
+	}).Error
 	if err != nil {
 		logger.Error("Update image failed", err)
 		return
@@ -70,7 +79,10 @@ func CreateImage(ctx context.Context, args []string) (status string, err error) 
 		} else {
 			storage.Status = model.StorageStatusError
 		}
-		err = db.Save(storage).Error
+		err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{
+			"status":    storage.Status,
+			"volume_id": storage.VolumeID,
+		}).Error
 		if err != nil {
 			logger.Error("Update image storage failed", err)
 			return

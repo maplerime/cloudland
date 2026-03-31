@@ -28,7 +28,7 @@ type VolumeInfo struct {
 }
 
 func execSourceMigrate(ctx context.Context, instance *model.Instance, migration *model.Migration, taskID int64, migrationScript, migrationType string) (err error) {
-	db := DB()
+	ctx, db := GetContextDB(ctx)
 	targetHyper := &model.Hyper{}
 	err = db.Where("hostid = ?", migration.TargetHyper).Take(targetHyper).Error
 	if err != nil {
@@ -79,7 +79,12 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 
 func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| migrate_vm.sh '12' '2' '127' '3' 'state'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 5 {
 		err = fmt.Errorf("Wrong params")

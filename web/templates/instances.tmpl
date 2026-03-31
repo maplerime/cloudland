@@ -230,10 +230,52 @@
 		            <div class="ui attached segment">
 			            <form class="ui form">
 	                        <div class="ui fluid tiny action input">
-	                            <input name="q" value="{{ .Query }}" placeholder="Search..." autofocus>
+	                            <select name="search_field" id="searchField" data-current="{{.SearchField}}" onchange="toggleSearch()" style="min-width:120px;max-width:160px;border-right:0;border-radius:.28571429rem 0 0 .28571429rem;">
+	                                <option value="name">{{.i18n.Tr "Hostname"}}</option>
+	                                <option value="id">ID</option>
+	                                <option value="uuid">UUID</option>
+	                                <option value="status">{{.i18n.Tr "Status"}}</option>
+	                            </select>
+	                            <input name="q" id="searchInput" value="{{ .Query }}" placeholder="{{.i18n.Tr "Search"}}..." autofocus>
+	                            <select name="q" id="searchSelect" style="display:none" disabled></select>
 	                            <button class="ui blue tiny button">{{.i18n.Tr "Search"}}</button>
 	                        </div>
                         </form>
+                        <script>
+                        (function(){
+                            var enums = {
+                                status: [['','-- All --'],['pending','pending'],['running','running'],['shut_off','shut_off'],
+                                         ['paused','paused'],['migrating','migrating'],['resizing','resizing'],
+                                         ['reinstalling','reinstalling'],['error','error']]
+                            };
+                            var fieldEl = document.getElementById('searchField');
+                            var inputEl = document.getElementById('searchInput');
+                            var selectEl = document.getElementById('searchSelect');
+                            var savedField = fieldEl.getAttribute('data-current');
+                            var savedQuery = inputEl.value;
+                            window.toggleSearch = function() {
+                                var f = fieldEl.value, opts = enums[f];
+                                if (opts) {
+                                    inputEl.style.display = 'none'; inputEl.disabled = true;
+                                    selectEl.style.display = ''; selectEl.disabled = false;
+                                    selectEl.innerHTML = '';
+                                    for (var i = 0; i < opts.length; i++) {
+                                        var o = document.createElement('option');
+                                        o.value = opts[i][0]; o.textContent = opts[i][1];
+                                        if (f === savedField && opts[i][0] === savedQuery) o.selected = true;
+                                        selectEl.appendChild(o);
+                                    }
+                                } else {
+                                    inputEl.style.display = ''; inputEl.disabled = false;
+                                    selectEl.style.display = 'none'; selectEl.disabled = true;
+                                }
+                            };
+                            for (var i = 0; i < fieldEl.options.length; i++) {
+                                if (fieldEl.options[i].value === savedField) { fieldEl.selectedIndex = i; break; }
+                            }
+                            toggleSearch();
+                        })();
+                        </script>
 		            </div>
 		            <div class="ui unstackable attached table segment">
                         <table class="ui unstackable very basic striped table">

@@ -56,7 +56,7 @@ func (a *InterfaceAdmin) Get(ctx context.Context, id int64) (iface *model.Interf
 	ctx, db := GetContextDB(ctx)
 	iface = &model.Interface{Model: model.Model{ID: id}}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Where("interface > 0").Order("addresses.updated_at")
+		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Take(iface).Error
 	if err != nil {
 		logger.Debug("DB failed to query interface, %v", err)
@@ -647,11 +647,10 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	_, secgroups, err := secgroupAdmin.List(c.Req.Context(), 0, -1, "", fmt.Sprintf("router_id = %d", iface.SecurityGroups[0].RouterID))
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(500, "500")
-		return
+	// Security groups are loaded via AJAX search; pass RouterID for the query constraint
+	var sgRouterID int64
+	if len(iface.SecurityGroups) > 0 {
+		sgRouterID = iface.SecurityGroups[0].RouterID
 	}
 	_, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), 0, -1, "updated_at", "", fmt.Sprintf("(instance_id = 0 and type = '%s') or (instance_id = %d and type = '%s')", PublicFloating, iface.Instance, PublicReserved))
 	if err != nil {
@@ -663,7 +662,7 @@ func (v *InterfaceView) Edit(c *macaron.Context, store session.Store) {
 		logger.Error("floating ips: %+v", fip)
 	}
 	c.Data["Interface"] = iface
-	c.Data["Secgroups"] = secgroups
+	c.Data["RouterID"] = sgRouterID
 	c.Data["PublicIps"] = floatingIps
 	c.Data["IfaceSubnets"] = ifaceSubnets
 	c.Data["IpCount"] = len(iface.SecondAddresses) + 1
@@ -974,6 +973,7 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 			if ifaceVlan != floatingIp.Subnet.Vlan {
 				logger.Error("Second addresses are not allowed to be in different vlan")
 				c.Data["ErrorMsg"] = "Second addresses are not allowed to be in different vlan"
+				return
 			}
 			if floatingIp.InstanceID > 0 && floatingIp.InstanceID != instance.ID {
 				errMsg := fmt.Sprintf("Public IP %s is in use", floatingIp.FipAddress)

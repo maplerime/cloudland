@@ -97,10 +97,8 @@ func (a *DictionaryAdmin) List(ctx context.Context, offset, limit int64, order s
 func (a *DictionaryAdmin) GetDictionaryByUUID(ctx context.Context, uuID string) (dictionaries *model.Dictionary, err error) {
 	logger.Debugf("Enter DictionaryAdmin.GetDictionaryByUUID, uuID=%s", uuID)
 	ctx, db := GetContextDB(ctx)
-	memberShip := GetMemberShip(ctx)
-	where := memberShip.GetWhere()
 	dictionaries = &model.Dictionary{}
-	err = db.Where(where).Where("uuid = ?", uuID).Take(dictionaries).Error
+	err = db.Where("uuid = ?", uuID).Take(dictionaries).Error
 	if err != nil {
 		logger.Errorf("DictionaryAdmin.GetDictionaryByUUID: failed, uuID=%s, err=%v", uuID, err)
 		return nil, NewCLError(ErrDictionaryRecordsNotFound, "Dictionary records not found", err)

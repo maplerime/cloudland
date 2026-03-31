@@ -22,6 +22,12 @@ func init() {
 
 func ReportRC(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| report_rc.sh 'cpu=12/16' 'memory=13395304/16016744' 'disk=58969763392/108580577280'
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 4 {
 		err = fmt.Errorf("Wrong params")
@@ -64,7 +70,6 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to get value", err)
 		}
 	}
-	db := DB()
 	resource := &model.Resource{
 		Hostid:      id,
 		Cpu:         cpu,

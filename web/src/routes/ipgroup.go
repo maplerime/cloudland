@@ -269,9 +269,10 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
-	query := c.QueryTrim("q")
-	if query != "" {
-		query = fmt.Sprintf("name like '%%%s%%'", query)
+	queryStr := c.QueryTrim("q")
+	query := ""
+	if queryStr != "" {
+		query = fmt.Sprintf("name like '%%%s%%'", queryStr)
 	}
 	total, ipGroups, err := ipGroupAdmin.List(c.Req.Context(), offset, limit, order, query)
 	if err != nil {
@@ -282,7 +283,7 @@ func (v *IpGroupView) List(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["IpGroups"] = ipGroups
-	c.Data["Query"] = query
+	c.Data["Query"] = queryStr
 	SetPaginationData(c, "ipgroups", total, limit, offset, listConfig,
 		`["ID", "Name", "Type", "Category", "Subnets", "FloatingIPs", "Action"]`,
 		[]string{"ID", "UUID", "Name", "Type", "Category", "Subnets", "FloatingIPs", "Action"})

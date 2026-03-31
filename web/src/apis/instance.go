@@ -50,7 +50,7 @@ type InstanceResizePayload struct {
 
 type InstanceRescuePayload struct {
 	RescueImage *BaseReference `json:"rescue_image" binding:"omitempty"`
-	Password    string         `json:"password" binging:"required,min=8,max=64"`
+	Password    string         `json:"password" binding:"required,min=8,max=64"`
 }
 
 type InstancePayload struct {

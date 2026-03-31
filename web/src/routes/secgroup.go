@@ -555,6 +555,44 @@ func (a *SecgroupAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	return
 }
 
+// List4View lists security groups with structured search params for Web Console.
+func (a *SecgroupAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *SecgroupSearchParams) (total int64, secgroups []*model.SecurityGroup, err error) {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
+	if params == nil {
+		params = &SecgroupSearchParams{}
+	}
+	ctx, db := GetContextDB(ctx)
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	where := memberShip.GetWhere()
+	secgroups = []*model.SecurityGroup{}
+	countDB := ApplySecgroupSearch(db.Model(&model.SecurityGroup{}).Where(where), params)
+	if err = countDB.Count(&total).Error; err != nil {
+		logger.Error("DB failed to count security group(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count security group(s)", err)
+		return
+	}
+	findDB := ApplySecgroupSearch(db.Where(where), params)
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	if err = findDB.Find(&secgroups).Error; err != nil {
+		logger.Error("DB failed to query security group(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query security group(s)", err)
+		return
+	}
+	return
+}
+
 func (v *SecgroupView) List(c *macaron.Context, store session.Store) {
 	// Get pagination parameters
 	listConfig, offset, limit := GetPaginationParams(c, "secgroups")
@@ -711,6 +749,35 @@ func (v *SecgroupView) Patch(c *macaron.Context, store session.Store) {
 	}
 	c.Redirect(redirectTo)
 	return
+}
+
+// SearchJSON returns security groups as JSON for AJAX dropdown search.
+func (v *SecgroupView) SearchJSON(c *macaron.Context, store session.Store) {
+	routerID := c.QueryInt64("router_id")
+	q := c.QueryTrim("q")
+	params := &SecgroupSearchParams{RouterID: routerID}
+	if id, err := strconv.Atoi(q); err == nil && q != "" {
+		params.ID = int64(id)
+	} else if q != "" {
+		params.Name = q
+	}
+	_, secgroups, err := secgroupAdmin.List4View(c.Req.Context(), 0, 20, "-created_at", params)
+	if err != nil {
+		c.JSON(500, map[string]interface{}{"success": false, "message": err.Error()})
+		return
+	}
+	type Result struct {
+		Name  string `json:"name"`
+		Value int64  `json:"value"`
+	}
+	results := make([]Result, 0, len(secgroups))
+	for _, sg := range secgroups {
+		results = append(results, Result{
+			Name:  fmt.Sprintf("%d-%s", sg.ID, sg.Name),
+			Value: sg.ID,
+		})
+	}
+	c.JSON(200, map[string]interface{}{"success": true, "results": results})
 }
 
 func (v *SecgroupView) Create(c *macaron.Context, store session.Store) {

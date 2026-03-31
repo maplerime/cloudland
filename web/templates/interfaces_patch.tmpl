@@ -46,6 +46,7 @@
                         <select name="public_ips" id="public_ips" multiple="" class="ui multiple selection dropdown">
                             <option value="{{ .Interface.FloatingIp }}" selected>{{ .Interface.Address.Address }}</option>
                             {{ $PrimaryAddress := .Interface.Address.Address }}
+                            {{ $Vlan := .Interface.Address.Subnet.Vlan }}
                             {{ $PublicIps := .PublicIps }}
                             {{ range .Interface.SecondAddresses }}
                               {{ $Address := .Address }}
@@ -69,7 +70,9 @@
                                 {{ end }}
                               {{ end }}
                               {{ if not $selected }}
+                                {{ if eq .Subnet.Vlan $Vlan }}
                                 <option value="{{ .ID }}">{{ $FipAddress }}</option>
+                                {{ end }}
                               {{ end }}
                             {{ end }}
                         </select>
@@ -148,25 +151,20 @@
                         </select>
                     </div>
                     <div class="inline field">
-                        <label for="secgroups">{{.i18n.Tr "Security Groups"}}</label>
+                        <label for="secgroupSearch">{{.i18n.Tr "Security Groups"}}</label>
+                        <div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
+                            <input type="text" id="secgroupSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
+                            <i class="search icon link" onclick="$('#secgroupSearch').trigger('input')"></i>
+                        </div>
+		                </div>
+                    <div class="inline field">
+                        <label for="secgroups">&nbsp;&nbsp;</label>
                         <select name="secgroups" id="secgroups" multiple="" class="ui multiple selection dropdown">
-                            {{ $IfaceSecgroups := .IfaceSecgroups }}
-            		    {{ range .Secgroups }}
-                              {{ $sgID := .ID }}
-                              {{ $selected := false }}
-            		      {{ range $IfaceSecgroups }}
-                                {{ if eq .ID $sgID }}
-                                  {{ $selected = true }}
-                                {{ end }}
-                              {{ end }}
-                              {{ if $selected }}
-                                  <option value="{{ .ID }}" selected>{{ .ID }}-{{ .Name }}</option>
-                              {{ else }}
-                                  <option value="{{ .ID }}">{{ .ID }}-{{ .Name }}</option>
-                              {{ end }}
+                            {{ range .IfaceSecgroups }}
+                              <option value="{{ .ID }}" selected>{{ .ID }}-{{ .Name }}</option>
                             {{ end }}
                         </select>
-		    </div>
+		                </div>
                     <div class="inline field">
                         <label></label>
                         <button class="ui green button">{{.i18n.Tr "Update Interface"}}</button>
@@ -176,5 +174,39 @@
         </div>
 	</div>
 </div>
+<script>
+(function(){
+    var timer;
+    var routerID = '{{.RouterID}}';
+    $('#secgroupSearch').on('input', function(){
+        var q = $(this).val();
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+            $.getJSON('/secgroups/search.json', {q: q, router_id: routerID}, function(data){
+                if (!data.results) return;
+                var sel = document.getElementById('secgroups');
+                var selected = $('#secgroups').dropdown('get value');
+                if (!Array.isArray(selected)) selected = selected ? [selected] : [];
+                var selectedSet = {};
+                for (var i = 0; i < selected.length; i++) selectedSet[selected[i]] = true;
+                // Keep selected options, add new search results
+                var html = '';
+                // Preserve currently selected options
+                $(sel).find('option[selected]').each(function(){ html += this.outerHTML; });
+                for (var i = 0; i < data.results.length; i++) {
+                    var r = data.results[i];
+                    if (!selectedSet[String(r.value)]) {
+                        html += '<option value="' + r.value + '">' + r.name + '</option>';
+                    }
+                }
+                sel.innerHTML = html;
+                $('#secgroups').dropdown('refresh');
+                // Re-apply selections
+                if (selected.length > 0) $('#secgroups').dropdown('set selected', selected);
+            });
+        }, 300);
+    });
+})();
+</script>
 {{template "_footer" .}}
 

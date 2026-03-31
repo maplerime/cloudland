@@ -698,6 +698,93 @@ func (a *FloatingIpAdmin) List(ctx context.Context, offset, limit int64, order, 
 	return
 }
 
+// List4View lists floating IPs with structured search params for Web Console.
+func (a *FloatingIpAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *FloatingIpSearchParams) (total int64, floatingIps []*model.FloatingIp, err error) {
+	memberShip := GetMemberShip(ctx)
+	if params == nil {
+		params = &FloatingIpSearchParams{}
+	}
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	_, db := GetContextDB(ctx)
+	where := memberShip.GetWhere()
+
+	// Count with parameterized filters
+	countDB := ApplyFloatingIpSearch(db.Model(&model.FloatingIp{}).Where(where), params)
+	if err = countDB.Count(&total).Error; err != nil {
+		logger.Error("DB failed to count floating ip(s), %v", err)
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count floating IPs", err)
+	}
+
+	// Find with same filters + pagination
+	findDB := ApplyFloatingIpSearch(db.Where(where), params)
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	floatingIps = []*model.FloatingIp{}
+	if err = findDB.Preload("Group").Preload("Interface").Preload("Interface.Address").Preload("Interface.Address.Subnet").Preload("Subnet").Find(&floatingIps).Error; err != nil {
+		logger.Error("DB failed to query floating ip(s), %v", err)
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating IPs", err)
+	}
+	db = db.Offset(0).Limit(-1)
+	for _, fip := range floatingIps {
+		err = a.EnsureSubnetID(ctx, fip)
+		if err != nil {
+			logger.Error("Failed to ensure subnet_id", err)
+			continue
+		}
+
+		if fip.InstanceID > 0 {
+			fip.Instance = &model.Instance{Model: model.Model{ID: fip.InstanceID}}
+			err = db.Preload("Zone").Take(fip.Instance).Error
+			if err != nil {
+				logger.Error("DB failed to query instance ", err)
+				err = nil
+				continue
+			}
+			instance := fip.Instance
+			err = db.Preload("Address").Where("instance = ? and primary_if = true", instance.ID).Find(&instance.Interfaces).Error
+			if err != nil {
+				logger.Error("Failed to query interfaces ", err)
+				err = nil
+				continue
+			}
+		} else if fip.LoadBalancerID > 0 {
+			fip.LoadBalancer, err = loadBalancerAdmin.Get(ctx, fip.LoadBalancerID)
+			if err != nil {
+				logger.Error("DB failed to query load balancer ", err)
+				err = nil
+				continue
+			}
+		}
+
+		if fip.RouterID > 0 {
+			fip.Router = &model.Router{Model: model.Model{ID: fip.RouterID}}
+			err = db.Take(fip.Router).Error
+			if err != nil {
+				logger.Error("DB failed to query router ", err)
+				err = nil
+				continue
+			}
+		}
+	}
+	permit := memberShip.CheckPermission(model.Admin)
+	if permit {
+		for _, fip := range floatingIps {
+			fip.OwnerInfo = &model.Organization{Model: model.Model{ID: fip.Owner}}
+			if err = db.Take(fip.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				return 0, nil, NewCLError(ErrOwnerNotFound, "Failed to query owner info", err)
+			}
+		}
+	}
+
+	return
+}
+
 func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
@@ -726,8 +813,32 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 		}
 		intQuery = fmt.Sprintf("load_balancer_id = %d", loadBalancerID)
 	}
+	searchField := c.QueryTrim("search_field")
 	query := c.QueryTrim("q")
-	total, floatingIps, err := floatingIpAdmin.List(c.Req.Context(), offset, limit, order, query, intQuery)
+	params := &FloatingIpSearchParams{}
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(query); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = query
+	case "name":
+		params.Name = query
+	case "fip_address":
+		params.FipAddress = query
+	case "int_address":
+		params.IntAddress = query
+	default:
+		searchField = "name"
+		if query != "" {
+			params.AnyQuery = query
+		}
+	}
+	if intQuery != "" {
+		params.RawCondition = intQuery
+	}
+	total, floatingIps, err := floatingIpAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		logger.Error("Failed to list floating ip(s), %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -736,6 +847,7 @@ func (v *FloatingIpView) List(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["FloatingIps"] = floatingIps
+	c.Data["SearchField"] = searchField
 	c.Data["Query"] = query
 	SetPaginationData(c, "floatingips", total, limit, offset, listConfig,
 		`["ID", "Name", "IpGroup", "FloatingIP", "InternalIP", "Type", "InboundBandwidth", "OutboundBandwidth", "Instance", "LoadBalancer", "Action"]`,
@@ -1265,7 +1377,11 @@ func AllocateFloatingIp(ctx context.Context, floatingIpID, owner int64, pubSubne
 
 func (a *FloatingIpAdmin) DeallocateFloatingIp(ctx context.Context, floatingIpID int64) (err error) {
 	ctx, db := GetContextDB(ctx)
-	DeleteInterfaces(ctx, floatingIpID, 0, "floating")
+	err = DeleteInterfaces(ctx, floatingIpID, 0, "floating")
+	if err != nil {
+		logger.Error("Failed to delete interfaces, %v", err)
+		return NewCLError(ErrInterfaceDeleteFailed, "Failed to delete interfaces", err)
+	}
 	floatingIp := &model.FloatingIp{Model: model.Model{ID: floatingIpID}}
 	err = db.Delete(floatingIp).Error
 	if err != nil {

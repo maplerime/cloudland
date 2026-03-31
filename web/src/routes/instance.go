@@ -60,22 +60,28 @@ type VolumeInfo struct {
 	Booting bool   `json:"booting"`
 }
 
+type PoolRelationItem struct {
+	ImageVolumeID string `json:"image_volume_id"`
+	Snapshot      int64  `json:"snapshot"`
+}
+
 type InstanceData struct {
-	Userdata       string             `json:"userdata"`
-	UserdataType   string             `json:"userdata_type"`
-	Vendordata     string             `json:"vendordata"`
-	VendordataType string             `json:"vendordata_type"`
-	DNS            string             `json:"dns"`
-	Vlans          []*VlanInfo        `json:"vlans"`
-	Networks       []*InstanceNetwork `json:"networks"`
-	Links          []*NetworkLink     `json:"links"`
-	Volumes        []*VolumeInfo      `json:"volumes"`
-	Keys           []string           `json:"keys"`
-	RootPasswd     string             `json:"root_passwd"`
-	LoginPort      int                `json:"login_port"`
-	OSCode         string             `json:"os_code"`
-	DiskIopsLimit  int32              `json:"disk_iops_limit"`
-	DiskBpsLimit   int32              `json:"disk_bps_limit"`
+	Userdata            string                      `json:"userdata"`
+	UserdataType        string                      `json:"userdata_type"`
+	Vendordata          string                      `json:"vendordata"`
+	VendordataType      string                      `json:"vendordata_type"`
+	DNS                 string                      `json:"dns"`
+	Vlans               []*VlanInfo                 `json:"vlans"`
+	Networks            []*InstanceNetwork          `json:"networks"`
+	Links               []*NetworkLink              `json:"links"`
+	Volumes             []*VolumeInfo               `json:"volumes"`
+	Keys                []string                    `json:"keys"`
+	RootPasswd          string                      `json:"root_passwd"`
+	LoginPort           int                         `json:"login_port"`
+	OSCode              string                      `json:"os_code"`
+	DiskIopsLimit       int32                       `json:"disk_iops_limit"`
+	DiskBpsLimit        int32                       `json:"disk_bps_limit"`
+	StoragePoolRelation map[string]PoolRelationItem `json:"storage_pool_relation,omitempty"`
 }
 
 type InstancesData struct {
@@ -142,21 +148,36 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 	}
 
 	driver := GetVolumeDriver()
-	imageVolumeID := ""
+	var poolRelation map[string]PoolRelationItem
 	if driver != "local" {
 		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 		if poolID == "" {
 			poolID = defaultPoolID
 		}
-		storage := model.ImageStorage{}
-		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
-		if err != nil {
-			logger.Errorf("Failed to query image storage %d, %v", image.ID, err)
-			err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
-			return
+		poolIDs := []string{}
+		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
+		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+			for _, s := range strings.Split(dictionary.Value, ",") {
+				if trimmed := strings.TrimSpace(s); trimmed != "" {
+					poolIDs = append(poolIDs, trimmed)
+				}
+			}
 		}
-		imageVolumeID = storage.VolumeID
-		logger.Debugf("Using volume driver %s with pool ID %s", driver, poolID)
+		if len(poolIDs) == 0 {
+			poolIDs = append(poolIDs, poolID)
+		}
+		poolRelation = make(map[string]PoolRelationItem)
+		for _, pid := range poolIDs {
+			storage := model.ImageStorage{}
+			err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, pid, model.StorageStatusSynced).First(&storage).Error
+			if err != nil {
+				logger.Errorf("Failed to query image storage %d for pool %s, %v", image.ID, pid, err)
+				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
+				return
+			}
+			poolRelation[pid] = PoolRelationItem{ImageVolumeID: storage.VolumeID, Snapshot: 0}
+		}
+		logger.Debugf("Using volume driver %s with pool IDs %v, relation %+v", driver, poolIDs, poolRelation)
 	}
 
 	execCommands := []*ExecutionCommand{}
@@ -174,22 +195,27 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
 			}
 		} else {
-			if err = db.Model(&model.Instance{}).
-				Unscoped().
-				Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
-				Where("v.pool_id = ?", poolID).
-				Where("instances.image_id = ?", image.ID).
-				Count(&total).Error; err != nil {
-				logger.Error("Failed to count instances with volumes matching pool_id", err)
+			for pid, rel := range poolRelation {
+				var poolTotal int
+				if err = db.Model(&model.Instance{}).
+					Unscoped().
+					Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
+					Where("v.pool_id = ?", pid).
+					Where("instances.image_id = ?", image.ID).
+					Count(&poolTotal).Error; err != nil {
+					logger.Errorf("Failed to count instances for pool %s, %v", pid, err)
+					continue
+				}
+				poolSnap := poolTotal/MaxmumSnapshot + 1
+				poolRelation[pid] = PoolRelationItem{ImageVolumeID: rel.ImageVolumeID, Snapshot: int64(poolSnap)}
 			}
 		}
-		snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 		instance := &model.Instance{
 			Model:          model.Model{Creater: memberShip.UserID},
 			Owner:          memberShip.OrgID,
 			Hostname:       hostname,
 			ImageID:        image.ID,
-			Snapshot:       int64(snapshot),
+			Snapshot:       0,
 			Keys:           keys,
 			PasswdLogin:    passwdLogin,
 			LoginPort:      int32(loginPort),
@@ -214,7 +240,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		var bootVolume *model.Volume
 		imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 		// boot volume name format: instance-15-boot-volume-10
-		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0, poolID)
+		bootVolume, err = volumeAdmin.CreateVolume(ctx, fmt.Sprintf("instance-%d-boot-volume", instance.ID), instance.Disk, instance.ID, true, diskIopsLimit, 0, diskBpsLimit, 0)
 		if err != nil {
 			logger.Error("Failed to create boot volume", err)
 			return
@@ -237,7 +263,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInterfaceInvalidSubnet, "Invalid or duplicate subnets for interfaces", err)
 		}
 
-		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, "")
+		ifaces, metadata, err = a.buildMetadata(ctx, primaryIface, secondaryIfaces, instancePasswd, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, "", poolRelation)
 		if err != nil {
 			logger.Error("Build instance metadata failed", err)
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
@@ -248,7 +274,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if i == 0 && hyperID >= 0 {
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%d' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, snapshot, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, poolID, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -475,12 +501,12 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	if instance.Disk == 0 {
 		instance.Disk = bootVolume.Size
 	}
-	if err = db.Save(&instance).Error; err != nil {
-		logger.Error("Failed to save instance", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
-	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
 		"flavor_id": 0,
+		"status":    instance.Status,
+		"memory":    instance.Memory,
+		"cpu":       instance.Cpu,
+		"disk":      instance.Disk,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
@@ -616,12 +642,15 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	instance.Memory = memory
 	instance.Disk = disk
 	instance.Keys = keys
-	if err = db.Save(&instance).Error; err != nil {
-		logger.Error("Failed to save instance", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
-	}
 	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
-		"flavor_id": 0,
+		"flavor_id":    0,
+		"status":       instance.Status,
+		"login_port":   instance.LoginPort,
+		"passwd_login": instance.PasswdLogin,
+		"image_id":     instance.ImageID,
+		"cpu":          instance.Cpu,
+		"memory":       instance.Memory,
+		"disk":         instance.Disk,
 	}).Error
 	if err != nil {
 		logger.Error("Failed to save instance", err)
@@ -635,7 +664,11 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	// change volume status to reinstalling
 	bootVolume.Status = "reinstalling"
 	bootVolume.Size = disk
-	if err = db.Save(&bootVolume).Error; err != nil {
+	err = db.Model(&model.Volume{}).Where("id = ?", bootVolume.ID).Updates(map[string]interface{}{
+		"status": bootVolume.Status,
+		"size":   bootVolume.Size,
+	}).Error
+	if err != nil {
 		logger.Error("Failed to save volume", err)
 		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to save volume", err)
 	}
@@ -827,7 +860,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 
 func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *InterfaceInfo, secondaryIfaces []*InterfaceInfo,
 	rootPasswd string, loginPort int, keys []*model.Key, instance *model.Instance, diskIopsLimit int32, diskBpsLimit int32, routerID, zoneID int64,
-	service string) (interfaces []*model.Interface, metadata string, err error) {
+	service string, poolRelation map[string]PoolRelationItem) (interfaces []*model.Interface, metadata string, err error) {
 	if rootPasswd == "" {
 		logger.Debugf("Build instance metadata with primaryIface: %v, secondaryIfaces: %+v, login_port: %d, keys: %+v, instance: %+v, diskIopsLimit: %d, diskBpsLimit: %d, routerID: %d, zoneID: %d, service: %s",
 			primaryIface, secondaryIfaces, loginPort, keys, instance, diskIopsLimit, diskBpsLimit, routerID, zoneID, service)
@@ -922,20 +955,21 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		dns = ""
 	}
 	instData := &InstanceData{
-		Userdata:       instance.Userdata,
-		UserdataType:   instance.UserdataType,
-		Vendordata:     instance.Vendordata,
-		VendordataType: instance.VendordataType,
-		DNS:            dns,
-		Vlans:          vlans,
-		Networks:       instNetworks,
-		Links:          instLinks,
-		Keys:           instKeys,
-		RootPasswd:     rootPasswd,
-		LoginPort:      loginPort,
-		OSCode:         GetImageOSCode(ctx, instance),
-		DiskIopsLimit:  diskIopsLimit,
-		DiskBpsLimit:   diskBpsLimit,
+		Userdata:            instance.Userdata,
+		UserdataType:        instance.UserdataType,
+		Vendordata:          instance.Vendordata,
+		VendordataType:      instance.VendordataType,
+		DNS:                 dns,
+		Vlans:               vlans,
+		Networks:            instNetworks,
+		Links:               instLinks,
+		Keys:                instKeys,
+		RootPasswd:          rootPasswd,
+		LoginPort:           loginPort,
+		OSCode:              GetImageOSCode(ctx, instance),
+		DiskIopsLimit:       diskIopsLimit,
+		DiskBpsLimit:        diskBpsLimit,
+		StoragePoolRelation: poolRelation,
 	}
 	jsonData, err := json.Marshal(instData)
 	if err != nil {
@@ -1229,7 +1263,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 	}
 	if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-		return db.Where("interface > 0").Order("addresses.updated_at")
+		return db.Order("addresses.updated_at")
 	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
@@ -1371,7 +1405,98 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	db = db.Offset(0).Limit(-1)
 	for _, instance := range instances {
 		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
-			return db.Where("interface > 0").Order("addresses.updated_at")
+			return db.Order("addresses.updated_at")
+		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+			logger.Errorf("Failed to query interfaces %v", err)
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
+			return
+		}
+
+		if err = db.Preload("Group").Preload("Subnet").Order("updated_at").Where("instance_id = ?", instance.ID).Find(&instance.FloatingIps).Error; err != nil {
+			logger.Errorf("Failed to query floating ip(s), %v", err)
+			err = NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
+			return
+		}
+
+		if instance.RouterID > 0 {
+			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
+			if err = db.Take(instance.Router).Error; err != nil {
+				logger.Errorf("Failed to query router, %v", err)
+				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
+				return
+			}
+		}
+		permit := memberShip.CheckPermission(model.Admin)
+		if permit {
+			instance.OwnerInfo = &model.Organization{Model: model.Model{ID: instance.Owner}}
+			if err = db.Take(instance.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Failed to query owner info for instance", err)
+				return
+			}
+		}
+	}
+
+	return
+}
+
+// List4View lists instances with structured search params for Web Console.
+// It does not modify the original List method used by the API layer.
+func (a *InstanceAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *InstanceSearchParams) (total int64, instances []*model.Instance, err error) {
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
+	if params == nil {
+		params = &InstanceSearchParams{}
+	}
+	db := DB()
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	where := memberShip.GetWhere()
+
+	// Count with parameterized filters
+	countDB := ApplyInstanceSearch(db.Model(&model.Instance{}).Where(where), params)
+	if params.IP != "" {
+		countDB = countDB.
+			Joins("LEFT JOIN interfaces ON interfaces.instance = instances.id").
+			Joins("LEFT JOIN addresses ON addresses.interface = interfaces.id").
+			Where("addresses.address LIKE ?", "%"+params.IP+"%").
+			Group("instances.id")
+	}
+	if err = countDB.Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count instance(s)", err)
+		return
+	}
+
+	// Find with same filters + pagination
+	findDB := ApplyInstanceSearch(db.Where(where), params)
+	if params.IP != "" {
+		findDB = findDB.
+			Joins("LEFT JOIN interfaces ON interfaces.instance = instances.id").
+			Joins("LEFT JOIN addresses ON addresses.interface = interfaces.id").
+			Where("addresses.address LIKE ?", "%"+params.IP+"%").
+			Group("instances.id")
+	}
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	instances = []*model.Instance{}
+	if err = findDB.Preload("Volumes").Preload("Image").Preload("Zone").Preload("Flavor").Preload("Keys").Find(&instances).Error; err != nil {
+		logger.Errorf("Failed to query instance(s), %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query instance(s)", err)
+		return
+	}
+	db = db.Offset(0).Limit(-1)
+	for _, instance := range instances {
+		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
+			return db.Order("addresses.updated_at")
 		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
@@ -1417,22 +1542,34 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	searchField := c.QueryTrim("search_field")
 	queryStr := c.QueryTrim("q")
-	query := queryStr
-	if query != "" {
-		query = fmt.Sprintf("hostname like '%%%s%%'", queryStr)
-	}
-	hostname := c.QueryTrim("hostname")
-	router_id := c.QueryTrim("router_id")
-	if router_id != "" {
-		routerID, err := strconv.Atoi(router_id)
-		if err != nil {
-			logger.Debugf("Error to convert router_id to integer: %+v ", err)
+	params := &InstanceSearchParams{}
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(queryStr); err == nil {
+			params.ID = int64(id)
 		}
-		query = fmt.Sprintf("router_id = %d", routerID)
+	case "uuid":
+		params.UUID = queryStr
+	case "status":
+		if queryStr != "" {
+			params.Statuses = []string{queryStr}
+		}
+	case "ip":
+		params.IP = queryStr
+	default:
+		searchField = "name"
+		params.Name = queryStr
 	}
-	// Fetch instances from database (call existing instanceAdmin.List function)
-	total, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
+	routerIDStr := c.QueryTrim("router_id")
+	if routerIDStr != "" {
+		if routerID, err := strconv.Atoi(routerIDStr); err == nil {
+			params.RouterID = int64(routerID)
+		}
+	}
+	// Fetch instances from database
+	total, instances, err := instanceAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		logger.Debugf("Failed to get instances, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -1445,9 +1582,10 @@ func (v *InstanceView) List(c *macaron.Context, store session.Store) {
 
 	// Set template data
 	c.Data["Instances"] = instances
+	c.Data["SearchField"] = searchField
 	c.Data["Query"] = queryStr
 	c.Data["IsAdmin"] = isAdmin
-	c.Data["HostName"] = hostname
+	c.Data["HostName"] = c.QueryTrim("hostname")
 	SetPaginationData(c, "instances", total, limit, offset, listConfig,
 		`["ID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"]`,
 		[]string{"ID", "UUID", "Hostname", "LoginPort", "Flavor", "Image", "IPAddress", "Status", "Console", "VPC", "Hyper", "Owner", "Zone", "Action"})
@@ -1474,7 +1612,9 @@ func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
 		order = "-created_at"
 	}
 	query := c.QueryTrim("q")
-	_, instances, err := instanceAdmin.List(c.Req.Context(), offset, limit, order, query)
+	params := &InstanceSearchParams{}
+	params.Name = query
+	_, instances, err := instanceAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
@@ -1488,6 +1628,34 @@ func (v *InstanceView) UpdateTable(c *macaron.Context, store session.Store) {
 
 	c.JSON(200, jsonData)
 	return
+}
+
+// SearchJSON returns instances as JSON for AJAX dropdown search.
+func (v *InstanceView) SearchJSON(c *macaron.Context, store session.Store) {
+	q := c.QueryTrim("q")
+	params := &InstanceSearchParams{}
+	if id, err := strconv.Atoi(q); err == nil && q != "" {
+		params.ID = int64(id)
+	} else if q != "" {
+		params.Name = q
+	}
+	_, instances, err := instanceAdmin.List4View(c.Req.Context(), 0, 20, "-created_at", params)
+	if err != nil {
+		c.JSON(500, map[string]interface{}{"success": false, "message": err.Error()})
+		return
+	}
+	type Result struct {
+		Name  string `json:"name"`
+		Value int64  `json:"value"`
+	}
+	results := make([]Result, 0, len(instances))
+	for _, inst := range instances {
+		results = append(results, Result{
+			Name:  fmt.Sprintf("%d-%s", inst.ID, inst.Hostname),
+			Value: inst.ID,
+		})
+	}
+	c.JSON(200, map[string]interface{}{"success": true, "results": results})
 }
 
 func (v *InstanceView) Status(c *macaron.Context, store session.Store) {

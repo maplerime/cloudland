@@ -83,7 +83,7 @@ func (a *VolumeAdmin) GetVolumeByUUID(ctx context.Context, uuID string) (volume 
 }
 
 func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32, instanceID int64, booting bool,
-	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
+	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32) (volume *model.Volume, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -101,9 +101,6 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 	}
 	if bpsBurst == 0 {
 		bpsBurst = viper.GetInt32("volume.default_bps_burst")
-	}
-	if poolID == "" {
-		poolID = viper.GetString("volume.default_wds_pool_id")
 	}
 	if bpsLimit > 0 && (bpsLimit < model.VolumeBpsLimitMin || bpsLimit > model.VolumeBpsLimitMax) {
 		logger.Error("Invalid bps limit: %d", bpsLimit)
@@ -136,7 +133,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 		BpsLimit:   bpsLimit,
 		BpsBurst:   bpsBurst,
 		Status:     "pending",
-		PoolID:     poolID,
+		PoolID:     "",
 	}
 	err = db.Create(volume).Error
 	if err != nil {
@@ -158,7 +155,17 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
-	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+	newPoolID := poolID
+	if poolID != "" {
+		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
+		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+			if dictionary.Value != "" {
+				newPoolID = dictionary.Value
+			}
+		}
+	}
+
+	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst)
 	if err != nil {
 		logger.Error("DB create volume failed", err)
 		return
@@ -167,7 +174,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	control := fmt.Sprintf("inter=")
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID)
+		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)
@@ -319,6 +326,17 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			err = NewCLError(ErrBootVolumeCannotDetach, "Boot volume can not be detached", nil)
 			return
 		}
+		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
+		if err = db.Model(instance).Take(instance).Error; err != nil {
+			logger.Error("DB: query instance failed", err)
+			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
+			logger.Error("Cannot detach volume to a paused/rescuing instance", instID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot detach volume to a paused/rescuing instance", nil)
+			return
+		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, uuid)
 		err = HyperExecute(ctx, control, command)
@@ -336,6 +354,11 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		if err = db.Model(instance).Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
+			logger.Error("Cannot attach volume to a paused/rescuing instance", instID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused/rescuing instance", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
@@ -541,6 +564,56 @@ func (a *VolumeAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	return a.ListVolume(ctx, offset, limit, order, query, "all")
 }
 
+// List4View lists volumes with structured search params for Web Console.
+func (a *VolumeAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *VolumeSearchParams) (total int64, volumes []*model.Volume, err error) {
+	memberShip := GetMemberShip(ctx)
+	ctx, db := GetContextDB(ctx)
+	if params == nil {
+		params = &VolumeSearchParams{}
+	}
+	if params.VolumeType == "" {
+		params.VolumeType = "all"
+	}
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	where := memberShip.GetWhere()
+
+	// Count with parameterized filters
+	countDB := ApplyVolumeSearch(db.Model(&model.Volume{}).Where(where), params)
+	if err = countDB.Count(&total).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to count volumes", err)
+		return
+	}
+
+	// Find with same filters + pagination
+	findDB := ApplyVolumeSearch(db.Where(where), params)
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	volumes = []*model.Volume{}
+	if err = findDB.Preload("Instance").Find(&volumes).Error; err != nil {
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query volumes", err)
+		return
+	}
+	permit := memberShip.CheckPermission(model.Admin)
+	if permit {
+		db = db.Offset(0).Limit(-1)
+		for _, vol := range volumes {
+			vol.OwnerInfo = &model.Organization{Model: model.Model{ID: vol.Owner}}
+			if err = db.Take(vol.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Owner organization not found", err)
+				return
+			}
+		}
+	}
+
+	return
+}
+
 func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order, query string, volume_type string) (total int64, volumes []*model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
@@ -617,8 +690,30 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
-	query := c.QueryTrim("q")
-	total, volumes, err := volumeAdmin.ListVolume(c.Req.Context(), offset, limit, order, query, "all")
+	searchField := c.QueryTrim("search_field")
+	queryStr := c.QueryTrim("q")
+	params := &VolumeSearchParams{}
+	params.VolumeType = "all"
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(queryStr); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = queryStr
+	case "status":
+		if queryStr != "" {
+			params.Statuses = []string{queryStr}
+		}
+	case "bootable":
+		if queryStr != "" {
+			params.VolumeType = queryStr
+		}
+	default:
+		searchField = "name"
+		params.Name = queryStr
+	}
+	total, volumes, err := volumeAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "500")
@@ -626,7 +721,8 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Volumes"] = volumes
-	c.Data["Query"] = query
+	c.Data["SearchField"] = searchField
+	c.Data["Query"] = queryStr
 	SetPaginationData(c, "volumes", total, limit, offset, listConfig,
 		`["ID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"]`,
 		[]string{"ID", "UUID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"})
@@ -716,14 +812,8 @@ func (v *VolumeView) Edit(c *macaron.Context, store session.Store) {
 		c.HTML(500, err.Error())
 		return
 	}
-	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(500, err.Error())
-		return
-	}
+	// Instances are loaded via AJAX search; only the attached instance is pre-loaded via Preload("Instance")
 	c.Data["Volume"] = volume
-	c.Data["Instances"] = instances
 	c.HTML(200, "volumes_patch")
 }
 

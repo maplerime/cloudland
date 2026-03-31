@@ -302,6 +302,33 @@ func (a *ImageAdmin) List(ctx context.Context, offset, limit int64, order, query
 	return
 }
 
+// List4View lists images with structured search params for Web Console.
+func (a *ImageAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *ImageSearchParams) (total int64, images []*model.Image, err error) {
+	ctx, db := GetContextDB(ctx)
+	if params == nil {
+		params = &ImageSearchParams{}
+	}
+	if limit == 0 {
+		limit = 16
+	}
+	if order == "" {
+		order = "created_at"
+	}
+
+	images = []*model.Image{}
+	countDB := ApplyImageSearch(db.Model(&model.Image{}), params)
+	if err = countDB.Count(&total).Error; err != nil {
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to count images", err)
+	}
+	findDB := ApplyImageSearch(db, params)
+	findDB = dbs.Sortby(findDB.Offset(offset).Limit(limit), order)
+	if err = findDB.Find(&images).Error; err != nil {
+		return 0, nil, NewCLError(ErrSQLSyntaxError, "Failed to find images", err)
+	}
+
+	return
+}
+
 func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, name, osVersion, userName string, pools []string, osFamily, uuid string) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -420,8 +447,29 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	if order == "" {
 		order = "-created_at"
 	}
+	searchField := c.QueryTrim("search_field")
 	query := c.QueryTrim("q")
-	total, images, err := imageAdmin.List(c.Req.Context(), offset, limit, order, query)
+	params := &ImageSearchParams{}
+	switch searchField {
+	case "id":
+		if id, err := strconv.Atoi(query); err == nil {
+			params.ID = int64(id)
+		}
+	case "uuid":
+		params.UUID = query
+	case "os_code":
+		if query != "" {
+			params.OSCodes = []string{query}
+		}
+	case "status":
+		if query != "" {
+			params.Statuses = []string{query}
+		}
+	default:
+		searchField = "name"
+		params.Name = query
+	}
+	total, images, err := imageAdmin.List4View(c.Req.Context(), offset, limit, order, params)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.Error(http.StatusInternalServerError)
@@ -432,6 +480,7 @@ func (v *ImageView) List(c *macaron.Context, store session.Store) {
 	isAdmin := memberShip.CheckPermission(model.Admin)
 
 	c.Data["Images"] = images
+	c.Data["SearchField"] = searchField
 	c.Data["Query"] = query
 	c.Data["IsAdmin"] = isAdmin
 	SetPaginationData(c, "images", total, limit, offset, listConfig,
@@ -488,12 +537,7 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, instances, err := instanceAdmin.List(c.Req.Context(), 0, -1, "", "")
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.Error(http.StatusInternalServerError)
-		return
-	}
+	// Instances are loaded via AJAX search instead of pre-loading all
 
 	// Query OS Family options from Dictionary
 	db := DB()
@@ -506,7 +550,6 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	c.Data["Instances"] = instances
 	c.Data["OsFamilies"] = osFamilies
 	c.HTML(200, "images_new")
 }

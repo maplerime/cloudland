@@ -21,7 +21,12 @@ func init() {
 
 func SystemRouter(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| system_router.sh '1' 'hyper-1'
-	db := DB()
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
 	argn := len(args)
 	if argn < 2 {
 		err = fmt.Errorf("Wrong params")
@@ -56,7 +61,9 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 			sysIface, err = CreateInterface(ctx, subnet, 0, 0, int32(hyperID), 0, 0, "", "", hyperName, "system", nil, false)
 			if err == nil && sysIface != nil {
 				hyper.RouteIP = sysIface.Address.Address
-				err = db.Save(hyper).Error
+				err = db.Model(&model.Hyper{}).Where("id = ?", hyper.ID).Updates(map[string]interface{}{
+					"route_ip": hyper.RouteIP,
+				}).Error
 				if err != nil {
 					logger.Error("Failed to save hyper address", err)
 					return
