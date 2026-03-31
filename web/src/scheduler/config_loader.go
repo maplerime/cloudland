@@ -120,8 +120,8 @@ func validateConfig(cfg *PlacementConfig) error {
 		if cfg.Overcommit.MemDeltaRatioPct < 0 || cfg.Overcommit.MemDeltaRatioPct > 100 {
 			return fmt.Errorf("overcommit.mem_delta_ratio_pct must be in [0, 100]")
 		}
-		if cfg.Overcommit.VCPUOvercommitRatio < 1.0 {
-			return fmt.Errorf("overcommit.vcpu_overcommit_ratio must be >= 1.0")
+		if cfg.Overcommit.VCPUDeltaRatioPct < 0 || cfg.Overcommit.VCPUDeltaRatioPct > 100 {
+			return fmt.Errorf("overcommit.vcpu_delta_ratio_pct must be in [0, 100]")
 		}
 	}
 	return nil

@@ -64,10 +64,16 @@ func (f *OvercommitFilter) canOvercommit(req *scheduler.PlacementRequest, h *sch
 		}
 	}
 
-	// vCPU overcommit limit
-	projected := float64(h.VCPUTotal - h.VCPUFree + int64(req.VCPUs))
-	if projected > float64(h.VCPUTotal)*oc.VCPUOvercommitRatio {
-		return false
+	// vCPU gap check (delta-based, same approach as memory).
+	// Note: VCPUTotal already incorporates the hyper's CpuOverRate from report_rc.sh,
+	// so we do NOT apply an additional overcommit ratio here.
+	// We only check if the deficit is within a tolerable percentage of what's requested.
+	vcpuAvail := h.VCPUFree
+	if vcpuAvail < int64(req.VCPUs) {
+		vcpuDeltaRatio := float64(int64(req.VCPUs)-vcpuAvail) / float64(req.VCPUs) * 100
+		if vcpuDeltaRatio > oc.VCPUDeltaRatioPct {
+			return false
+		}
 	}
 
 	// CPU load relaxed threshold
@@ -83,6 +89,8 @@ func (f *OvercommitFilter) canOvercommit(req *scheduler.PlacementRequest, h *sch
 	return true
 }
 
+// delta calculates a combined gap score; lower = closer to meeting requirements.
+// Memory/hugepage gap weighted 70%, vCPU gap weighted 30%.
 func (f *OvercommitFilter) delta(req *scheduler.PlacementRequest, h *scheduler.HostState) float64 {
 	var memRatio float64
 	if h.HugepageSizeKB > 0 {
@@ -98,10 +106,8 @@ func (f *OvercommitFilter) delta(req *scheduler.PlacementRequest, h *scheduler.H
 	}
 
 	vcpuRatio := 0.0
-	used := h.VCPUTotal - h.VCPUFree
-	projected := float64(used + int64(req.VCPUs))
-	if projected > float64(h.VCPUTotal) {
-		vcpuRatio = (projected - float64(h.VCPUTotal)) / float64(h.VCPUTotal)
+	if h.VCPUFree < int64(req.VCPUs) {
+		vcpuRatio = float64(int64(req.VCPUs)-h.VCPUFree) / float64(req.VCPUs)
 	}
 
 	return memRatio*0.7 + vcpuRatio*0.3

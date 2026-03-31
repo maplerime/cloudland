@@ -1,42 +1,58 @@
-# Cloudland Placement Scheduler Configuration
-# Reload via Admin UI (/placement) or API (POST /placement/reload)
+# Cloudland Placement 调度器配置
+# 通过管理后台 (/placement) 或 API (POST /placement/reload) 重新加载配置
 
 [placement]
-# Hyper heartbeat report interval (seconds). Alive threshold = 2 * this value.
+# 节点心跳上报间隔（秒），存活判定阈值 = 2 × 此值
+# 超过阈值未上报的节点将被 compute_alive 过滤器剔除
 host_report_interval_sec = 60
 
-# Filter chain: executed in order. Names correspond to registered filters.
-# Available: compute_alive, zone, hugepage, resource, cpu_load, overcommit
+# Filter 链：按列表顺序依次执行，名称对应已注册的 Filter
+# 可用值：compute_alive, zone, hugepage, resource, cpu_load, overcommit
+# 增删或调整顺序后点击 Reload 即可生效，无需重启服务
 filter_chain = ["compute_alive", "zone", "hugepage", "resource", "cpu_load"]
 
-# Weigher chain: scored in order. Names correspond to registered weighers.
-# Available: hugepage, ram, cpu_load, overcommit_penalty, spread
+# Weigher 链：按列表顺序依次评分，名称对应已注册的 Weigher
+# 可用值：hugepage, ram, cpu_load, overcommit_penalty, spread
 weigher_chain = ["hugepage", "ram", "cpu_load"]
 
-# Fallback filter name, triggered when standard filter chain eliminates all candidates.
-# Set to "overcommit" to enable overcommit tolerance, or "" to disable.
+# 兜底 Filter 名称，当标准 Filter 链将所有候选节点淘汰后触发
+# 设为 "overcommit" 启用超配容忍，设为 "" 禁用
 fallback_filter = ""
 
 [placement.filters.cpu_load]
-# Standard path: nodes with CPU idle below this percentage are filtered out.
+# CPU 空闲率低于此百分比的节点将被过滤（不参与调度）
 idle_threshold_pct = 15.0
 
 [placement.overcommit]
-# Enable overcommit tolerance fallback
+# 是否启用超配容忍兜底机制
 enabled = false
-# Memory gap tolerance: gap / requested <= this percentage
+
+# 内存缺口容忍上限：缺口 / 请求量 ≤ 此百分比时允许超配
+# 例如 10.0 表示：VM 请求 10GB，节点可用 9.5GB，缺口 5%，在容忍范围内
 mem_delta_ratio_pct = 10.0
-# vCPU overcommit ratio limit (relative to physical cores)
-vcpu_overcommit_ratio = 1.5
-# Relaxed CPU idle threshold for overcommit path
+
+# vCPU 缺口容忍上限：缺口 / 请求量 ≤ 此百分比时允许超配
+# 注意：节点的 CPU 超买比（CpuOverRate）已在资源上报时生效
+# （report_rc.sh 中 total_cpu = 物理核数 × cpu_over_ratio），
+# 此处仅控制在已超买容量基础上的额外缺口容忍度
+vcpu_delta_ratio_pct = 10.0
+
+# 超配路径下 CPU 空闲率的放宽阈值
+# 标准路径阈值 15%，超配路径放宽到此值，避免因负载略高而无法兜底
 cpu_idle_fallback_pct = 5.0
-# Hugepage gap tolerance (stricter than regular memory)
+
+# 大页内存缺口容忍上限（通常比普通内存更严格，因为大页碎片难以恢复）
 hugepage_delta_ratio_pct = 5.0
 
 [placement.weighers]
-# Multiplier for each weigher. Higher = more influence on host selection.
+# 各 Weigher 的权重系数（Multiplier），值越大对最终排序的影响越大
+# 超配节点降权系数（确保正常节点优先于超配节点）
 overcommit_penalty_multiplier = 3.0
+# 大页剩余优先系数（大页是 vhost-user VM 的关键资源）
 hugepage_multiplier = 1.5
+# 普通内存剩余优先系数
 ram_multiplier = 1.0
+# CPU 低负载优先系数（空闲率越高得分越高）
 cpu_load_multiplier = 1.0
+# 打散/堆叠策略系数（Phase 2 生效）
 spread_multiplier = 1.0

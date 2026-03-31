@@ -31,7 +31,7 @@ type PlacementConfig struct {
 	Overcommit struct {
 		Enabled               bool    `mapstructure:"enabled"`
 		MemDeltaRatioPct      float64 `mapstructure:"mem_delta_ratio_pct"`
-		VCPUOvercommitRatio   float64 `mapstructure:"vcpu_overcommit_ratio"`
+		VCPUDeltaRatioPct     float64 `mapstructure:"vcpu_delta_ratio_pct"`
 		CPUIdleFallbackPct    float64 `mapstructure:"cpu_idle_fallback_pct"`
 		HugepageDeltaRatioPct float64 `mapstructure:"hugepage_delta_ratio_pct"`
 	} `mapstructure:"overcommit"`
@@ -65,7 +65,7 @@ func defaultConfig() *PlacementConfig {
 	cfg.Filters.CPULoad.IdleThresholdPct = 15.0
 	cfg.Overcommit.Enabled = false
 	cfg.Overcommit.MemDeltaRatioPct = 10.0
-	cfg.Overcommit.VCPUOvercommitRatio = 1.5
+	cfg.Overcommit.VCPUDeltaRatioPct = 10.0
 	cfg.Overcommit.CPUIdleFallbackPct = 5.0
 	cfg.Overcommit.HugepageDeltaRatioPct = 5.0
 	cfg.Weighers.OvercommitPenaltyMultiplier = 3.0

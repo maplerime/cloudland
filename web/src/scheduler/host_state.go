@@ -21,12 +21,19 @@ type HostState struct {
 	ZoneName   string
 
 	// Compute resources (Resource table values are "free", not "used")
+	// Note: VCPUTotal/MemTotalKB/DiskTotalBytes already incorporate hyper's overcommit ratio.
+	// report_rc.sh calculates: total_cpu = physical_cpu * cpu_over_ratio
 	VCPUFree       int64
-	VCPUTotal      int64
-	MemFreeKB      int64 // free memory in KB (as reported by report_rc)
-	MemTotalKB     int64
-	DiskFreeBytes  int64 // free disk in bytes
-	DiskTotalBytes int64
+	VCPUTotal      int64 // already multiplied by CpuOverRate
+	MemFreeKB      int64 // free memory in KB
+	MemTotalKB     int64 // already multiplied by MemOverRate
+	DiskFreeBytes  int64
+	DiskTotalBytes int64 // already multiplied by DiskOverRate
+
+	// Hyper overcommit rates (from Hyper model, managed via admin UI)
+	CpuOverRate  float32
+	MemOverRate  float32
+	DiskOverRate float32
 
 	// Hugepage
 	Hugepages2MFree int64
@@ -101,6 +108,9 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 			MemTotalKB:      h.Resource.MemoryTotal,
 			DiskFreeBytes:   h.Resource.Disk,
 			DiskTotalBytes:  h.Resource.DiskTotal,
+			CpuOverRate:     h.CpuOverRate,
+			MemOverRate:     h.MemOverRate,
+			DiskOverRate:    h.DiskOverRate,
 			Hugepages2MFree: h.Resource.Hugepages2MFree,
 			Hugepages1GFree: h.Resource.Hugepages1GFree,
 			HugepageSizeKB:  h.Resource.HugepageSizeKB,
