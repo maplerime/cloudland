@@ -32,9 +32,9 @@ func GetImageOSCode(ctx context.Context, instance *model.Instance) string {
 func GetHyperGroup(ctx context.Context, zoneID int64, skipHyper int32) (hyperGroup string, err error) {
 	ctx, db := GetContextDB(ctx)
 	hypers := []*model.Hyper{}
-	where := fmt.Sprintf("status = 1 and hostid <> %d", skipHyper)
+	where := fmt.Sprintf("status = 1 and hostid >= 0 and hostid <> %d", skipHyper)
 	if zoneID > 0 {
-		where = fmt.Sprintf("zone_id = %d and status = 1 and hostid <> %d", zoneID, skipHyper)
+		where = fmt.Sprintf("zone_id = %d and status = 1 and hostid >= 0 and hostid <> %d", zoneID, skipHyper)
 	}
 	if err = db.Where(where).Find(&hypers).Error; err != nil {
 		logger.Error("Hypers query failed", err)
