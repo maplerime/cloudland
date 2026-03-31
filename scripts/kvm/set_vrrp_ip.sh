@@ -30,7 +30,10 @@ ip netns exec $router ip addr add $local_ip dev ns-$vrrp_vlan
 read -d'\n' -r network < <(ipcalc -nb $local_ip | awk '/Network/ {print $2}')
 ip netns exec $router ipset add nonat $network
 ns_ip=${local_ip%/*}
+prefix=${local_ip#*/}
 ip netns exec $router iptables -C INPUT -d $ns_ip -m conntrack --ctstate NEW -j ACCEPT
 [ $? -ne 0 ] && ip netns exec $router iptables -A INPUT -d $ns_ip -m conntrack --ctstate NEW -j ACCEPT
+read -d'\n' -r gateway < <(ipcalc -nb $local_ip | awk '/HostMin/ {print $2}')
+./set_subnet_gw.sh $router $vrrp_vlan $gateway/$prefix
 
 echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role' '$local_mac'"

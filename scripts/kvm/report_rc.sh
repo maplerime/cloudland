@@ -162,6 +162,7 @@ function recover_loadbalancer()
     check_sync_flag
     [ $? -eq 0 ] && return
     echo "|:-COMMAND-:| recover_loadbalancer.sh '$SCI_CLIENT_ID'"
+    sudo cp $boot_file $flag_file
 }
 
 function sync_instance()
@@ -186,7 +187,6 @@ function sync_instance()
         sudo virsh start inst-$inst_id
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
-    sudo cp $boot_file $flag_file
 }
 
 function sync_delayed_job()
@@ -262,6 +262,7 @@ function calc_resource()
 
 calc_resource
 sync_instance
+recover_loadbalancer
 sync_delayed_job
 check_system_router
 check_conntrack

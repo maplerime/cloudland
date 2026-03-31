@@ -117,7 +117,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 			return
 		}
 		router.VrrpSubnetID = vrrpSubnet.ID
-		err = db.Model(router).Update("vrrp_subnet_id", vrrpSubnet.ID).Error
+		err = db.Model(router).Updates(map[string]interface{}{"vrrp_subnet_id": vrrpSubnet.ID}).Error
 		if err != nil {
 			logger.Error("DB failed to update router vrrp subnet", err)
 			return
