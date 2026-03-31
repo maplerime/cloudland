@@ -202,15 +202,8 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			continue
 		}
 
-		// Get hyper group for VRRP
-		hyperGroup, _, _, err := GetVrrpHyperGroup(ctx, loadBalancer.VrrpInstance)
-		if err != nil {
-			logger.Error("Failed to get vrrp hyper group", err)
-			continue
-		}
-
 		// Execute haproxy config creation on the hypervisor
-		control := "toall=" + hyperGroup
+		control := fmt.Sprintf("inter=%d", hyperID)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF",
 			loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, haproxyJsonData)
 		err = HyperExecute(ctx, control, command)
@@ -219,6 +212,22 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			continue
 		}
 		logger.Infof("Recovered haproxy config for load balancer %d on hyper %d", loadBalancer.ID, hyperID)
+
+		// Recreate floating IP network configuration
+		for _, fip := range floatingIps {
+			if fip.Subnet == nil {
+				logger.Errorf("Floating IP %d has no subnet", fip.ID)
+				continue
+			}
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_lb_floating.sh '%d' '%s' '%s' '%d' '%d' '%d' '%d'",
+				loadBalancer.RouterID, fip.FipAddress, fip.Subnet.Gateway, fip.Subnet.Vlan, fip.ID, fip.Inbound, fip.Outbound)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Errorf("Execute create_lb_floating.sh failed for floating IP %d: %v", fip.ID, err)
+				continue
+			}
+			logger.Infof("Recovered floating IP %d for load balancer %d on hyper %d", fip.ID, loadBalancer.ID, hyperID)
+		}
 	}
 
 	status = fmt.Sprintf("Successfully recovered %d load balancer(s) on hypervisor %d", len(loadBalancers), hyperID)
