@@ -332,9 +332,9 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
-		if instance.Status == model.InstanceStatusPaused {
-			logger.Error("Cannot detach volume to a paused instance", instID)
-			err = NewCLError(ErrInstanceInvalidState, "Cannot detach volume to a paused instance", nil)
+		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
+			logger.Error("Cannot detach volume to a paused/rescuing instance", instID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot detach volume to a paused/rescuing instance", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
@@ -356,9 +356,9 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
-		if instance.Status == model.InstanceStatusPaused {
-			logger.Error("Cannot attach volume to a paused instance", instID)
-			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused instance", nil)
+		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
+			logger.Error("Cannot attach volume to a paused/rescuing instance", instID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused/rescuing instance", nil)
 			return
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)

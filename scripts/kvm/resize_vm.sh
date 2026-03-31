@@ -11,7 +11,11 @@ vm_cpu=$2
 vm_mem=$3
 state=error
 
+# Graceful shutdown first, fall back to hard stop after 30s timeout
+./action_vm.sh $ID stop
+wait_vm_status $vm_ID "shut_off"
 ./action_vm.sh $ID hard_stop
+
 let vm_mem=${vm_mem%[m|M]}*1024
 
 # backup vm xml

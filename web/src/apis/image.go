@@ -56,7 +56,7 @@ type ImagePayload struct {
 	User         string         `json:"user" binding:"required,min=2,max=32"`
 	InstanceUUID string         `json:"instance_uuid"`
 	BootLoader   string         `json:"boot_loader" binding:"required,oneof=bios uefi"`
-	IsRescue     bool           `json:"is_resque"`
+	IsRescue     bool           `json:"is_rescue"`
 	RescueImage  *BaseReference `json:"rescue_image" binding:"omitempty"`
 	OsFamily     string         `json:"os_family" binding:"required"`
 }
@@ -231,7 +231,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		}
 	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, true, instanceID, payload.UUID, rescueImage, payload.OsFamily)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, payload.IsRescue, instanceID, payload.UUID, rescueImage, payload.OsFamily)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

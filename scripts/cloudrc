@@ -34,6 +34,18 @@ function die()
     exit -1
 }
 
+function wait_vm_status()
+{
+    local vm_ID=$1
+    local status=$2
+    # wait for 30 seconds
+    for i in {1..60}; do
+        local state=$(virsh domstate $vm_ID | sed 's/shut off/shut_off/g')
+        [ "$state" = "$status" ] && break
+        sleep 0.5
+    done
+}
+
 function inet_aton()
 {
     ip="$1"
