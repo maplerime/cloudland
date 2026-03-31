@@ -33,40 +33,55 @@ var (
 // InitPlacementConfig loads the config file and builds the first snapshot.
 // Called once at startup. Does not start file watching.
 func InitPlacementConfig(path string) error {
+	logger.Infof("InitPlacementConfig entry: path=%s", path)
 	configFilePath = path
 	configViper = viper.New()
 	configViper.SetConfigFile(path)
 	configViper.SetConfigType("toml")
 
 	if err := configViper.ReadInConfig(); err != nil {
-		logger.Warningf("placement config not found at %s, using defaults", path)
+		// Config file not found, use defaults
+		logger.Warningf("Placement config not found at %s, using defaults: %v", path, err)
 		snapshot := buildSnapshot(defaultConfig(), path)
 		activeSnapshot.Store(snapshot)
+		logger.Info("InitPlacementConfig completed with default config")
 		return nil
 	}
 
-	return doReload()
+	if err := doReload(); err != nil {
+		logger.Errorf("InitPlacementConfig failed to load config: %v", err)
+		return err
+	}
+	logger.Info("InitPlacementConfig completed successfully")
+	return nil
 }
 
 // ReloadConfig re-reads the config file and atomically replaces the active snapshot.
 // Called by the admin API handler.
 func ReloadConfig() (*ReloadResult, error) {
+	logger.Info("ReloadConfig entry: re-reading config file")
 	if configViper == nil {
+		logger.Error("ReloadConfig failed: config not initialized")
 		return nil, fmt.Errorf("placement config not initialized")
 	}
+	// Re-read config file from disk
 	if err := configViper.ReadInConfig(); err != nil {
+		logger.Errorf("ReloadConfig failed to read config file %s: %v", configFilePath, err)
 		return nil, fmt.Errorf("failed to read config file %s: %w", configFilePath, err)
 	}
 	if err := doReload(); err != nil {
+		logger.Errorf("ReloadConfig failed: %v (keeping previous config)", err)
 		return nil, err
 	}
 	snap := GetSnapshot()
-	return &ReloadResult{
+	result := &ReloadResult{
 		LoadedAt:     snap.loadedAt,
 		ConfigPath:   snap.configPath,
 		FilterChain:  snap.cfg.FilterChain,
 		WeigherChain: snap.cfg.WeigherChain,
-	}, nil
+	}
+	logger.Infof("ReloadConfig completed: filters=%v, weighers=%v", result.FilterChain, result.WeigherChain)
+	return result, nil
 }
 
 // ReloadResult is returned to the API caller after a successful reload.
@@ -79,19 +94,24 @@ type ReloadResult struct {
 
 func doReload() error {
 	cfg := defaultConfig()
+	// Unmarshal config from file
 	if err := configViper.UnmarshalKey("placement", cfg); err != nil {
 		return fmt.Errorf("config unmarshal failed: %w", err)
 	}
+	// Validate before applying
 	if err := validateConfig(cfg); err != nil {
 		return fmt.Errorf("config validation failed: %w", err)
 	}
+	// Build and atomically store new snapshot
 	snapshot := buildSnapshot(cfg, configFilePath)
 	activeSnapshot.Store(snapshot)
-	logger.Info("placement config loaded successfully")
+	logger.Infof("Placement config loaded: filters=%v, weighers=%v, fallback=%q",
+		cfg.FilterChain, cfg.WeigherChain, cfg.FallbackFilter)
 	return nil
 }
 
 func buildSnapshot(cfg *PlacementConfig, path string) *configSnapshot {
+	logger.Debug("Building config snapshot: constructing filter and weigher chains")
 	snap := &configSnapshot{
 		cfg:        cfg,
 		loadedAt:   time.Now(),
@@ -99,16 +119,23 @@ func buildSnapshot(cfg *PlacementConfig, path string) *configSnapshot {
 	}
 	snap.filters = BuildFilters(cfg)
 	snap.weighers = BuildWeighers(cfg)
+	// Build fallback filter if configured
 	if cfg.FallbackFilter != "" {
 		registryMu.RLock()
 		if factory, ok := filterRegistry[cfg.FallbackFilter]; ok {
 			snap.fallback = factory(cfg)
+			logger.Debugf("Fallback filter %q loaded", cfg.FallbackFilter)
+		} else {
+			logger.Warningf("Fallback filter %q not found in registry, fallback disabled", cfg.FallbackFilter)
 		}
 		registryMu.RUnlock()
 	}
+	logger.Debugf("Config snapshot built: %d filters, %d weighers, fallback=%v",
+		len(snap.filters), len(snap.weighers), snap.fallback != nil)
 	return snap
 }
 
+// validateConfig checks config values for sanity before applying.
 func validateConfig(cfg *PlacementConfig) error {
 	if len(cfg.FilterChain) == 0 {
 		return fmt.Errorf("filter_chain must not be empty")

@@ -83,6 +83,7 @@ func (h *HostState) DiskAvailGB() int64 {
 
 // loadHostStates queries active hypers with their resources from the database.
 func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
+	logger.Debugf("loadHostStates entry: zoneID=%d", zoneID)
 	_, db := GetContextDB(ctx)
 	hypers := []*model.Hyper{}
 
@@ -91,13 +92,17 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 		query = query.Where("zone_id = ?", zoneID)
 	}
 	if err := query.Preload("Resource").Preload("Zone").Find(&hypers).Error; err != nil {
+		logger.Errorf("loadHostStates DB query failed: %v", err)
 		return nil, err
 	}
+	logger.Debugf("loadHostStates: queried %d hyper(s) from database", len(hypers))
 
 	var hosts []*HostState
 	for _, h := range hypers {
 		if h.Resource == nil {
-			continue // no resource data yet
+			// Skip hypers without resource data
+			logger.Debugf("loadHostStates: hyper %d has no resource data, skipped", h.Hostid)
+			continue
 		}
 		hs := &HostState{
 			HyperID:         h.Hostid,
@@ -123,5 +128,6 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 		}
 		hosts = append(hosts, hs)
 	}
+	logger.Debugf("loadHostStates exit: %d host(s) with valid resource data", len(hosts))
 	return hosts, nil
 }

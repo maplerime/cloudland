@@ -22,6 +22,7 @@ func init() {
 	})
 }
 
+// CPULoadFilter removes hosts whose CPU idle percentage is below the threshold.
 type CPULoadFilter struct {
 	threshold float64
 }
@@ -33,6 +34,10 @@ func (f *CPULoadFilter) Filter(ctx context.Context, req *scheduler.PlacementRequ
 	for _, h := range hosts {
 		if h.CpuIdlePct >= f.threshold {
 			result = append(result, h)
+		} else {
+			// CPU too busy
+			logger.Debugf("cpu_load: hyper %d cpu_idle %.1f%% < threshold %.1f%%, removed",
+				h.HyperID, h.CpuIdlePct, f.threshold)
 		}
 	}
 	return result

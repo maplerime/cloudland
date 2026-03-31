@@ -32,6 +32,8 @@
 			                        <th data-column="Cpu">{{.i18n.Tr "Cpu"}}</th>
 			                        <th data-column="Memory">{{.i18n.Tr "Memory"}}(MB)</th>
 			                        <th data-column="Disk">{{.i18n.Tr "Disk"}}(GB)</th>
+			                        <th data-column="CpuLoad">CPU Load</th>
+			                        <th data-column="Hugepages">Hugepages</th>
 			                        <th data-column="OverCommitRates">{{.i18n.Tr "Over Commit Rates"}}</th>
 			                        <th data-column="Remark">{{.i18n.Tr "Remark"}}</th>
 			                        <th data-column="Action">{{.i18n.Tr "Operations"}}</th>
@@ -52,6 +54,8 @@
 			                        <td data-column="Cpu">{{.Resource.Cpu}}/<br>{{.Resource.CpuTotal}}</td>
 			                        <td data-column="Memory">{{.Resource.Memory}}/<br>{{.Resource.MemoryTotal}}</td>
 			                        <td data-column="Disk">{{.Resource.Disk}}/<br>{{.Resource.DiskTotal}}</td>
+			                        <td data-column="CpuLoad">Idle: {{printf "%.1f" .Resource.CpuIdlePct}}%<br>Load5m: {{printf "%.2f" .Resource.LoadAvg5m}}</td>
+			                        <td data-column="Hugepages">{{ if eq .Resource.HugepageSizeKB 0 }}N/A{{ else }}{{ if eq .Resource.HugepageSizeKB 2048 }}2M: {{.Resource.Hugepages2MFree}} free{{ else }}1G: {{.Resource.Hugepages1GFree}} free{{ end }}{{ end }}</td>
 			                        <td data-column="OverCommitRates">CPU: {{.CpuOverRate}}<br>MEM: {{.MemOverRate}}<br>DISK: {{.DiskOverRate}}</td>
 			                        <td data-column="Remark">{{.Remark}}</td>
 			                        <td data-column="Action">
