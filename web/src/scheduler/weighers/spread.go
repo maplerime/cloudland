@@ -14,8 +14,9 @@ func init() {
 	})
 }
 
-// SpreadWeigher is a Phase 2 stub. Currently returns 0 for all hosts.
-// In Phase 2, it will use instance count per host and support spread/pack modes.
+// SpreadWeigher scores hosts by their current instance count.
+// With negative multiplier (default -1.0): fewer VMs = higher final score (spread/打散).
+// With positive multiplier: more VMs = higher final score (pack/堆叠).
 type SpreadWeigher struct {
 	multiplier float64
 }
@@ -24,5 +25,5 @@ func (w *SpreadWeigher) Name() string       { return "spread" }
 func (w *SpreadWeigher) Multiplier() float64 { return w.multiplier }
 
 func (w *SpreadWeigher) Score(req *scheduler.PlacementRequest, h *scheduler.HostState) float64 {
-	return 0 // no-op until Phase 2
+	return float64(h.InstanceCount)
 }

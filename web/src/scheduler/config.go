@@ -49,21 +49,24 @@ type PlacementConfig struct {
 // PlacementRequest describes the resources needed by a VM.
 type PlacementRequest struct {
 	VCPUs          int32
-	MemMB          int64 // memory in MB
+	MemMB          int64    // memory in MB
 	DiskGB         int64
-	HugepageSizeKB int64 // 0 = no hugepage requirement
+	HugepageSizeKB int64    // 0 = no hugepage requirement
 	ZoneID         int64
+	Traits         []string // required hyper tags, e.g. ["gpu", "nvme"]
+	OwnerID        int64    // owner org ID (for affinity/anti-affinity)
+	Policy         string   // "affinity" | "anti-affinity" | ""
 }
 
 func defaultConfig() *PlacementConfig {
 	cfg := &PlacementConfig{
-		FilterChain:           []string{"compute_alive", "zone", "hugepage", "resource", "cpu_load"},
-		WeigherChain:          []string{"hugepage", "ram", "cpu_load"},
-		FallbackFilter:        "",
+		FilterChain:           []string{"compute_alive", "zone", "hugepage", "resource", "cpu_load", "affinity", "capability"},
+		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},
+		FallbackFilter:        "overcommit",
 		HostReportIntervalSec: 60,
 	}
 	cfg.Filters.CPULoad.IdleThresholdPct = 15.0
-	cfg.Overcommit.Enabled = false
+	cfg.Overcommit.Enabled = true
 	cfg.Overcommit.MemDeltaRatioPct = 10.0
 	cfg.Overcommit.VCPUDeltaRatioPct = 10.0
 	cfg.Overcommit.CPUIdleFallbackPct = 5.0
@@ -72,6 +75,6 @@ func defaultConfig() *PlacementConfig {
 	cfg.Weighers.HugepageMultiplier = 1.5
 	cfg.Weighers.RAMMultiplier = 1.0
 	cfg.Weighers.CPULoadMultiplier = 1.0
-	cfg.Weighers.SpreadMultiplier = 1.0
+	cfg.Weighers.SpreadMultiplier = -1.0
 	return cfg
 }

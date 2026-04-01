@@ -7,17 +7,17 @@
 host_report_interval_sec = 60
 
 # Filter 链：按列表顺序依次执行，名称对应已注册的 Filter
-# 可用值：compute_alive, zone, hugepage, resource, cpu_load, overcommit
+# 可用值：compute_alive, zone, hugepage, resource, cpu_load, affinity, capability, overcommit
 # 增删或调整顺序后点击 Reload 即可生效，无需重启服务
-filter_chain = ["compute_alive", "zone", "hugepage", "resource", "cpu_load"]
+filter_chain = ["compute_alive", "zone", "hugepage", "resource", "cpu_load", "affinity", "capability"]
 
 # Weigher 链：按列表顺序依次评分，名称对应已注册的 Weigher
 # 可用值：hugepage, ram, cpu_load, overcommit_penalty, spread
-weigher_chain = ["hugepage", "ram", "cpu_load"]
+weigher_chain = ["overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"]
 
 # 兜底 Filter 名称，当标准 Filter 链将所有候选节点淘汰后触发
 # 设为 "overcommit" 启用超配容忍，设为 "" 禁用
-fallback_filter = ""
+fallback_filter = "overcommit"
 
 [placement.filters.cpu_load]
 # CPU 空闲率低于此百分比的节点将被过滤（不参与调度）
@@ -54,5 +54,5 @@ hugepage_multiplier = 1.5
 ram_multiplier = 1.0
 # CPU 低负载优先系数（空闲率越高得分越高）
 cpu_load_multiplier = 1.0
-# 打散/堆叠策略系数（Phase 2 生效）
-spread_multiplier = 1.0
+# 打散/堆叠策略系数（负值 = 打散优先，VM少的节点得分高；正值 = 堆叠优先）
+spread_multiplier = -1.0

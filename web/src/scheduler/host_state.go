@@ -44,6 +44,10 @@ type HostState struct {
 	LoadAvg5m  float64
 	CpuIdlePct float64
 
+	// Spread/affinity data
+	InstanceCount int               // number of VMs on this hyper (for SpreadWeigher)
+	Tags          map[string]string // hyper tags (for CapabilityFilter)
+
 	// Metadata
 	LastReportAt time.Time
 
@@ -81,6 +85,12 @@ func (h *HostState) DiskAvailGB() int64 {
 	return h.DiskFreeBytes / (1024 * 1024 * 1024)
 }
 
+// instanceCountRow is used to scan the instance count per hyper query result.
+type instanceCountRow struct {
+	Hyper int32
+	Count int
+}
+
 // loadHostStates queries active hypers with their resources from the database.
 func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 	logger.Debugf("loadHostStates entry: zoneID=%d", zoneID)
@@ -96,6 +106,39 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 		return nil, err
 	}
 	logger.Debugf("loadHostStates: queried %d hyper(s) from database", len(hypers))
+
+	// Query instance count per hyper (for SpreadWeigher)
+	instCountMap := make(map[int32]int)
+	var countRows []instanceCountRow
+	if err := db.Model(&model.Instance{}).
+		Select("hyper, count(*) as count").
+		Where("hyper > 0").
+		Group("hyper").
+		Scan(&countRows).Error; err != nil {
+		logger.Warningf("loadHostStates: failed to query instance counts: %v", err)
+		// Non-fatal: SpreadWeigher will treat all hosts as having 0 instances
+	} else {
+		for _, row := range countRows {
+			instCountMap[row.Hyper] = row.Count
+		}
+		logger.Debugf("loadHostStates: loaded instance counts for %d hyper(s)", len(countRows))
+	}
+
+	// Query hyper tags (for CapabilityFilter)
+	tagMap := make(map[int32]map[string]string)
+	var tags []model.HyperTag
+	if err := db.Find(&tags).Error; err != nil {
+		logger.Warningf("loadHostStates: failed to query hyper tags: %v", err)
+		// Non-fatal: CapabilityFilter will see empty tags
+	} else {
+		for _, t := range tags {
+			if tagMap[t.Hostid] == nil {
+				tagMap[t.Hostid] = make(map[string]string)
+			}
+			tagMap[t.Hostid][t.TagName] = t.TagValue
+		}
+		logger.Debugf("loadHostStates: loaded tags for %d hyper(s)", len(tagMap))
+	}
 
 	var hosts []*HostState
 	for _, h := range hypers {
@@ -121,6 +164,8 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 			HugepageSizeKB:  h.Resource.HugepageSizeKB,
 			LoadAvg5m:       h.Resource.LoadAvg5m,
 			CpuIdlePct:      h.Resource.CpuIdlePct,
+			InstanceCount:   instCountMap[h.Hostid],
+			Tags:            tagMap[h.Hostid],
 			LastReportAt:    h.Resource.UpdatedAt,
 		}
 		if h.Zone != nil {

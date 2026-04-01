@@ -137,20 +137,8 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			loginPort = 3389
 		}
 	}
-	// Use placement scheduler to select the best hyper node
+	// Use placement scheduler to select the best hyper node (per-VM in loop for spread)
 	selectedHyperID := int32(-1)
-	if hyperID < 0 {
-		selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
-			VCPUs:  cpu,
-			MemMB:  int64(memory),
-			DiskGB: int64(disk),
-			ZoneID: zoneID,
-		})
-		if err != nil {
-			logger.Error("Scheduler failed to select host", err)
-			return nil, NewCLError(ErrNoQualifiedHypervisor, "No qualified hypervisor found", err)
-		}
-	}
 	hyperGroup, err := GetHyperGroup(ctx, zoneID, -1)
 	if err != nil {
 		logger.Warning("GetHyperGroup fallback failed", err)
@@ -283,6 +271,21 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
 		}
 		instance.Interfaces = ifaces
+		// Per-VM scheduler call (enables spread across hosts for batch creation)
+		if hyperID < 0 {
+			selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+				VCPUs:   cpu,
+				MemMB:   int64(memory),
+				DiskGB:  int64(disk),
+				ZoneID:  zoneID,
+				OwnerID: memberShip.OrgID,
+			})
+			if err != nil {
+				logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)
+				selectedHyperID = -1
+				// Fall through to hyperGroup fallback below
+			}
+		}
 		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
 		var control string
 		if i == 0 && hyperID >= 0 {
