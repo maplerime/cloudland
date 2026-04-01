@@ -118,8 +118,8 @@ runcmd:
     if [ -f /etc/sysconfig/qemu-ga ]; then
       sed -i 's/--allow-rpcs=/--allow-rpcs=guest-exec,/;/BLACKLIST_RPC/d' /etc/sysconfig/qemu-ga
     elif [ -f /lib/systemd/system/qemu-guest-agent.service ]; then
-      sed -i \"s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
-      sed -i \"s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#\" /lib/systemd/system/qemu-guest-agent.service
+      sed -i "s#/usr/bin/qemu-ga#/usr/bin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
+      sed -i "s#/usr/sbin/qemu-ga#/usr/sbin/qemu-ga -b ''#" /lib/systemd/system/qemu-guest-agent.service
       systemctl daemon-reload
     fi
     systemctl restart qemu-guest-agent.service
@@ -146,8 +146,8 @@ EOF
     if [ -n "${login_port}" ] && [ "${login_port}" != "22" ] && [ ${login_port} -gt 0 ]; then
         cloud_config_txt+=$(cat <<EOF
 
-    sed -i \"s/^#Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
-    sed -i \"s/^Port .*/Port ${login_port}/\" /etc/ssh/sshd_config
+    sed -i 's/^#Port .*/Port ${login_port}/' /etc/ssh/sshd_config
+    sed -i 's/^Port .*/Port ${login_port}/' /etc/ssh/sshd_config
     systemctl daemon-reload
     systemctl restart ssh.socket
     systemctl restart sshd || systemctl restart ssh
