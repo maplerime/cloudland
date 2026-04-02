@@ -86,13 +86,55 @@
                     </div>
 
                     <h4 class="ui attached header">Available (Registered)</h4>
-                    <div class="ui bottom attached segment">
+                    <div class="ui attached segment">
                         <p><strong>Filters:</strong>
                             {{range .AvailableFilters}}<span class="ui label">{{.}}</span> {{end}}
                         </p>
                         <p><strong>Weighers:</strong>
                             {{range .AvailableWeighers}}<span class="ui label">{{.}}</span> {{end}}
                         </p>
+                    </div>
+
+                    <h4 class="ui attached header">Recent Placement Decisions</h4>
+                    <div class="ui bottom attached table segment">
+                        {{if .RecentDecisions}}
+                        <table class="ui very basic compact striped table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Request</th>
+                                    <th>Zone</th>
+                                    <th>Hosts</th>
+                                    <th>Candidates</th>
+                                    <th>Result</th>
+                                    <th>Duration</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .RecentDecisions}}
+                                <tr class="{{if .Success}}positive{{else}}negative{{end}}">
+                                    <td>{{.Timestamp.Format "01-02 15:04:05"}}</td>
+                                    <td>{{.Request.VCPUs}}C / {{.Request.MemMB}}MB / {{.Request.DiskGB}}GB</td>
+                                    <td>{{.Request.ZoneID}}</td>
+                                    <td>{{.TotalHosts}}</td>
+                                    <td>{{.CandidateCount}}</td>
+                                    <td>
+                                        {{if .Success}}
+                                            <span class="ui green text">Hyper {{.SelectedHost}}</span>
+                                            {{if .IsOvercommit}}<span class="ui orange label mini">overcommit</span>{{end}}
+                                            {{if .FallbackUsed}}<span class="ui yellow label mini">fallback</span>{{end}}
+                                        {{else}}
+                                            <span class="ui red text" title="{{.RejectReason}}">Failed</span>
+                                        {{end}}
+                                    </td>
+                                    <td>{{printf "%.1f" .DurationMs}}ms</td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                        {{else}}
+                        <p style="padding: 10px; color: #888;">No placement decisions recorded yet.</p>
+                        {{end}}
                     </div>
                 </div>
             </div>

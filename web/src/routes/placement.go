@@ -22,7 +22,7 @@ var placementView = &PlacementView{}
 
 type PlacementView struct{}
 
-// Show renders the placement configuration management page.
+// Show renders the placement configuration management page with recent decisions.
 // GET /placement
 func (v *PlacementView) Show(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
@@ -39,6 +39,8 @@ func (v *PlacementView) Show(c *macaron.Context, store session.Store) {
 	c.Data["LoadedAt"] = loadedAt.Format("2006-01-02 15:04:05")
 	c.Data["AvailableFilters"] = scheduler.GetRegisteredFilters()
 	c.Data["AvailableWeighers"] = scheduler.GetRegisteredWeighers()
+	// Load recent placement decisions for display
+	c.Data["RecentDecisions"] = scheduler.GetRecentDecisions(20)
 	c.HTML(200, "placement")
 }
 
@@ -61,6 +63,27 @@ func (v *PlacementView) GetConfig(c *macaron.Context, store session.Store) {
 	})
 }
 
+// GetDecisions returns recent placement decisions as JSON.
+// GET /placement/decisions
+func (v *PlacementView) GetDecisions(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	permit := memberShip.CheckPermission(model.Admin)
+	if !permit {
+		c.JSON(http.StatusForbidden, map[string]string{"error": "not authorized"})
+		return
+	}
+
+	n := c.QueryInt("limit")
+	if n <= 0 || n > 100 {
+		n = 20
+	}
+	decisions := scheduler.GetRecentDecisions(n)
+	c.JSON(http.StatusOK, map[string]interface{}{
+		"decisions": decisions,
+		"count":     len(decisions),
+	})
+}
+
 // Reload re-reads the placement config file and rebuilds the scheduler chains.
 // POST /placement/reload
 func (v *PlacementView) Reload(c *macaron.Context, store session.Store) {
@@ -80,6 +103,9 @@ func (v *PlacementView) Reload(c *macaron.Context, store session.Store) {
 		c.HTML(500, "error")
 		return
 	}
+
+	// Invalidate host state cache on config reload
+	scheduler.InvalidateHostStateCache()
 
 	logger.Infof("placement config reloaded by user %s, filters=%v, weighers=%v",
 		memberShip.UserName, result.FilterChain, result.WeigherChain)
