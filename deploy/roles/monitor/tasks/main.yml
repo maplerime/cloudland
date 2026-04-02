@@ -37,39 +37,26 @@
   set_fact:
     node_exporters_block: |
       - job_name: 'prometheus_node_exporter'
-        static_configs:
-          {% for ip in hyper_ips -%}
-          - targets: ['{{ ip }}:9101']
-            labels:
-              node_type: 'compute'
-          {% endfor -%}
-          {% for ip in cland_ips | difference(hyper_ips) -%}
-          - targets: ['{{ ip }}:9101']
-            labels:
-              node_type: 'management'
-          {% endfor %}
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/node_exporters.json']
+            refresh_interval: 30s
 
 - name: Generate libvirt exporters config block
   set_fact:
     libvirt_exporters_block: |
       - job_name: 'prometheus_libvirt_exporter'
-        static_configs:
-          {% for ip in hyper_ips -%}
-          - targets: ['{{ ip }}:9177']
-          {% endfor %}
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/libvirt_exporters.json']
+            refresh_interval: 30s
 
 - name: Generate CloudLand exporters config block
   set_fact:
     cloudland_exporters_block: |
       - job_name: 'cloudland_exporter'
         scrape_interval: 60s
-        static_configs:
-          {% for ip in cland_ips -%}
-          - targets: ['{{ ip }}:9102']
-            labels:
-              node_type: 'control'
-              exporter_type: 'cloudland'
-          {% endfor %}
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/cloudland_exporters.json']
+            refresh_interval: 30s
 
 - name: Validate Alertmanager variables
   fail:
@@ -741,6 +728,22 @@
     - /etc/prometheus/rules_enabled
     - /etc/prometheus/general_rules
     - /var/log/prometheus
+    - /etc/prometheus/lists
+  tags: [monitor]
+
+- name: Render Prometheus file_sd_configs JSON files
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+  with_items:
+    - { src: 'node_exporters.json.j2', dest: '/etc/prometheus/lists/node_exporters.json' }
+    - { src: 'libvirt_exporters.json.j2', dest: '/etc/prometheus/lists/libvirt_exporters.json' }
+    - { src: 'cloudland_exporters.json.j2', dest: '/etc/prometheus/lists/cloudland_exporters.json' }
   tags: [monitor]
 
 - name: Ensure rule_files declaration exists

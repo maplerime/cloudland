@@ -78,6 +78,16 @@
   roles:
     - {role: monitor_hyper, become: yes, tags: [monitor]}
 
+# update prometheus file_sd target json
+- name: update prometheus monitor sd
+  hosts: hyper:cland
+  tasks:
+    - name: render prometheus file_sd json
+      include_role:
+        name: monitor
+        tasks_from: monitor_sd
+      tags: [monitor_sd]
+
 # add  monitor nginx rule for cland nodes
 - name: add  monitor nginx rule for cland nodes
   hosts: cland

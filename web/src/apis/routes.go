@@ -231,6 +231,8 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/active-rules", alarmAPI.GetActiveRules)
 			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
 			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
+			metricsGroup.POST("/alarm/compute/enable", alarmAPI.EnableComputeMonitor)
+			metricsGroup.POST("/alarm/compute/disable", alarmAPI.DisableComputeMonitor)
 
 			metricsGroup.POST("/alarm/memory/rules", alarmAPI.CreateMemoryRule)
 			metricsGroup.GET("/alarm/memory/rules", alarmAPI.GetMemoryRules)
