@@ -41,6 +41,7 @@ const (
 	RuleTypeHypervisorResource = "hypervisor_resource"
 	RuleTypePacketDrop         = "packet_drop"
 	RuleTypeIPBlock            = "ip_block"
+	RuleTypeIPGroupAvailableIP = "ipgroup_available_ip"
 	RulesEnabled               = "/etc/prometheus/rules_enabled"
 	RulesGeneral               = "/etc/prometheus/general_rules"
 	RulesSpecial               = "/etc/prometheus/special_rules"
@@ -2010,7 +2011,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"packet-drop-monitor.yml.j2"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml.j2"}
-	case "ipgroup_available_ip":
+	case RuleTypeIPGroupAvailableIP:
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
@@ -2035,6 +2036,36 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 			} else {
 				configData["node_down_duration_minutes"] = 5
 			}
+		}
+
+		if rule.RuleType == RuleTypeIPGroupAvailableIP {
+			ipgroups, ok := configData["ipgroups"].([]interface{})
+			if !ok || len(ipgroups) == 0 {
+				operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+				return nil, fmt.Errorf("ipgroup_available_ip config must contain a non-empty ipgroups array")
+			}
+			var parts []string
+			for _, item := range ipgroups {
+				entry, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				name, _ := entry["name"].(string)
+				if name == "" {
+					continue
+				}
+				threshold := 100.0
+				if t, ok := entry["threshold"].(float64); ok {
+					threshold = t
+				}
+				escapedName := strings.ReplaceAll(name, `"`, `\"`)
+				parts = append(parts, fmt.Sprintf(`        label_replace(vector(%g), "ipgroup_name", "%s", "", "")`, threshold, escapedName))
+			}
+			if len(parts) == 0 {
+				operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+				return nil, fmt.Errorf("ipgroup_available_ip config: no valid ipgroup entries found")
+			}
+			configData["threshold_expr"] = strings.Join(parts, " or\n")
 		}
 
 		outputFile := strings.TrimSuffix(templateFile, ".j2")
@@ -2248,7 +2279,7 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		templateFiles = []string{"packet-drop-monitor.yml"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml"}
-	case "ipgroup_available_ip":
+	case RuleTypeIPGroupAvailableIP:
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
