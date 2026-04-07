@@ -211,6 +211,8 @@ func New() (m *macaron.Macaron) {
 	m.Post("/loadbalancers/:lbid/listeners/:id", listenerView.Patch)
 	m.Get("/loadbalancers/:lbid/floatingips/new", floatingIpView.LBNew)
 	m.Post("/loadbalancers/:lbid/floatingips/new", floatingIpView.Create)
+	m.Get("/loadbalancers/:lbid/floatingips/:id", floatingIpView.Edit)
+	m.Post("/loadbalancers/:lbid/floatingips/:id", floatingIpView.Patch)
 	m.Delete("/loadbalancers/:lbid/floatingips/:id", floatingIpView.Delete)
 	m.Get("/loadbalancers/:lbid/floatingips", floatingIpView.List)
 	m.Get("/loadbalancers/:lbid/listeners/:lstnid/backends/new", backendView.New)
