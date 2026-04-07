@@ -236,6 +236,7 @@ const (
 	ErrSecurityRuleDeleteFailed    ErrCode = 141011
 	ErrSecurityRuleCreateFailed    ErrCode = 141012
 	ErrSecurityRuleUpdateFailed    ErrCode = 141013
+	ErrSecurityRuleConflict        ErrCode = 141014
 
 	// Image related errors (151xxx)
 	ErrImageNotFound            ErrCode = 151000
