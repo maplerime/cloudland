@@ -29,6 +29,36 @@ var (
 type SecruleAdmin struct{}
 type SecruleView struct{}
 
+func (a *SecruleAdmin) CheckRuleConflict(ctx context.Context, secgroupID int64, direction, protocol string, portMin, portMax int32, remoteIp string, excludeRuleID int64) (conflict bool, existing *model.SecurityRule, err error) {
+	ctx, db := GetContextDB(ctx)
+	var rules []*model.SecurityRule
+	query := db.Where("secgroup = ? AND direction = ? AND protocol = ?", secgroupID, direction, protocol)
+	if excludeRuleID > 0 {
+		query = query.Where("id != ?", excludeRuleID)
+	}
+	err = query.Find(&rules).Error
+	if err != nil {
+		logger.Error("DB failed to query candidate rules", err)
+		return
+	}
+	for _, rule := range rules {
+		overlap, cidrErr := CIDROverlaps(rule.RemoteIp, remoteIp)
+		if cidrErr != nil {
+			logger.Debugf("CIDR parse error during conflict check: %v", cidrErr)
+			continue
+		}
+		if !overlap {
+			continue
+		}
+		if portMin <= rule.PortMax && portMax >= rule.PortMin {
+			conflict = true
+			existing = rule
+			return
+		}
+	}
+	return
+}
+
 func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.SecurityGroup) (err error) {
 	ctx, db := GetContextDB(ctx)
 	err = secgroupAdmin.GetSecgroupInterfaces(ctx, secgroup)
@@ -117,6 +147,21 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 		err = NewCLError(ErrInvalidParameter, "PortMax should be greater than PortMin", nil)
 		return
 	}
+	if secrule.Protocol == "icmp" {
+		secrule.PortMin = -1
+		secrule.PortMax = -1
+	}
+	conflict, existingRule, conflictErr := secruleAdmin.CheckRuleConflict(ctx, secrule.Secgroup, secrule.Direction, secrule.Protocol, secrule.PortMin, secrule.PortMax, secrule.RemoteIp, secrule.ID)
+	if conflictErr != nil {
+		logger.Error("Failed to check rule conflict", conflictErr)
+		err = conflictErr
+		return
+	}
+	if conflict {
+		logger.Errorf("Security rule conflict with existing rule %d", existingRule.ID)
+		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule already exists: protocol=%s, cidr=%s, port=%d-%d", secrule.Protocol, secrule.RemoteIp, secrule.PortMin, secrule.PortMax), nil)
+		return
+	}
 	err = db.Model(secrule).Updates(secrule).Error
 	if err != nil {
 		logger.Error("DB failed to save security rule ", err)
@@ -140,14 +185,19 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 			EndTransaction(ctx, err)
 		}
 	}()
-	_, err = secruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
-	if err == nil {
-		logger.Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
-		return
-	}
 	if protocol == "icmp" {
 		portMin = -1
 		portMax = -1
+	}
+	conflict, existingRule, err := secruleAdmin.CheckRuleConflict(ctx, secgroup.ID, direction, protocol, portMin, portMax, remoteIp, 0)
+	if err != nil {
+		logger.Error("Failed to check rule conflict", err)
+		return
+	}
+	if conflict {
+		logger.Errorf("Security rule conflict with existing rule %d for security group %d", existingRule.ID, secgroup.ID)
+		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule already exists: protocol=%s, cidr=%s, port=%d-%d", protocol, remoteIp, portMin, portMax), nil)
+		return
 	}
 	secrule = &model.SecurityRule{
 		Model:     model.Model{Creater: memberShip.UserID},
