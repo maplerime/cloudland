@@ -116,7 +116,11 @@ document.addEventListener('DOMContentLoaded', function() {
 			"severity": "warning"
 		},
 		'ipgroup_available_ip': {
-			"threshold": 100,
+			"ipgroups": [
+				{"name": "REG-name-subname1", "threshold": 50},
+				{"name": "REG-name-subname2", "threshold": 100},
+				{"name": "REG-name-subname3", "threshold": 200}
+			],
 			"for_duration": "5m",
 			"severity": "warning"
 		}
