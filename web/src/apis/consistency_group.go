@@ -7,11 +7,11 @@ SPDX-License-Identifier: Apache-2.0
 package apis
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 
 	. "web/src/common"
-	"web/src/dbs"
 	"web/src/model"
 	"web/src/routes"
 
@@ -45,18 +45,18 @@ type ConsistencyGroupVolumesPayload struct {
 // ConsistencyGroupResponse represents a consistency group response
 type ConsistencyGroupResponse struct {
 	*ResourceReference
-	Description string              `json:"description"`
-	Status      string              `json:"status"`
-	WdsCgID     string              `json:"wds_cg_id,omitempty"`
-	Volumes     []*BaseReference    `json:"volumes,omitempty"`
+	Description string           `json:"description"`
+	Status      string           `json:"status"`
+	WdsCgID     string           `json:"wds_cg_id,omitempty"`
+	Volumes     []*BaseReference `json:"volumes,omitempty"`
 }
 
 // ConsistencyGroupListResponse represents a list of consistency groups
 type ConsistencyGroupListResponse struct {
-	Offset              int                             `json:"offset"`
-	Total               int                             `json:"total"`
-	Limit               int                             `json:"limit"`
-	ConsistencyGroups   []*ConsistencyGroupResponse     `json:"consistency_groups"`
+	Offset            int                         `json:"offset"`
+	Total             int                         `json:"total"`
+	Limit             int                         `json:"limit"`
+	ConsistencyGroups []*ConsistencyGroupResponse `json:"consistency_groups"`
 }
 
 // @Summary Get a consistency group
@@ -85,37 +85,12 @@ func (a *ConsistencyGroupAPI) Get(c *gin.Context) {
 
 	// Build response
 	// 构建响应
-	response := &ConsistencyGroupResponse{
-		ResourceReference: &ResourceReference{
-			ID:        cg.UUID,
-			Name:      cg.Name,
-			CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: cg.Description,
-		Status:      cg.Status.String(),
-		WdsCgID:     cg.WdsCgID,
-	}
 
-	// Get associated volumes
-	// 获取关联的卷
-	db := dbs.DB()
-	var cgVolumes []*model.ConsistencyGroupVolume
-	if err = db.Where("cg_id = ?", cg.ID).Preload("Volume").Find(&cgVolumes).Error; err != nil {
-		logger.Errorf("Failed to get volumes for CG %s: %+v", uuid, err)
-		ErrorResponse(c, http.StatusInternalServerError, "Failed to get volumes", err)
+	response, err := a.GetCGResponse(ctx, cg)
+	if err != nil {
+		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get consistency group response", err)
 		return
-	}
-
-	// Add volume references
-	// 添加卷引用
-	for _, cgVol := range cgVolumes {
-		if cgVol.Volume != nil {
-			response.Volumes = append(response.Volumes, &BaseReference{
-				ID:   cgVol.Volume.UUID,
-				Name: cgVol.Volume.Name,
-			})
-		}
 	}
 
 	logger.Debugf("Successfully retrieved consistency group %s", uuid)
@@ -168,16 +143,10 @@ func (a *ConsistencyGroupAPI) List(c *gin.Context) {
 	// 构建响应
 	var responses []*ConsistencyGroupResponse
 	for _, cg := range cgs {
-		response := &ConsistencyGroupResponse{
-			ResourceReference: &ResourceReference{
-				ID:        cg.UUID,
-				Name:      cg.Name,
-				CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
-				UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
-			},
-			Description: cg.Description,
-			Status:      cg.Status.String(),
-			WdsCgID:     cg.WdsCgID,
+		response, err := a.GetCGResponse(ctx, cg)
+		if err != nil {
+			logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+			continue
 		}
 		responses = append(responses, response)
 	}
@@ -227,18 +196,12 @@ func (a *ConsistencyGroupAPI) Create(c *gin.Context) {
 		return
 	}
 
-	// Build response
 	// 构建响应
-	response := &ConsistencyGroupResponse{
-		ResourceReference: &ResourceReference{
-			ID:        cg.UUID,
-			Name:      cg.Name,
-			CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: cg.Description,
-		Status:      cg.Status.String(),
-		WdsCgID:     cg.WdsCgID,
+	response, err := a.GetCGResponse(ctx, cg)
+	if err != nil {
+		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
+		return
 	}
 
 	logger.Debugf("Successfully created consistency group %s", cg.UUID)
@@ -290,16 +253,11 @@ func (a *ConsistencyGroupAPI) Patch(c *gin.Context) {
 
 	// Build response
 	// 构建响应
-	response := &ConsistencyGroupResponse{
-		ResourceReference: &ResourceReference{
-			ID:        cg.UUID,
-			Name:      cg.Name,
-			CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: cg.Description,
-		Status:      cg.Status.String(),
-		WdsCgID:     cg.WdsCgID,
+	response, err := a.GetCGResponse(ctx, cg)
+	if err != nil {
+		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
+		return
 	}
 
 	logger.Debugf("Successfully updated consistency group %s", uuid)
@@ -388,16 +346,11 @@ func (a *ConsistencyGroupAPI) AddVolumes(c *gin.Context) {
 
 	// Build response
 	// 构建响应
-	response := &ConsistencyGroupResponse{
-		ResourceReference: &ResourceReference{
-			ID:        cg.UUID,
-			Name:      cg.Name,
-			CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: cg.Description,
-		Status:      cg.Status.String(),
-		WdsCgID:     cg.WdsCgID,
+	response, err := a.GetCGResponse(ctx, cg)
+	if err != nil {
+		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
+		return
 	}
 
 	logger.Debugf("Successfully added volumes to consistency group %s", uuid)
@@ -441,16 +394,11 @@ func (a *ConsistencyGroupAPI) RemoveVolume(c *gin.Context) {
 
 	// Build response
 	// 构建响应
-	response := &ConsistencyGroupResponse{
-		ResourceReference: &ResourceReference{
-			ID:        cg.UUID,
-			Name:      cg.Name,
-			CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: cg.Description,
-		Status:      cg.Status.String(),
-		WdsCgID:     cg.WdsCgID,
+	response, err := a.GetCGResponse(ctx, cg)
+	if err != nil {
+		logger.Errorf("Failed to get CG response for CG %s: %+v", cg.ID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get CG response", err)
+		return
 	}
 
 	logger.Debugf("Successfully removed volume from consistency group %s", uuid)
@@ -543,18 +491,11 @@ func (a *ConsistencyGroupAPI) ListSnapshots(c *gin.Context) {
 	// 构建响应
 	var responses []*ConsistencyGroupSnapshotResponse
 	for _, snapshot := range snapshots {
-		response := &ConsistencyGroupSnapshotResponse{
-			ResourceReference: &ResourceReference{
-				ID:        snapshot.UUID,
-				Name:      snapshot.Name,
-				CreatedAt: snapshot.CreatedAt.Format(TimeStringForMat),
-				UpdatedAt: snapshot.UpdatedAt.Format(TimeStringForMat),
-			},
-			Description: snapshot.Description,
-			Status:      snapshot.Status.String(),
-			CGID:        cgUUID,
-			Size:        snapshot.Size,
-			WdsSnapID:   snapshot.WdsSnapID,
+		response, err := a.GetCGSnapshotResponse(ctx, snapshot, cgUUID)
+		if err != nil {
+			logger.Errorf("Failed to get snapshot response for snapshot %s: %+v", snapshot.UUID, err)
+			ErrorResponse(c, http.StatusInternalServerError, "Failed to get snapshot response", err)
+			return
 		}
 		responses = append(responses, response)
 	}
@@ -615,18 +556,11 @@ func (a *ConsistencyGroupAPI) GetSnapshot(c *gin.Context) {
 
 	// Build response
 	// 构建响应
-	response := &ConsistencyGroupSnapshotResponse{
-		ResourceReference: &ResourceReference{
-			ID:        snapshot.UUID,
-			Name:      snapshot.Name,
-			CreatedAt: snapshot.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: snapshot.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: snapshot.Description,
-		Status:      snapshot.Status.String(),
-		CGID:        cgUUID,
-		Size:        snapshot.Size,
-		WdsSnapID:   snapshot.WdsSnapID,
+	response, err := a.GetCGSnapshotResponse(ctx, snapshot, cgUUID)
+	if err != nil {
+		logger.Errorf("Failed to get snapshot response for snapshot %s: %+v", snapUUID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get snapshot response", err)
+		return
 	}
 
 	logger.Debugf("Successfully retrieved snapshot %s", snapUUID)
@@ -669,18 +603,11 @@ func (a *ConsistencyGroupAPI) CreateSnapshot(c *gin.Context) {
 
 	// Build response
 	// 构建响应
-	response := &ConsistencyGroupSnapshotResponse{
-		ResourceReference: &ResourceReference{
-			ID:        snapshot.UUID,
-			Name:      snapshot.Name,
-			CreatedAt: snapshot.CreatedAt.Format(TimeStringForMat),
-			UpdatedAt: snapshot.UpdatedAt.Format(TimeStringForMat),
-		},
-		Description: snapshot.Description,
-		Status:      snapshot.Status.String(),
-		CGID:        cgUUID,
-		Size:        snapshot.Size,
-		WdsSnapID:   snapshot.WdsSnapID,
+	response, err := a.GetCGSnapshotResponse(ctx, snapshot, cgUUID)
+	if err != nil {
+		logger.Errorf("Failed to get snapshot response for snapshot %s: %+v", snapshot.ID, err)
+		ErrorResponse(c, http.StatusInternalServerError, "Failed to get snapshot response", err)
+		return
 	}
 
 	logger.Debugf("Successfully created snapshot %s for CG %s", snapshot.UUID, cgUUID)
@@ -753,4 +680,53 @@ func (a *ConsistencyGroupAPI) RestoreSnapshot(c *gin.Context) {
 
 	logger.Debugf("Successfully initiated restore for CG %s from snapshot %s, task ID: %d", cgUUID, snapUUID, task.ID)
 	c.JSON(http.StatusOK, response)
+}
+
+func (a *ConsistencyGroupAPI) GetCGResponse(ctx context.Context, cg *model.ConsistencyGroup) (*ConsistencyGroupResponse, error) {
+	// Build response
+	owner := orgAdmin.GetOrgName(ctx, cg.Owner)
+	// volumes
+	vols, err := consistencyGroupAdmin.GetVolumes(ctx, cg.ID)
+	if err != nil {
+		logger.Errorf("Failed to get volumes for CG %s: %+v", cg.ID, err)
+		return nil, err
+	}
+	var volumes []*BaseReference
+	for _, volume := range vols {
+		volumes = append(volumes, &BaseReference{
+			ID:   volume.UUID,
+			Name: volume.Name,
+		})
+	}
+	return &ConsistencyGroupResponse{
+		ResourceReference: &ResourceReference{
+			ID:        cg.UUID,
+			Name:      cg.Name,
+			CreatedAt: cg.CreatedAt.Format(TimeStringForMat),
+			UpdatedAt: cg.UpdatedAt.Format(TimeStringForMat),
+			Owner:     owner,
+		},
+		Description: cg.Description,
+		Status:      cg.Status.String(),
+		WdsCgID:     cg.WdsCgID,
+		Volumes:     volumes,
+	}, nil
+}
+
+func (a *ConsistencyGroupAPI) GetCGSnapshotResponse(ctx context.Context, snap *model.ConsistencyGroupSnapshot, cgUUID string) (*ConsistencyGroupSnapshotResponse, error) {
+	owner := orgAdmin.GetOrgName(ctx, snap.Owner)
+	return &ConsistencyGroupSnapshotResponse{
+		ResourceReference: &ResourceReference{
+			ID:        snap.UUID,
+			Name:      snap.Name,
+			CreatedAt: snap.CreatedAt.Format(TimeStringForMat),
+			UpdatedAt: snap.UpdatedAt.Format(TimeStringForMat),
+			Owner:     owner,
+		},
+		Description: snap.Description,
+		Status:      snap.Status.String(),
+		CGID:        cgUUID,
+		Size:        snap.Size,
+		WdsSnapID:   snap.WdsSnapID,
+	}, nil
 }

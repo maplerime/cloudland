@@ -1,0 +1,42 @@
+- name: Set prometheus_server_ip from monitor group
+  set_fact:
+    prometheus_server_ip: "{{ hostvars[groups['monitor'][0]]['ansible_host'] }}"
+  tags: [monitor_sd]
+
+- name: Gather IP addresses from hyper group
+  set_fact:
+    hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
+  tags: [monitor_sd]
+
+- name: Gather IP addresses from cland group
+  set_fact:
+    cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
+  tags: [monitor_sd]
+
+- name: Ensure Prometheus lists directory exists
+  delegate_to: "{{ groups['monitor'][0] }}"
+  run_once: true
+  become: true
+  file:
+    path: /etc/prometheus/lists
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: 0755
+  tags: [monitor_sd]
+
+- name: Render Prometheus file_sd_configs JSON files
+  delegate_to: "{{ groups['monitor'][0] }}"
+  run_once: true
+  become: true
+  template:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    owner: prometheus
+    group: prometheus
+    mode: 0644
+  with_items:
+    - { src: 'node_exporters.json.j2', dest: '/etc/prometheus/lists/node_exporters.json' }
+    - { src: 'libvirt_exporters.json.j2', dest: '/etc/prometheus/lists/libvirt_exporters.json' }
+    - { src: 'cloudland_exporters.json.j2', dest: '/etc/prometheus/lists/cloudland_exporters.json' }
+  tags: [monitor_sd]

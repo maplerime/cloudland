@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -2531,6 +2532,81 @@ func (a *AlarmAPI) BatchGetRules(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, response)
+}
+
+func (a *AlarmAPI) updateComputeMonitorStatus(action string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Target string `json:"target"`
+			IP     string `json:"ip"`
+			Host   string `json:"host"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid request body"})
+			return
+		}
+
+		input := strings.TrimSpace(req.Target)
+		if input == "" {
+			input = strings.TrimSpace(req.IP)
+		}
+		if input == "" {
+			input = strings.TrimSpace(req.Host)
+		}
+		if input == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "target is required"})
+			return
+		}
+
+		var (
+			hyper *model.Hyper
+			err   error
+		)
+		if net.ParseIP(input) != nil {
+			hyper, err = hyperAdmin.GetHyperByHostIP(c.Request.Context(), input)
+			if err != nil {
+				logger.Errorf("Failed to query hypervisor by ip %s: %v", input, err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "hypervisor not found"})
+				return
+			}
+		} else {
+			hyper, err = hyperAdmin.GetHyperByHostname(c.Request.Context(), input)
+			if err != nil {
+				logger.Errorf("Failed to query hypervisor by hostname %s: %v", input, err)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "hypervisor not found"})
+				return
+			}
+		}
+
+		targetIP := strings.TrimSpace(hyper.HostIP)
+		if targetIP == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "hypervisor host ip is empty"})
+			return
+		}
+
+		if err := routes.UpdateComputeTargetsJSON(c.Request.Context(), hyper.Hostname, targetIP, action); err != nil {
+			logger.Errorf("Failed to %s compute monitor target for host %s: %v", action, hyper.Hostname, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("failed to %s compute monitor target", action)})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status": "success",
+			"data": gin.H{
+				"hostname": hyper.Hostname,
+				"host_ip":  hyper.HostIP,
+				"action":   action,
+			},
+		})
+	}
+}
+
+func (a *AlarmAPI) EnableComputeMonitor(c *gin.Context) {
+	a.updateComputeMonitorStatus("enable")(c)
+}
+
+func (a *AlarmAPI) DisableComputeMonitor(c *gin.Context) {
+	a.updateComputeMonitorStatus("disable")(c)
 }
 
 // getSingleRuleByIdentifier 通过标识符获取单个规则 (支持uuid和rule_id)

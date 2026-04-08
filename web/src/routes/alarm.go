@@ -41,6 +41,7 @@ const (
 	RuleTypeHypervisorResource = "hypervisor_resource"
 	RuleTypePacketDrop         = "packet_drop"
 	RuleTypeIPBlock            = "ip_block"
+	RuleTypeIPGroupAvailableIP = "ipgroup_available_ip"
 	RulesEnabled               = "/etc/prometheus/rules_enabled"
 	RulesGeneral               = "/etc/prometheus/general_rules"
 	RulesSpecial               = "/etc/prometheus/special_rules"
@@ -1461,12 +1462,19 @@ func WriteFile(path string, content []byte, perm os.FileMode) error {
 		}
 		return prometheusClient.ClientWriteRuleFile(path, content, perm)
 	} else {
-		os.WriteFile(path, content, perm)
+		const safeDir = "/etc/prometheus/"
+		cleanPath := filepath.Clean(path)
+		if !strings.HasPrefix(cleanPath, safeDir) {
+			return fmt.Errorf("invalid file path: %s", path)
+		}
+		if err := os.WriteFile(cleanPath, content, perm); err != nil {
+			return err
+		}
 		uid, gid, err := GetUser("prometheus")
 		if err != nil {
 			return err
 		}
-		return SetFileOwner(path, uid, gid)
+		return SetFileOwner(cleanPath, uid, gid)
 	}
 }
 
@@ -1758,6 +1766,11 @@ func ProcessTemplate(templateFile, outputFile string, data map[string]interface{
 
 	// All rule files are now stored in RulesGeneral directory (simplified from previous owner-based separation)
 	outputPath := filepath.Join(RulesGeneral, outputFile)
+	cleanOutputPath := filepath.Clean(outputPath)
+	if !strings.HasPrefix(cleanOutputPath, RulesGeneral+"/") {
+		return fmt.Errorf("invalid output path")
+	}
+	outputPath = cleanOutputPath
 
 	// Read template content
 	templateContent, err := ReadFile(templatePath)
@@ -1998,7 +2011,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"packet-drop-monitor.yml.j2"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml.j2"}
-	case "ipgroup_available_ip":
+	case RuleTypeIPGroupAvailableIP:
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
@@ -2023,6 +2036,36 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 			} else {
 				configData["node_down_duration_minutes"] = 5
 			}
+		}
+
+		if rule.RuleType == RuleTypeIPGroupAvailableIP {
+			ipgroups, ok := configData["ipgroups"].([]interface{})
+			if !ok || len(ipgroups) == 0 {
+				operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+				return nil, fmt.Errorf("ipgroup_available_ip config must contain a non-empty ipgroups array")
+			}
+			var parts []string
+			for _, item := range ipgroups {
+				entry, ok := item.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				name, _ := entry["name"].(string)
+				if name == "" {
+					continue
+				}
+				threshold := 100.0
+				if t, ok := entry["threshold"].(float64); ok {
+					threshold = t
+				}
+				escapedName := strings.ReplaceAll(name, `"`, `\"`)
+				parts = append(parts, fmt.Sprintf(`        label_replace(vector(%g), "ipgroup_name", "%s", "", "")`, threshold, escapedName))
+			}
+			if len(parts) == 0 {
+				operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+				return nil, fmt.Errorf("ipgroup_available_ip config: no valid ipgroup entries found")
+			}
+			configData["threshold_expr"] = strings.Join(parts, " or\n")
 		}
 
 		outputFile := strings.TrimSuffix(templateFile, ".j2")
@@ -2236,7 +2279,7 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		templateFiles = []string{"packet-drop-monitor.yml"}
 	case RuleTypeIPBlock:
 		templateFiles = []string{"ip-block-monitor.yml"}
-	case "ipgroup_available_ip":
+	case RuleTypeIPGroupAvailableIP:
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
@@ -2548,6 +2591,100 @@ func UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, groupUUID, oper
 	} else {
 		logger.Infof("Successfully reloaded Prometheus configuration after updating matched_vms.json")
 	}
+
+	return nil
+}
+
+// UpdateComputeTargetsJSON updates the node and libvirt json files to enable/disable compute nodes
+func UpdateComputeTargetsJSON(ctx context.Context, targetHost, ip, action string) error {
+	if targetHost == "" {
+		return fmt.Errorf("target host is required")
+	}
+	if action != "enable" && action != "disable" {
+		return fmt.Errorf("unsupported action %s", action)
+	}
+	if ip == "" {
+		return fmt.Errorf("ip is required for action %s", action)
+	}
+
+	filesToUpdate := []struct {
+		File string
+		Port string
+	}{
+		{"/etc/prometheus/lists/node_exporters.json", "9101"},
+		{"/etc/prometheus/lists/libvirt_exporters.json", "9177"},
+	}
+
+	for _, target := range filesToUpdate {
+		var existingTargets []map[string]interface{}
+		data, err := ReadFile(target.File)
+		if err == nil && len(data) > 0 {
+			if err := json.Unmarshal(data, &existingTargets); err != nil {
+				logger.Errorf("Failed to parse %s: %v", target.File, err)
+				existingTargets = []map[string]interface{}{}
+			}
+		} else {
+			existingTargets = []map[string]interface{}{}
+		}
+
+		updatedTargets := []map[string]interface{}{}
+		expectedTarget := fmt.Sprintf("%s:%s", ip, target.Port)
+		exists := false
+		for _, t := range existingTargets {
+			labels, ok := t["labels"].(map[string]interface{})
+			if !ok {
+				updatedTargets = append(updatedTargets, t)
+				continue
+			}
+
+			host, hasHost := labels["host"].(string)
+			targets, hasTargets := t["targets"].([]interface{})
+			if !hasHost || !hasTargets {
+				updatedTargets = append(updatedTargets, t)
+				continue
+			}
+
+			matchedTarget := false
+			for _, raw := range targets {
+				if targetStr, ok := raw.(string); ok && targetStr == expectedTarget {
+					matchedTarget = true
+					break
+				}
+			}
+
+			if host == targetHost && matchedTarget {
+				exists = true
+				if action == "disable" {
+					continue
+				}
+			}
+			updatedTargets = append(updatedTargets, t)
+		}
+
+		if action == "enable" && !exists {
+			newTarget := map[string]interface{}{
+				"targets": []string{expectedTarget},
+				"labels": map[string]interface{}{
+					"host":      targetHost,
+					"node_type": "compute",
+				},
+			}
+			updatedTargets = append(updatedTargets, newTarget)
+		}
+
+		outData, err := json.MarshalIndent(updatedTargets, "", "  ")
+		if err != nil {
+			logger.Errorf("Failed to marshal %s: %v", target.File, err)
+			return err
+		}
+
+		if err := WriteFile(target.File, outData, 0644); err != nil {
+			logger.Errorf("Failed to write %s: %v", target.File, err)
+			return err
+		}
+	}
+
+	logger.Infof("Compute target JSON files updated successfully. Waiting for Prometheus file_sd refresh to apply changes automatically")
 
 	return nil
 }

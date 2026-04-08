@@ -2,7 +2,6 @@
 Copyright <holder> All Rights Reserved.
 
 SPDX-License-Identifier: Apache-2.0
-
 */
 
 package common
@@ -537,5 +536,44 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 		}
 		instNetworks = append(instNetworks, instNetwork)
 	}
+	return
+}
+
+// GetVrrpInterfaces retrieves the MASTER and BACKUP interfaces for a VRRP instance
+func GetVrrpInterfaces(ctx context.Context, vrrpID int64) (vrrpIface1, vrrpIface2 *model.Interface, err error) {
+	ctx, db := GetContextDB(ctx)
+	vrrpIface1 = &model.Interface{}
+	vrrpIface2 = &model.Interface{}
+	err = db.Preload("Address").Where("type = 'vrrp' and name = 'MASTER' and device = ?", vrrpID).Take(vrrpIface1).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp interface 1", err)
+		return
+	}
+	err = db.Preload("Address").Where("type = 'vrrp' and name = 'BACKUP' and device = ?", vrrpID).Take(vrrpIface2).Error
+	if err != nil {
+		logger.Error("Failed to query vrrp interface 2", err)
+		return
+	}
+	return
+}
+
+// GetVrrpHyperGroup returns the hyper group string and both VRRP interfaces for a VRRP instance
+func GetVrrpHyperGroup(ctx context.Context, vrrpInstance *model.VrrpInstance) (hyperGroup string, vrrpIface1, vrrpIface2 *model.Interface, err error) {
+	hyperList := ""
+	vrrpIface1, vrrpIface2, err = GetVrrpInterfaces(ctx, vrrpInstance.ID)
+	if err != nil {
+		return
+	}
+	if vrrpIface1.Hyper >= 0 {
+		hyperList = fmt.Sprintf("%d,", vrrpIface1.Hyper)
+	}
+	if vrrpIface2.Hyper >= 0 {
+		hyperList = fmt.Sprintf("%s%d", hyperList, vrrpIface2.Hyper)
+	}
+	if hyperList == "" {
+		err = fmt.Errorf("No valid hyper for vrrp interfaces")
+		return
+	}
+	hyperGroup = fmt.Sprintf("group-vrrp-%d:%s", vrrpInstance.ID, hyperList)
 	return
 }
