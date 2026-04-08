@@ -8,7 +8,6 @@ package routes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -565,12 +564,7 @@ func (v *SecruleView) Patch(c *macaron.Context, store session.Store) {
 	_, err = secruleAdmin.Update(c.Req.Context(), int64(secruleID), name, remoteIp, direction, protocol, portMin, portMax)
 	if err != nil {
 		logger.Error("Update Security Rules failed, %v", err)
-		var clErr *CLError
-		if errors.As(err, &clErr) {
-			c.Data["ErrorMsg"] = clErr.Message
-		} else {
-			c.Data["ErrorMsg"] = err.Error()
-		}
+		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
