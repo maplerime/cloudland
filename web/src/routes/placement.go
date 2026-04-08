@@ -45,7 +45,12 @@ func (v *PlacementView) Show(c *macaron.Context, store session.Store) {
 }
 
 // GetConfig returns the current placement config as JSON.
-// GET /placement/config
+// Supports optional ?zone_id=<id> query parameter:
+//   - No zone_id param  → returns global config
+//   - zone_id=<id>      → returns the effective merged config for that zone
+//     (per-zone overrides merged onto global, or global if no override exists)
+//
+// GET /placement/config?zone_id=<zone_id>
 func (v *PlacementView) GetConfig(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Admin)
@@ -54,8 +59,19 @@ func (v *PlacementView) GetConfig(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	cfg, loadedAt := scheduler.GetCurrentConfig()
+	zoneID := c.QueryInt64("zone_id")
+
+	var cfg *scheduler.PlacementConfig
+	if zoneID > 0 {
+		// Return the effective config for the specified zone (merged with global).
+		cfg = scheduler.ResolveZoneConfig(zoneID)
+	} else {
+		cfg, _ = scheduler.GetCurrentConfig()
+	}
+
+	_, loadedAt := scheduler.GetCurrentConfig()
 	c.JSON(http.StatusOK, map[string]interface{}{
+		"zone_id":            zoneID, // 0 means global config
 		"config":             cfg,
 		"loaded_at":          loadedAt,
 		"available_filters":  scheduler.GetRegisteredFilters(),

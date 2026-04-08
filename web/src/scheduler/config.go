@@ -6,9 +6,49 @@ SPDX-License-Identifier: Apache-2.0
 
 package scheduler
 
+// ZonePlacementConfig is a per-zone override config.
+// All fields are pointers; nil means "not set, fall back to global value".
+type ZonePlacementConfig struct {
+	// Overrides global filter_chain if non-nil (whole list replaced, not appended)
+	FilterChain *[]string `mapstructure:"filter_chain"`
+
+	// Overrides global weigher_chain if non-nil
+	WeigherChain *[]string `mapstructure:"weigher_chain"`
+
+	// Overrides global fallback_filter if non-nil
+	FallbackFilter *string `mapstructure:"fallback_filter"`
+
+	// Overrides global filters section if non-nil
+	Filters *struct {
+		CPULoad *struct {
+			IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
+		} `mapstructure:"cpu_load"`
+	} `mapstructure:"filters"`
+
+	// Overrides global overcommit section (field-level merge)
+	Overcommit *struct {
+		Enabled               *bool    `mapstructure:"enabled"`
+		MemDeltaRatioPct      *float64 `mapstructure:"mem_delta_ratio_pct"`
+		VCPUDeltaRatioPct     *float64 `mapstructure:"vcpu_delta_ratio_pct"`
+		CPUIdleFallbackPct    *float64 `mapstructure:"cpu_idle_fallback_pct"`
+		HugepageDeltaRatioPct *float64 `mapstructure:"hugepage_delta_ratio_pct"`
+	} `mapstructure:"overcommit"`
+
+	// Overrides global weighers section (field-level merge)
+	Weighers *struct {
+		OvercommitPenaltyMultiplier *float64 `mapstructure:"overcommit_penalty_multiplier"`
+		HugepageMultiplier          *float64 `mapstructure:"hugepage_multiplier"`
+		RAMMultiplier               *float64 `mapstructure:"ram_multiplier"`
+		CPULoadMultiplier           *float64 `mapstructure:"cpu_load_multiplier"`
+		SpreadMultiplier            *float64 `mapstructure:"spread_multiplier"`
+	} `mapstructure:"weighers"`
+}
+
 // PlacementConfig holds all scheduler configuration, loaded from placement.toml.
 type PlacementConfig struct {
-	// Filter chain: executed in order, names correspond to RegisterFilter keys
+	// Filter chain: executed in order, names correspond to RegisterFilter keys.
+	// Zone filtering is performed at DB query level (loadHostStates WHERE zone_id=?),
+	// so no "zone" filter is needed here.
 	FilterChain []string `mapstructure:"filter_chain"`
 
 	// Weigher chain: scored in order
@@ -17,7 +57,8 @@ type PlacementConfig struct {
 	// Fallback filter name (e.g. "overcommit"), empty string disables
 	FallbackFilter string `mapstructure:"fallback_filter"`
 
-	// Hyper heartbeat report interval in seconds; alive threshold = 2 * this
+	// Hyper heartbeat report interval in seconds; alive threshold = 2 * this.
+	// Global only — not overridable per zone (heartbeat period is node-wide).
 	HostReportIntervalSec int `mapstructure:"host_report_interval_sec"`
 
 	// Filter-specific parameters
@@ -44,6 +85,11 @@ type PlacementConfig struct {
 		CPULoadMultiplier           float64 `mapstructure:"cpu_load_multiplier"`
 		SpreadMultiplier            float64 `mapstructure:"spread_multiplier"`
 	} `mapstructure:"weighers"`
+
+	// Per-zone override configs: key = zone ID string (e.g. "1").
+	// Corresponds to [placement.zone.1] sections in placement.toml.
+	// Use ResolveZoneConfig(zoneID) to obtain the effective merged config.
+	Zones map[string]*ZonePlacementConfig `mapstructure:"zone"`
 }
 
 // PlacementRequest describes the resources needed by a VM.
@@ -52,7 +98,7 @@ type PlacementRequest struct {
 	MemMB          int64    // memory in MB
 	DiskGB         int64
 	HugepageSizeKB int64    // 0 = no hugepage requirement
-	ZoneID         int64
+	ZoneID         int64    // used for DB-level zone filtering and config lookup
 	Traits         []string // required hyper tags, e.g. ["gpu", "nvme"]
 	OwnerID        int64    // owner org ID (for affinity/anti-affinity)
 	Policy         string   // "affinity" | "anti-affinity" | ""
@@ -60,7 +106,8 @@ type PlacementRequest struct {
 
 func defaultConfig() *PlacementConfig {
 	cfg := &PlacementConfig{
-		FilterChain:           []string{"compute_alive", "zone", "hugepage", "resource", "cpu_load", "affinity", "capability"},
+		// "zone" filter removed: DB query already scopes hosts to the requested zone.
+		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity", "capability"},
 		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},
 		FallbackFilter:        "overcommit",
 		HostReportIntervalSec: 60,

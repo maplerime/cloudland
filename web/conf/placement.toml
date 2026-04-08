@@ -1,15 +1,20 @@
 # Cloudland Placement 调度器配置
 # 通过管理后台 (/placement) 或 API (POST /placement/reload) 重新加载配置
 
+##############################################################################
+# 全局配置（所有 zone 默认使用，除非 zone 有专属覆盖）
+##############################################################################
+
 [placement]
 # 节点心跳上报间隔（秒），存活判定阈值 = 2 × 此值
 # 超过阈值未上报的节点将被 compute_alive 过滤器剔除
 host_report_interval_sec = 60
 
 # Filter 链：按列表顺序依次执行，名称对应已注册的 Filter
-# 可用值：compute_alive, zone, hugepage, resource, cpu_load, affinity, capability, overcommit
-# 增删或调整顺序后点击 Reload 即可生效，无需重启服务
-filter_chain = ["compute_alive", "zone", "hugepage", "resource", "cpu_load", "affinity", "capability"]
+# 可用值：compute_alive, hugepage, resource, cpu_load, affinity, capability, overcommit
+# 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此处加 "zone" filter
+# 增删或调整顺序后通过 /placement/reload 即可生效，无需重启服务
+filter_chain = ["compute_alive", "hugepage", "resource", "cpu_load", "affinity", "capability"]
 
 # Weigher 链：按列表顺序依次评分，名称对应已注册的 Weigher
 # 可用值：hugepage, ram, cpu_load, overcommit_penalty, spread
@@ -56,3 +61,40 @@ ram_multiplier = 1.0
 cpu_load_multiplier = 1.0
 # 打散/堆叠策略系数（负值 = 打散优先，VM少的节点得分高；正值 = 堆叠优先）
 spread_multiplier = -1.0
+
+##############################################################################
+# per-zone 覆盖配置
+# 格式：[placement.zone.<zone_name>]，zone_name 与 Cloudland zone 名称一致
+# 只需写需要覆盖的字段，其余字段自动回退到全局配置
+# 查看某 zone 生效配置：GET /placement/config?zone=<zone_name>
+##############################################################################
+
+# 示例：zone-gpu —— GPU zone，节点全部支持大页 + GPU trait
+# [placement.zone.zone-gpu]
+# filter_chain = [
+#     "compute_alive",
+#     "hugepage",    # GPU zone 全部节点支持大页，优先过滤
+#     "resource",
+#     "cpu_load",
+#     "capability",  # GPU trait 检查（不需要 affinity，GPU zone 独立管理）
+# ]
+# weigher_chain = ["overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"]
+#
+# [placement.zone.zone-gpu.filters.cpu_load]
+# # GPU 任务 CPU 密集，放宽空闲率阈值
+# idle_threshold_pct = 10.0
+#
+# [placement.zone.zone-gpu.overcommit]
+# # GPU zone 资源珍贵，禁用超配容忍
+# enabled = false
+
+# 示例：zone-edge —— 边缘节点，资源紧张，开启更宽松超配容忍
+# [placement.zone.zone-edge.overcommit]
+# enabled = true
+# mem_delta_ratio_pct = 20.0
+# vcpu_delta_ratio_pct = 20.0
+# cpu_idle_fallback_pct = 3.0
+#
+# [placement.zone.zone-edge.weighers]
+# # 边缘节点倾向堆叠（节省资源）
+# spread_multiplier = 2.0

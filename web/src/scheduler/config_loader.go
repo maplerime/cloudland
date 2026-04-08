@@ -8,6 +8,7 @@ package scheduler
 
 import (
 	"fmt"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -15,9 +16,11 @@ import (
 )
 
 // configSnapshot is an immutable snapshot: config + pre-built Filter/Weigher chains.
+// The chains in the snapshot are built from the GLOBAL config.
+// Per-zone scheduling uses ResolveZoneConfig + BuildFilters/BuildWeighers on the fly.
 type configSnapshot struct {
 	cfg        *PlacementConfig
-	filters    []Filter
+	filters    []Filter // built from global config (kept for reference / fallback)
 	weighers   []Weigher
 	fallback   Filter // may be nil
 	loadedAt   time.Time
@@ -80,7 +83,8 @@ func ReloadConfig() (*ReloadResult, error) {
 		FilterChain:  snap.cfg.FilterChain,
 		WeigherChain: snap.cfg.WeigherChain,
 	}
-	logger.Infof("ReloadConfig completed: filters=%v, weighers=%v", result.FilterChain, result.WeigherChain)
+	logger.Infof("ReloadConfig completed: filters=%v, weighers=%v, zone_overrides=%d",
+		result.FilterChain, result.WeigherChain, len(snap.cfg.Zones))
 	return result, nil
 }
 
@@ -105,8 +109,8 @@ func doReload() error {
 	// Build and atomically store new snapshot
 	snapshot := buildSnapshot(cfg, configFilePath)
 	activeSnapshot.Store(snapshot)
-	logger.Infof("Placement config loaded: filters=%v, weighers=%v, fallback=%q",
-		cfg.FilterChain, cfg.WeigherChain, cfg.FallbackFilter)
+	logger.Infof("Placement config loaded: filters=%v, weighers=%v, fallback=%q, zone_overrides=%d",
+		cfg.FilterChain, cfg.WeigherChain, cfg.FallbackFilter, len(cfg.Zones))
 	return nil
 }
 
@@ -130,8 +134,8 @@ func buildSnapshot(cfg *PlacementConfig, path string) *configSnapshot {
 		}
 		registryMu.RUnlock()
 	}
-	logger.Debugf("Config snapshot built: %d filters, %d weighers, fallback=%v",
-		len(snap.filters), len(snap.weighers), snap.fallback != nil)
+	logger.Debugf("Config snapshot built: %d filters, %d weighers, fallback=%v, zone_overrides=%d",
+		len(snap.filters), len(snap.weighers), snap.fallback != nil, len(cfg.Zones))
 	return snap
 }
 
@@ -166,4 +170,91 @@ func GetCurrentConfig() (*PlacementConfig, time.Time) {
 		return defaultConfig(), time.Time{}
 	}
 	return snap.cfg, snap.loadedAt
+}
+
+// ResolveZoneConfig returns the effective PlacementConfig for the given zone.
+// Lookup priority: per-zone config → global config (field-level fallback, not whole replacement).
+// The returned *PlacementConfig is a merged copy safe to use directly by the caller.
+func ResolveZoneConfig(zoneID int64) *PlacementConfig {
+	snap := activeSnapshot.Load()
+	if snap == nil {
+		logger.Warning("ResolveZoneConfig: no active snapshot, returning default config")
+		return defaultConfig()
+	}
+	global := snap.cfg
+	if zoneID <= 0 {
+		return global
+	}
+	zoneKey := strconv.FormatInt(zoneID, 10)
+	zoneCfg, ok := global.Zones[zoneKey]
+	if !ok || zoneCfg == nil {
+		// No per-zone config, use global
+		logger.Debugf("ResolveZoneConfig: no override for zone ID %d, using global config", zoneID)
+		return global
+	}
+	logger.Debugf("ResolveZoneConfig: merging per-zone override for zone ID %d", zoneID)
+	return mergeZoneConfig(global, zoneCfg)
+}
+
+// mergeZoneConfig merges per-zone overrides onto a copy of the global config.
+// Only fields explicitly set (non-nil) in zone are overridden; others inherit from global.
+func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *PlacementConfig {
+	// Shallow copy global as the base
+	merged := *global
+	// Merged config does not carry the zones table (prevents recursive resolution)
+	merged.Zones = nil
+
+	if zone.FilterChain != nil {
+		merged.FilterChain = *zone.FilterChain
+		logger.Debugf("mergeZoneConfig: override filter_chain=%v", merged.FilterChain)
+	}
+	if zone.WeigherChain != nil {
+		merged.WeigherChain = *zone.WeigherChain
+		logger.Debugf("mergeZoneConfig: override weigher_chain=%v", merged.WeigherChain)
+	}
+	if zone.FallbackFilter != nil {
+		merged.FallbackFilter = *zone.FallbackFilter
+		logger.Debugf("mergeZoneConfig: override fallback_filter=%q", merged.FallbackFilter)
+	}
+	if zone.Filters != nil && zone.Filters.CPULoad != nil && zone.Filters.CPULoad.IdleThresholdPct != nil {
+		merged.Filters.CPULoad.IdleThresholdPct = *zone.Filters.CPULoad.IdleThresholdPct
+		logger.Debugf("mergeZoneConfig: override cpu_load.idle_threshold_pct=%.1f", merged.Filters.CPULoad.IdleThresholdPct)
+	}
+	if zone.Overcommit != nil {
+		z := zone.Overcommit
+		if z.Enabled != nil {
+			merged.Overcommit.Enabled = *z.Enabled
+		}
+		if z.MemDeltaRatioPct != nil {
+			merged.Overcommit.MemDeltaRatioPct = *z.MemDeltaRatioPct
+		}
+		if z.VCPUDeltaRatioPct != nil {
+			merged.Overcommit.VCPUDeltaRatioPct = *z.VCPUDeltaRatioPct
+		}
+		if z.CPUIdleFallbackPct != nil {
+			merged.Overcommit.CPUIdleFallbackPct = *z.CPUIdleFallbackPct
+		}
+		if z.HugepageDeltaRatioPct != nil {
+			merged.Overcommit.HugepageDeltaRatioPct = *z.HugepageDeltaRatioPct
+		}
+	}
+	if zone.Weighers != nil {
+		z := zone.Weighers
+		if z.OvercommitPenaltyMultiplier != nil {
+			merged.Weighers.OvercommitPenaltyMultiplier = *z.OvercommitPenaltyMultiplier
+		}
+		if z.HugepageMultiplier != nil {
+			merged.Weighers.HugepageMultiplier = *z.HugepageMultiplier
+		}
+		if z.RAMMultiplier != nil {
+			merged.Weighers.RAMMultiplier = *z.RAMMultiplier
+		}
+		if z.CPULoadMultiplier != nil {
+			merged.Weighers.CPULoadMultiplier = *z.CPULoadMultiplier
+		}
+		if z.SpreadMultiplier != nil {
+			merged.Weighers.SpreadMultiplier = *z.SpreadMultiplier
+		}
+	}
+	return &merged
 }

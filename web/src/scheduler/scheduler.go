@@ -25,6 +25,9 @@ var (
 )
 
 // SelectHost runs the Filter+Weigher chain and returns the best hyper's Hostid.
+// The effective config is resolved per-zone: if req.ZoneID has a [placement.zone.<id>]
+// override in placement.toml, those overrides are merged with the global config for this
+// scheduling call only.  Host candidates are pre-scoped to req.ZoneID at DB query level.
 // A structured DecisionLog is recorded for every call (success or failure).
 func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	startTime := time.Now()
@@ -43,15 +46,40 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 		logger.Debugf("SelectHost completed in %.2fms, success=%v", dlog.DurationMs, dlog.Success)
 	}()
 
-	snap := GetSnapshot()
-	if snap == nil {
+	// Ensure the scheduler is initialized
+	if activeSnapshot.Load() == nil {
 		logger.Error("Scheduler not initialized, no active config snapshot")
 		dlog.RejectReason = "scheduler not initialized"
 		return -1, ErrSchedulerNotReady
 	}
 
-	// Load host states
-	logger.Debug("Loading host states from database/cache")
+	// 1. Resolve effective config for this zone (per-zone override or global fallback).
+	//    This is done per-call so that per-zone overrides take effect immediately after
+	//    a reload without needing to re-start the service.
+	cfg := ResolveZoneConfig(req.ZoneID)
+
+	// 2. Build Filter / Weigher chains from the resolved config.
+	//    Each scheduling call gets its own chain instances; this is cheap since chains
+	//    are just slices of lightweight structs.
+	filters := BuildFilters(cfg)
+	weighers := BuildWeighers(cfg)
+
+	// Build fallback filter from resolved config
+	var fallback Filter
+	if cfg.FallbackFilter != "" {
+		registryMu.RLock()
+		if factory, ok := filterRegistry[cfg.FallbackFilter]; ok {
+			fallback = factory(cfg)
+		} else {
+			logger.Warningf("SelectHost: fallback filter %q not found in registry", cfg.FallbackFilter)
+		}
+		registryMu.RUnlock()
+	}
+
+	// 3. Load host states for the requested zone.
+	//    loadHostStatesWithCache queries DB with WHERE zone_id=?, so the returned list
+	//    is already scoped to this zone — no ZoneFilter needed in the chain.
+	logger.Debugf("Loading host states for zoneID=%d", req.ZoneID)
 	hosts, err := loadHostStatesWithCache(ctx, req.ZoneID)
 	if err != nil {
 		logger.Errorf("Failed to load host states: %v", err)
@@ -66,11 +94,11 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	}
 	logger.Debugf("Loaded %d active host(s) for zone_id=%d", len(hosts), req.ZoneID)
 
-	// Phase 1: Filter chain
-	logger.Debugf("Starting filter chain with %d filter(s)", len(snap.filters))
+	// 4. Phase 1: Filter chain (order and members from resolved zone/global config)
+	logger.Debugf("Starting filter chain with %d filter(s) for zoneID=%d", len(filters), req.ZoneID)
 	candidates := hosts
 	lastFilterName := ""
-	for _, f := range snap.filters {
+	for _, f := range filters {
 		before := len(candidates)
 		candidates = f.Filter(ctx, req, candidates)
 		after := len(candidates)
@@ -94,12 +122,13 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 		}
 	}
 
-	// Fallback: overcommit tolerance path
-	if len(candidates) == 0 && snap.fallback != nil {
+	// 5. Fallback: overcommit tolerance path (uses zone-resolved config)
+	if len(candidates) == 0 && fallback != nil {
 		dlog.FallbackUsed = true
-		dlog.FallbackName = snap.fallback.Name()
-		logger.Infof("Standard filters eliminated all %d hosts, trying fallback filter %q", len(hosts), snap.fallback.Name())
-		candidates = snap.fallback.Filter(ctx, req, hosts)
+		dlog.FallbackName = fallback.Name()
+		logger.Infof("Standard filters eliminated all %d hosts, trying fallback filter %q (zoneID=%d)",
+			len(hosts), fallback.Name(), req.ZoneID)
+		candidates = fallback.Filter(ctx, req, hosts)
 		for _, h := range candidates {
 			h.IsOvercommit = true
 		}
@@ -127,14 +156,14 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 
 	dlog.CandidateCount = len(candidates)
 
-	// Phase 2: Weigher chain
-	logger.Debugf("Starting weigher chain with %d weigher(s) on %d candidate(s)", len(snap.weighers), len(candidates))
-	best := weightAndPick(snap.weighers, req, candidates, dlog)
+	// 6. Phase 2: Weigher chain scoring (from resolved zone/global config)
+	logger.Debugf("Starting weigher chain with %d weigher(s) on %d candidate(s)", len(weighers), len(candidates))
+	best := weightAndPick(weighers, req, candidates, dlog)
 
 	dlog.Success = true
 	dlog.SelectedHost = best.HyperID
 	dlog.IsOvercommit = best.IsOvercommit
-	logger.Infof("SelectHost result: selected hyper %d (zone=%d, overcommit=%v) from %d candidates",
+	logger.Infof("SelectHost result: selected hyper %d (zoneID=%d, overcommit=%v) from %d candidates",
 		best.HyperID, best.ZoneID, best.IsOvercommit, len(candidates))
 	return best.HyperID, nil
 }
