@@ -20,6 +20,10 @@ type ZonePlacementConfig struct {
 
 	// Overrides global filters section if non-nil
 	Filters *struct {
+		Hugepage *struct {
+			PageSizeKB *int64 `mapstructure:"page_size_kb"`
+		} `mapstructure:"hugepage"`
+
 		CPULoad *struct {
 			IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
 		} `mapstructure:"cpu_load"`
@@ -63,6 +67,10 @@ type PlacementConfig struct {
 
 	// Filter-specific parameters
 	Filters struct {
+		Hugepage struct {
+			PageSizeKB int64 `mapstructure:"page_size_kb"`
+		} `mapstructure:"hugepage"`
+
 		CPULoad struct {
 			IdleThresholdPct float64 `mapstructure:"idle_threshold_pct"`
 		} `mapstructure:"cpu_load"`
@@ -95,7 +103,7 @@ type PlacementConfig struct {
 // PlacementRequest describes the resources needed by a VM.
 type PlacementRequest struct {
 	VCPUs          int32
-	MemMB          int64    // memory in MB
+	MemMB          int64 // memory in MB
 	DiskGB         int64
 	HugepageSizeKB int64    // 0 = no hugepage requirement
 	ZoneID         int64    // used for DB-level zone filtering and config lookup
@@ -113,6 +121,7 @@ func defaultConfig() *PlacementConfig {
 		HostReportIntervalSec: 60,
 	}
 	cfg.Filters.CPULoad.IdleThresholdPct = 15.0
+	cfg.Filters.Hugepage.PageSizeKB = 2048
 	cfg.Overcommit.Enabled = true
 	cfg.Overcommit.MemDeltaRatioPct = 10.0
 	cfg.Overcommit.VCPUDeltaRatioPct = 10.0
@@ -124,4 +133,26 @@ func defaultConfig() *PlacementConfig {
 	cfg.Weighers.CPULoadMultiplier = 1.0
 	cfg.Weighers.SpreadMultiplier = -1.0
 	return cfg
+}
+
+func hasFilter(chain []string, name string) bool {
+	for _, n := range chain {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// ResolveRequestHugepageSizeKB returns the effective hugepage size to be carried in
+// PlacementRequest for the target zone. Returning 0 means no hugepage requirement.
+func ResolveRequestHugepageSizeKB(zoneID int64) int64 {
+	cfg := ResolveZoneConfig(zoneID)
+	if cfg == nil || !hasFilter(cfg.FilterChain, "hugepage") {
+		return 0
+	}
+	if cfg.Filters.Hugepage.PageSizeKB <= 0 {
+		return 2048
+	}
+	return cfg.Filters.Hugepage.PageSizeKB
 }

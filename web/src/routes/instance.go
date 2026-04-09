@@ -273,12 +273,14 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		instance.Interfaces = ifaces
 		// Per-VM scheduler call (enables spread across hosts for batch creation)
 		if hyperID < 0 {
+			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(zoneID)
 			selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
-				VCPUs:   cpu,
-				MemMB:   int64(memory),
-				DiskGB:  int64(disk),
-				ZoneID:  zoneID,
-				OwnerID: memberShip.OrgID,
+				VCPUs:          cpu,
+				MemMB:          int64(memory),
+				DiskGB:         int64(disk),
+				ZoneID:         zoneID,
+				OwnerID:        memberShip.OrgID,
+				HugepageSizeKB: reqHugepageSizeKB,
 			})
 			if err != nil {
 				logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)

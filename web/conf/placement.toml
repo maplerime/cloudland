@@ -28,7 +28,7 @@ host_report_interval_sec = 60
 #
 # 每个过滤器作用：
 #   compute_alive  检查节点心跳是否在存活阈值内，剔除失联节点
-#   hugepage       检查大页内存是否满足 VM 需求（仅当 VM 请求大页时生效）
+#   hugepage       检查大页内存是否满足 VM 需求（页大小由 filters.hugepage.page_size_kb 指定）
 #   resource       检查 vCPU / 内存 / 磁盘是否充足
 #   cpu_load       检查 CPU 空闲率是否高于 idle_threshold_pct
 #   affinity       按 Owner 的亲和/反亲和策略过滤（需 VM 创建时传入 Policy）
@@ -59,7 +59,15 @@ weigher_chain = ["overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"]
 fallback_filter = "overcommit"
 
 
+[placement.filters.hugepage]
+# hugepage 是否生效由 filter_chain 是否包含 hugepage 决定。
+
+# VM 调度请求使用的大页大小（KB）。
+# 当前 WDS vhost 场景建议为 2048（2MB）。
+page_size_kb = 2048
+
 [placement.filters.cpu_load]
+# cpu_load 是否生效由 filter_chain 是否包含 cpu_load 决定。
 
 # idle_threshold_pct —— CPU 空闲率过滤阈值（百分比，0~100）
 #
@@ -71,7 +79,6 @@ fallback_filter = "overcommit"
 #   - 调低（如 5.0）： 接受更高负载的节点，可用节点更多，但 VM 性能可能受影响
 # 例：设为 15.0，则 CPU 使用率超过 85% 的节点不参与调度
 idle_threshold_pct = 15.0
-
 
 [placement.overcommit]
 

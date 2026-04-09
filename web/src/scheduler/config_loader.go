@@ -147,12 +147,88 @@ func validateConfig(cfg *PlacementConfig) error {
 	if len(cfg.WeigherChain) == 0 {
 		return fmt.Errorf("weigher_chain must not be empty")
 	}
+	if err := validateFilterChain(cfg.FilterChain, "placement.filter_chain"); err != nil {
+		return err
+	}
+	if err := validateWeigherChain(cfg.WeigherChain, "placement.weigher_chain"); err != nil {
+		return err
+	}
+	if cfg.FallbackFilter != "" {
+		if err := validateFilterName(cfg.FallbackFilter, "placement.fallback_filter"); err != nil {
+			return err
+		}
+	}
 	if cfg.Overcommit.Enabled {
 		if cfg.Overcommit.MemDeltaRatioPct < 0 || cfg.Overcommit.MemDeltaRatioPct > 100 {
 			return fmt.Errorf("overcommit.mem_delta_ratio_pct must be in [0, 100]")
 		}
 		if cfg.Overcommit.VCPUDeltaRatioPct < 0 || cfg.Overcommit.VCPUDeltaRatioPct > 100 {
 			return fmt.Errorf("overcommit.vcpu_delta_ratio_pct must be in [0, 100]")
+		}
+	}
+	if hasFilter(cfg.FilterChain, "hugepage") && cfg.Filters.Hugepage.PageSizeKB <= 0 {
+		return fmt.Errorf("filters.hugepage.page_size_kb must be > 0 when hugepage filter is enabled")
+	}
+	for zoneID, zone := range cfg.Zones {
+		if zone == nil {
+			continue
+		}
+		if zone.FilterChain != nil {
+			if len(*zone.FilterChain) == 0 {
+				return fmt.Errorf("placement.zone.%s.filter_chain must not be empty when set", zoneID)
+			}
+			if err := validateFilterChain(*zone.FilterChain, fmt.Sprintf("placement.zone.%s.filter_chain", zoneID)); err != nil {
+				return err
+			}
+		}
+		if zone.WeigherChain != nil {
+			if len(*zone.WeigherChain) == 0 {
+				return fmt.Errorf("placement.zone.%s.weigher_chain must not be empty when set", zoneID)
+			}
+			if err := validateWeigherChain(*zone.WeigherChain, fmt.Sprintf("placement.zone.%s.weigher_chain", zoneID)); err != nil {
+				return err
+			}
+		}
+		if zone.FallbackFilter != nil && *zone.FallbackFilter != "" {
+			if err := validateFilterName(*zone.FallbackFilter, fmt.Sprintf("placement.zone.%s.fallback_filter", zoneID)); err != nil {
+				return err
+			}
+		}
+		if zone.Filters != nil && zone.Filters.Hugepage != nil && zone.Filters.Hugepage.PageSizeKB != nil {
+			if *zone.Filters.Hugepage.PageSizeKB <= 0 {
+				return fmt.Errorf("placement.zone.%s.filters.hugepage.page_size_kb must be > 0", zoneID)
+			}
+		}
+	}
+	return nil
+}
+
+func validateFilterName(name, field string) error {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	if _, ok := filterRegistry[name]; !ok {
+		return fmt.Errorf("%s contains unknown filter %q", field, name)
+	}
+	return nil
+}
+
+func validateFilterChain(chain []string, field string) error {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	for _, name := range chain {
+		if _, ok := filterRegistry[name]; !ok {
+			return fmt.Errorf("%s contains unknown filter %q", field, name)
+		}
+	}
+	return nil
+}
+
+func validateWeigherChain(chain []string, field string) error {
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+	for _, name := range chain {
+		if _, ok := weigherRegistry[name]; !ok {
+			return fmt.Errorf("%s contains unknown weigher %q", field, name)
 		}
 	}
 	return nil
@@ -216,9 +292,19 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 		merged.FallbackFilter = *zone.FallbackFilter
 		logger.Debugf("mergeZoneConfig: override fallback_filter=%q", merged.FallbackFilter)
 	}
-	if zone.Filters != nil && zone.Filters.CPULoad != nil && zone.Filters.CPULoad.IdleThresholdPct != nil {
-		merged.Filters.CPULoad.IdleThresholdPct = *zone.Filters.CPULoad.IdleThresholdPct
-		logger.Debugf("mergeZoneConfig: override cpu_load.idle_threshold_pct=%.1f", merged.Filters.CPULoad.IdleThresholdPct)
+	if zone.Filters != nil {
+		z := zone.Filters
+		if z.Hugepage != nil {
+			if z.Hugepage.PageSizeKB != nil {
+				merged.Filters.Hugepage.PageSizeKB = *z.Hugepage.PageSizeKB
+			}
+		}
+		if z.CPULoad != nil {
+			if z.CPULoad.IdleThresholdPct != nil {
+				merged.Filters.CPULoad.IdleThresholdPct = *z.CPULoad.IdleThresholdPct
+				logger.Debugf("mergeZoneConfig: override cpu_load.idle_threshold_pct=%.1f", merged.Filters.CPULoad.IdleThresholdPct)
+			}
+		}
 	}
 	if zone.Overcommit != nil {
 		z := zone.Overcommit
