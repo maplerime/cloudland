@@ -8,7 +8,6 @@ package routes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -292,13 +291,6 @@ func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, 
 	for _, sg := range iface.SecurityGroups {
 		_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", port, port, sg)
 		if err != nil {
-			// ignore conflict
-			var clErr *CLError
-			if errors.As(err, &clErr) && clErr.Code == ErrSecurityRuleConflict {
-				logger.Infof("Security rule already exists for port %d in security group %d, skipping", port, sg.ID)
-				err = nil
-				continue
-			}
 			logger.Error("Failed to create security rule", err)
 			return
 		}
