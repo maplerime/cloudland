@@ -16,9 +16,9 @@ import (
 
 // HostState is the in-memory representation of a hyper node's current state.
 type HostState struct {
-	HyperID    int32
-	ZoneID     int64
-	ZoneName   string
+	HyperID  int32
+	ZoneID   int64
+	ZoneName string
 
 	// Compute resources (Resource table values are "free", not "used")
 	// Note: VCPUTotal/MemTotalKB/DiskTotalBytes already incorporate hyper's overcommit ratio.
@@ -101,11 +101,32 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 	if zoneID > 0 {
 		query = query.Where("zone_id = ?", zoneID)
 	}
-	if err := query.Preload("Resource").Preload("Zone").Find(&hypers).Error; err != nil {
+	if err := query.Preload("Zone").Find(&hypers).Error; err != nil {
 		logger.Errorf("loadHostStates DB query failed: %v", err)
 		return nil, err
 	}
 	logger.Debugf("loadHostStates: queried %d hyper(s) from database", len(hypers))
+
+	// Load resources separately to avoid GORM v1 Preload zero-value bug:
+	// Preload("Resource") silently drops hostid=0 from the IN clause because
+	// GORM v1 treats integer zero as "blank" when building association queries.
+	// A plain Find with an explicit WHERE clause does not apply this filtering.
+	resourceMap := make(map[int32]*model.Resource, len(hypers))
+	if len(hypers) > 0 {
+		hids := make([]int32, len(hypers))
+		for i, h := range hypers {
+			hids[i] = h.Hostid
+		}
+		var resourceList []*model.Resource
+		if err := db.Where("hostid IN (?)", hids).Find(&resourceList).Error; err != nil {
+			logger.Errorf("loadHostStates: resource query failed: %v", err)
+			return nil, err
+		}
+		for _, r := range resourceList {
+			resourceMap[r.Hostid] = r
+		}
+		logger.Debugf("loadHostStates: loaded resources for %d hyper(s)", len(resourceMap))
+	}
 
 	// Query instance count per hyper (for SpreadWeigher)
 	instCountMap := make(map[int32]int)
@@ -142,31 +163,31 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 
 	var hosts []*HostState
 	for _, h := range hypers {
-		if h.Resource == nil {
-			// Skip hypers without resource data
+		r, ok := resourceMap[h.Hostid]
+		if !ok {
 			logger.Debugf("loadHostStates: hyper %d has no resource data, skipped", h.Hostid)
 			continue
 		}
 		hs := &HostState{
 			HyperID:         h.Hostid,
 			ZoneID:          h.ZoneID,
-			VCPUFree:        h.Resource.Cpu,
-			VCPUTotal:       h.Resource.CpuTotal,
-			MemFreeKB:       h.Resource.Memory,
-			MemTotalKB:      h.Resource.MemoryTotal,
-			DiskFreeBytes:   h.Resource.Disk,
-			DiskTotalBytes:  h.Resource.DiskTotal,
+			VCPUFree:        r.Cpu,
+			VCPUTotal:       r.CpuTotal,
+			MemFreeKB:       r.Memory,
+			MemTotalKB:      r.MemoryTotal,
+			DiskFreeBytes:   r.Disk,
+			DiskTotalBytes:  r.DiskTotal,
 			CpuOverRate:     h.CpuOverRate,
 			MemOverRate:     h.MemOverRate,
 			DiskOverRate:    h.DiskOverRate,
-			Hugepages2MFree: h.Resource.Hugepages2MFree,
-			Hugepages1GFree: h.Resource.Hugepages1GFree,
-			HugepageSizeKB:  h.Resource.HugepageSizeKB,
-			LoadAvg5m:       h.Resource.LoadAvg5m,
-			CpuIdlePct:      h.Resource.CpuIdlePct,
+			Hugepages2MFree: r.Hugepages2MFree,
+			Hugepages1GFree: r.Hugepages1GFree,
+			HugepageSizeKB:  r.HugepageSizeKB,
+			LoadAvg5m:       r.LoadAvg5m,
+			CpuIdlePct:      r.CpuIdlePct,
 			InstanceCount:   instCountMap[h.Hostid],
 			Tags:            tagMap[h.Hostid],
-			LastReportAt:    h.Resource.UpdatedAt,
+			LastReportAt:    r.UpdatedAt,
 		}
 		if h.Zone != nil {
 			hs.ZoneName = h.Zone.Name
