@@ -153,7 +153,7 @@ func (v *SecruleAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating secrule with %+v", payload)
-	secrule, err := secruleAdmin.Create(ctx, payload.Name, payload.RemoteCIDR, payload.Direction, payload.Protocol, payload.PortMin, payload.PortMax, secgroup)
+	secrule, err := secruleAdmin.Create(ctx, payload.Name, payload.RemoteCIDR, payload.Direction, payload.Protocol, payload.PortMin, payload.PortMax, secgroup, true)
 	if err != nil {
 		logger.Errorf("Failed to create secrule, %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)

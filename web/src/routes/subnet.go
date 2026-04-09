@@ -302,12 +302,12 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 		err = NewCLError(ErrSecurityGroupNotFound, "Security group not found", err)
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, "", subnet.Network, "ingress", "tcp", 1, 65535, secgroup)
+	_, err = secruleAdmin.Create(ctx, "", subnet.Network, "ingress", "tcp", 1, 65535, secgroup, false)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, "", subnet.Network, "ingress", "udp", 1, 65535, secgroup)
+	_, err = secruleAdmin.Create(ctx, "", subnet.Network, "ingress", "udp", 1, 65535, secgroup, false)
 	if err != nil {
 		logger.Error("Failed to create security rule", err)
 		return

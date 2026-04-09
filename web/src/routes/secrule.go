@@ -89,7 +89,7 @@ func (a *SecruleAdmin) ApplySecgroup(ctx context.Context, secgroup *model.Securi
 	return
 }
 
-func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, direction, protocol string, portMin, portMax int) (secrule *model.SecurityRule, err error) {
+func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, direction, protocol string, portMin, portMax int, checkConflict bool) (secrule *model.SecurityRule, err error) {
 	ctx, db := GetContextDB(ctx)
 	secrule = &model.SecurityRule{Model: model.Model{ID: id}}
 	err = db.Take(secrule).Error
@@ -157,16 +157,18 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 	if secrule.PortMax == 0 {
 		secrule.PortMax = -1
 	}
-	conflict, existingRule, conflictErr := secruleAdmin.CheckRuleConflict(ctx, secrule.Secgroup, secrule.Direction, secrule.Protocol, secrule.PortMin, secrule.PortMax, secrule.RemoteIp, secrule.ID)
-	if conflictErr != nil {
-		logger.Error("Failed to check rule conflict", conflictErr)
-		err = conflictErr
-		return
-	}
-	if conflict {
-		logger.Errorf("Security rule conflict with existing rule %d", existingRule.ID)
-		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule conflict with existing rule: protocol=%s, cidr=%s, port=%d-%d", existingRule.Protocol, existingRule.RemoteIp, existingRule.PortMin, existingRule.PortMax), nil)
-		return
+	if checkConflict {
+		conflict, existingRule, conflictErr := secruleAdmin.CheckRuleConflict(ctx, secrule.Secgroup, secrule.Direction, secrule.Protocol, secrule.PortMin, secrule.PortMax, secrule.RemoteIp, secrule.ID)
+		if conflictErr != nil {
+			logger.Error("Failed to check rule conflict", conflictErr)
+			err = conflictErr
+			return
+		}
+		if conflict {
+			logger.Errorf("Security rule conflict with existing rule %d", existingRule.ID)
+			err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule conflict with existing rule: protocol=%s, cidr=%s, port=%d-%d", existingRule.Protocol, existingRule.RemoteIp, existingRule.PortMin, existingRule.PortMax), nil)
+			return
+		}
 	}
 	err = db.Model(secrule).Updates(secrule).Error
 	if err != nil {
@@ -177,7 +179,7 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 	return
 }
 
-func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
+func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup, checkConflict bool) (secrule *model.SecurityRule, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
 	if !permit {
@@ -201,15 +203,23 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	if portMax == 0 {
 		portMax = -1
 	}
-	conflict, existingRule, err := secruleAdmin.CheckRuleConflict(ctx, secgroup.ID, direction, protocol, portMin, portMax, remoteIp, 0)
-	if err != nil {
-		logger.Error("Failed to check rule conflict", err)
+	_, err = secruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
+	if err == nil {
+		logger.Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
 		return
 	}
-	if conflict {
-		logger.Errorf("Security rule conflict with existing rule %d for security group %d", existingRule.ID, secgroup.ID)
-		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule conflict with existing rule: protocol=%s, cidr=%s, port=%d-%d", existingRule.Protocol, existingRule.RemoteIp, existingRule.PortMin, existingRule.PortMax), nil)
-		return
+	if checkConflict {
+		conflict, existingRule, checkErr := secruleAdmin.CheckRuleConflict(ctx, secgroup.ID, direction, protocol, portMin, portMax, remoteIp, 0)
+		if checkErr != nil {
+			logger.Error("Failed to check rule conflict", checkErr)
+			err = checkErr
+			return
+		}
+		if conflict {
+			logger.Errorf("Security rule conflict with existing rule %d for security group %d", existingRule.ID, secgroup.ID)
+			err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule conflict with existing rule: protocol=%s, cidr=%s, port=%d-%d", existingRule.Protocol, existingRule.RemoteIp, existingRule.PortMin, existingRule.PortMax), nil)
+			return
+		}
 	}
 	secrule = &model.SecurityRule{
 		Model:     model.Model{Creater: memberShip.UserID},
@@ -481,7 +491,7 @@ func (v *SecruleView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	name := c.QueryTrim("name")
-	_, err = secruleAdmin.Create(ctx, name, remoteIp, direction, protocol, int32(portMin), int32(portMax), secgroup)
+	_, err = secruleAdmin.Create(ctx, name, remoteIp, direction, protocol, int32(portMin), int32(portMax), secgroup, true)
 	if err != nil {
 		logger.Error("Failed to create security rule, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
@@ -573,7 +583,7 @@ func (v *SecruleView) Patch(c *macaron.Context, store session.Store) {
 	portMin, err := strconv.Atoi(min)
 	portMax, err := strconv.Atoi(max)
 	name := c.QueryTrim("name")
-	_, err = secruleAdmin.Update(c.Req.Context(), int64(secruleID), name, remoteIp, direction, protocol, portMin, portMax)
+	_, err = secruleAdmin.Update(c.Req.Context(), int64(secruleID), name, remoteIp, direction, protocol, portMin, portMax, true)
 	if err != nil {
 		logger.Error("Update Security Rules failed, %v", err)
 		c.Data["ErrorMsg"] = err.Error()
