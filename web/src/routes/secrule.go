@@ -151,6 +151,12 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 		secrule.PortMin = -1
 		secrule.PortMax = -1
 	}
+	if secrule.PortMin == 0 {
+		secrule.PortMin = -1
+	}
+	if secrule.PortMax == 0 {
+		secrule.PortMax = -1
+	}
 	conflict, existingRule, conflictErr := secruleAdmin.CheckRuleConflict(ctx, secrule.Secgroup, secrule.Direction, secrule.Protocol, secrule.PortMin, secrule.PortMax, secrule.RemoteIp, secrule.ID)
 	if conflictErr != nil {
 		logger.Error("Failed to check rule conflict", conflictErr)
@@ -187,6 +193,12 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	}()
 	if protocol == "icmp" {
 		portMin = -1
+		portMax = -1
+	}
+	if portMin == 0 {
+		portMin = -1
+	}
+	if portMax == 0 {
 		portMax = -1
 	}
 	conflict, existingRule, err := secruleAdmin.CheckRuleConflict(ctx, secgroup.ID, direction, protocol, portMin, portMax, remoteIp, 0)
