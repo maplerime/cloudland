@@ -36,7 +36,7 @@ host_report_interval_sec = 60
 #
 # 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此添加 "zone"。
 # 调整顺序会影响性能：将淘汰率高的过滤器放前面可减少后续计算量。
-filter_chain = ["compute_alive", "hugepage", "resource", "cpu_load", "affinity", "capability"]
+filter_chain = ["compute_alive", "resource", "cpu_load", "affinity", "capability"]
 
 # weigher_chain —— 评分器链（软性排序，对候选节点综合评分）
 #
@@ -261,3 +261,13 @@ enabled = false
 # 独享型打散部署，超配惩罚权重保持高位
 spread_multiplier            = -2.0
 overcommit_penalty_multiplier = 3.0
+
+# zone ID=2 —— prestaging zone1，与 zone ID=1 类似，无大页，无超配
+[placement.zone.2]
+filter_chain = ["compute_alive", "resource", "cpu_load"]
+fallback_filter = "overcommit"
+
+[placement.zone.2.overcommit]
+enabled = true
+mem_delta_ratio_pct  = 10.0
+vcpu_delta_ratio_pct = 10.0

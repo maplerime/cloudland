@@ -27,7 +27,7 @@
 			                        <th data-column="Parentid">{{.i18n.Tr "ParentID"}}</th>
 			                        <th data-column="CpuModel">{{.i18n.Tr "Cpu Model"}}</th>
 			                        <th data-column="HostIP">{{.i18n.Tr "HostIP"}}</th>
-			                        <th data-column="RouteIP">{{.i18n.Tr "HostIP"}}</th>
+			                        <th data-column="RouteIP">{{.i18n.Tr "RouteIP"}}</th>
 			                        <th data-column="Status">{{.i18n.Tr "Status"}}</th>
 			                        <th data-column="Zone">{{.i18n.Tr "Zone"}}</th>
 			                        <th data-column="Cpu">{{.i18n.Tr "Cpu"}}</th>
@@ -50,7 +50,7 @@
 			                        <td data-column="Parentid">{{.Parentid}}</td>
 			                        <td data-column="CpuModel">{{.CpuModel}}</td>
 			                        <td data-column="HostIP">{{.HostIP}}</td>
-			                        <td data-column="HostIP">{{.RouteIP}}</td>
+			                        <td data-column="RouteIP">{{.RouteIP}}</td>
 			                        <td data-column="Status">{{.GetStatus}}</td>
 			                        <td data-column="Zone">{{ if .Zone}}{{.Zone.Name}}{{end}}</td>
 			                        <td data-column="Cpu">{{.Resource.Cpu}}/<br>{{.Resource.CpuTotal}}</td>
