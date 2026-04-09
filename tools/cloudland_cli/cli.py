@@ -6,11 +6,14 @@ Provides subcommands for various operational tasks:
 
 import logging
 import logging.handlers
+import json
 import sys
+import time
 
 import click
 
 from cloudland_cli.config import load_config
+from cloudland_cli.iaas_client import IaaSClient
 from cloudland_cli.wds_client import WDSClient
 from cloudland_cli.clean_volumes import clean_volumes
 from cloudland_cli.clean_images import clean_image_snapshots
@@ -147,3 +150,162 @@ def clean_images_cmd(ctx, snapshot, execute, no_cache):
     # Exit with error code if there were failures
     if result["failed"] > 0:
         sys.exit(1)
+
+
+def _print_output(data, as_json):
+    if as_json:
+        click.echo(json.dumps(data, ensure_ascii=False, indent=2))
+        return
+    if data is None:
+        click.echo("OK")
+    elif isinstance(data, (dict, list)):
+        click.echo(json.dumps(data, ensure_ascii=False, indent=2))
+    else:
+        click.echo(str(data))
+
+
+@cli.group()
+@click.option("--endpoint", required=True, help="CloudLand API endpoint, e.g. https://dev-sv01.raksmart.com")
+@click.option("--username", required=True, help="CloudLand username")
+@click.option("--password", required=True, help="CloudLand password")
+@click.option("--org", default=None, help="Org name (optional)")
+@click.option("--insecure", is_flag=True, help="Disable TLS certificate verification")
+@click.option("--timeout", default=30, show_default=True, help="HTTP timeout in seconds")
+@click.pass_context
+def iaas(ctx, endpoint, username, password, org, insecure, timeout):
+    """CloudLand IaaS API helper commands (login/list/create/delete)."""
+    client = IaaSClient(
+        endpoint=endpoint,
+        username=username,
+        password=password,
+        org=org,
+        insecure=insecure,
+        timeout=timeout,
+    )
+    try:
+        client.login()
+    except Exception as e:
+        click.echo(f"IaaS login failed: {e}", err=True)
+        sys.exit(1)
+    ctx.obj["iaas_client"] = client
+
+
+@iaas.command("zones")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_zones(ctx, as_json):
+    """List zones."""
+    data = ctx.obj["iaas_client"].request("GET", "/api/v1/zones")
+    _print_output(data, as_json)
+
+
+@iaas.command("hypers")
+@click.option("--limit", default=200, show_default=True, help="Max hypers returned")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_hypers(ctx, limit, as_json):
+    """List hypervisors."""
+    data = ctx.obj["iaas_client"].request("GET", "/api/v1/hypers", params={"offset": 0, "limit": limit})
+    _print_output(data, as_json)
+
+
+@iaas.command("images")
+@click.option("--limit", default=200, show_default=True, help="Max images returned")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_images(ctx, limit, as_json):
+    """List images."""
+    data = ctx.obj["iaas_client"].request("GET", "/api/v1/images", params={"offset": 0, "limit": limit})
+    _print_output(data, as_json)
+
+
+@iaas.command("flavors")
+@click.option("--limit", default=200, show_default=True, help="Max flavors returned")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_flavors(ctx, limit, as_json):
+    """List flavors."""
+    data = ctx.obj["iaas_client"].request("GET", "/api/v1/flavors", params={"offset": 0, "limit": limit})
+    _print_output(data, as_json)
+
+
+@iaas.command("subnets")
+@click.option("--limit", default=200, show_default=True, help="Max subnets returned")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_subnets(ctx, limit, as_json):
+    """List subnets."""
+    data = ctx.obj["iaas_client"].request("GET", "/api/v1/subnets", params={"offset": 0, "limit": limit})
+    _print_output(data, as_json)
+
+
+@iaas.group("instances")
+def iaas_instances():
+    """Instance operations."""
+    pass
+
+
+@iaas_instances.command("list")
+@click.option("--limit", default=200, show_default=True, help="Max instances returned")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_instances_list(ctx, limit, as_json):
+    """List instances."""
+    data = ctx.obj["iaas_client"].request("GET", "/api/v1/instances", params={"offset": 0, "limit": limit})
+    _print_output(data, as_json)
+
+
+@iaas_instances.command("get")
+@click.argument("instance_id")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_instances_get(ctx, instance_id, as_json):
+    """Get one instance by UUID."""
+    data = ctx.obj["iaas_client"].request("GET", f"/api/v1/instances/{instance_id}")
+    _print_output(data, as_json)
+
+
+@iaas_instances.command("create")
+@click.option("--payload-file", required=True, type=click.Path(exists=True), help="JSON payload file for /api/v1/instances")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_instances_create(ctx, payload_file, as_json):
+    """Create instance(s) using a JSON payload file."""
+    with open(payload_file, "r", encoding="utf-8") as f:
+        payload = json.load(f)
+    data = ctx.obj["iaas_client"].request("POST", "/api/v1/instances", payload=payload)
+    _print_output(data, as_json)
+
+
+@iaas_instances.command("delete")
+@click.argument("instance_id")
+@click.pass_context
+def iaas_instances_delete(ctx, instance_id):
+    """Delete one instance by UUID."""
+    ctx.obj["iaas_client"].request("DELETE", f"/api/v1/instances/{instance_id}")
+    click.echo(f"Deleted instance {instance_id}")
+
+
+@iaas_instances.command("wait")
+@click.argument("instance_id")
+@click.option("--status", "expected_status", required=True, help="Expected status, e.g. running|active|error")
+@click.option("--timeout", "timeout_sec", default=900, show_default=True, help="Wait timeout seconds")
+@click.option("--interval", default=5, show_default=True, help="Poll interval seconds")
+@click.pass_context
+def iaas_instances_wait(ctx, instance_id, expected_status, timeout_sec, interval):
+    """Wait until instance reaches expected status."""
+    deadline = time.time() + timeout_sec
+    expected = expected_status.lower()
+    while time.time() < deadline:
+        data = ctx.obj["iaas_client"].request("GET", f"/api/v1/instances/{instance_id}")
+        current = str(data.get("status", "")).lower()
+        click.echo(f"instance={instance_id} status={current}")
+        if current == expected:
+            click.echo("Reached expected status")
+            return
+        if current == "error":
+            click.echo("Instance entered error status", err=True)
+            sys.exit(1)
+        time.sleep(interval)
+    click.echo(f"Timeout waiting for {instance_id} to reach {expected_status}", err=True)
+    sys.exit(1)

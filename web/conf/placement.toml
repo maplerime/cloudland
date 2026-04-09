@@ -1,65 +1,220 @@
 # Cloudland Placement 调度器配置
-# 通过管理后台 (/placement) 或 API (POST /placement/reload) 重新加载配置
+# 通过管理后台 (/placement) 或 API (POST /placement/reload) 重新加载配置，无需重启服务
+#
+# 调度流程概述：
+#   1. 从数据库加载指定 zone 内的所有活跃 hyper 节点
+#   2. 依次执行 filter_chain 中的过滤器，逐步淘汰不满足条件的节点
+#   3. 若所有节点被淘汰且启用了 fallback_filter，则进入超配容忍路径
+#   4. 对剩余候选节点依次执行 weigher_chain 中的评分器，选出得分最高的节点
 
 ##############################################################################
 # 全局配置（所有 zone 默认使用，除非 zone 有专属覆盖）
 ##############################################################################
 
 [placement]
-# 节点心跳上报间隔（秒），存活判定阈值 = 2 × 此值
-# 超过阈值未上报的节点将被 compute_alive 过滤器剔除
+
+# host_report_interval_sec —— 节点心跳上报间隔（秒）
+#
+# 每个 hyper 节点通过 report_rc.sh 定期上报资源状态。
+# 存活判定阈值 = 2 × 此值：若节点超过该时长未上报，compute_alive 过滤器将其剔除。
+#
+# 调整建议：
+#   - 调小：更快检测到宕机节点，但上报压力增大
+#   - 调大：减少上报频次，但宕机检测延迟增加
+# 例：设为 60，则节点超过 120 秒未上报时被视为离线
 host_report_interval_sec = 60
 
-# Filter 链：按列表顺序依次执行，名称对应已注册的 Filter
-# 可用值：compute_alive, hugepage, resource, cpu_load, affinity, capability, overcommit
-# 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此处加 "zone" filter
-# 增删或调整顺序后通过 /placement/reload 即可生效，无需重启服务
+# filter_chain —— 过滤器链（硬性淘汰，按顺序依次执行）
+#
+# 每个过滤器作用：
+#   compute_alive  检查节点心跳是否在存活阈值内，剔除失联节点
+#   hugepage       检查大页内存是否满足 VM 需求（仅当 VM 请求大页时生效）
+#   resource       检查 vCPU / 内存 / 磁盘是否充足
+#   cpu_load       检查 CPU 空闲率是否高于 idle_threshold_pct
+#   affinity       按 Owner 的亲和/反亲和策略过滤（需 VM 创建时传入 Policy）
+#   capability     检查节点是否具备所需硬件 trait（如 gpu、nvme）
+#
+# 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此添加 "zone"。
+# 调整顺序会影响性能：将淘汰率高的过滤器放前面可减少后续计算量。
 filter_chain = ["compute_alive", "hugepage", "resource", "cpu_load", "affinity", "capability"]
 
-# Weigher 链：按列表顺序依次评分，名称对应已注册的 Weigher
-# 可用值：hugepage, ram, cpu_load, overcommit_penalty, spread
+# weigher_chain —— 评分器链（软性排序，对候选节点综合评分）
+#
+# 每个评分器先将原始分归一化到 [0,1]，再乘以各自的 multiplier 求和，
+# 最终选得分最高的节点。
+#
+# 各评分器作用：
+#   overcommit_penalty  超配节点得 0 分，正常节点得 1 分（强制降权超配节点）
+#   hugepage            大页剩余越多得分越高（适合 vhost-user 大页 VM 密集场景）
+#   ram                 普通内存剩余越多得分越高
+#   cpu_load            CPU 空闲率越高得分越高
+#   spread              节点上已有 VM 数量作为原始分（配合 multiplier 控制打散/堆叠）
 weigher_chain = ["overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"]
 
-# 兜底 Filter 名称，当标准 Filter 链将所有候选节点淘汰后触发
-# 设为 "overcommit" 启用超配容忍，设为 "" 禁用
+# fallback_filter —— 兜底过滤器
+#
+# 当 filter_chain 将所有候选节点全部淘汰后触发。
+# 设为 "overcommit" 启用超配容忍兜底，允许在资源略有不足的节点上创建 VM。
+# 设为 "" 禁用兜底，资源不足时直接返回错误。
 fallback_filter = "overcommit"
 
+
 [placement.filters.cpu_load]
-# CPU 空闲率低于此百分比的节点将被过滤（不参与调度）
+
+# idle_threshold_pct —— CPU 空闲率过滤阈值（百分比，0~100）
+#
+# cpu_load 过滤器会剔除空闲率低于此值的节点。
+# 节点的 cpu_idle_pct 由 hyper agent 采集 /proc/stat 计算后上报。
+#
+# 调整建议：
+#   - 调高（如 30.0）：调度到更空闲的节点，VM 性能好，但可用节点减少
+#   - 调低（如 5.0）： 接受更高负载的节点，可用节点更多，但 VM 性能可能受影响
+# 例：设为 15.0，则 CPU 使用率超过 85% 的节点不参与调度
 idle_threshold_pct = 15.0
 
+
 [placement.overcommit]
-# 是否启用超配容忍兜底机制
+
+# enabled —— 是否启用超配容忍兜底机制
+#
+# 仅在标准 filter_chain 全部失败（无候选节点）时触发。
+# true：资源略有不足时仍尝试调度（参数由下方各字段控制）
+# false：资源不足则直接报错，不做任何妥协
 enabled = true
 
-# 内存缺口容忍上限：缺口 / 请求量 ≤ 此百分比时允许超配
-# 例如 10.0 表示：VM 请求 10GB，节点可用 9.5GB，缺口 5%，在容忍范围内
+# mem_delta_ratio_pct —— 内存缺口容忍上限（百分比）
+#
+# 含义：(VM请求内存 - 节点可用内存) / VM请求内存 × 100 ≤ 此值时，允许超配
+#
+# 举例（设为 10.0）：
+#   VM 请求 10 GB，节点可用 9.2 GB → 缺口 8%  → 允许（8% ≤ 10%）
+#   VM 请求 10 GB，节点可用 8.8 GB → 缺口 12% → 拒绝（12% > 10%）
+#
+# 调整建议：
+#   - 调高（如 20.0）：接受更大缺口，兜底成功率提升，但内存争用风险增加
+#   - 调低（如 5.0）： 只接受极小缺口，更保守，兜底成功率降低
 mem_delta_ratio_pct = 10.0
 
-# vCPU 缺口容忍上限：缺口 / 请求量 ≤ 此百分比时允许超配
-# 注意：节点的 CPU 超买比（CpuOverRate）已在资源上报时生效
-# （report_rc.sh 中 total_cpu = 物理核数 × cpu_over_ratio），
-# 此处仅控制在已超买容量基础上的额外缺口容忍度
+# vcpu_delta_ratio_pct —— vCPU 缺口容忍上限（百分比）
+#
+# 含义：(VM请求vCPU - 节点可用vCPU) / VM请求vCPU × 100 ≤ 此值时，允许超配
+# 注意：节点的 CpuOverRate 已在 report_rc.sh 上报时生效
+#       （total_cpu = 物理核数 × cpu_over_ratio），
+#       此处是在已超买容量基础上的额外缺口容忍，通常保持较小值。
+#
+# 举例（设为 10.0）：
+#   VM 请求 4 vCPU，节点可用 3.7 vCPU → 缺口 7.5% → 允许
+#   VM 请求 4 vCPU，节点可用 3.5 vCPU → 缺口 12.5% → 拒绝
 vcpu_delta_ratio_pct = 10.0
 
-# 超配路径下 CPU 空闲率的放宽阈值
-# 标准路径阈值 15%，超配路径放宽到此值，避免因负载略高而无法兜底
+# cpu_idle_fallback_pct —— 超配路径下 CPU 空闲率放宽阈值（百分比）
+#
+# 标准路径使用 idle_threshold_pct（默认 15%）过滤高负载节点。
+# 超配兜底路径将此阈值放宽到 cpu_idle_fallback_pct，
+# 确保即便节点负载略高，只要还有少量 CPU 余量，就不完全排除。
+#
+# 举例：标准阈值 15%，兜底阈值 5%
+#   节点 CPU 空闲 10%：标准路径被剔除，兜底路径仍可接受
+#   节点 CPU 空闲  3%：标准和兜底路径均拒绝
 cpu_idle_fallback_pct = 5.0
 
-# 大页内存缺口容忍上限（通常比普通内存更严格，因为大页碎片难以恢复）
+# hugepage_delta_ratio_pct —— 大页内存缺口容忍上限（百分比）
+#
+# 与 mem_delta_ratio_pct 类似，但专用于大页内存路径，通常设置更严格。
+# 原因：大页内存一旦分配出去难以回收，碎片化后恢复成本高。
+#
+# 举例（设为 5.0）：
+#   VM 请求 2 GB 大页，节点可用 1.95 GB → 缺口 2.5% → 允许
+#   VM 请求 2 GB 大页，节点可用 1.88 GB → 缺口 6%   → 拒绝
 hugepage_delta_ratio_pct = 5.0
 
+
 [placement.weighers]
-# 各 Weigher 的权重系数（Multiplier），值越大对最终排序的影响越大
-# 超配节点降权系数（确保正常节点优先于超配节点）
+
+# Weigher 评分机制说明：
+#
+# 每个 Weigher 对所有候选节点打一个原始分（raw score），
+# 再将所有节点的原始分归一化到 [0, 1]：
+#   normalized = (raw - min) / (max - min)
+# 然后乘以 multiplier 后累加到节点总分：
+#   total_score += multiplier × normalized
+# 最终选总分最高的节点。
+#
+# multiplier 的作用：
+#   正值：raw score 越高，总分贡献越大（高分节点越优先）
+#   负值：raw score 越低，总分贡献越大（低分节点越优先，即反向排序）
+#   绝对值越大：该维度对最终选择影响越大
+
+# overcommit_penalty_multiplier —— 超配节点惩罚系数
+#
+# OvercommitPenaltyWeigher 的 raw score：正常节点=1，超配节点=0
+# multiplier 越大，正常节点与超配节点的总分差距越大，超配节点越难被选中。
+#
+# 举例（设为 3.0）：
+#   正常节点归一化得分 = 1，贡献 +3.0
+#   超配节点归一化得分 = 0，贡献 +0.0
+#   即使超配节点在其他维度略优，也难以胜过正常节点
+# 建议：独享型 zone 保持 3.0 或更高；共享型 zone 可调低至 1.0
 overcommit_penalty_multiplier = 3.0
-# 大页剩余优先系数（大页是 vhost-user VM 的关键资源）
+
+# hugepage_multiplier —— 大页剩余优先系数
+#
+# HugepageWeigher 的 raw score = 节点大页剩余 MB。
+# 大页剩余越多得分越高。
+#
+# 举例（设为 1.5）：
+#   节点 A 大页剩余 8 GB，节点 B 剩余 2 GB
+#   A 归一化得分 ≈ 1.0，B ≈ 0.0，A 在此维度多得 1.5 分
+# 若无节点使用大页（HugepageSizeKB=0），所有节点该维度得分相同，系数无影响
 hugepage_multiplier = 1.5
-# 普通内存剩余优先系数
+
+# ram_multiplier —— 普通内存剩余优先系数
+#
+# RAMWeigher 的 raw score = 节点可用内存 MB（MemTotalKB - MemUsedKB 换算）。
+# 内存剩余越多得分越高。
+#
+# 举例（设为 1.0）：
+#   节点 A 可用 32 GB，节点 B 可用 8 GB
+#   A 的贡献比 B 多 1.0 分（完全归一化时）
 ram_multiplier = 1.0
-# CPU 低负载优先系数（空闲率越高得分越高）
+
+# cpu_load_multiplier —— CPU 空闲率优先系数
+#
+# CPULoadWeigher 的 raw score = 节点 cpu_idle_pct（0~100）。
+# 空闲率越高（负载越低）得分越高。
+#
+# 举例（设为 1.0）：
+#   节点 A 空闲率 80%，节点 B 空闲率 20%
+#   A 的贡献比 B 多 1.0 分（完全归一化时）
 cpu_load_multiplier = 1.0
-# 打散/堆叠策略系数（负值 = 打散优先，VM少的节点得分高；正值 = 堆叠优先）
+
+# spread_multiplier —— 打散 / 堆叠策略系数
+#
+# SpreadWeigher 的 raw score = 节点当前已有 VM 数量（InstanceCount）。
+# VM 数越多，raw score 越高。
+#
+# ★ 关键：通过系数符号控制策略方向：
+#
+#   负值（默认 -1.0）= 打散优先：
+#     VM 少的节点 raw score 低 → 归一化后反而获得更高的加权分
+#     效果：VM 均匀分散到各节点，避免单节点过载
+#     适用：独享型 zone、在线业务、希望资源隔离
+#
+#   正值 = 堆叠优先：
+#     VM 多的节点 raw score 高 → 获得更高加权分
+#     效果：VM 尽量堆叠到少数节点，让更多节点保持空闲
+#     适用：共享型 zone、离线批处理、希望整节点空出以便维护
+#
+# 举例：
+#   spread_multiplier = -2.0（强力打散）
+#     节点 A 有 0 个 VM，节点 B 有 10 个 VM
+#     A raw=0, B raw=10；归一化后 A=1.0, B=0.0
+#     A 在此维度比 B 多 2.0 分 → 强烈倾向选 A
+#
+#   spread_multiplier = 2.0（堆叠优先）
+#     同样情形下 B 比 A 多 2.0 分 → 倾向选已有 VM 的节点 B
+#
+# 绝对值越大，该策略越强势，其他维度难以扳回；建议范围 ±1.0 ~ ±3.0
 spread_multiplier = -1.0
 
 ##############################################################################
