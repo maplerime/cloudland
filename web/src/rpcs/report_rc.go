@@ -126,6 +126,16 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to create or update hyper resource", err)
 		return
 	}
+	// GORM v1 skips zero-value fields when updating structs. Hugepage free values can
+	// legitimately be 0, so force-write these fields using map updates.
+	err = db.Model(&model.Resource{}).Where("hostid = ?", id).Updates(map[string]interface{}{
+		"hugepages2_m_free": hugepages2MFree,
+		"hugepages1_g_free": hugepages1GFree,
+		"hugepage_size_kb":  hugepageSizeKB,
+	}).Error
+	if err != nil {
+		logger.Error("Failed to update hypervisor hugepage metrics", err)
+	}
 	if cpu == 0 || memory == 0 || disk == 0 {
 		err = db.Model(&model.Resource{}).Where("hostid = ?", id).Updates(map[string]interface{}{
 			"cpu":    cpu,
@@ -138,9 +148,9 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 	}
 	// Always update load/idle fields since zero values are valid
 	err = db.Model(&model.Resource{}).Where("hostid = ?", id).Updates(map[string]interface{}{
-		"load_avg1m":  loadAvg1m,
-		"load_avg5m":  loadAvg5m,
-		"load_avg15m": loadAvg15m,
+		"load_avg1m":   loadAvg1m,
+		"load_avg5m":   loadAvg5m,
+		"load_avg15m":  loadAvg15m,
 		"cpu_idle_pct": cpuIdlePct,
 	}).Error
 	if err != nil {
