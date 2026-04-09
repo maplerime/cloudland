@@ -8,7 +8,6 @@ package routes
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -160,7 +159,7 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 	}
 	if conflict {
 		logger.Errorf("Security rule conflict with existing rule %d", existingRule.ID)
-		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule conflict with existing rule: protocol=%s, cidr=%s, port=%d-%d", existingRule.Protocol, existingRule.RemoteIp, existingRule.PortMin, existingRule.PortMax), nil)
+		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule already exists: protocol=%s, cidr=%s, port=%d-%d", secrule.Protocol, secrule.RemoteIp, secrule.PortMin, secrule.PortMax), nil)
 		return
 	}
 	err = db.Model(secrule).Updates(secrule).Error
@@ -197,7 +196,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	}
 	if conflict {
 		logger.Errorf("Security rule conflict with existing rule %d for security group %d", existingRule.ID, secgroup.ID)
-		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule conflict with existing rule: protocol=%s, cidr=%s, port=%d-%d", existingRule.Protocol, existingRule.RemoteIp, existingRule.PortMin, existingRule.PortMax), nil)
+		err = NewCLError(ErrSecurityRuleConflict, fmt.Sprintf("Security rule already exists: protocol=%s, cidr=%s, port=%d-%d", protocol, remoteIp, portMin, portMax), nil)
 		return
 	}
 	secrule = &model.SecurityRule{
@@ -564,13 +563,8 @@ func (v *SecruleView) Patch(c *macaron.Context, store session.Store) {
 	name := c.QueryTrim("name")
 	_, err = secruleAdmin.Update(c.Req.Context(), int64(secruleID), name, remoteIp, direction, protocol, portMin, portMax)
 	if err != nil {
-		logger.Error("Update Security Rules failed, %v", err)
-		var clErr *CLError
-		if errors.As(err, &clErr) {
-			c.Data["ErrorMsg"] = clErr.Message
-		} else {
-			c.Data["ErrorMsg"] = err.Error()
-		}
+		logger.Error("Create Security Rules failed, %v", err)
+		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
