@@ -250,8 +250,8 @@ overcommit_penalty_multiplier = 1.0
 
 # zone ID=1 —— 独享型，资源独占，禁用超配，打散部署
 [placement.zone.1]
-filter_chain = ["compute_alive", "resource", "cpu_load", "affinity"]
-fallback_filter = ""
+filter_chain = ["compute_alive", "resource", "affinity"]
+fallback_filter = "overcommit"
 
 [placement.zone.1.overcommit]
 # 独享型不允许超配
@@ -262,9 +262,9 @@ enabled = false
 spread_multiplier            = -2.0
 overcommit_penalty_multiplier = 3.0
 
-# zone ID=2 —— prestaging zone1，与 zone ID=1 类似，无大页，无超配
+# zone ID=2 —— prestaging zone1
 [placement.zone.2]
-filter_chain = ["compute_alive", "resource", "cpu_load"]
+filter_chain = ["compute_alive", "resource"]
 fallback_filter = "overcommit"
 
 [placement.zone.2.overcommit]

@@ -229,6 +229,45 @@ def iaas_flavors(ctx, limit, as_json):
     _print_output(data, as_json)
 
 
+@iaas.group("flavor")
+def iaas_flavor():
+    """Flavor operations."""
+    pass
+
+
+@iaas_flavor.command("create")
+@click.option("--name", required=True, help="Flavor name (2-32 chars)")
+@click.option("--cpu", required=True, type=int, help="Number of vCPUs (>=1)")
+@click.option("--memory", required=True, type=int, help="Memory in MB (>=16)")
+@click.option("--disk", required=True, type=int, help="Disk in GB (>=1)")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_flavor_create(ctx, name, cpu, memory, disk, as_json):
+    """Create a flavor."""
+    payload = {"name": name, "cpu": cpu, "memory": memory, "disk": disk}
+    data = ctx.obj["iaas_client"].request("POST", "/api/v1/flavors", payload=payload)
+    _print_output(data, as_json)
+
+
+@iaas_flavor.command("delete")
+@click.argument("name")
+@click.pass_context
+def iaas_flavor_delete(ctx, name):
+    """Delete a flavor by name."""
+    ctx.obj["iaas_client"].request("DELETE", f"/api/v1/flavors/{name}")
+    click.echo(f"Deleted flavor {name}")
+
+
+@iaas_flavor.command("get")
+@click.argument("name")
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def iaas_flavor_get(ctx, name, as_json):
+    """Get a flavor by name."""
+    data = ctx.obj["iaas_client"].request("GET", f"/api/v1/flavors/{name}")
+    _print_output(data, as_json)
+
+
 @iaas.command("subnets")
 @click.option("--limit", default=200, show_default=True, help="Max subnets returned")
 @click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
