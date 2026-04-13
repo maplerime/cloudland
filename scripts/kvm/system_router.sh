@@ -18,6 +18,8 @@ ip netns exec $router ip addr add $ext_ip dev link-$ext_vlan
 ip netns exec $router ip route replace default via $gateway
 route_ip=${ext_ip%/*}
 ip netns exec $router iptables -P INPUT DROP
+ip netns exec $router iptables -C INPUT -s $gateway -p icmp -j ACCEPT
+[ $? -ne 0 ] && ip netns exec $router iptables -I INPUT -s $gateway -p icmp -j ACCEPT
 ip netns exec $router iptables -C FORWARD -p tcp --dport 25 -j DROP
 [ $? -ne 0 ] && ip netns exec $router iptables -I FORWARD -p tcp --dport 25 -j DROP
 ip netns exec $router iptables -C FORWARD -p tcp --dport 465 -j DROP

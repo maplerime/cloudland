@@ -157,9 +157,19 @@ function check_system_router()
 
 function check_conntrack()
 {
+    inst_list_file=$image_dir/old_inst_list
     [ -z "$syn_threshold_src_dst" ] && syn_threshold_src_dst=1500
     [ -z "$syn_threshold_src" ] && syn_threshold_src=3000
     [ -z "$syn_threshold_dst" ] && syn_threshold_dst=5000
+    [ -z "$base_conn_num" ] && base_conn_num=1000000
+    inst_num=$(wc -l <$inst_list_file)
+    if [ "$inst_num" -gt 0 ]; then
+        syn_threshold_dst=$(($base_conn_num/$inst_num))
+        [ "$syn_threshold_dst" -lt 4000 ] && syn_threshold_dst=4000
+        [ "$syn_threshold_dst" -gt 20000 ] && syn_threshold_dst=20000
+        syn_threshold_src=$(($syn_threshold_dst * 3 / 5))
+        syn_threshold_src_dst=$(($syn_threshold_src/2))
+    fi
     sudo $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
 }
 
@@ -190,6 +200,8 @@ function sync_instance()
 	sudo iptables -C FORWARD -i $bridge -o $bridge -j ACCEPT
 	[ $? -ne 0 ] && sudo iptables -I FORWARD 2 -i $bridge -o $bridge -j ACCEPT
     done
+    sudo iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+    sudo iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
     insts=$(ls $xml_dir)
     for inst in $insts; do
 	inst_id=${inst/inst-/}
@@ -281,9 +293,9 @@ sync_instance
 recover_loadbalancer
 sync_delayed_job
 check_system_router
-check_conntrack
 #probe_arp >/dev/null 2>&1
 inst_status
+check_conntrack
 daily_job
 halfday_job
 #vlan_status
