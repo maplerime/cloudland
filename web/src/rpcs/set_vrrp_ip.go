@@ -80,6 +80,27 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to query vrrp interface", err)
 		return
 	}
+	if vrrpIface.Hyper >= 0 && vrrpIface.Hyper != int32(hyperID) {
+		logger.Errorf("Duplicated vrrp interface, need to clean vrrp interface %d on hyper %d", vrrpIface.ID, hyperID)
+		role2 := "MASTER"
+		if role == "MASTER" {
+		    role2 = "BACKUP"
+		}
+		vrrpIface2 := &model.Interface{}
+		err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = ? and device = ?", role2, vrrpID).Take(vrrpIface2).Error
+		if err != nil {
+			logger.Error("Failed to query vrrp interface", err)
+			return
+		}
+		control := fmt.Sprintf("inter=%d", vrrpIface.Hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface.Address.Address, vrrpIface.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Set vrrp ip command execution failed ", err)
+			return
+		}
+		return
+	}
 	err = sendFdbRules(ctx, nil, vrrpInstance, vrrpIface)
 	if err != nil {
 		logger.Error("Failed to send fdb rules for interface", err)
@@ -109,7 +130,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 		control := "select=" + hyperGroup
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface2.MacAddr, vrrpIface2.Address.Address, vrrpIface.MacAddr, vrrpIface.Address.Address)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP' 'true'", vrrpInstance.RouterID, vrrpInstance.ID, vrrpInstance.VrrpSubnet.Vlan, vrrpIface2.MacAddr, vrrpIface2.Address.Address, vrrpIface.MacAddr, vrrpIface.Address.Address)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("set vrrp ip execution failed", err)
