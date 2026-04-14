@@ -13,6 +13,7 @@ import (
 	"math"
 	"time"
 
+	. "web/src/common"
 	rlog "web/src/utils/log"
 )
 
@@ -50,7 +51,7 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	if activeSnapshot.Load() == nil {
 		logger.Error("Scheduler not initialized, no active config snapshot")
 		dlog.RejectReason = "scheduler not initialized"
-		return -1, ErrSchedulerNotReady
+		return -1, NewCLError(ErrPlacementNotReady, "Scheduler not initialized, no active config snapshot", ErrSchedulerNotReady)
 	}
 
 	// 1. Resolve effective config for this zone (per-zone override or global fallback).
@@ -84,13 +85,13 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	if err != nil {
 		logger.Errorf("Failed to load host states: %v", err)
 		dlog.RejectReason = fmt.Sprintf("failed to load host states: %v", err)
-		return -1, fmt.Errorf("failed to load host states: %w", err)
+		return -1, NewCLError(ErrPlacementHostStateLoadFailed, fmt.Sprintf("Failed to load host states for zone_id=%d", req.ZoneID), err)
 	}
 	dlog.TotalHosts = len(hosts)
 	if len(hosts) == 0 {
 		logger.Warningf("No active hyper nodes found for zone_id=%d", req.ZoneID)
 		dlog.RejectReason = fmt.Sprintf("no active hyper nodes in zone_id=%d", req.ZoneID)
-		return -1, ErrNoHyperNode
+		return -1, NewCLError(ErrPlacementNoHyperNodes, fmt.Sprintf("No active hyper nodes in zone_id=%d", req.ZoneID), ErrNoHyperNode)
 	}
 	logger.Debugf("Loaded %d active host(s) for zone_id=%d", len(hosts), req.ZoneID)
 
@@ -151,7 +152,7 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 		}
 		dlog.RejectReason = reason
 		logger.Warningf("SelectHost failed: %s, zone_id=%d", reason, req.ZoneID)
-		return -1, fmt.Errorf("%w: %s", ErrNoValidHost, reason)
+		return -1, NewCLError(ErrPlacementNoValidHost, reason, ErrNoValidHost)
 	}
 
 	dlog.CandidateCount = len(candidates)

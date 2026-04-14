@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	. "web/src/common"
+
 	"github.com/spf13/viper"
 )
 
@@ -65,12 +67,12 @@ func ReloadConfig() (*ReloadResult, error) {
 	logger.Info("ReloadConfig entry: re-reading config file")
 	if configViper == nil {
 		logger.Error("ReloadConfig failed: config not initialized")
-		return nil, fmt.Errorf("placement config not initialized")
+		return nil, NewCLError(ErrPlacementConfigNotInit, "Placement config not initialized, call InitPlacementConfig first", nil)
 	}
 	// Re-read config file from disk
 	if err := configViper.ReadInConfig(); err != nil {
 		logger.Errorf("ReloadConfig failed to read config file %s: %v", configFilePath, err)
-		return nil, fmt.Errorf("failed to read config file %s: %w", configFilePath, err)
+		return nil, NewCLError(ErrPlacementConfigReadFailed, fmt.Sprintf("Failed to read config file %s", configFilePath), err)
 	}
 	if err := doReload(); err != nil {
 		logger.Errorf("ReloadConfig failed: %v (keeping previous config)", err)
@@ -100,11 +102,11 @@ func doReload() error {
 	cfg := defaultConfig()
 	// Unmarshal config from file
 	if err := configViper.UnmarshalKey("placement", cfg); err != nil {
-		return fmt.Errorf("config unmarshal failed: %w", err)
+		return NewCLError(ErrPlacementConfigParseFailed, "Config unmarshal failed", err)
 	}
 	// Validate before applying
 	if err := validateConfig(cfg); err != nil {
-		return fmt.Errorf("config validation failed: %w", err)
+		return err // already CLError from validateConfig
 	}
 	// Build and atomically store new snapshot
 	snapshot := buildSnapshot(cfg, configFilePath)
@@ -142,10 +144,10 @@ func buildSnapshot(cfg *PlacementConfig, path string) *configSnapshot {
 // validateConfig checks config values for sanity before applying.
 func validateConfig(cfg *PlacementConfig) error {
 	if len(cfg.FilterChain) == 0 {
-		return fmt.Errorf("filter_chain must not be empty")
+		return NewCLError(ErrPlacementConfigInvalid, "filter_chain must not be empty", nil)
 	}
 	if len(cfg.WeigherChain) == 0 {
-		return fmt.Errorf("weigher_chain must not be empty")
+		return NewCLError(ErrPlacementConfigInvalid, "weigher_chain must not be empty", nil)
 	}
 	if err := validateFilterChain(cfg.FilterChain, "placement.filter_chain"); err != nil {
 		return err
@@ -160,14 +162,14 @@ func validateConfig(cfg *PlacementConfig) error {
 	}
 	if cfg.Overcommit.Enabled {
 		if cfg.Overcommit.MemDeltaRatioPct < 0 || cfg.Overcommit.MemDeltaRatioPct > 100 {
-			return fmt.Errorf("overcommit.mem_delta_ratio_pct must be in [0, 100]")
+			return NewCLError(ErrPlacementConfigInvalid, "overcommit.mem_delta_ratio_pct must be in [0, 100]", nil)
 		}
 		if cfg.Overcommit.VCPUDeltaRatioPct < 0 || cfg.Overcommit.VCPUDeltaRatioPct > 100 {
-			return fmt.Errorf("overcommit.vcpu_delta_ratio_pct must be in [0, 100]")
+			return NewCLError(ErrPlacementConfigInvalid, "overcommit.vcpu_delta_ratio_pct must be in [0, 100]", nil)
 		}
 	}
 	if hasFilter(cfg.FilterChain, "hugepage") && cfg.Filters.Hugepage.PageSizeKB <= 0 {
-		return fmt.Errorf("filters.hugepage.page_size_kb must be > 0 when hugepage filter is enabled")
+		return NewCLError(ErrPlacementConfigInvalid, "filters.hugepage.page_size_kb must be > 0 when hugepage filter is enabled", nil)
 	}
 	for zoneID, zone := range cfg.Zones {
 		if zone == nil {
@@ -175,7 +177,7 @@ func validateConfig(cfg *PlacementConfig) error {
 		}
 		if zone.FilterChain != nil {
 			if len(*zone.FilterChain) == 0 {
-				return fmt.Errorf("placement.zone.%s.filter_chain must not be empty when set", zoneID)
+				return NewCLError(ErrPlacementConfigInvalid, fmt.Sprintf("placement.zone.%s.filter_chain must not be empty when set", zoneID), nil)
 			}
 			if err := validateFilterChain(*zone.FilterChain, fmt.Sprintf("placement.zone.%s.filter_chain", zoneID)); err != nil {
 				return err
@@ -183,7 +185,7 @@ func validateConfig(cfg *PlacementConfig) error {
 		}
 		if zone.WeigherChain != nil {
 			if len(*zone.WeigherChain) == 0 {
-				return fmt.Errorf("placement.zone.%s.weigher_chain must not be empty when set", zoneID)
+				return NewCLError(ErrPlacementConfigInvalid, fmt.Sprintf("placement.zone.%s.weigher_chain must not be empty when set", zoneID), nil)
 			}
 			if err := validateWeigherChain(*zone.WeigherChain, fmt.Sprintf("placement.zone.%s.weigher_chain", zoneID)); err != nil {
 				return err
@@ -196,7 +198,7 @@ func validateConfig(cfg *PlacementConfig) error {
 		}
 		if zone.Filters != nil && zone.Filters.Hugepage != nil && zone.Filters.Hugepage.PageSizeKB != nil {
 			if *zone.Filters.Hugepage.PageSizeKB <= 0 {
-				return fmt.Errorf("placement.zone.%s.filters.hugepage.page_size_kb must be > 0", zoneID)
+				return NewCLError(ErrPlacementConfigInvalid, fmt.Sprintf("placement.zone.%s.filters.hugepage.page_size_kb must be > 0", zoneID), nil)
 			}
 		}
 	}
@@ -207,7 +209,7 @@ func validateFilterName(name, field string) error {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 	if _, ok := filterRegistry[name]; !ok {
-		return fmt.Errorf("%s contains unknown filter %q", field, name)
+		return NewCLError(ErrPlacementUnknownFilter, fmt.Sprintf("%s contains unknown filter %q", field, name), nil)
 	}
 	return nil
 }
@@ -217,7 +219,7 @@ func validateFilterChain(chain []string, field string) error {
 	defer registryMu.RUnlock()
 	for _, name := range chain {
 		if _, ok := filterRegistry[name]; !ok {
-			return fmt.Errorf("%s contains unknown filter %q", field, name)
+			return NewCLError(ErrPlacementUnknownFilter, fmt.Sprintf("%s contains unknown filter %q", field, name), nil)
 		}
 	}
 	return nil
@@ -228,7 +230,7 @@ func validateWeigherChain(chain []string, field string) error {
 	defer registryMu.RUnlock()
 	for _, name := range chain {
 		if _, ok := weigherRegistry[name]; !ok {
-			return fmt.Errorf("%s contains unknown weigher %q", field, name)
+			return NewCLError(ErrPlacementUnknownWeigher, fmt.Sprintf("%s contains unknown weigher %q", field, name), nil)
 		}
 	}
 	return nil

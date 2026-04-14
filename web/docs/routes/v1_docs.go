@@ -6641,7 +6641,7 @@ const docTemplatev1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
-                "is_resque": {
+                "is_rescue": {
                     "type": "boolean"
                 },
                 "name": {
@@ -6960,9 +6960,14 @@ const docTemplatev1 = `{
         },
         "apis.InstanceRescuePayload": {
             "type": "object",
+            "required": [
+                "password"
+            ],
             "properties": {
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 },
                 "rescue_image": {
                     "$ref": "#/definitions/common.BaseReference"

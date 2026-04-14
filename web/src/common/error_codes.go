@@ -272,6 +272,21 @@ const (
 	ErrZoneDeleteFailed       ErrCode = 171010
 	ErrHypersInZone           ErrCode = 171011
 
+	// Placement/Scheduler related errors (172xxx)
+	// Scheduler core errors (1720xx) — returned by SelectHost at runtime
+	ErrPlacementNotReady            ErrCode = 172001 // scheduler not initialized (no active config snapshot)
+	ErrPlacementNoHyperNodes        ErrCode = 172002 // no active hyper nodes found in the requested zone
+	ErrPlacementNoValidHost         ErrCode = 172003 // all candidate hosts eliminated by filter chain
+	ErrPlacementHostStateLoadFailed ErrCode = 172004 // failed to load host states from database
+
+	// Placement config errors (1721xx) — returned by InitPlacementConfig / ReloadConfig
+	ErrPlacementConfigNotInit     ErrCode = 172101 // ReloadConfig called before InitPlacementConfig
+	ErrPlacementConfigReadFailed  ErrCode = 172102 // config file read/access error
+	ErrPlacementConfigParseFailed ErrCode = 172103 // TOML unmarshal/parse error
+	ErrPlacementConfigInvalid     ErrCode = 172104 // config validation failed (empty chain, out-of-range value, etc.)
+	ErrPlacementUnknownFilter     ErrCode = 172105 // filter_chain references an unregistered filter name
+	ErrPlacementUnknownWeigher    ErrCode = 172106 // weigher_chain references an unregistered weigher name
+
 	// task related errors (181xxx)
 	ErrTaskNotFound ErrCode = 181001
 

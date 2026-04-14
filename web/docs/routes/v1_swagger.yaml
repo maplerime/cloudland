@@ -727,7 +727,7 @@ definitions:
         type: string
       instance_uuid:
         type: string
-      is_resque:
+      is_rescue:
         type: boolean
       name:
         maxLength: 32
@@ -960,9 +960,13 @@ definitions:
   apis.InstanceRescuePayload:
     properties:
       password:
+        maxLength: 64
+        minLength: 8
         type: string
       rescue_image:
         $ref: '#/definitions/common.BaseReference'
+    required:
+    - password
     type: object
   apis.InstanceResizePayload:
     properties:
