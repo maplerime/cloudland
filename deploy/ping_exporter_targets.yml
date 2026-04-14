@@ -1,0 +1,42 @@
+targets:
+  - "10.255.253.148":
+      dst_name: "SV8-0106-POP-MX10008-F-10.255.253.148"
+      dst_isp: "PEG-SV"
+  - "10.255.253.152":
+      dst_name: "SV5-0121-POP-MX10008-G-10.255.253.152"
+      dst_isp: "PEG-SV"
+  - "10.255.249.49":
+      dst_name: "SV6-AH22-CORE-ASR9010-A-10.255.249.49"
+      dst_isp: "PEG-SV"
+  - "10.255.253.180":
+      dst_name: "SV9-0316-CORE-ASR9010-A-21U-10.255.253.180"
+      dst_isp: "PEG-SV"
+  - "10.255.253.217":
+      dst_name: "SV6-AG22-BD-ASR9010-C-10.255.253.217"
+      dst_isp: "PEG-SV"
+  - "10.255.253.167":
+      dst_name: "SV9-0313-BD-ASR9010-C-21U-10.255.253.167"
+      dst_isp: "PEG-SV"
+  - "10.255.253.162":
+      dst_name: "SV9-0312-BD-ASR9010-D-10.255.253.162"
+      dst_isp: "PEG-SV"
+
+dns:
+  refresh: 2m15s
+  nameserver: 1.1.1.1
+
+ping:
+  interval: 1s
+  timeout: 5s
+  history-size: 500
+  size: 120
+
+mtr:
+  interval: 600s      # 每个目标执行 mtr 的间隔时间
+  count: 100          # 每个 TTL 发送多少个包（用于计算 best/worst/last/loss）
+  timeout: 500ms      # 单个探测包的超时时间
+  max-hops: 20        # 最大 TTL（最多探测多少跳）
+  max-concurrent: 5   # 全局同时并发执行 mtr 的目标数
+
+options:
+  disableIPv6: false

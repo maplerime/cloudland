@@ -13,6 +13,24 @@
     cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
   tags: [monitor_sd]
 
+- name: Check ping_exporter config exists on control node for monitor_sd
+  delegate_to: localhost
+  become: false
+  stat:
+    path: "{{ playbook_dir }}/ping_exporter_targets.yml"
+  register: ping_exporter_config_stat
+  tags: [monitor_sd]
+
+- name: Set ping_exporter flag for monitor_sd
+  set_fact:
+    ping_exporter_enabled: >-
+      {{
+        (ping_exporter_download_url is defined)
+        and ((ping_exporter_download_url | trim) != '')
+        and (ping_exporter_config_stat.stat.exists | default(false))
+      }}
+  tags: [monitor_sd]
+
 - name: Ensure Prometheus lists directory exists
   delegate_to: "{{ groups['monitor'][0] }}"
   run_once: true
@@ -39,4 +57,5 @@
     - { src: 'node_exporters.json.j2', dest: '/etc/prometheus/lists/node_exporters.json' }
     - { src: 'libvirt_exporters.json.j2', dest: '/etc/prometheus/lists/libvirt_exporters.json' }
     - { src: 'cloudland_exporters.json.j2', dest: '/etc/prometheus/lists/cloudland_exporters.json' }
+    - { src: 'ping_exporters.json.j2', dest: '/etc/prometheus/lists/ping_exporters.json' }
   tags: [monitor_sd]

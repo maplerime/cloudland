@@ -1,0 +1,16 @@
+[
+{% if ping_exporter_enabled | default(false) %}
+{% set comma = joiner(",") %}
+{% for host in groups['hyper'] | default([]) %}
+  {{ comma() }}
+  {
+    "targets": ["{{ hostvars[host]['ansible_host'] | default(hostvars[host]['ansible_ssh_host']) | default(host) }}:9427"],
+    "labels": {
+      "host": "{{ host }}",
+      "node_type": "compute",
+      "exporter_type": "ping"
+    }
+  }
+{% endfor %}
+{% endif %}
+]

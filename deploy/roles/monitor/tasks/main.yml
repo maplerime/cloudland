@@ -58,6 +58,30 @@
           - files: ['/etc/prometheus/lists/cloudland_exporters.json']
             refresh_interval: 30s
 
+- name: Check ping_exporter config exists on control node
+  delegate_to: localhost
+  become: false
+  stat:
+    path: "{{ playbook_dir }}/ping_exporter_targets.yml"
+  register: ping_exporter_config_stat
+
+- name: Set ping_exporter monitor flag
+  set_fact:
+    ping_exporter_enabled: >-
+      {{
+        (ping_exporter_download_url is defined)
+        and ((ping_exporter_download_url | trim) != '')
+        and (ping_exporter_config_stat.stat.exists | default(false))
+      }}
+
+- name: Generate ping exporters config block
+  set_fact:
+    ping_exporters_block: |
+      - job_name: 'ping_exporter'
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/ping_exporters.json']
+            refresh_interval: 30s
+
 - name: Validate Alertmanager variables
   fail:
     msg: "Must define {{ item }} for task"
@@ -744,6 +768,7 @@
     - { src: 'node_exporters.json.j2', dest: '/etc/prometheus/lists/node_exporters.json' }
     - { src: 'libvirt_exporters.json.j2', dest: '/etc/prometheus/lists/libvirt_exporters.json' }
     - { src: 'cloudland_exporters.json.j2', dest: '/etc/prometheus/lists/cloudland_exporters.json' }
+    - { src: 'ping_exporters.json.j2', dest: '/etc/prometheus/lists/ping_exporters.json' }
   tags: [monitor]
 
 - name: Ensure rule_files declaration exists
@@ -808,6 +833,19 @@
     block: |
       {{ cloudland_exporters_block | indent(2, True) }}
     marker: "# {mark} ANSIBLE MANAGED BLOCK - CloudLand Exporter"
+    insertafter: '^scrape_configs:'
+    create: yes
+  tags: [monitor]
+
+- name: Update Prometheus with ping exporters block
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    state: "{{ 'present' if ping_exporter_enabled else 'absent' }}"
+    block: |
+      {{ ping_exporters_block | indent(2, True) }}
+    marker: "# {mark} ANSIBLE MANAGED BLOCK - Ping Exporter"
     insertafter: '^scrape_configs:'
     create: yes
   tags: [monitor]

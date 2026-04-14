@@ -1,0 +1,14 @@
+[Unit]
+Description=prometheus ping_exporter exporter
+Documentation=https://prometheus.io/docs/instrumenting/exporters/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ping_exporter
+ExecStart=/opt/ping_exporter/ping_exporter --config.path config.yml --web.listen-address=:9427
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

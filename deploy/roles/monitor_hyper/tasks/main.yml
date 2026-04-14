@@ -260,3 +260,149 @@
     enabled: yes
     state: started
   tags: [monitor]
+
+- name: Check ping_exporter config exists on control node
+  delegate_to: localhost
+  become: false
+  stat:
+    path: "{{ playbook_dir }}/ping_exporter_targets.yml"
+  register: ping_exporter_config_stat
+  tags: [monitor]
+
+- name: Set ping_exporter monitor flag on hyper nodes
+  set_fact:
+    ping_exporter_enabled: >-
+      {{
+        (ping_exporter_download_url is defined)
+        and ((ping_exporter_download_url | trim) != '')
+        and (ping_exporter_config_stat.stat.exists | default(false))
+      }}
+  tags: [monitor]
+
+- name: Handle disabled ping_exporter deployment on hyper nodes
+  when: not ping_exporter_enabled
+  tags: [monitor]
+  block:
+    - name: Skip ping_exporter deployment on hyper nodes when config is incomplete
+      debug:
+        msg: "Skip ping_exporter because download url or config file is not provided"
+
+    - name: Stop ping_exporter on hyper nodes when deployment is not enabled
+      become: true
+      systemd:
+        name: ping_exporter
+        state: stopped
+      ignore_errors: true
+
+- name: Handle enabled ping_exporter deployment on hyper nodes
+  when: ping_exporter_enabled
+  tags: [monitor]
+  block:
+    - name: Ensure ping_exporter install directory exists
+      become: true
+      file:
+        path: /opt/ping_exporter
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Reset ping_exporter temporary directory
+      become: true
+      file:
+        path: /opt/ping_exporter_tmp
+        state: absent
+
+    - name: Create ping_exporter temporary directory
+      become: true
+      file:
+        path: /opt/ping_exporter_tmp
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Download ping_exporter package
+      become: true
+      get_url:
+        url: "{{ ping_exporter_download_url }}"
+        dest: "/opt/ping_exporter_tmp/{{ ping_exporter_download_url | basename }}"
+        mode: '0644'
+
+    - name: Stop ping_exporter before binary update
+      become: true
+      systemd:
+        name: ping_exporter
+        state: stopped
+      ignore_errors: true
+
+    - name: Extract ping_exporter package
+      become: true
+      unarchive:
+        src: "/opt/ping_exporter_tmp/{{ ping_exporter_download_url | basename }}"
+        dest: /opt/ping_exporter_tmp
+        remote_src: true
+
+    - name: Find extracted ping_exporter binary
+      become: true
+      find:
+        paths: /opt/ping_exporter_tmp
+        patterns: ping_exporter
+        file_type: file
+      register: ping_exporter_binary_found
+
+    - name: Fail when ping_exporter binary is missing from package
+      fail:
+        msg: "ping_exporter binary not found in package downloaded from {{ ping_exporter_download_url }}"
+      when: (ping_exporter_binary_found.matched | default(0)) == 0
+
+    - name: Install ping_exporter binary
+      become: true
+      copy:
+        src: "{{ ping_exporter_binary_found.files[0].path }}"
+        dest: /opt/ping_exporter/ping_exporter
+        mode: '0755'
+        remote_src: true
+      register: ping_exporter_binary_install
+
+    - name: Deploy ping_exporter config file
+      become: true
+      copy:
+        src: "{{ playbook_dir }}/ping_exporter_targets.yml"
+        dest: /opt/ping_exporter/config.yml
+        mode: '0644'
+      register: ping_exporter_config_deploy
+
+    - name: Deploy ping_exporter systemd service
+      become: true
+      template:
+        src: ping_exporter.service.j2
+        dest: /etc/systemd/system/ping_exporter.service
+        mode: '0644'
+      register: ping_exporter_service_deploy
+
+    - name: Restart ping_exporter when package or config changed
+      become: true
+      systemd:
+        name: ping_exporter
+        enabled: yes
+        state: restarted
+        daemon_reload: yes
+      when: >-
+        ping_exporter_binary_install.changed
+        or ping_exporter_config_deploy.changed
+        or ping_exporter_service_deploy.changed
+
+    - name: Ensure ping_exporter service is enabled and started
+      become: true
+      systemd:
+        name: ping_exporter
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+    - name: Remove ping_exporter temporary directory
+      become: true
+      file:
+        path: /opt/ping_exporter_tmp
+        state: absent
