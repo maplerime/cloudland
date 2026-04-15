@@ -107,7 +107,6 @@ type PlacementRequest struct {
 	DiskGB         int64
 	HugepageSizeKB int64    // 0 = no hugepage requirement
 	ZoneID         int64    // used for DB-level zone filtering and config lookup
-	Traits         []string // required hyper tags, e.g. ["gpu", "nvme"]
 	OwnerID        int64    // owner org ID (for affinity/anti-affinity)
 	Policy         string   // "affinity" | "anti-affinity" | ""
 	ExcludeHypers  []int32  // hypers to exclude from candidates (e.g. migration source)
@@ -116,7 +115,7 @@ type PlacementRequest struct {
 func defaultConfig() *PlacementConfig {
 	cfg := &PlacementConfig{
 		// "zone" filter removed: DB query already scopes hosts to the requested zone.
-		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity", "capability"},
+		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity"},
 		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},
 		FallbackFilter:        "overcommit",
 		HostReportIntervalSec: 60,

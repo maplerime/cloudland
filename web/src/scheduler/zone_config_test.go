@@ -67,19 +67,19 @@ func TestResolveZoneConfig_UnknownZoneID(t *testing.T) {
 func TestResolveZoneConfig_KnownZone_FilterChainOverride(t *testing.T) {
 	makeTestSnapshot(map[string]*ZonePlacementConfig{
 		"1": {
-			FilterChain: ptrStrSlice([]string{"compute_alive", "hugepage", "resource", "capability"}),
+			FilterChain: ptrStrSlice([]string{"compute_alive", "hugepage", "resource"}),
 		},
 	})
 
 	cfg := ResolveZoneConfig(1)
 	if cfg == nil {
-		t.Fatal("expected non-nil config for zone-gpu")
+		t.Fatal("expected non-nil config for zone override")
 	}
-	if len(cfg.FilterChain) != 4 {
-		t.Errorf("expected 4 filters for zone-gpu, got %d: %v", len(cfg.FilterChain), cfg.FilterChain)
+	if len(cfg.FilterChain) != 3 {
+		t.Errorf("expected 3 filters for zone override, got %d: %v", len(cfg.FilterChain), cfg.FilterChain)
 	}
-	if cfg.FilterChain[3] != "capability" {
-		t.Errorf("expected last filter to be 'capability', got %q", cfg.FilterChain[3])
+	if cfg.FilterChain[2] != "resource" {
+		t.Errorf("expected last filter to be 'resource', got %q", cfg.FilterChain[2])
 	}
 	// Zones map should be stripped from merged config
 	if cfg.Zones != nil {
@@ -195,6 +195,9 @@ func TestMergeZoneConfig_CPULoadThresholdOverride(t *testing.T) {
 	global := defaultConfig()
 	zone := &ZonePlacementConfig{
 		Filters: &struct {
+			Hugepage *struct {
+				PageSizeKB *int64 `mapstructure:"page_size_kb"`
+			} `mapstructure:"hugepage"`
 			CPULoad *struct {
 				IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
 			} `mapstructure:"cpu_load"`

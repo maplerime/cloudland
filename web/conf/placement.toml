@@ -32,11 +32,10 @@ host_report_interval_sec = 60
 #   resource       检查 vCPU / 内存 / 磁盘是否充足
 #   cpu_load       检查 CPU 空闲率是否高于 idle_threshold_pct
 #   affinity       按 Owner 的亲和/反亲和策略过滤（需 VM 创建时传入 Policy）
-#   capability     检查节点是否具备所需硬件 trait（如 gpu、nvme）
 #
 # 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此添加 "zone"。
 # 调整顺序会影响性能：将淘汰率高的过滤器放前面可减少后续计算量。
-filter_chain = ["compute_alive", "resource", "cpu_load", "affinity", "capability"]
+filter_chain = ["compute_alive", "resource", "cpu_load", "affinity"]
 
 # weigher_chain —— 评分器链（软性排序，对候选节点综合评分）
 #

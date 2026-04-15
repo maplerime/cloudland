@@ -45,8 +45,7 @@ type HostState struct {
 	CpuIdlePct float64
 
 	// Spread/affinity data
-	InstanceCount int               // number of VMs on this hyper (for SpreadWeigher)
-	Tags          map[string]string // hyper tags (for CapabilityFilter)
+	InstanceCount int // number of VMs on this hyper (for SpreadWeigher)
 
 	// Metadata
 	LastReportAt time.Time
@@ -145,22 +144,6 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 		logger.Debugf("loadHostStates: loaded instance counts for %d hyper(s)", len(countRows))
 	}
 
-	// Query hyper tags (for CapabilityFilter)
-	tagMap := make(map[int32]map[string]string)
-	var tags []model.HyperTag
-	if err := db.Find(&tags).Error; err != nil {
-		logger.Warningf("loadHostStates: failed to query hyper tags: %v", err)
-		// Non-fatal: CapabilityFilter will see empty tags
-	} else {
-		for _, t := range tags {
-			if tagMap[t.Hostid] == nil {
-				tagMap[t.Hostid] = make(map[string]string)
-			}
-			tagMap[t.Hostid][t.TagName] = t.TagValue
-		}
-		logger.Debugf("loadHostStates: loaded tags for %d hyper(s)", len(tagMap))
-	}
-
 	var hosts []*HostState
 	for _, h := range hypers {
 		r, ok := resourceMap[h.Hostid]
@@ -186,7 +169,6 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 			LoadAvg5m:       r.LoadAvg5m,
 			CpuIdlePct:      r.CpuIdlePct,
 			InstanceCount:   instCountMap[h.Hostid],
-			Tags:            tagMap[h.Hostid],
 			LastReportAt:    r.UpdatedAt,
 		}
 		if h.Zone != nil {
