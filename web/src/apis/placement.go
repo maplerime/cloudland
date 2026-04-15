@@ -22,11 +22,11 @@ var placementAPI = &PlacementAPI{}
 type PlacementAPI struct{}
 
 type ValidatePayload struct {
-	HyperID  int32 `json:"hyper_id" binding:"required"`
-	VCPUs    int32 `json:"vcpus" binding:"required,gte=1"`
-	MemoryMB int64 `json:"memory_mb" binding:"required,gte=1"`
-	DiskGB   int64 `json:"disk_gb" binding:"required,gte=0"`
-	ZoneID   int64 `json:"zone_id" binding:"omitempty"`
+	HyperID  *int32 `json:"hyper_id" binding:"required"`
+	VCPUs    int32  `json:"vcpus" binding:"required,gte=1"`
+	MemoryMB int64  `json:"memory_mb" binding:"required,gte=1"`
+	DiskGB   int64  `json:"disk_gb" binding:"required,gte=0"`
+	ZoneID   int64  `json:"zone_id" binding:"omitempty"`
 }
 
 // Available returns the list of hypers that can host a VM with the given spec.
@@ -129,11 +129,11 @@ func (v *PlacementAPI) Validate(c *gin.Context) {
 		ZoneID: payload.ZoneID,
 	}
 
-	err := scheduler.ValidateHostForVM(ctx, payload.HyperID, req)
+	err := scheduler.ValidateHostForVM(ctx, *payload.HyperID, req)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{
 			"valid":    false,
-			"hyper_id": payload.HyperID,
+			"hyper_id": *payload.HyperID,
 			"reason":   err.Error(),
 		})
 		return
@@ -141,6 +141,6 @@ func (v *PlacementAPI) Validate(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"valid":    true,
-		"hyper_id": payload.HyperID,
+		"hyper_id": *payload.HyperID,
 	})
 }
