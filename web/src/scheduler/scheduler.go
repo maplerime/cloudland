@@ -11,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	. "web/src/common"
+	"web/src/model"
 	rlog "web/src/utils/log"
 )
 
@@ -94,6 +96,9 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 		return -1, NewCLError(ErrPlacementNoHyperNodes, fmt.Sprintf("No active hyper nodes in zone_id=%d", req.ZoneID), ErrNoHyperNode)
 	}
 	logger.Debugf("Loaded %d active host(s) for zone_id=%d", len(hosts), req.ZoneID)
+
+	// Filter out excluded hypers (e.g. migration source)
+	hosts = excludeHypers(hosts, req.ExcludeHypers)
 
 	// 4. Phase 1: Filter chain (order and members from resolved zone/global config)
 	logger.Debugf("Starting filter chain with %d filter(s) for zoneID=%d", len(filters), req.ZoneID)
@@ -182,7 +187,47 @@ func weightAndPick(weighers []Weigher, req *PlacementRequest, hosts []*HostState
 		return hosts[0]
 	}
 
+	scores := weightAndScore(weighers, req, hosts, dlog)
+
+	best := 0
+	for i := range hosts {
+		if scores[i] > scores[best] {
+			best = i
+		}
+	}
+	logger.Debugf("Weigher scores: best=hyper %d (score=%.4f), total candidates=%d",
+		hosts[best].HyperID, scores[best], len(hosts))
+	return hosts[best]
+}
+
+// excludeHypers removes hosts whose HyperID is in the exclude list.
+func excludeHypers(hosts []*HostState, exclude []int32) []*HostState {
+	if len(exclude) == 0 {
+		return hosts
+	}
+	excSet := make(map[int32]struct{}, len(exclude))
+	for _, id := range exclude {
+		excSet[id] = struct{}{}
+	}
+	var filtered []*HostState
+	for _, h := range hosts {
+		if _, skip := excSet[h.HyperID]; !skip {
+			filtered = append(filtered, h)
+		}
+	}
+	if len(filtered) < len(hosts) {
+		logger.Debugf("excludeHypers: removed %d host(s) from candidates", len(hosts)-len(filtered))
+	}
+	return filtered
+}
+
+// weightAndScore normalizes and scores all candidates, returns scores array.
+// Shared by weightAndPick and QueryAvailableHosts.
+func weightAndScore(weighers []Weigher, req *PlacementRequest, hosts []*HostState, dlog *DecisionLog) []float64 {
 	scores := make([]float64, len(hosts))
+	if len(hosts) == 0 || len(weighers) == 0 {
+		return scores
+	}
 	for _, w := range weighers {
 		raw := make([]float64, len(hosts))
 		minV, maxV := math.MaxFloat64, -math.MaxFloat64
@@ -203,25 +248,183 @@ func weightAndPick(weighers []Weigher, req *PlacementRequest, hosts []*HostState
 			}
 			scores[i] += w.Multiplier() * normalized
 		}
-
-		// Record weigher step
-		step := WeigherStep{
-			Name:       w.Name(),
-			Multiplier: w.Multiplier(),
-			MinRaw:     minV,
-			MaxRaw:     maxV,
+		if dlog != nil {
+			step := WeigherStep{
+				Name:       w.Name(),
+				Multiplier: w.Multiplier(),
+				MinRaw:     minV,
+				MaxRaw:     maxV,
+			}
+			dlog.WeigherSteps = append(dlog.WeigherSteps, step)
 		}
-		dlog.WeigherSteps = append(dlog.WeigherSteps, step)
 		logger.Debugf("Weigher %q: multiplier=%.1f, raw range=[%.2f, %.2f]", w.Name(), w.Multiplier(), minV, maxV)
 	}
+	return scores
+}
 
-	best := 0
-	for i := range hosts {
-		if scores[i] > scores[best] {
-			best = i
+// HostCandidate represents a hyper that passed the filter chain with its weigher score.
+type HostCandidate struct {
+	HyperID       int32   `json:"hyper_id"`
+	ZoneName      string  `json:"zone_name"`
+	VCPUFree      int64   `json:"vcpu_free"`
+	VCPUTotal     int64   `json:"vcpu_total"`
+	MemFreeMB     int64   `json:"mem_free_mb"`
+	MemTotalMB    int64   `json:"mem_total_mb"`
+	DiskFreeGB    int64   `json:"disk_free_gb"`
+	DiskTotalGB   int64   `json:"disk_total_gb"`
+	CpuIdlePct    float64 `json:"cpu_idle_pct"`
+	InstanceCount int     `json:"instance_count"`
+	Score         float64 `json:"score"`
+	IsOvercommit  bool    `json:"is_overcommit"`
+}
+
+// QueryAvailableHosts runs the filter+weigher chain and returns ALL passing
+// candidates sorted by weigher score (highest first).
+func QueryAvailableHosts(ctx context.Context, req *PlacementRequest) ([]*HostCandidate, error) {
+	if activeSnapshot.Load() == nil {
+		return nil, NewCLError(ErrPlacementNotReady, "Scheduler not initialized", ErrSchedulerNotReady)
+	}
+	cfg := ResolveZoneConfig(req.ZoneID)
+	filters := BuildFilters(cfg)
+	weighers := BuildWeighers(cfg)
+
+	var fallback Filter
+	if cfg.FallbackFilter != "" {
+		registryMu.RLock()
+		if factory, ok := filterRegistry[cfg.FallbackFilter]; ok {
+			fallback = factory(cfg)
+		}
+		registryMu.RUnlock()
+	}
+
+	hosts, err := loadHostStatesWithCache(ctx, req.ZoneID)
+	if err != nil {
+		return nil, NewCLError(ErrPlacementHostStateLoadFailed, "Failed to load host states", err)
+	}
+	hosts = excludeHypers(hosts, req.ExcludeHypers)
+	if len(hosts) == 0 {
+		return nil, NewCLError(ErrPlacementNoHyperNodes, fmt.Sprintf("No active hyper nodes in zone_id=%d", req.ZoneID), ErrNoHyperNode)
+	}
+
+	// Filter chain
+	candidates := hosts
+	for _, f := range filters {
+		candidates = f.Filter(ctx, req, candidates)
+		if len(candidates) == 0 {
+			break
 		}
 	}
-	logger.Debugf("Weigher scores: best=hyper %d (score=%.4f), total candidates=%d",
-		hosts[best].HyperID, scores[best], len(hosts))
-	return hosts[best]
+
+	// Fallback
+	if len(candidates) == 0 && fallback != nil {
+		candidates = fallback.Filter(ctx, req, hosts)
+		for _, h := range candidates {
+			h.IsOvercommit = true
+		}
+	}
+
+	if len(candidates) == 0 {
+		return []*HostCandidate{}, nil
+	}
+
+	// Score and sort
+	scores := weightAndScore(weighers, req, candidates, nil)
+	result := make([]*HostCandidate, len(candidates))
+	for i, h := range candidates {
+		result[i] = &HostCandidate{
+			HyperID:       h.HyperID,
+			ZoneName:      h.ZoneName,
+			VCPUFree:      h.VCPUFree,
+			VCPUTotal:     h.VCPUTotal,
+			MemFreeMB:     h.MemFreeKB / 1024,
+			MemTotalMB:    h.MemTotalKB / 1024,
+			DiskFreeGB:    h.DiskFreeBytes / (1024 * 1024 * 1024),
+			DiskTotalGB:   h.DiskTotalBytes / (1024 * 1024 * 1024),
+			CpuIdlePct:    h.CpuIdlePct,
+			InstanceCount: h.InstanceCount,
+			Score:         scores[i],
+			IsOvercommit:  h.IsOvercommit,
+		}
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i].Score > result[j].Score })
+	return result, nil
+}
+
+// ValidateHostForVM checks whether a specific hyper can host a VM with the given requirements.
+// Returns nil if the hyper passes filter chain (or overcommit fallback), otherwise a descriptive error.
+func ValidateHostForVM(ctx context.Context, hyperID int32, req *PlacementRequest) error {
+	if activeSnapshot.Load() == nil {
+		return NewCLError(ErrPlacementNotReady, "Scheduler not initialized", ErrSchedulerNotReady)
+	}
+
+	// Load fresh host state for this specific hyper (skip cache for accuracy)
+	_, db := GetContextDB(ctx)
+	hyper := &model.Hyper{}
+	if err := db.Where("hostid = ? AND status = 1", hyperID).Preload("Zone").Take(hyper).Error; err != nil {
+		return NewCLError(ErrPlacementNoHyperNodes, fmt.Sprintf("Hyper %d not found or not active", hyperID), err)
+	}
+
+	// Check zone match if specified
+	if req.ZoneID > 0 && hyper.ZoneID != req.ZoneID {
+		return NewCLError(ErrPlacementInsufficientResource,
+			fmt.Sprintf("Hyper %d is in zone %d, not in requested zone %d", hyperID, hyper.ZoneID, req.ZoneID), nil)
+	}
+
+	// Load resource
+	resource := &model.Resource{}
+	if err := db.Where("hostid = ?", hyperID).Take(resource).Error; err != nil {
+		return NewCLError(ErrPlacementHostStateLoadFailed, fmt.Sprintf("No resource data for hyper %d", hyperID), err)
+	}
+
+	hs := &HostState{
+		HyperID:         hyper.Hostid,
+		ZoneID:          hyper.ZoneID,
+		VCPUFree:        resource.Cpu,
+		VCPUTotal:       resource.CpuTotal,
+		MemFreeKB:       resource.Memory,
+		MemTotalKB:      resource.MemoryTotal,
+		DiskFreeBytes:   resource.Disk,
+		DiskTotalBytes:  resource.DiskTotal,
+		CpuOverRate:     hyper.CpuOverRate,
+		MemOverRate:     hyper.MemOverRate,
+		DiskOverRate:    hyper.DiskOverRate,
+		Hugepages2MFree: resource.Hugepages2MFree,
+		Hugepages1GFree: resource.Hugepages1GFree,
+		HugepageSizeKB:  resource.HugepageSizeKB,
+		LoadAvg5m:       resource.LoadAvg5m,
+		CpuIdlePct:      resource.CpuIdlePct,
+		LastReportAt:    resource.UpdatedAt,
+	}
+
+	// Resolve zone config and build filter chain
+	zoneID := req.ZoneID
+	if zoneID == 0 {
+		zoneID = hyper.ZoneID
+	}
+	cfg := ResolveZoneConfig(zoneID)
+	filters := BuildFilters(cfg)
+
+	// Run filter chain on this single host
+	candidates := []*HostState{hs}
+	for _, f := range filters {
+		candidates = f.Filter(ctx, req, candidates)
+		if len(candidates) == 0 {
+			// Try fallback
+			if cfg.FallbackFilter != "" {
+				registryMu.RLock()
+				factory, ok := filterRegistry[cfg.FallbackFilter]
+				registryMu.RUnlock()
+				if ok {
+					fb := factory(cfg)
+					candidates = fb.Filter(ctx, req, []*HostState{hs})
+					if len(candidates) > 0 {
+						return nil // passed via fallback
+					}
+				}
+			}
+			return NewCLError(ErrPlacementInsufficientResource,
+				fmt.Sprintf("Hyper %d rejected by filter %q", hyperID, f.Name()), nil)
+		}
+	}
+	return nil
 }

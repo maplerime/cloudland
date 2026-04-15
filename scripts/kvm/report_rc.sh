@@ -32,10 +32,23 @@ hp_2m_total=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/
 hp_1g_free=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/free_hugepages 2>/dev/null || echo 0)
 hp_1g_total=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || echo 0)
 hp_size_kb=0
-[ "$hp_2m_total" -gt 0 ] 2>/dev/null && hp_size_kb=2048
-[ "$hp_1g_total" -gt 0 ] 2>/dev/null && hp_size_kb=1048576
-# CPU idle percentage
-cpu_idle=$(top -bn1 2>/dev/null | grep 'Cpu(s)' | awk '{for(i=1;i<=NF;i++) if($i~/id/) print $(i-1)}' | tr -d '%,' || echo 100)
+# When both 2MB and 1GB hugepages are configured, pick the dominant size (larger total memory).
+# Both free counts are always reported; hp_size_kb tells the scheduler which path to use.
+_hp_2m_mem=$(( hp_2m_total * 2048 ))
+_hp_1g_mem=$(( hp_1g_total * 1048576 ))
+if [ "$_hp_1g_mem" -gt "$_hp_2m_mem" ] 2>/dev/null; then
+    hp_size_kb=1048576
+elif [ "$_hp_2m_mem" -gt 0 ] 2>/dev/null; then
+    hp_size_kb=2048
+fi
+# CPU idle percentage — two-sample /proc/stat for accuracy (top output varies by distro/locale)
+read_cpu_stat() { awk '/^cpu /{print $2,$3,$4,$5,$6,$7,$8}' /proc/stat; }
+_cpu_stat1=$(read_cpu_stat); sleep 0.5; _cpu_stat2=$(read_cpu_stat)
+cpu_idle=$(awk -v s1="$_cpu_stat1" -v s2="$_cpu_stat2" 'BEGIN {
+    split(s1,a); split(s2,b); dtotal=0; didle=0
+    for(i=1;i<=7;i++){dtotal+=b[i]-a[i]}; didle=b[4]-a[4]
+    printf "%.1f", (dtotal>0)?didle/dtotal*100:100
+}')
 vtep_ip=$(ifconfig $vxlan_interface | grep 'inet ' | awk '{print $2}')
 
 function probe_arp()
@@ -280,8 +293,9 @@ function calc_resource()
     let total_disk=$total_disk/1000*1000
     old_resource_list=$(cat old_resource_list 2>/dev/null)
     # Include hugepage and cpu_idle in dedup check so changes trigger hyper_status update
-    cpu_idle_int=${cpu_idle%.*}
-    resource_list="'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$cpu_idle_int'"
+    # Multiply cpu_idle by 10 and truncate → 0.1% granularity (e.g. 15.3 → 153)
+    cpu_idle_dedup=$(awk -v v="$cpu_idle" 'BEGIN{printf "%d", v*10}')
+    resource_list="'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$cpu_idle_dedup'"
     echo "$resource_list" >/opt/cloudland/run/old_resource_list
     [ "$resource_list" = "$old_resource_list" ] && return
     cpu_model=$(lscpu | grep 'Model name:' | cut -d: -f2 | xargs)

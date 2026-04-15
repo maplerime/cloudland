@@ -110,6 +110,7 @@ type PlacementRequest struct {
 	Traits         []string // required hyper tags, e.g. ["gpu", "nvme"]
 	OwnerID        int64    // owner org ID (for affinity/anti-affinity)
 	Policy         string   // "affinity" | "anti-affinity" | ""
+	ExcludeHypers  []int32  // hypers to exclude from candidates (e.g. migration source)
 }
 
 func defaultConfig() *PlacementConfig {

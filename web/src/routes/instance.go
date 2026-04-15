@@ -521,6 +521,95 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		logger.Error("Instance has volume restoring", err)
 		return
 	}
+
+	// Check if scaling up and current hyper needs resource validation
+	scalingUp := cpu > instance.Cpu || memory > instance.Memory
+	needMigrate := false
+	var selectedHyperID int32 = -1
+
+	if scalingUp && instance.Hyper >= 0 {
+		// Validate current hyper with the resource delta
+		deltaCPU := cpu - instance.Cpu
+		if deltaCPU < 0 {
+			deltaCPU = 0
+		}
+		deltaMem := int64(memory - instance.Memory)
+		if deltaMem < 0 {
+			deltaMem = 0
+		}
+		deltaReq := &scheduler.PlacementRequest{
+			VCPUs:  deltaCPU,
+			MemMB:  deltaMem,
+			DiskGB: 0,
+			ZoneID: instance.ZoneID,
+		}
+		validateErr := scheduler.ValidateHostForVM(ctx, instance.Hyper, deltaReq)
+		if validateErr != nil {
+			logger.Infof("Resize: current hyper %d insufficient for instance %d, finding new hyper: %v",
+				instance.Hyper, instance.ID, validateErr)
+			// Find a new hyper via placement (full new spec, exclude current hyper)
+			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
+			selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+				VCPUs:          cpu,
+				MemMB:          int64(memory),
+				DiskGB:         int64(instance.Disk),
+				ZoneID:         instance.ZoneID,
+				ExcludeHypers:  []int32{instance.Hyper},
+				HugepageSizeKB: reqHugepageSizeKB,
+			})
+			if err != nil {
+				logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
+				err = NewCLError(ErrInsufficientResource,
+					fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)
+				return
+			}
+			needMigrate = true
+			logger.Infof("Resize: will migrate instance %d to hyper %d before resize", instance.ID, selectedHyperID)
+		}
+	}
+
+	if needMigrate {
+		// Auto-migrate then resize: update instance with new spec, create migration with pending resize
+		instance.Cpu = cpu
+		instance.Memory = memory
+		if instance.Disk == 0 {
+			instance.Disk = bootVolume.Size
+		}
+		err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+			"flavor_id": 0,
+			"status":    model.InstanceStatusMigrating,
+			"memory":    memory,
+			"cpu":       cpu,
+			"disk":      instance.Disk,
+		}).Error
+		if err != nil {
+			logger.Error("Failed to save instance for migrate+resize", err)
+			return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
+		}
+		// Create migration with pending resize
+		_, err = migrationAdmin.Create(ctx, fmt.Sprintf("resize-migrate-%d", instance.ID),
+			[]*model.Instance{instance}, false, selectedHyperID)
+		if err != nil {
+			logger.Errorf("Failed to create migration for resize: %v", err)
+			// Revert instance status
+			db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+				"status": model.InstanceStatusRunning,
+			})
+			return
+		}
+		// Set pending resize on the migration record
+		err = db.Model(&model.Migration{}).Where("instance_id = ? AND status = 'in_progress'", instance.ID).
+			Updates(map[string]interface{}{
+				"pending_resize_cpu":    cpu,
+				"pending_resize_memory": memory,
+			}).Error
+		if err != nil {
+			logger.Errorf("Failed to set pending resize on migration: %v", err)
+		}
+		return nil
+	}
+
+	// Normal resize path: in-place on current hyper
 	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory

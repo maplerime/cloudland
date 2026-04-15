@@ -278,6 +278,7 @@ const (
 	ErrPlacementNoHyperNodes        ErrCode = 172002 // no active hyper nodes found in the requested zone
 	ErrPlacementNoValidHost         ErrCode = 172003 // all candidate hosts eliminated by filter chain
 	ErrPlacementHostStateLoadFailed ErrCode = 172004 // failed to load host states from database
+	ErrPlacementInsufficientResource ErrCode = 172005 // specified hyper has insufficient resources for the VM
 
 	// Placement config errors (1721xx) — returned by InitPlacementConfig / ReloadConfig
 	ErrPlacementConfigNotInit     ErrCode = 172101 // ReloadConfig called before InitPlacementConfig
