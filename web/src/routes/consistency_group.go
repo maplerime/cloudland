@@ -956,6 +956,17 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 		}
 	}()
 
+	// if the original snapshot status is error and wds_snap_id is empty, then delete the snapshot record directly
+	if snapshot.Status == model.CGSnapshotStatusError && snapshot.WdsSnapID == "" {
+		logger.Debugf("CG Snapshot %s is in error status and has no WDS snapshot ID, deleting snapshot record directly", snapshot.UUID)
+		if err = db.Delete(snapshot).Error; err != nil {
+			logger.Errorf("Failed to delete snapshot record: %v", err)
+			return NewCLError(ErrDatabaseError, "Failed to delete snapshot record", err)
+		}
+		logger.Debugf("Successfully deleted snapshot record %s in CG %s", snapshot.UUID, cg.UUID)
+		return nil
+	}
+
 	// 6. 创建删除任务
 	task := &model.Task{
 		Owner:   cg.Owner,
