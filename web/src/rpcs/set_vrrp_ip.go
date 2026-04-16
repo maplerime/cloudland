@@ -48,11 +48,12 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid vrrp ID", err)
 		return
 	}
-	hyperID, err := strconv.Atoi(args[2])
-	if err != nil || hyperID < 0 {
+	parsedHyperID, err := strconv.ParseInt(args[2], 10, 32)
+	if err != nil || parsedHyperID < 0 {
 		logger.Error("Invalid hypervisor ID", err)
 		return
 	}
+	hyperID := int32(parsedHyperID)
 	hyper := &model.Hyper{}
 	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
 	if err != nil || hyper.Hostid < 0 {
@@ -80,7 +81,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to query vrrp interface", err)
 		return
 	}
-	if vrrpIface.Hyper >= 0 && vrrpIface.Hyper != int32(hyperID) {
+	if vrrpIface.Hyper >= 0 && vrrpIface.Hyper != hyperID {
 		logger.Errorf("Duplicated vrrp interface, need to clean vrrp interface %d on hyper %d", vrrpIface.ID, hyperID)
 		role2 := "MASTER"
 		if role == "MASTER" {
