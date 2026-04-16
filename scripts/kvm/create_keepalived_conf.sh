@@ -45,7 +45,7 @@ while [ $i -lt $nvip ]; do
     let i=$i+1
 done
 
-ip netns exec $router ip link show ns-$vrrp_vlan | grep $local_mac 
+ip netns exec $router ip addr show ns-$vrrp_vlan | grep $local_ip
 [ $? -ne 0 ] && ./set_vrrp_ip.sh $@
 
 [ ! -d "$vrrp_dir" ] && mkdir -p $vrrp_dir

@@ -154,7 +154,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		}
 		control = "select=" + hyperGroup
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set vrrp ip command execution failed ", err)
