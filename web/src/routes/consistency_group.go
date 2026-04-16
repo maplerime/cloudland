@@ -898,9 +898,10 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 
 	// 10. 调用 shell 脚本创建 WDS 快照
 	// Parameters: cg_ID, cg_snapshot_ID, cg_snapshot_Name, wds_cg_id
+	cg_snapshot_Name := fmt.Sprintf("cg_snap_%s", snapshot.UUID)
 	control := fmt.Sprintf("inter=")
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh '%d' '%d' '%s' '%s'",
-		cg.ID, snapshot.ID, snapshot.Name, cg.WdsCgID)
+		cg.ID, snapshot.ID, cg_snapshot_Name, cg.WdsCgID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute create CG snapshot script: %v", err)
