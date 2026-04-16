@@ -90,27 +90,25 @@ func TestResolveZoneConfig_KnownZone_FilterChainOverride(t *testing.T) {
 func TestResolveZoneConfig_GlobalFieldsInherited(t *testing.T) {
 	makeTestSnapshot(map[string]*ZonePlacementConfig{
 		"2": {
-			// Only override overcommit.mem_delta_ratio_pct
+			// Only override overcommit.vcpu_delta_ratio_pct
 			Overcommit: &struct {
-				Enabled               *bool    `mapstructure:"enabled"`
-				MemDeltaRatioPct      *float64 `mapstructure:"mem_delta_ratio_pct"`
-				VCPUDeltaRatioPct     *float64 `mapstructure:"vcpu_delta_ratio_pct"`
-				CPUIdleFallbackPct    *float64 `mapstructure:"cpu_idle_fallback_pct"`
-				HugepageDeltaRatioPct *float64 `mapstructure:"hugepage_delta_ratio_pct"`
+				Enabled            *bool    `mapstructure:"enabled"`
+				VCPUDeltaRatioPct  *float64 `mapstructure:"vcpu_delta_ratio_pct"`
+				CPUIdleFallbackPct *float64 `mapstructure:"cpu_idle_fallback_pct"`
 			}{
-				MemDeltaRatioPct: ptrFloat(20.0),
+				VCPUDeltaRatioPct: ptrFloat(20.0),
 			},
 		},
 	})
 
 	cfg := ResolveZoneConfig(2)
-	// MemDeltaRatioPct overridden
-	if cfg.Overcommit.MemDeltaRatioPct != 20.0 {
-		t.Errorf("expected MemDeltaRatioPct=20.0, got %.1f", cfg.Overcommit.MemDeltaRatioPct)
+	// VCPUDeltaRatioPct overridden
+	if cfg.Overcommit.VCPUDeltaRatioPct != 20.0 {
+		t.Errorf("expected VCPUDeltaRatioPct=20.0, got %.1f", cfg.Overcommit.VCPUDeltaRatioPct)
 	}
-	// VCPUDeltaRatioPct inherited from global default (10.0)
-	if cfg.Overcommit.VCPUDeltaRatioPct != 10.0 {
-		t.Errorf("expected VCPUDeltaRatioPct=10.0 (inherited), got %.1f", cfg.Overcommit.VCPUDeltaRatioPct)
+	// CPUIdleFallbackPct inherited from global default (5.0)
+	if cfg.Overcommit.CPUIdleFallbackPct != 5.0 {
+		t.Errorf("expected CPUIdleFallbackPct=5.0 (inherited), got %.1f", cfg.Overcommit.CPUIdleFallbackPct)
 	}
 	// FilterChain inherited from global default
 	defaultFC := defaultConfig().FilterChain
@@ -147,11 +145,9 @@ func TestMergeZoneConfig_OvercommitDisabled(t *testing.T) {
 	global := defaultConfig()
 	zone := &ZonePlacementConfig{
 		Overcommit: &struct {
-			Enabled               *bool    `mapstructure:"enabled"`
-			MemDeltaRatioPct      *float64 `mapstructure:"mem_delta_ratio_pct"`
-			VCPUDeltaRatioPct     *float64 `mapstructure:"vcpu_delta_ratio_pct"`
-			CPUIdleFallbackPct    *float64 `mapstructure:"cpu_idle_fallback_pct"`
-			HugepageDeltaRatioPct *float64 `mapstructure:"hugepage_delta_ratio_pct"`
+			Enabled            *bool    `mapstructure:"enabled"`
+			VCPUDeltaRatioPct  *float64 `mapstructure:"vcpu_delta_ratio_pct"`
+			CPUIdleFallbackPct *float64 `mapstructure:"cpu_idle_fallback_pct"`
 		}{
 			Enabled: ptrBool(false),
 		},
@@ -160,10 +156,10 @@ func TestMergeZoneConfig_OvercommitDisabled(t *testing.T) {
 	if merged.Overcommit.Enabled {
 		t.Error("expected Overcommit.Enabled=false for zone override")
 	}
-	// MemDeltaRatioPct should still be inherited from global
-	if merged.Overcommit.MemDeltaRatioPct != global.Overcommit.MemDeltaRatioPct {
-		t.Errorf("expected MemDeltaRatioPct inherited from global (%.1f), got %.1f",
-			global.Overcommit.MemDeltaRatioPct, merged.Overcommit.MemDeltaRatioPct)
+	// VCPUDeltaRatioPct should still be inherited from global
+	if merged.Overcommit.VCPUDeltaRatioPct != global.Overcommit.VCPUDeltaRatioPct {
+		t.Errorf("expected VCPUDeltaRatioPct inherited from global (%.1f), got %.1f",
+			global.Overcommit.VCPUDeltaRatioPct, merged.Overcommit.VCPUDeltaRatioPct)
 	}
 }
 

@@ -161,9 +161,6 @@ func validateConfig(cfg *PlacementConfig) error {
 		}
 	}
 	if cfg.Overcommit.Enabled {
-		if cfg.Overcommit.MemDeltaRatioPct < 0 || cfg.Overcommit.MemDeltaRatioPct > 100 {
-			return NewCLError(ErrPlacementConfigInvalid, "overcommit.mem_delta_ratio_pct must be in [0, 100]", nil)
-		}
 		if cfg.Overcommit.VCPUDeltaRatioPct < 0 || cfg.Overcommit.VCPUDeltaRatioPct > 100 {
 			return NewCLError(ErrPlacementConfigInvalid, "overcommit.vcpu_delta_ratio_pct must be in [0, 100]", nil)
 		}
@@ -313,17 +310,11 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 		if z.Enabled != nil {
 			merged.Overcommit.Enabled = *z.Enabled
 		}
-		if z.MemDeltaRatioPct != nil {
-			merged.Overcommit.MemDeltaRatioPct = *z.MemDeltaRatioPct
-		}
 		if z.VCPUDeltaRatioPct != nil {
 			merged.Overcommit.VCPUDeltaRatioPct = *z.VCPUDeltaRatioPct
 		}
 		if z.CPUIdleFallbackPct != nil {
 			merged.Overcommit.CPUIdleFallbackPct = *z.CPUIdleFallbackPct
-		}
-		if z.HugepageDeltaRatioPct != nil {
-			merged.Overcommit.HugepageDeltaRatioPct = *z.HugepageDeltaRatioPct
 		}
 	}
 	if zone.Weighers != nil {

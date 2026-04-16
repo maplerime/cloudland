@@ -30,12 +30,11 @@ type ZonePlacementConfig struct {
 	} `mapstructure:"filters"`
 
 	// Overrides global overcommit section (field-level merge)
+	// Note: only CPU is overcommittable. Memory/hugepage/disk are hard requirements.
 	Overcommit *struct {
-		Enabled               *bool    `mapstructure:"enabled"`
-		MemDeltaRatioPct      *float64 `mapstructure:"mem_delta_ratio_pct"`
-		VCPUDeltaRatioPct     *float64 `mapstructure:"vcpu_delta_ratio_pct"`
-		CPUIdleFallbackPct    *float64 `mapstructure:"cpu_idle_fallback_pct"`
-		HugepageDeltaRatioPct *float64 `mapstructure:"hugepage_delta_ratio_pct"`
+		Enabled            *bool    `mapstructure:"enabled"`
+		VCPUDeltaRatioPct  *float64 `mapstructure:"vcpu_delta_ratio_pct"`
+		CPUIdleFallbackPct *float64 `mapstructure:"cpu_idle_fallback_pct"`
 	} `mapstructure:"overcommit"`
 
 	// Overrides global weighers section (field-level merge)
@@ -76,13 +75,13 @@ type PlacementConfig struct {
 		} `mapstructure:"cpu_load"`
 	} `mapstructure:"filters"`
 
-	// Overcommit fallback parameters
+	// Overcommit fallback parameters.
+	// Only CPU is overcommittable (time-sliced). Memory/hugepage/disk are
+	// incompressible and cannot be overcommitted — they are hard requirements.
 	Overcommit struct {
-		Enabled               bool    `mapstructure:"enabled"`
-		MemDeltaRatioPct      float64 `mapstructure:"mem_delta_ratio_pct"`
-		VCPUDeltaRatioPct     float64 `mapstructure:"vcpu_delta_ratio_pct"`
-		CPUIdleFallbackPct    float64 `mapstructure:"cpu_idle_fallback_pct"`
-		HugepageDeltaRatioPct float64 `mapstructure:"hugepage_delta_ratio_pct"`
+		Enabled            bool    `mapstructure:"enabled"`
+		VCPUDeltaRatioPct  float64 `mapstructure:"vcpu_delta_ratio_pct"`
+		CPUIdleFallbackPct float64 `mapstructure:"cpu_idle_fallback_pct"`
 	} `mapstructure:"overcommit"`
 
 	// Weigher multiplier parameters
@@ -123,10 +122,8 @@ func defaultConfig() *PlacementConfig {
 	cfg.Filters.CPULoad.IdleThresholdPct = 15.0
 	cfg.Filters.Hugepage.PageSizeKB = 2048
 	cfg.Overcommit.Enabled = true
-	cfg.Overcommit.MemDeltaRatioPct = 10.0
 	cfg.Overcommit.VCPUDeltaRatioPct = 10.0
 	cfg.Overcommit.CPUIdleFallbackPct = 5.0
-	cfg.Overcommit.HugepageDeltaRatioPct = 5.0
 	cfg.Weighers.OvercommitPenaltyMultiplier = 3.0
 	cfg.Weighers.HugepageMultiplier = 1.5
 	cfg.Weighers.RAMMultiplier = 1.0

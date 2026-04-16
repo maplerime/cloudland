@@ -84,22 +84,14 @@ idle_threshold_pct = 15.0
 # enabled —— 是否启用超配容忍兜底机制
 #
 # 仅在标准 filter_chain 全部失败（无候选节点）时触发。
-# true：资源略有不足时仍尝试调度（参数由下方各字段控制）
-# false：资源不足则直接报错，不做任何妥协
+# ★ 重要：只有 CPU 是可压缩资源（通过时间片共享），可以适度超配。
+#   内存/大页/磁盘是不可压缩资源，超买会导致 OOM 或启动失败，因此
+#   overcommit filter 仍然要求内存/大页/磁盘必须完全满足（硬约束）。
+#   本节参数只控制 CPU 的超配程度。
+#
+# true：CPU 资源略有不足时仍尝试调度（由 vcpu_delta_ratio_pct 控制）
+# false：标准路径失败则直接报错，不做任何妥协
 enabled = true
-
-# mem_delta_ratio_pct —— 内存缺口容忍上限（百分比）
-#
-# 含义：(VM请求内存 - 节点可用内存) / VM请求内存 × 100 ≤ 此值时，允许超配
-#
-# 举例（设为 10.0）：
-#   VM 请求 10 GB，节点可用 9.2 GB → 缺口 8%  → 允许（8% ≤ 10%）
-#   VM 请求 10 GB，节点可用 8.8 GB → 缺口 12% → 拒绝（12% > 10%）
-#
-# 调整建议：
-#   - 调高（如 20.0）：接受更大缺口，兜底成功率提升，但内存争用风险增加
-#   - 调低（如 5.0）： 只接受极小缺口，更保守，兜底成功率降低
-mem_delta_ratio_pct = 10.0
 
 # vcpu_delta_ratio_pct —— vCPU 缺口容忍上限（百分比）
 #
@@ -123,16 +115,6 @@ vcpu_delta_ratio_pct = 10.0
 #   节点 CPU 空闲 10%：标准路径被剔除，兜底路径仍可接受
 #   节点 CPU 空闲  3%：标准和兜底路径均拒绝
 cpu_idle_fallback_pct = 5.0
-
-# hugepage_delta_ratio_pct —— 大页内存缺口容忍上限（百分比）
-#
-# 与 mem_delta_ratio_pct 类似，但专用于大页内存路径，通常设置更严格。
-# 原因：大页内存一旦分配出去难以回收，碎片化后恢复成本高。
-#
-# 举例（设为 5.0）：
-#   VM 请求 2 GB 大页，节点可用 1.95 GB → 缺口 2.5% → 允许
-#   VM 请求 2 GB 大页，节点可用 1.88 GB → 缺口 6%   → 拒绝
-hugepage_delta_ratio_pct = 5.0
 
 
 [placement.weighers]
@@ -238,7 +220,6 @@ fallback_filter = "overcommit"
 
 [placement.zone.0.overcommit]
 enabled = true
-mem_delta_ratio_pct  = 20.0
 vcpu_delta_ratio_pct = 20.0
 cpu_idle_fallback_pct = 3.0
 
@@ -268,5 +249,4 @@ fallback_filter = "overcommit"
 
 [placement.zone.2.overcommit]
 enabled = true
-mem_delta_ratio_pct  = 10.0
 vcpu_delta_ratio_pct = 10.0
