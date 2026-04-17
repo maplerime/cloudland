@@ -642,7 +642,7 @@ func (a *AlarmOperator) GetLinkedVMsByRuleIDOrOwner(ctx context.Context, ruleID,
 		query = query.Where("rule_group_v2.owner = ?", owner)
 	} else {
 		// Neither specified: return all
-		log.Printf("Querying all VM links from database")
+		logger.Infof("Querying all VM links from database")
 	}
 
 	var results []struct {
@@ -653,7 +653,7 @@ func (a *AlarmOperator) GetLinkedVMsByRuleIDOrOwner(ctx context.Context, ruleID,
 	}
 
 	if err := query.Scan(&results).Error; err != nil {
-		log.Printf("Failed to query VM links: ruleID=%s, owner=%s, error=%v", ruleID, owner, err)
+		logger.Errorf("Failed to query VM links: ruleID=%s, owner=%s, error=%v", ruleID, owner, err)
 		return nil, err
 	}
 
@@ -663,7 +663,7 @@ func (a *AlarmOperator) GetLinkedVMsByRuleIDOrOwner(ctx context.Context, ruleID,
 		linkMap[r.GroupUUID] = append(linkMap[r.GroupUUID], r.VMRuleLink)
 	}
 
-	log.Printf("Queried VM links from DB: ruleID=%s, owner=%s, found %d groups with %d total links",
+	logger.Infof("Queried VM links from DB: ruleID=%s, owner=%s, found %d groups with %d total links",
 		ruleID, owner, len(linkMap), len(results))
 	return linkMap, nil
 }
