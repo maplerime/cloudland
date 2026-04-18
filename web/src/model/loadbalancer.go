@@ -54,6 +54,7 @@ type Backend struct {
 	ListenerID  int64  `gorm:"unique_index:idx_listener_be"`
 	BackendAddr string `gorm:"unique_index:idx_listener_be;type:varchar(128)"`
 	Status      string `gorm:"type:varchar(32)"`
+	SSL         bool
 }
 
 func init() {
