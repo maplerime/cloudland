@@ -31,6 +31,7 @@
 									<th>{{.i18n.Tr "Name"}}</th>
 			                        <th>{{.i18n.Tr "Status"}}</th>
 			                        <th>{{.i18n.Tr "BackendAddr"}}</th>
+			                        <th>{{.i18n.Tr "SSL"}}</th>
 		   			        {{ if $.IsAdmin }}
 			                        <th>{{.i18n.Tr "Owner"}}</th>
 						{{ end }}
@@ -49,6 +50,13 @@
 			                        <td>
 						    {{.BackendAddr }}<br>
                                     		</td>
+			                        <td>
+						    {{ if .SSL }}
+						        <i class="green check icon"></i> {{ $.i18n.Tr "Yes" }}
+						    {{ else }}
+						        <i class="grey close icon"></i> {{ $.i18n.Tr "No" }}
+						    {{ end }}
+			                        </td>
 		   			        {{ if $.IsAdmin }}
 			                        <td>{{.OwnerInfo.Name}}</td>
 						{{ end }}

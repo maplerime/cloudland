@@ -41,6 +41,7 @@ type BackendListResponse struct {
 type BackendPayload struct {
 	Name     string `json:"name" binding:"required,min=2,max=32"`
 	Endpoint string `json:"endpoint" binding:"required,min=8,max=128"`
+	SSL      bool   `json:"ssl"`
 }
 
 type BackendPatchPayload struct {
@@ -270,7 +271,7 @@ func (v *BackendAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating backend with %+v", payload)
-	backend, err := backendAdmin.Create(ctx, payload.Name, payload.Endpoint, listener, loadBalancer)
+	backend, err := backendAdmin.Create(ctx, payload.Name, payload.Endpoint, payload.SSL, listener, loadBalancer)
 	if err != nil {
 		logger.Errorf("Failed to create backend %+v, %+v", payload, err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
