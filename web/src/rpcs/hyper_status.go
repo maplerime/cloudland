@@ -154,6 +154,30 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 			logger.Error("Failed to update hypervisor resource", err)
 		}
 	}
+	// PET-1345: parse extended resource fields (hugepage + CPU load)
+	// args[16..22]: hp_2m_free, hp_1g_free, hp_size_kb, load_1m, load_5m, load_15m, cpu_idle
+	// Backward compatible: old hyper nodes without these fields are skipped
+	if argn >= 23 {
+		hp2mFree, _ := strconv.ParseInt(args[16], 10, 64)
+		hp1gFree, _ := strconv.ParseInt(args[17], 10, 64)
+		hpSizeKB, _ := strconv.ParseInt(args[18], 10, 64)
+		loadAvg1m, _ := strconv.ParseFloat(args[19], 64)
+		loadAvg5m, _ := strconv.ParseFloat(args[20], 64)
+		loadAvg15m, _ := strconv.ParseFloat(args[21], 64)
+		cpuIdlePct, _ := strconv.ParseFloat(args[22], 64)
+		err = db.Model(&model.Resource{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
+			"hugepages2_m_free": hp2mFree,
+			"hugepages1_g_free": hp1gFree,
+			"hugepage_size_kb":  hpSizeKB,
+			"load_avg1m":        loadAvg1m,
+			"load_avg5m":        loadAvg5m,
+			"load_avg15m":       loadAvg15m,
+			"cpu_idle_pct":      cpuIdlePct,
+		}).Error
+		if err != nil {
+			logger.Error("Failed to update hypervisor extended metrics", err)
+		}
+	}
 	if hyper.RouteIP == "" {
 		_, err = SystemRouter(ctx, []string{args[0], args[1], args[2]})
 		if err != nil {

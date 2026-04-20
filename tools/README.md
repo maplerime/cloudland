@@ -136,3 +136,27 @@ cloudland clean images --snapshot --execute --no-cache
 |------|------|
 | `--execute` | 实际执行删除（默认 dry-run 仅报告） |
 | `--no-cache` | 忽略缓存，强制重新扫描 |
+
+### iaas - CloudLand IaaS API 快捷命令
+
+用于测试和运维场景，封装常用 CloudLand REST API 调用。
+
+```bash
+# 查询 hypers
+cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --password '***' --insecure hypers --json
+
+# 查询 instances
+cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --password '***' --insecure instances list --json
+
+# 通过 payload 文件创建 instance
+cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --password '***' --insecure \
+	instances create --payload-file /tmp/instance_payload.json --json
+
+# 等待 instance 到 running
+cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --password '***' --insecure \
+	instances wait <instance_uuid> --status running --timeout 900
+
+# 删除 instance
+cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --password '***' --insecure \
+	instances delete <instance_uuid>
+```

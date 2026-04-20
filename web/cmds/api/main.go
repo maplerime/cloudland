@@ -14,7 +14,12 @@ import (
 	"strings"
 
 	"web/src/apis"
+	"web/src/scheduler"
 	rlog "web/src/utils/log"
+
+	// Register scheduler filters and weighers via init()
+	_ "web/src/scheduler/filters"
+	_ "web/src/scheduler/weighers"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -32,6 +37,10 @@ var (
 )
 
 func RunDaemon(cmd *cobra.Command, args []string) (err error) {
+	// Initialize placement scheduler config for API-driven instance creation.
+	if err := scheduler.InitPlacementConfig("conf/placement.toml"); err != nil {
+		rlog.MustGetLogger("main").Errorf("Failed to init placement config: %v", err)
+	}
 	g, _ := errgroup.WithContext(context.Background())
 	g.Go(apis.Run)
 	return g.Wait()

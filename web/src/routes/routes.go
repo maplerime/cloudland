@@ -283,6 +283,12 @@ func New() (m *macaron.Macaron) {
 	m.Get("/tasks", taskView.List)
 	m.Get("/tasks/:id", taskView.Get)
 
+	// Placement scheduler configuration (Admin only)
+	m.Get("/placement", placementView.Show)
+	m.Post("/placement/reload", placementView.Reload)
+	m.Get("/placement/config", placementView.GetConfig)
+	m.Get("/placement/decisions", placementView.GetDecisions)
+
 	m.Get("/error", func(c *macaron.Context) {
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")
 		c.HTML(500, "error")

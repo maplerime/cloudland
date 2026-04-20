@@ -4093,6 +4093,119 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/placement/available": {
+            "get": {
+                "description": "Runs the full filter+weigher chain and returns all passing hypers sorted by score",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Query available placement candidates",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Zone ID",
+                        "name": "zone_id",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of vCPUs",
+                        "name": "vcpus",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Memory in MB",
+                        "name": "memory_mb",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Disk in GB",
+                        "name": "disk_gb",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement/validate": {
+            "post": {
+                "description": "Checks if the specified hyper passes the filter chain for the given VM spec",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Validate hyper resource availability",
+                "parameters": [
+                    {
+                        "description": "Validation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ValidatePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/security_groups": {
             "get": {
                 "description": "list secgroups",
@@ -6641,7 +6754,7 @@ const docTemplatev1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
-                "is_resque": {
+                "is_rescue": {
                     "type": "boolean"
                 },
                 "name": {
@@ -6960,9 +7073,14 @@ const docTemplatev1 = `{
         },
         "apis.InstanceRescuePayload": {
             "type": "object",
+            "required": [
+                "password"
+            ],
             "properties": {
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 },
                 "rescue_image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8474,6 +8592,35 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.ValidatePayload": {
+            "type": "object",
+            "required": [
+                "disk_gb",
+                "hyper_id",
+                "memory_mb",
+                "vcpus"
+            ],
+            "properties": {
+                "disk_gb": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "hyper_id": {
+                    "type": "integer"
+                },
+                "memory_mb": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "vcpus": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "zone_id": {
+                    "type": "integer"
                 }
             }
         },

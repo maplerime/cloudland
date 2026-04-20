@@ -1,0 +1,252 @@
+# Cloudland Placement 调度器配置
+# 通过管理后台 (/placement) 或 API (POST /placement/reload) 重新加载配置，无需重启服务
+#
+# 调度流程概述：
+#   1. 从数据库加载指定 zone 内的所有活跃 hyper 节点
+#   2. 依次执行 filter_chain 中的过滤器，逐步淘汰不满足条件的节点
+#   3. 若所有节点被淘汰且启用了 fallback_filter，则进入超配容忍路径
+#   4. 对剩余候选节点依次执行 weigher_chain 中的评分器，选出得分最高的节点
+
+##############################################################################
+# 全局配置（所有 zone 默认使用，除非 zone 有专属覆盖）
+##############################################################################
+
+[placement]
+
+# host_report_interval_sec —— 节点心跳上报间隔（秒）
+#
+# 每个 hyper 节点通过 report_rc.sh 定期上报资源状态。
+# 存活判定阈值 = 2 × 此值：若节点超过该时长未上报，compute_alive 过滤器将其剔除。
+#
+# 调整建议：
+#   - 调小：更快检测到宕机节点，但上报压力增大
+#   - 调大：减少上报频次，但宕机检测延迟增加
+# 例：设为 60，则节点超过 120 秒未上报时被视为离线
+host_report_interval_sec = 60
+
+# filter_chain —— 过滤器链（硬性淘汰，按顺序依次执行）
+#
+# 每个过滤器作用：
+#   compute_alive  检查节点心跳是否在存活阈值内，剔除失联节点
+#   hugepage       检查大页内存是否满足 VM 需求（页大小由 filters.hugepage.page_size_kb 指定）
+#   resource       检查 vCPU / 内存 / 磁盘是否充足
+#   cpu_load       检查 CPU 空闲率是否高于 idle_threshold_pct
+#   affinity       按 Owner 的亲和/反亲和策略过滤（需 VM 创建时传入 Policy）
+#
+# 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此添加 "zone"。
+# 调整顺序会影响性能：将淘汰率高的过滤器放前面可减少后续计算量。
+filter_chain = ["compute_alive", "resource", "cpu_load", "affinity"]
+
+# weigher_chain —— 评分器链（软性排序，对候选节点综合评分）
+#
+# 每个评分器先将原始分归一化到 [0,1]，再乘以各自的 multiplier 求和，
+# 最终选得分最高的节点。
+#
+# 各评分器作用：
+#   overcommit_penalty  超配节点得 0 分，正常节点得 1 分（强制降权超配节点）
+#   hugepage            大页剩余越多得分越高（适合 vhost-user 大页 VM 密集场景）
+#   ram                 普通内存剩余越多得分越高
+#   cpu_load            CPU 空闲率越高得分越高
+#   spread              节点上已有 VM 数量作为原始分（配合 multiplier 控制打散/堆叠）
+weigher_chain = ["overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"]
+
+# fallback_filter —— 兜底过滤器
+#
+# 当 filter_chain 将所有候选节点全部淘汰后触发。
+# 设为 "overcommit" 启用超配容忍兜底，允许在资源略有不足的节点上创建 VM。
+# 设为 "" 禁用兜底，资源不足时直接返回错误。
+fallback_filter = "overcommit"
+
+
+[placement.filters.hugepage]
+# hugepage 是否生效由 filter_chain 是否包含 hugepage 决定。
+
+# VM 调度请求使用的大页大小（KB）。
+# 当前 WDS vhost 场景建议为 2048（2MB）。
+page_size_kb = 2048
+
+[placement.filters.cpu_load]
+# cpu_load 是否生效由 filter_chain 是否包含 cpu_load 决定。
+
+# idle_threshold_pct —— CPU 空闲率过滤阈值（百分比，0~100）
+#
+# cpu_load 过滤器会剔除空闲率低于此值的节点。
+# 节点的 cpu_idle_pct 由 hyper agent 采集 /proc/stat 计算后上报。
+#
+# 调整建议：
+#   - 调高（如 30.0）：调度到更空闲的节点，VM 性能好，但可用节点减少
+#   - 调低（如 5.0）： 接受更高负载的节点，可用节点更多，但 VM 性能可能受影响
+# 例：设为 15.0，则 CPU 使用率超过 85% 的节点不参与调度
+idle_threshold_pct = 15.0
+
+[placement.overcommit]
+
+# enabled —— 是否启用超配容忍兜底机制
+#
+# 仅在标准 filter_chain 全部失败（无候选节点）时触发。
+# ★ 重要：只有 CPU 是可压缩资源（通过时间片共享），可以适度超配。
+#   内存/大页/磁盘是不可压缩资源，超买会导致 OOM 或启动失败，因此
+#   overcommit filter 仍然要求内存/大页/磁盘必须完全满足（硬约束）。
+#   本节参数只控制 CPU 的超配程度。
+#
+# true：CPU 资源略有不足时仍尝试调度（由 vcpu_delta_ratio_pct 控制）
+# false：标准路径失败则直接报错，不做任何妥协
+enabled = true
+
+# vcpu_delta_ratio_pct —— vCPU 缺口容忍上限（百分比）
+#
+# 含义：(VM请求vCPU - 节点可用vCPU) / VM请求vCPU × 100 ≤ 此值时，允许超配
+# 注意：节点的 CpuOverRate 已在 report_rc.sh 上报时生效
+#       （total_cpu = 物理核数 × cpu_over_ratio），
+#       此处是在已超买容量基础上的额外缺口容忍，通常保持较小值。
+#
+# 举例（设为 10.0）：
+#   VM 请求 4 vCPU，节点可用 3.7 vCPU → 缺口 7.5% → 允许
+#   VM 请求 4 vCPU，节点可用 3.5 vCPU → 缺口 12.5% → 拒绝
+vcpu_delta_ratio_pct = 10.0
+
+# cpu_idle_fallback_pct —— 超配路径下 CPU 空闲率放宽阈值（百分比）
+#
+# 标准路径使用 idle_threshold_pct（默认 15%）过滤高负载节点。
+# 超配兜底路径将此阈值放宽到 cpu_idle_fallback_pct，
+# 确保即便节点负载略高，只要还有少量 CPU 余量，就不完全排除。
+#
+# 举例：标准阈值 15%，兜底阈值 5%
+#   节点 CPU 空闲 10%：标准路径被剔除，兜底路径仍可接受
+#   节点 CPU 空闲  3%：标准和兜底路径均拒绝
+cpu_idle_fallback_pct = 5.0
+
+
+[placement.weighers]
+
+# Weigher 评分机制说明：
+#
+# 每个 Weigher 对所有候选节点打一个原始分（raw score），
+# 再将所有节点的原始分归一化到 [0, 1]：
+#   normalized = (raw - min) / (max - min)
+# 然后乘以 multiplier 后累加到节点总分：
+#   total_score += multiplier × normalized
+# 最终选总分最高的节点。
+#
+# multiplier 的作用：
+#   正值：raw score 越高，总分贡献越大（高分节点越优先）
+#   负值：raw score 越低，总分贡献越大（低分节点越优先，即反向排序）
+#   绝对值越大：该维度对最终选择影响越大
+
+# overcommit_penalty_multiplier —— 超配节点惩罚系数
+#
+# OvercommitPenaltyWeigher 的 raw score：正常节点=1，超配节点=0
+# multiplier 越大，正常节点与超配节点的总分差距越大，超配节点越难被选中。
+#
+# 举例（设为 3.0）：
+#   正常节点归一化得分 = 1，贡献 +3.0
+#   超配节点归一化得分 = 0，贡献 +0.0
+#   即使超配节点在其他维度略优，也难以胜过正常节点
+# 建议：独享型 zone 保持 3.0 或更高；共享型 zone 可调低至 1.0
+overcommit_penalty_multiplier = 3.0
+
+# hugepage_multiplier —— 大页剩余优先系数
+#
+# HugepageWeigher 的 raw score = 节点大页剩余 MB。
+# 大页剩余越多得分越高。
+#
+# 举例（设为 1.5）：
+#   节点 A 大页剩余 8 GB，节点 B 剩余 2 GB
+#   A 归一化得分 ≈ 1.0，B ≈ 0.0，A 在此维度多得 1.5 分
+# 若无节点使用大页（HugepageSizeKB=0），所有节点该维度得分相同，系数无影响
+hugepage_multiplier = 1.5
+
+# ram_multiplier —— 普通内存剩余优先系数
+#
+# RAMWeigher 的 raw score = 节点可用内存 MB（MemTotalKB - MemUsedKB 换算）。
+# 内存剩余越多得分越高。
+#
+# 举例（设为 1.0）：
+#   节点 A 可用 32 GB，节点 B 可用 8 GB
+#   A 的贡献比 B 多 1.0 分（完全归一化时）
+ram_multiplier = 1.0
+
+# cpu_load_multiplier —— CPU 空闲率优先系数
+#
+# CPULoadWeigher 的 raw score = 节点 cpu_idle_pct（0~100）。
+# 空闲率越高（负载越低）得分越高。
+#
+# 举例（设为 1.0）：
+#   节点 A 空闲率 80%，节点 B 空闲率 20%
+#   A 的贡献比 B 多 1.0 分（完全归一化时）
+cpu_load_multiplier = 1.0
+
+# spread_multiplier —— 打散 / 堆叠策略系数
+#
+# SpreadWeigher 的 raw score = 节点当前已有 VM 数量（InstanceCount）。
+# VM 数越多，raw score 越高。
+#
+# ★ 关键：通过系数符号控制策略方向：
+#
+#   负值（默认 -1.0）= 打散优先：
+#     VM 少的节点 raw score 低 → 归一化后反而获得更高的加权分
+#     效果：VM 均匀分散到各节点，避免单节点过载
+#     适用：独享型 zone、在线业务、希望资源隔离
+#
+#   正值 = 堆叠优先：
+#     VM 多的节点 raw score 高 → 获得更高加权分
+#     效果：VM 尽量堆叠到少数节点，让更多节点保持空闲
+#     适用：共享型 zone、离线批处理、希望整节点空出以便维护
+#
+# 举例：
+#   spread_multiplier = -2.0（强力打散）
+#     节点 A 有 0 个 VM，节点 B 有 10 个 VM
+#     A raw=0, B raw=10；归一化后 A=1.0, B=0.0
+#     A 在此维度比 B 多 2.0 分 → 强烈倾向选 A
+#
+#   spread_multiplier = 2.0（堆叠优先）
+#     同样情形下 B 比 A 多 2.0 分 → 倾向选已有 VM 的节点 B
+#
+# 绝对值越大，该策略越强势，其他维度难以扳回；建议范围 ±1.0 ~ ±3.0
+spread_multiplier = -1.0
+
+##############################################################################
+# per-zone 覆盖配置
+# 格式：[placement.zone.<zone_id>]，zone_id 为 Cloudland 数据库中的 zone 整数 ID
+# 只需写需要覆盖的字段，其余字段自动回退到全局配置
+# 修改后通过 /placement/reload 即可生效，无需重启服务
+# 查看某 zone 生效配置：GET /placement/config?zone_id=<zone_id>
+##############################################################################
+
+# zone ID=0 —— 共享型，资源超配，倾向堆叠以提高利用率
+[placement.zone.0]
+filter_chain = ["compute_alive", "resource", "cpu_load"]
+fallback_filter = "overcommit"
+
+[placement.zone.0.overcommit]
+enabled = true
+vcpu_delta_ratio_pct = 20.0
+cpu_idle_fallback_pct = 3.0
+
+[placement.zone.0.weighers]
+# 共享型倾向堆叠（提高节点利用率），超配惩罚较轻
+spread_multiplier            = 2.0
+overcommit_penalty_multiplier = 1.0
+
+# zone ID=1 —— 独享型，资源独占，禁用超配，打散部署
+[placement.zone.1]
+filter_chain = ["compute_alive", "resource", "affinity"]
+fallback_filter = "overcommit"
+
+[placement.zone.1.overcommit]
+# 独享型不允许超配
+enabled = false
+
+[placement.zone.1.weighers]
+# 独享型打散部署，超配惩罚权重保持高位
+spread_multiplier            = -2.0
+overcommit_penalty_multiplier = 3.0
+
+# zone ID=2 —— prestaging zone1
+[placement.zone.2]
+filter_chain = ["compute_alive", "resource"]
+fallback_filter = "overcommit"
+
+[placement.zone.2.overcommit]
+enabled = true
+vcpu_delta_ratio_pct = 10.0

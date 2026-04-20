@@ -178,6 +178,26 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to exec finish source migration", err)
 			return
 		}
+		// Check for pending resize after migration completes
+		if migration.PendingResizeCpu > 0 || migration.PendingResizeMemory > 0 {
+			logger.Infof("Migration %d completed, triggering pending resize (cpu=%d, memory=%d) on hyper %d",
+				migration.ID, migration.PendingResizeCpu, migration.PendingResizeMemory, migration.TargetHyper)
+			err = db.Model(&model.Instance{Model: model.Model{ID: instID}}).Updates(map[string]interface{}{
+				"status": model.InstanceStatusResizing,
+			}).Error
+			if err != nil {
+				logger.Errorf("Failed to update instance status to resizing: %v", err)
+				return
+			}
+			resizeControl := fmt.Sprintf("inter=%d", migration.TargetHyper)
+			resizeCommand := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_vm.sh '%d' '%d' '%d'",
+				instID, migration.PendingResizeCpu, migration.PendingResizeMemory)
+			err = HyperExecute(ctx, resizeControl, resizeCommand)
+			if err != nil {
+				logger.Errorf("Failed to exec pending resize after migration: %v", err)
+				return
+			}
+		}
 	} else if status == "rollback" {
 		err = execSourceMigrate(ctx, instance, migration, taskID, "/opt/cloudland/scripts/backend/rollback_source_migration.sh", migration.Type)
 		if err != nil {
