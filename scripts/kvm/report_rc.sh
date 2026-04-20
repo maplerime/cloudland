@@ -11,7 +11,7 @@ total_cpu=$(cat /proc/cpuinfo | grep -c processor)
 memory=0
 if [ -z "$system_reserved_memory" ]; then
     let system_reserved_memory=$(cat /proc/meminfo | grep MemTotal | awk '{print $2}')/4
-    [ $system_reserved_memory -gt 32000000 ] && system_reserved_memory=32000000
+    [ $system_reserved_memory -gt 64000000 ] && system_reserved_memory=64000000
 fi
 total_memory=$(( $(free | grep 'Mem:' | awk '{print $2}') - $system_reserved_memory ))
 disk=0
