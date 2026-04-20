@@ -21,6 +21,15 @@ ip=$1
 info_ipset=$2
 IPSET_NAME="blacklist"
 CHAIN_NAME="BLACKLIST"
+WHITELIST_FILE="/opt/cloudland/conf/ip_whitelist.json"
+
+# Second-line-of-defense: skip blocking if IP is in the whitelist
+if [ -f "$WHITELIST_FILE" ]; then
+    if jq -e --arg ip "$ip" '.whitelist[] | select(.ip == $ip)' "$WHITELIST_FILE" > /dev/null 2>&1; then
+        log "INFO: $ip is in whitelist, skipping block"
+        exit 0
+    fi
+fi
 
 # Create ipset if not exists
 if ! ipset list "$IPSET_NAME" &>/dev/null; then

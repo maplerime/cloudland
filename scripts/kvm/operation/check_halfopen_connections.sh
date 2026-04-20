@@ -22,6 +22,14 @@ THRESHOLD_SRC=$2
 THRESHOLD_DST=$3
 
 BLOCK_SCRIPT="./block_ip.sh"
+WHITELIST_FILE="/opt/cloudland/conf/ip_whitelist.json"
+
+# Return 0 (true) if the given IP is in the local whitelist file
+is_whitelisted() {
+    local check_ip="$1"
+    [ -f "$WHITELIST_FILE" ] || return 1
+    jq -e --arg ip "$check_ip" '.whitelist[] | select(.ip == $ip)' "$WHITELIST_FILE" > /dev/null 2>&1
+}
 
 # Get half-open connections, extract src/dst IPs, count and sort
 conn_rest=$(conntrack -L 2>/dev/null)
@@ -31,6 +39,7 @@ if [ -n "$result" ]; then
     echo "$result" | while read count src dst; do
         if [ "$count" -gt "$THRESHOLD_SRC_DST" ]; then
             log "CRITICAL: Blocking syn attack from src $src to dst $dst (count: $count)"
+            if is_whitelisted "$src"; then log "INFO: $src is whitelisted, skipping block"; continue; fi
             $BLOCK_SCRIPT "$src" "block_src"
             ((blocked_count++))
         fi
@@ -44,6 +53,7 @@ if [ -n "$result" ]; then
     echo "$result" | while read count src; do
         if [ "$count" -gt "$THRESHOLD_SRC" ]; then
             log "CRITICAL: Blocking syn attack from src $src (count: $count)"
+            if is_whitelisted "$src"; then log "INFO: $src is whitelisted, skipping block"; continue; fi
             $BLOCK_SCRIPT "$src" "block_src"
             ((blocked_count++))
         fi
@@ -57,6 +67,7 @@ if [ -n "$result" ]; then
     echo "$result" | while read count dst; do
         if [ "$count" -gt "$THRESHOLD_DST" ]; then
             log "CRITICAL: Blocking syn attack to dst $dst (count: $count)"
+            if is_whitelisted "$dst"; then log "INFO: $dst is whitelisted, skipping block"; continue; fi
             $BLOCK_SCRIPT "$dst" "block_dst"
             ((blocked_count++))
         fi
