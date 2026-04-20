@@ -1,0 +1,24 @@
+[
+  {
+    "targets": [
+{% for ip in vmagent_hyper_ips %}
+      "{{ ip }}:9101"{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    ],
+    "labels": {
+      "node_type": "compute"
+    }
+  },
+  {
+    "targets": [
+{% for ip in vmagent_cland_ips %}
+      "{{ ip }}:9101"{% if not loop.last %},{% endif %}
+
+{% endfor %}
+    ],
+    "labels": {
+      "node_type": "management"
+    }
+  }
+]

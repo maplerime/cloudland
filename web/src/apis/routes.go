@@ -228,7 +228,6 @@ func Register() (r *gin.Engine) {
 
 			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
 			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules)
-			metricsGroup.GET("/alarm/active-rules", alarmAPI.GetActiveRules)
 			metricsGroup.GET("/alarm/cpu/rule/:uuid", alarmAPI.GetCPURules)
 			metricsGroup.DELETE("/alarm/cpu/rule/:uuid", alarmAPI.DeleteCPURule)
 			metricsGroup.POST("/alarm/compute/enable", alarmAPI.EnableComputeMonitor)
@@ -243,6 +242,17 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/bw/rules", alarmAPI.GetBWRules)
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
+
+			// N9E Anchor Management APIs
+			metricsGroup.POST("/alarm/anchor/link", alarmAPI.LinkVMsToRule)
+			metricsGroup.GET("/alarm/anchor/links", alarmAPI.GetRuleLinks)           // Query from VictoriaMetrics
+			metricsGroup.GET("/alarm/anchor/dblinks", alarmAPI.GetDBLinks)           // Query from CloudLand DB
+			metricsGroup.DELETE("/alarm/anchor/unlink", alarmAPI.UnlinkVMsFromRule)
+			metricsGroup.POST("/alarm/anchor/sync", alarmAPI.SyncAnchorThresholds)
+			metricsGroup.POST("/alarm/anchor/recover", alarmAPI.RecoverAnchorThresholds)
+
+			// N9E Direct Query API - Get alert rule directly from N9E
+			metricsGroup.GET("/alarm/n9e/rule/:rule_id", alarmAPI.GetN9EAlertRule)
 
 			// Add new endpoint for synchronizing VM rule mappings
 			metricsGroup.POST("/alarm/sync-mappings", alarmAPI.SyncAllVMRuleMappings)
