@@ -11,7 +11,7 @@ total_cpu=$(cat /proc/cpuinfo | grep -c processor)
 memory=0
 if [ -z "$system_reserved_memory" ]; then
     let system_reserved_memory=$(cat /proc/meminfo | grep MemTotal | awk '{print $2}')/4
-    [ $system_reserved_memory -gt 64000000 ] && system_reserved_memory=64000000
+    [ $system_reserved_memory -gt 32000000 ] && system_reserved_memory=32000000
 fi
 total_memory=$(( $(free | grep 'Mem:' | awk '{print $2}') - $system_reserved_memory ))
 disk=0
@@ -20,11 +20,35 @@ total_disk=$(echo $disk_info | awk '{print $2}')
 mount_point=$(echo $disk_info | awk '{print $6}')
 network=0
 total_network=0
-load=$(w | head -1 | cut -d',' -f5 | cut -d'.' -f1 | xargs)
+load_1m=$(awk '{print $1}' /proc/loadavg)
+load_5m=$(awk '{print $2}' /proc/loadavg)
+load_15m=$(awk '{print $3}' /proc/loadavg)
+load=$(echo "$load_5m" | cut -d'.' -f1)
+[ -z "$load" ] && load=0
 total_load=0
 # Hugepage collection
 hp_2m_free=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages 2>/dev/null || echo 0)
 hp_2m_total=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0)
+hp_1g_free=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/free_hugepages 2>/dev/null || echo 0)
+hp_1g_total=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || echo 0)
+hp_size_kb=0
+# When both 2MB and 1GB hugepages are configured, pick the dominant size (larger total memory).
+# Both free counts are always reported; hp_size_kb tells the scheduler which path to use.
+_hp_2m_mem=$(( hp_2m_total * 2048 ))
+_hp_1g_mem=$(( hp_1g_total * 1048576 ))
+if [ "$_hp_1g_mem" -gt "$_hp_2m_mem" ] 2>/dev/null; then
+    hp_size_kb=1048576
+elif [ "$_hp_2m_mem" -gt 0 ] 2>/dev/null; then
+    hp_size_kb=2048
+fi
+# CPU idle percentage — two-sample /proc/stat for accuracy (top output varies by distro/locale)
+read_cpu_stat() { awk '/^cpu /{print $2,$3,$4,$5,$6,$7,$8}' /proc/stat; }
+_cpu_stat1=$(read_cpu_stat); sleep 0.5; _cpu_stat2=$(read_cpu_stat)
+cpu_idle=$(awk -v s1="$_cpu_stat1" -v s2="$_cpu_stat2" 'BEGIN {
+    split(s1,a); split(s2,b); dtotal=0; didle=0
+    for(i=1;i<=7;i++){dtotal+=b[i]-a[i]}; didle=b[4]-a[4]
+    printf "%.1f", (dtotal>0)?didle/dtotal*100:100
+}')
 vtep_ip=$(ifconfig $vxlan_interface | grep 'inet ' | awk '{print $2}')
 
 function probe_arp()
@@ -254,29 +278,28 @@ function calc_resource()
     memory=${memory%.*}
     free_mem=$(cat /proc/meminfo | grep -i MemFree | awk '{print $2}')
     [ $memory -lt $free_mem ] && memory=$free_mem
-    if [ -n "$wds_address" ]; then
-        total_memory=$(( hp_2m_total * 2048 ))
-        memory=$(( hp_2m_free * 2048 ))
-    fi
     if [ $(( $(date +"%s") % 10 )) -gt 7 ]; then
 	rm -f $run_dir/old_resource_list
     fi
     state=1
     if [ -f "$run_dir/disabled" ]; then
-        echo "cpu=0/$total_cpu memory=0/$total_memory disk=0/$total_disk network=$network/$total_network load=$load/$total_load"
+        echo "cpu=0/$total_cpu memory=0/$total_memory disk=0/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle"
         state=0
     else
-        echo "cpu=$cpu/$total_cpu memory=$memory/$total_memory disk=$disk/$total_disk network=$network/$total_network load=$load/$total_load"
+        echo "cpu=$cpu/$total_cpu memory=$memory/$total_memory disk=$disk/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle"
     fi
     cd /opt/cloudland/run
     let disk=$disk/1000*1000
     let total_disk=$total_disk/1000*1000
     old_resource_list=$(cat old_resource_list 2>/dev/null)
-    resource_list="'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state'"
-    echo "'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state'" >/opt/cloudland/run/old_resource_list
+    # Include hugepage and cpu_idle in dedup check so changes trigger hyper_status update
+    # Multiply cpu_idle by 10 and truncate → 0.1% granularity (e.g. 15.3 → 153)
+    cpu_idle_dedup=$(awk -v v="$cpu_idle" 'BEGIN{printf "%d", v*10}')
+    resource_list="'$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$cpu_idle_dedup'"
+    echo "$resource_list" >/opt/cloudland/run/old_resource_list
     [ "$resource_list" = "$old_resource_list" ] && return
     cpu_model=$(lscpu | grep 'Model name:' | cut -d: -f2 | xargs)
-    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model'"
+    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$load_1m' '$load_5m' '$load_15m' '$cpu_idle'"
 }
 
 calc_resource
