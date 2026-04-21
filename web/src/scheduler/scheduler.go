@@ -37,6 +37,11 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	logger.Debugf("SelectHost entry: vcpus=%d, memMB=%d, diskGB=%d, zoneID=%d",
 		req.VCPUs, req.MemMB, req.DiskGB, req.ZoneID)
 
+	// 1. Resolve effective config for this zone (per-zone override or global fallback).
+	//    This is done per-call so that per-zone overrides take effect immediately after
+	//    a reload without needing to re-start the service.
+	cfg := ResolveZoneConfig(req.ZoneID)
+
 	// Initialize decision log
 	dlog := &DecisionLog{
 		Timestamp:    startTime,
@@ -45,7 +50,7 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	}
 	defer func() {
 		dlog.DurationMs = float64(time.Since(startTime).Microseconds()) / 1000.0
-		recordDecision(dlog)
+		recordDecision(cfg, dlog)
 		logger.Debugf("SelectHost completed in %.2fms, success=%v", dlog.DurationMs, dlog.Success)
 	}()
 
@@ -55,11 +60,6 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 		dlog.RejectReason = "scheduler not initialized"
 		return -1, NewCLError(ErrPlacementNotReady, "Scheduler not initialized, no active config snapshot", ErrSchedulerNotReady)
 	}
-
-	// 1. Resolve effective config for this zone (per-zone override or global fallback).
-	//    This is done per-call so that per-zone overrides take effect immediately after
-	//    a reload without needing to re-start the service.
-	cfg := ResolveZoneConfig(req.ZoneID)
 
 	// 2. Build Filter / Weigher chains from the resolved config.
 	//    Each scheduling call gets its own chain instances; this is cheap since chains

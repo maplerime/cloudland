@@ -13,6 +13,12 @@
 
 [placement]
 
+# log2db —— 是否将调度决策记录到数据库
+#
+# true：每次调度决策都会记录到 placement_decisions 表
+# false：调度决策不会记录到数据库，而是打印到日志
+log2db = true
+
 # host_report_interval_sec —— 节点心跳上报间隔（秒）
 #
 # 每个 hyper 节点通过 report_rc.sh 定期上报资源状态。

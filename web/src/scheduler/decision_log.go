@@ -62,7 +62,7 @@ type WeigherStep struct {
 }
 
 // recordDecision persists a decision log to the database.
-func recordDecision(log *DecisionLog) {
+func recordDecision(cfg *PlacementConfig, log *DecisionLog) {
 	detailJSON, err := json.Marshal(log)
 	if err != nil {
 		logger.Errorf("recordDecision: failed to marshal decision log: %v", err)
@@ -92,6 +92,11 @@ func recordDecision(log *DecisionLog) {
 		DurationMs:   log.DurationMs,
 	}
 
+	if !cfg.Log2DB {
+		logger.Debugf("recordDecision: log2db is disabled, skipping DB insert")
+		logger.Debugf("recordDecision: decision log: %v", record)
+		return
+	}
 	db := dbs.DB()
 	if err := db.Create(record).Error; err != nil {
 		logger.Errorf("recordDecision: failed to persist decision to DB: %v", err)

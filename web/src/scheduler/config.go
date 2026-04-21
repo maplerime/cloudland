@@ -49,6 +49,8 @@ type ZonePlacementConfig struct {
 
 // PlacementConfig holds all scheduler configuration, loaded from placement.toml.
 type PlacementConfig struct {
+	// Log placement decision to DB
+	Log2DB bool `mapstructure:"log2db"`
 	// Filter chain: executed in order, names correspond to RegisterFilter keys.
 	// Zone filtering is performed at DB query level (loadHostStates WHERE zone_id=?),
 	// so no "zone" filter is needed here.
@@ -104,15 +106,16 @@ type PlacementRequest struct {
 	VCPUs          int32
 	MemMB          int64 // memory in MB
 	DiskGB         int64
-	HugepageSizeKB int64    // 0 = no hugepage requirement
-	ZoneID         int64    // used for DB-level zone filtering and config lookup
-	OwnerID        int64    // owner org ID (for affinity/anti-affinity)
-	Policy         string   // "affinity" | "anti-affinity" | ""
-	ExcludeHypers  []int32  // hypers to exclude from candidates (e.g. migration source)
+	HugepageSizeKB int64   // 0 = no hugepage requirement
+	ZoneID         int64   // used for DB-level zone filtering and config lookup
+	OwnerID        int64   // owner org ID (for affinity/anti-affinity)
+	Policy         string  // "affinity" | "anti-affinity" | ""
+	ExcludeHypers  []int32 // hypers to exclude from candidates (e.g. migration source)
 }
 
 func defaultConfig() *PlacementConfig {
 	cfg := &PlacementConfig{
+		Log2DB: true,
 		// "zone" filter removed: DB query already scopes hosts to the requested zone.
 		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity"},
 		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},
