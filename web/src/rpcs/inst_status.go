@@ -99,8 +99,8 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 		}
 		if instance.Hyper != hyperID {
+			instance.Hyper = hyperID
 			if instance.Hyper >= 0 {
-				instance.Hyper = hyperID
 				err = syncMigration(ctx, instance)
 				if err != nil {
 					logger.Error("Failed to sync migration info", err)
