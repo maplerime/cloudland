@@ -240,16 +240,16 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	migration := &model.Migration{}
 	ctx, db := GetContextDB(ctx)
-	if instance.Status == "running" {
-		err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
-		if err != nil {
-			if gorm.IsRecordNotFoundError(err) {
-				err = nil
-				return
-			}
-			logger.Error("Failed to get migrations", err)
+	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
+	if err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			err = nil
 			return
 		}
+		logger.Error("Failed to get migrations", err)
+		return
+	}
+	if len(migration.Phases) > 0 {
 		for _, task := range migration.Phases {
 			err = execSourceMigrate(ctx, instance, migration, task.ID, "/opt/cloudland/scripts/backend/source_migration.sh", "cold")
 			if err != nil {
@@ -257,7 +257,9 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 				return
 			}
 		}
-	} else if instance.Status == "shutoff" {
+		return
+	}
+	if instance.Status == "shutoff" {
 		err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and target_hyper = ? and status != 'completed'", instance.ID, instance.Hyper).Last(migration).Error
 		if err != nil {
 			if gorm.IsRecordNotFoundError(err) {
