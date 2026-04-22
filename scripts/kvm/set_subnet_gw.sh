@@ -17,18 +17,18 @@ cat /proc/net/dev | grep -q "^\<ln-$vlan\>"
 if [ $? -ne 0 ]; then
     ./create_veth.sh $router ln-$vlan ns-$vlan
     apply_vnic -I ln-$vlan
+    mac_map=$(printf "%06x" $vlan)
+    hw_addr=52:$(echo $mac_map | cut -c 1-2):$(echo $mac_map | cut -c 3-4):$(echo $mac_map | cut -c 5-6)
+    hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
+    hw_addr=$hw_addr:$(echo $hyper_map | cut -c 1-2):$(echo $hyper_map | cut -c 3-4)
+    if [ $? -eq 0 ]; then
+        ip netns exec $router ip link set ns-$vlan address $hw_addr
+    fi
 fi
 brctl addif br$vlan ln-$vlan
 read -r network bcast hostmin hostmax < <(ipcalc $gateway | awk '/^Network:/ {n=$2} /^Broadcast:/ {b=$2} /^HostMin:/ {min=$2} /^HostMax:/ {max=$2} END {print n,b,min,max}')
 ip netns exec $router ipset add nonat $network
 ip netns exec $router ip addr add $gateway brd $bcast dev ns-$vlan
-mac_map=$(printf "%06x" $vlan)
-hw_addr=52:$(echo $mac_map | cut -c 1-2):$(echo $mac_map | cut -c 3-4):$(echo $mac_map | cut -c 5-6)
-hyper_map=$(printf "%04x" $(($SCI_CLIENT_ID & 0xffff)))
-hw_addr=$hw_addr:$(echo $hyper_map | cut -c 1-2):$(echo $hyper_map | cut -c 3-4)
-if [ $? -eq 0 ]; then
-    ip netns exec $router ip link set ns-$vlan address $hw_addr
-fi
 rt_file=/etc/iproute2/rt_tables
 tables=$(cat $rt_file | grep fip- | awk '{print $2}')
 for table in $tables; do
