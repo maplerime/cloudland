@@ -388,21 +388,6 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
 	}
-	count := 0
-	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", loadBalancer.RouterID).Count(&count).Error
-	if err != nil {
-		logger.Error("Failed to count load balancer")
-		err = NewCLError(ErrDatabaseError, "Failed to count load balancer in the router", err)
-		return
-	}
-	if count == 0 {
-		err = subnetAdmin.Delete(ctx, loadBalancer.VrrpInstance.VrrpSubnet)
-		if err != nil {
-			logger.Error("Failed to list floating ips", err)
-			err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
-			return
-		}
-	}
 	return
 }
 
