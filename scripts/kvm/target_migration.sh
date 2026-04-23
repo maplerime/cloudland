@@ -140,7 +140,12 @@ jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
 state="target_prepared"
 if [ "$migration_type" = "cold" ]; then
     virsh start $vm_ID
-    [ $? -ne 0 ] && state="failed"
+    if [ $? -ne 0 ]; then
+        state="failed"
+        virsh undefine --nvram $vm_ID
+        rm -f ${cache_dir}/meta/${vm_ID}.iso
+        rm -rf $xml_dir/$vm_ID
+    fi
 fi
 
 # Update vm_instance_map metrics - add VM to target hypervisor

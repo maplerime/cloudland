@@ -1,0 +1,13 @@
+[Unit]
+Description=Run anchor-sync every 24 hours
+Documentation=https://github.com/cloudland/cloudland
+
+[Timer]
+# Run daily at 02:00 (off-peak hours)
+OnCalendar=*-*-* 02:00:00
+# If the machine was off at scheduled time, run immediately after boot
+Persistent=true
+Unit=anchor-sync.service
+
+[Install]
+WantedBy=timers.target

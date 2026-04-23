@@ -30,6 +30,21 @@ metering_server_port: "8480"
 metering_server_url: "http://{{ metering_server_vip }}:{{ metering_server_port }}/insert/0/prometheus/api/v1/write"
 metering_api_port: "8480"
 
+# Nightingale vmagent remote write URL (for VM alerting)
+n9e_vm_remotewrite_url: "http://n9e-vm-lb:8480/api/v1/write"
+
+# Nightingale cluster configuration for VM alarm management
+n9e_cluster_url: "http://n9e-cluster:18000"
+n9e_api_username: "root"
+n9e_api_password: "root.2020"
+n9e_default_busi_group_id: 1
+n9e_template_path: "/opt/n9etemplate"
+n9e_data_source: "VictoriaMetrics"
+n9e_alarm_notify_group_name: "cloudland_guest_alert"
+
+# VictoriaMetrics configuration for vm_rule_anchor metric management
+vm_api_url: "http://victoriametrics:8428"
+
 switch_api_endpoint: "localhost"
 switch_api_house: "test"
 

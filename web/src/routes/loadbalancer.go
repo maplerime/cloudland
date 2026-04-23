@@ -154,7 +154,7 @@ func CreateVrrpInstance(ctx context.Context, name string, router *model.Router, 
 		}
 		control = "select=" + hyperGroup
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_vrrp_ip.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER' 'true'", router.ID, vrrpInstance.ID, vrrpSubnet.Vlan, vrrpIface1.MacAddr, vrrpIface1.Address.Address, vrrpIface2.MacAddr, vrrpIface2.Address.Address)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set vrrp ip command execution failed ", err)
@@ -387,21 +387,6 @@ func (a *LoadBalancerAdmin) Delete(ctx context.Context, loadBalancer *model.Load
 		logger.Error("DB failed to update loadBalancer name", err)
 		err = NewCLError(ErrLoadBalancerUpdateFailed, "Failed to update loadBalancer name", err)
 		return
-	}
-	count := 0
-	err = db.Model(&model.LoadBalancer{}).Where("router_id = ?", loadBalancer.RouterID).Count(&count).Error
-	if err != nil {
-		logger.Error("Failed to count load balancer")
-		err = NewCLError(ErrDatabaseError, "Failed to count load balancer in the router", err)
-		return
-	}
-	if count == 0 {
-		err = subnetAdmin.Delete(ctx, loadBalancer.VrrpInstance.VrrpSubnet)
-		if err != nil {
-			logger.Error("Failed to list floating ips", err)
-			err = NewCLError(ErrFIPListFailed, "Failed to list floating ips", err)
-			return
-		}
 	}
 	return
 }

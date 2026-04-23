@@ -1,0 +1,442 @@
+---
+# vmagent deployment tasks
+# This role deploys vmagent for VM monitoring and alerting with Nightingale
+# Tags: vmagent (full deployment), vmagent_install (install only), vmagent_sd_update (update service discovery only)
+
+# ============================================
+# Set Variables
+# ============================================
+- name: Set vmagent variables
+  set_fact:
+    vmagent_version: "v1.132.0"
+    vmagent_port: 8429
+    vmagent_base_dir: "/opt/vmagent"
+    vmagent_scrape_interval: "30s"
+    vmagent_scrape_timeout: "20s"
+  tags: [vmagent, vmagent_install, vmagent_sd_update]
+
+# ============================================
+# Gather Facts for Service Discovery
+# ============================================
+- name: Gather hyper nodes IP addresses
+  set_fact:
+    vmagent_hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
+  tags: [vmagent, vmagent_sd_update]
+
+- name: Gather hyper nodes hostnames
+  set_fact:
+    vmagent_hyper_hostnames: "{{ groups['hyper'] | map('extract', hostvars, 'inventory_hostname') | list }}"
+  tags: [vmagent, vmagent_sd_update]
+
+- name: Gather cland nodes IP addresses
+  set_fact:
+    vmagent_cland_ips: "{{ groups['cland'] | map('extract', hostvars, 'ansible_host') | list }}"
+  tags: [vmagent, vmagent_sd_update]
+
+- name: Build hyper nodes list with metadata for libvirt targets
+  set_fact:
+    vmagent_hyper_nodes: |
+      {% set nodes = [] %}
+      {% for i in range(vmagent_hyper_ips | length) %}
+      {% set _ = nodes.append({'ip': vmagent_hyper_ips[i], 'hostname': vmagent_hyper_hostnames[i]}) %}
+      {% endfor %}
+      {{ nodes }}
+  tags: [vmagent, vmagent_sd_update]
+
+# ============================================
+# Install Dependencies (only for vmagent and vmagent_install tags)
+# ============================================
+- name: Find broken apt sources (Grafana/VictoriaMetrics)
+  become: true
+  find:
+    paths: 
+      - /etc/apt/sources.list.d
+      - /etc/apt/keyrings
+      - /usr/share/keyrings
+    patterns: 
+      - "grafana*.list"
+      - "packages_grafana*.list"
+      - "grafana*"
+      - "vmagent*"
+      - "victoriametrics*"
+    file_type: any
+  register: apt_garbage_files
+  tags: [vmagent, vmagent_install]
+
+- name: Remove broken apt sources
+  become: true
+  file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ apt_garbage_files.files }}"
+  tags: [vmagent, vmagent_install]
+
+- name: Install Docker prerequisites
+  become: true
+  apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - software-properties-common
+      - python3-pip
+    state: present
+    update_cache: yes
+  tags: [vmagent, vmagent_install]
+
+- name: Check if Docker is installed
+  become: true
+  command: docker --version
+  register: docker_check
+  ignore_errors: true
+  changed_when: false
+  tags: [vmagent, vmagent_install]
+
+- name: Install Docker if not present
+  become: true
+  when: docker_check.rc != 0
+  tags: [vmagent, vmagent_install]
+  block:
+    - name: Clean up old Docker configurations
+      shell: |
+        rm -f /etc/apt/sources.list.d/docker*.list
+        rm -f /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
+        rm -f /etc/apt/keyrings/docker*
+        rm -f /usr/share/keyrings/docker*
+      ignore_errors: true
+
+    - name: Create keyrings directory
+      file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: '0755'
+
+    - name: Install Docker GPG key
+      get_url:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        dest: /etc/apt/keyrings/docker.asc
+        mode: '0644'
+        force: true
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+        filename: docker
+
+    - name: Install Docker CE
+      apt:
+        name: docker-ce
+        state: present
+        update_cache: yes
+
+- name: Install Docker SDK for Python
+  become: true
+  pip:
+    name: docker
+    executable: pip3
+    state: present
+  tags: [vmagent, vmagent_install]
+
+- name: Ensure Docker service is running
+  become: true
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Create Directory Structure
+# ============================================
+- name: Create vmagent base directories
+  become: true
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  with_items:
+    - "{{ vmagent_base_dir }}"
+    - "{{ vmagent_base_dir }}/vmagentdata"
+    - "{{ vmagent_base_dir }}/sd_configs"
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Calculate Disk Limits
+# ============================================
+- name: Collect filesystem facts
+  setup:
+    gather_subset:
+      - '!all'
+      - '!min'
+      - hardware
+  tags: [vmagent, vmagent_install]
+
+- name: Determine vmagent disk usage limit
+  vars:
+    # Find the mount point that holds vmagent_base_dir (longest match wins)
+    first_target_mount: >-
+      {{
+        ansible_mounts 
+        | selectattr('mount', 'in', vmagent_base_dir) 
+        | sort(attribute='mount') 
+        | last 
+      }}
+  set_fact:
+    # Calculate 90% of available space on that mount (raw bytes, no 'B' suffix)
+    final_disk_usage_limit: "{{ (first_target_mount.size_available * 0.9) | int }}"
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Generate Configuration Files
+# ============================================
+- name: Generate vmagent.yml configuration
+  become: true
+  template:
+    src: vmagent.yml.j2
+    dest: "{{ vmagent_base_dir }}/vmagent.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  # notify: restart vmagent
+  tags: [vmagent, vmagent_install]
+
+- name: Generate relabel_rules.yml configuration
+  become: true
+  template:
+    src: relabel_rules.yml.j2
+    dest: "{{ vmagent_base_dir }}/relabel_rules.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  # notify: restart vmagent
+  tags: [vmagent, vmagent_install]
+
+- name: Generate .env file
+  become: true
+  copy:
+    content: |
+      VM_RW_QUEUES=5
+      VM_RW_MAX_SAMPLES_PER_SEND=2000
+      VM_RW_BATCH_SEND_DEADLINE=5m
+      VM_REMOTEWRITE_URL={{ n9e_vm_remotewrite_url }}
+    dest: "{{ vmagent_base_dir }}/.env"
+    owner: root
+    group: root
+    mode: '0600'
+  # notify: restart vmagent
+  tags: [vmagent, vmagent_install]
+
+- name: Generate docker-compose.yml
+  become: true
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ vmagent_base_dir }}/docker-compose.yml"
+    owner: root
+    group: root
+    mode: '0644'
+  # notify: restart vmagent
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Generate Service Discovery Configurations
+# ============================================
+- name: Generate libvirt_nodes.json service discovery
+  become: true
+  template:
+    src: libvirt_nodes.json.j2
+    dest: "{{ vmagent_base_dir }}/sd_configs/libvirt_nodes.json"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [vmagent, vmagent_sd_update]
+
+- name: Generate cloudland_nodes.json service discovery
+  become: true
+  template:
+    src: cloudland_nodes.json.j2
+    dest: "{{ vmagent_base_dir }}/sd_configs/cloudland_nodes.json"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [vmagent, vmagent_sd_update]
+
+- name: Generate system_nodes.json service discovery
+  become: true
+  template:
+    src: system_nodes.json.j2
+    dest: "{{ vmagent_base_dir }}/sd_configs/system_nodes.json"
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [vmagent, vmagent_sd_update]
+
+# ============================================
+# Deploy vmagent Container
+# ============================================
+- name: Check if vmagent container exists
+  become: true
+  command: docker inspect vmagent
+  register: vmagent_check
+  failed_when: false
+  changed_when: false
+  ignore_errors: true
+  tags: [vmagent, vmagent_install]
+
+- name: Stop and remove existing vmagent container
+  become: true
+  docker_container:
+    name: vmagent
+    state: absent
+    container_default_behavior: no_defaults
+  when: vmagent_check.rc == 0
+  tags: [vmagent, vmagent_install]
+
+- name: Remove vmagent Docker image
+  become: true
+  docker_image:
+    name: "victoriametrics/vmagent:{{ vmagent_version }}"
+    state: absent
+    force_absent: yes
+  when: vmagent_check.rc == 0
+  tags: [vmagent, vmagent_install]
+
+- name: Pull vmagent Docker image
+  become: true
+  docker_image:
+    name: "victoriametrics/vmagent:{{ vmagent_version }}"
+    source: pull
+    force_source: yes
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Deploy N9E PromQL Templates
+# ============================================
+- name: Create N9E template directory
+  become: true
+  file:
+    path: /opt/n9etemplate
+    state: directory
+    mode: '0755'
+  delegate_to: "{{ item }}"
+  with_items: "{{ groups['cland'] }}"
+  run_once: false
+  tags: [vmagent, vmagent_install]
+
+- name: Deploy N9E PromQL templates
+  become: true
+  copy:
+    src: "../templates/{{ item.1 }}"
+    dest: "/opt/n9etemplate/{{ item.1 }}"
+    mode: '0644'
+  delegate_to: "{{ item.0 }}"
+  with_nested:
+    - "{{ groups['cland'] }}"
+    -
+      - N9E-cpu-promql.j2
+      - N9E-memory-promql.j2
+      - N9E-bandwidth-in-promql.j2
+      - N9E-bandwidth-out-promql.j2
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Deploy Anchor Sync Service (systemd timer)
+# ============================================
+- name: Install jq (required by anchor_sync.sh)
+  become: true
+  apt:
+    name: jq
+    state: present
+    update_cache: yes
+  tags: [vmagent, vmagent_install]
+
+- name: Deploy anchor_sync.sh script
+  become: true
+  template:
+    src: anchor_sync.sh.j2
+    dest: /opt/vmagent/anchor_sync.sh
+    owner: root
+    group: root
+    mode: '0755'
+  tags: [vmagent, vmagent_install]
+
+- name: Deploy anchor-sync.service unit
+  become: true
+  template:
+    src: anchor-sync.service.j2
+    dest: /etc/systemd/system/anchor-sync.service
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [vmagent, vmagent_install]
+
+- name: Deploy anchor-sync.timer unit
+  become: true
+  template:
+    src: anchor-sync.timer.j2
+    dest: /etc/systemd/system/anchor-sync.timer
+    owner: root
+    group: root
+    mode: '0644'
+  tags: [vmagent, vmagent_install]
+
+- name: Reload systemd daemon
+  become: true
+  systemd:
+    daemon_reload: yes
+  tags: [vmagent, vmagent_install]
+
+- name: Enable and start anchor-sync timer
+  become: true
+  systemd:
+    name: anchor-sync.timer
+    enabled: yes
+    state: started
+  tags: [vmagent, vmagent_install]
+
+- name: Deploy vmagent container
+  become: true
+  docker_container:
+    name: vmagent
+    image: "victoriametrics/vmagent:{{ vmagent_version }}"
+    state: started
+    container_default_behavior: no_defaults
+    restart_policy: always
+    ports:
+      - "{{ vmagent_port }}:{{ vmagent_port }}"
+    volumes:
+      - "{{ vmagent_base_dir }}:{{ vmagent_base_dir }}"
+    env_file: "{{ vmagent_base_dir }}/.env"
+    command:
+      - "-promscrape.config={{ vmagent_base_dir }}/vmagent.yml"
+      - "-remoteWrite.relabelConfig={{ vmagent_base_dir }}/relabel_rules.yml"
+      - "-remoteWrite.tmpDataPath={{ vmagent_base_dir }}/vmagentdata"
+      - "-remoteWrite.maxDiskUsagePerURL={{ final_disk_usage_limit }}"
+      - "-remoteWrite.url={{ n9e_vm_remotewrite_url }}"
+      - "-loggerFormat=json"
+  tags: [vmagent, vmagent_install]
+
+# ============================================
+# Validation
+# ============================================
+- name: Wait for vmagent to initialize
+  pause:
+    seconds: 5
+  tags: [vmagent, vmagent_install, vmagent_sd_update]
+
+- name: Check final vmagent container status
+  become: true
+  docker_container_info:
+    name: vmagent
+  register: vmagent_final_status
+  tags: [vmagent, vmagent_install, vmagent_sd_update]
+
+- name: Fail if vmagent is not running
+  fail:
+    msg: "vmagent container is failing to run. Status: {{ vmagent_final_status.container.State.Status }}. Check logs with 'docker logs vmagent'."
+  when: >
+    not vmagent_final_status.container.State.Running or
+    vmagent_final_status.container.State.Restarting
+  tags: [vmagent, vmagent_install, vmagent_sd_update]

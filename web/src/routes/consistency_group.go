@@ -898,9 +898,10 @@ func (a *ConsistencyGroupAdmin) CreateSnapshot(ctx context.Context, cgUUID strin
 
 	// 10. 调用 shell 脚本创建 WDS 快照
 	// Parameters: cg_ID, cg_snapshot_ID, cg_snapshot_Name, wds_cg_id
+	cg_snapshot_Name := fmt.Sprintf("cg_snap_%s", snapshot.UUID)
 	control := fmt.Sprintf("inter=")
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_cg_snapshot_wds.sh '%d' '%d' '%s' '%s'",
-		cg.ID, snapshot.ID, snapshot.Name, cg.WdsCgID)
+		cg.ID, snapshot.ID, cg_snapshot_Name, cg.WdsCgID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Errorf("Failed to execute create CG snapshot script: %v", err)
@@ -955,6 +956,17 @@ func (a *ConsistencyGroupAdmin) DeleteSnapshot(ctx context.Context, cgUUID, snap
 			EndTransaction(ctx, err)
 		}
 	}()
+
+	// if the original snapshot status is error and wds_snap_id is empty, then delete the snapshot record directly
+	if snapshot.Status == model.CGSnapshotStatusError && snapshot.WdsSnapID == "" {
+		logger.Debugf("CG Snapshot %s is in error status and has no WDS snapshot ID, deleting snapshot record directly", snapshot.UUID)
+		if err = db.Delete(snapshot).Error; err != nil {
+			logger.Errorf("Failed to delete snapshot record: %v", err)
+			return NewCLError(ErrDatabaseError, "Failed to delete snapshot record", err)
+		}
+		logger.Debugf("Successfully deleted snapshot record %s in CG %s", snapshot.UUID, cg.UUID)
+		return nil
+	}
 
 	// 6. 创建删除任务
 	task := &model.Task{
