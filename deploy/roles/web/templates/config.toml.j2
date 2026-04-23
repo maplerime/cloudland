@@ -53,6 +53,18 @@ api_url = "{{ vm_api_url }}"
 [admin]
 password = "{{ admin_passwd }}"
 
+[callback]
+enabled = true
+url = "{{ ps_api_endpoint }}"
+api_key = "{{ ps_api_key }}"
+region = "{{ region_name }}"
+tls_insecure_skip_verify = true
+workers = 3
+queue_size = 10000
+timeout = 30
+retry_max = 3
+retry_interval = 5
+
 [key]
 private = """-----BEGIN RSA PRIVATE KEY-----
 MIIEpQIBAAKCAQEAv2TkunvS/lUZm7oH4cpHvy/QyT72kwoVdEzBwfBNZoXWmC2h
