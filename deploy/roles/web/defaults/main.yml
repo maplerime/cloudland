@@ -3,3 +3,14 @@ db_passwd: d6Passwd
 coreos_image: http://www.bluecat.ltd/repo/openshift43/rhcos-4.3.0-x86_64-metal.raw.gz
 oc_installer: http://www.bluecat.ltd/repo/openshift43/openshift-install-linux-4.3.1.tar.gz
 oc_client: http://www.bluecat.ltd/repo/openshift43/openshift-client-linux-4.3.1.tar.gz
+
+n9e_cluster_url: ""
+n9e_api_username: ""
+n9e_api_password: ""
+n9e_user_group_id: 0
+n9e_template_path: "/opt/n9etemplate"
+n9e_data_source: "VictoriaMetrics"
+n9e_alarm_notify_group_name: ""
+vm_query_url: ""
+vm_import_url: ""
+vm_delete_url: ""

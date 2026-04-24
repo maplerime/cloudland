@@ -883,8 +883,10 @@ func (c *N9EClient) DeleteBusinessGroupByID(ctx context.Context, id int64) error
 
 // AnchorManager handles vm_rule_anchor metric management via VictoriaMetrics API
 type AnchorManager struct {
-	vmAPIURL   string
-	httpClient *http.Client
+	vmQueryURL  string // http://<host>/select/0/prometheus
+	vmImportURL string // http://<host>/insert/0/prometheus
+	vmDeleteURL string // http://<host>/delete/0/prometheus
+	httpClient  *http.Client
 }
 
 // VMInstance represents a VM instance for anchor binding
@@ -896,9 +898,11 @@ type VMInstance struct {
 }
 
 // NewAnchorManager creates a new anchor manager
-func NewAnchorManager(vmAPIURL string, timeout time.Duration) *AnchorManager {
+func NewAnchorManager(vmQueryURL, vmImportURL, vmDeleteURL string, timeout time.Duration) *AnchorManager {
 	return &AnchorManager{
-		vmAPIURL: vmAPIURL,
+		vmQueryURL:  vmQueryURL,
+		vmImportURL: vmImportURL,
+		vmDeleteURL: vmDeleteURL,
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
@@ -931,7 +935,7 @@ func (am *AnchorManager) QueryAnchorLinks(ctx context.Context, ruleUUID string) 
 	// Use last_over_time to query historical data within retention period
 	query := fmt.Sprintf(`last_over_time(vm_rule_anchor{rule_uuid="%s"}[30d]) == 1`, ruleUUID)
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -989,7 +993,7 @@ func (am *AnchorManager) QueryAnchorLinksByOwner(ctx context.Context, owner stri
 	// Use last_over_time to query historical data within retention period
 	query := fmt.Sprintf(`last_over_time(vm_rule_anchor{owner="%s"}[30d]) == 1`, owner)
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -1049,7 +1053,7 @@ func (am *AnchorManager) QueryAllAnchorLinks(ctx context.Context) (map[string][]
 	// Use last_over_time to query historical data within 30 days
 	query := `last_over_time(vm_rule_anchor[30d]) == 1`
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -1123,7 +1127,7 @@ func (am *AnchorManager) buildAnchorMetrics(ruleUUID string, vms []VMInstance, v
 
 // importToVM sends metrics to VictoriaMetrics Import API
 func (am *AnchorManager) importToVM(ctx context.Context, metrics string) error {
-	importURL := fmt.Sprintf("%s/api/v1/import/prometheus", am.vmAPIURL)
+	importURL := fmt.Sprintf("%s/api/v1/import/prometheus", am.vmImportURL)
 
 	req, err := http.NewRequestWithContext(ctx, "POST", importURL, strings.NewReader(metrics))
 	if err != nil {
@@ -1223,7 +1227,7 @@ func (am *AnchorManager) DeleteAnchorSeries(ctx context.Context, anchorType, rul
 			metricName, ruleUUID, instanceID)
 	}
 
-	deleteURL := fmt.Sprintf("%s/api/v1/admin/tsdb/delete_series", am.vmAPIURL)
+	deleteURL := fmt.Sprintf("%s/api/v1/admin/tsdb/delete_series", am.vmDeleteURL)
 	body := url.Values{}
 	body.Set("match[]", matcher)
 
@@ -1261,7 +1265,7 @@ func (am *AnchorManager) QueryAnchorsByType(ctx context.Context, anchorType, own
 		query = fmt.Sprintf(`last_over_time(%s[7d]) > 0`, metricName)
 	}
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -1328,7 +1332,7 @@ func (am *AnchorManager) QueryTypedAnchorLinksByRule(ctx context.Context, anchor
 	metricName := fmt.Sprintf("vm_%s_anchor", anchorType)
 	query := fmt.Sprintf(`last_over_time(%s{rule_uuid="%s"}[7d]) > 0`, metricName, ruleUUID)
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -1405,7 +1409,7 @@ func (am *AnchorManager) QueryAnchorByInstance(ctx context.Context, anchorType, 
 			metricName, ruleUUID, instanceID)
 	}
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -1476,7 +1480,7 @@ func (am *AnchorManager) QueryTypedAnchorLinksByOwner(ctx context.Context, ancho
 	metricName := fmt.Sprintf("vm_%s_anchor", anchorType)
 	query := fmt.Sprintf(`last_over_time(%s{owner="%s"}[7d]) > 0`, metricName, owner)
 
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {
@@ -1546,7 +1550,7 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 	for _, anchorType := range allAnchorTypes {
 		metricName := fmt.Sprintf("vm_%s_anchor", anchorType)
 		query := fmt.Sprintf(`last_over_time(%s[7d]) > 0`, metricName)
-		queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+		queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 		req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 		if err != nil {
@@ -1623,7 +1627,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 			`last_over_time(%s[14d]) > 0 unless last_over_time(%s[7d]) > 0`,
 			metricName, metricName,
 		)
-		queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+		queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 		req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 		if err != nil {
@@ -2322,7 +2326,7 @@ func (o *N9EOperator) CreateVMRuleLink(ctx context.Context, link *model.N9EVMRul
 func (o *N9EOperator) GetVMRuleLinks(ctx context.Context, ruleUUID string) ([]model.N9EVMRuleLink, error) {
 	ctx, db := common.GetContextDB(ctx)
 	var links []model.N9EVMRuleLink
-	err := db.Where("rule_uuid = ?", ruleUUID).Find(&links).Error
+	err := db.Where("rule_uuid = ? AND deleted_at IS NULL", ruleUUID).Find(&links).Error
 	return links, err
 }
 
@@ -2330,7 +2334,7 @@ func (o *N9EOperator) GetVMRuleLinks(ctx context.Context, ruleUUID string) ([]mo
 func (o *N9EOperator) GetVMRuleLinksByOwner(ctx context.Context, owner string) ([]model.N9EVMRuleLink, error) {
 	ctx, db := common.GetContextDB(ctx)
 	var links []model.N9EVMRuleLink
-	err := db.Where("owner = ?", owner).Find(&links).Error
+	err := db.Where("owner = ? AND deleted_at IS NULL", owner).Find(&links).Error
 	return links, err
 }
 
@@ -2471,7 +2475,7 @@ func (p *ListN9ERulesParams) SetDefaults() {
 // Returns: domain, hypervisor, region, error
 func (am *AnchorManager) GetInstanceMetadata(ctx context.Context, instanceID string) (domain, hypervisor, region string, err error) {
 	query := fmt.Sprintf(`vm_instance_map{instance_id="%s"}`, instanceID)
-	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmAPIURL, url.QueryEscape(query))
+	queryURL := fmt.Sprintf("%s/api/v1/query?query=%s", am.vmQueryURL, url.QueryEscape(query))
 
 	req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 	if err != nil {

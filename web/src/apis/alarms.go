@@ -59,6 +59,18 @@ func resolveOperator(op string) string {
 	}
 }
 
+var businessGroupNamePattern = regexp.MustCompile(`[^A-Za-z0-9]+`)
+
+func normalizeBusinessGroupName(name string) (string, error) {
+	normalized := businessGroupNamePattern.ReplaceAllString(strings.TrimSpace(name), "")
+	if normalized == "" {
+		err := fmt.Errorf("invalid business group name after normalization: %q", name)
+		logger.Errorf("AlarmAPI.normalizeBusinessGroupName: %v", err)
+		return "", err
+	}
+	return normalized, nil
+}
+
 type AlarmAPI struct {
 	operator         *routes.AlarmOperator
 	alarmAdmin       *routes.AlarmAdmin
@@ -92,15 +104,17 @@ func (a *AlarmAPI) InitN9EComponents() {
 	}
 
 	if a.anchorManager == nil {
-		vmAPIURL := viper.GetString("victoriametrics.api_url")
+		vmQueryURL := viper.GetString("victoriametrics.query_url")
+		vmImportURL := viper.GetString("victoriametrics.import_url")
+		vmDeleteURL := viper.GetString("victoriametrics.delete_url")
 		vmTimeout, _ := time.ParseDuration(viper.GetString("victoriametrics.api_timeout"))
 		if vmTimeout == 0 {
 			vmTimeout = 30 * time.Second
 		}
 
-		if vmAPIURL != "" {
-			a.anchorManager = routes.NewAnchorManager(vmAPIURL, vmTimeout)
-			log.Printf("Anchor manager initialized with VM API URL: %s", vmAPIURL)
+		if vmQueryURL != "" {
+			a.anchorManager = routes.NewAnchorManager(vmQueryURL, vmImportURL, vmDeleteURL, vmTimeout)
+			log.Printf("Anchor manager initialized with VM query=%s import=%s delete=%s", vmQueryURL, vmImportURL, vmDeleteURL)
 		}
 	}
 
@@ -720,8 +734,20 @@ func (a *AlarmAPI) CreateCPURule(c *gin.Context) {
 		return
 	}
 
+	if _, err := a.n9eOperator.GetCPURuleByUUID(c.Request.Context(), req.RuleID); err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "CPU rule already exists with rule_id: " + req.RuleID})
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query existing CPU rule: " + err.Error()})
+		return
+	}
+
 	// Step 1: Create N9E Business Group (or get existing one)
-	regionName := viper.GetString("console.host")
+	regionName, err := normalizeBusinessGroupName(viper.GetString("console.host"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to normalize business group name: " + err.Error()})
+		return
+	}
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByName(c.Request.Context(), regionName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query business group: " + err.Error()})
@@ -893,8 +919,20 @@ func (a *AlarmAPI) CreateMemoryRule(c *gin.Context) {
 		return
 	}
 
+	if _, err := a.n9eOperator.GetMemoryRuleByUUID(c.Request.Context(), req.RuleID); err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Memory rule already exists with rule_id: " + req.RuleID})
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query existing memory rule: " + err.Error()})
+		return
+	}
+
 	// Step 1: Create N9E Business Group (or get existing one)
-	regionName := viper.GetString("console.host")
+	regionName, err := normalizeBusinessGroupName(viper.GetString("console.host"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to normalize business group name: " + err.Error()})
+		return
+	}
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByName(c.Request.Context(), regionName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query business group: " + err.Error()})
@@ -1859,8 +1897,20 @@ func (a *AlarmAPI) CreateBWRule(c *gin.Context) {
 		return
 	}
 
+	if _, err := a.n9eOperator.GetBandwidthRuleByUUID(c.Request.Context(), req.RuleID); err == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Bandwidth rule already exists with rule_id: " + req.RuleID})
+		return
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query existing bandwidth rule: " + err.Error()})
+		return
+	}
+
 	// Step 1: Create N9E Business Group (or get existing one)
-	regionName := viper.GetString("console.host")
+	regionName, err := normalizeBusinessGroupName(viper.GetString("console.host"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to normalize business group name: " + err.Error()})
+		return
+	}
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByName(c.Request.Context(), regionName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to query business group: " + err.Error()})
