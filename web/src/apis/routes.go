@@ -217,6 +217,11 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/tasks", taskAPI.List)
 		authGroup.GET("/api/v1/tasks/:id", taskAPI.Get)
 
+		authGroup.GET("/api/v1/ip-whitelist", ipWhitelistAPI.List)
+		authGroup.POST("/api/v1/ip-whitelist", ipWhitelistAPI.Create)
+		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
+		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
+
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{
 			metricsGroup.POST("/instances/cpu/his_data", monitorAPI.GetCPU)
@@ -245,8 +250,8 @@ func Register() (r *gin.Engine) {
 
 			// N9E Anchor Management APIs
 			metricsGroup.POST("/alarm/anchor/link", alarmAPI.LinkVMsToRule)
-			metricsGroup.GET("/alarm/anchor/links", alarmAPI.GetRuleLinks)           // Query from VictoriaMetrics
-			metricsGroup.GET("/alarm/anchor/dblinks", alarmAPI.GetDBLinks)           // Query from CloudLand DB
+			metricsGroup.GET("/alarm/anchor/links", alarmAPI.GetRuleLinks) // Query from VictoriaMetrics
+			metricsGroup.GET("/alarm/anchor/dblinks", alarmAPI.GetDBLinks) // Query from CloudLand DB
 			metricsGroup.DELETE("/alarm/anchor/unlink", alarmAPI.UnlinkVMsFromRule)
 			metricsGroup.POST("/alarm/anchor/sync", alarmAPI.SyncAnchorThresholds)
 			metricsGroup.POST("/alarm/anchor/recover", alarmAPI.RecoverAnchorThresholds)

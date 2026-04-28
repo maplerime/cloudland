@@ -1213,6 +1213,11 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Failed to cleanup rule links", cleanupErr)
 	}
 
+	// Cleanup ip whitelist entries for this instance
+	if cleanupErr := ipWhitelistAdmin.DeleteByInstanceUUID(ctx, instance.UUID); cleanupErr != nil {
+		logger.Error("Failed to cleanup ip whitelist entries", cleanupErr)
+	}
+
 	// Build imagePrefix for async snapshot cleanup (same rule as Create)
 	imagePrefix := ""
 	if instance.Image != nil {

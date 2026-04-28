@@ -1841,6 +1841,10 @@ func (a *AlarmAPI) ProcessAlertWebhook(c *gin.Context) {
 
 			// Send request asynchronously
 			logger.Debugf("Switch API Request Body: %+v", reqBody)
+			if routes.IsIPWhitelisted(ip) {
+				logger.Infof("IP %s is in whitelist, skipping Switch API request", ip)
+				continue
+			}
 			go a.sendSwitchAPIRequest(reqBody)
 			logger.Infof("Triggered Switch API request for IP Block: %s", ip)
 		} else {
