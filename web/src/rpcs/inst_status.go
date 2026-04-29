@@ -76,7 +76,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			continue
 		}
 		if instance.Status == "migrating" {
-			if time.Since(instance.UpdatedAt) < 12*time.Minute {
+			if time.Since(instance.UpdatedAt) < 6*time.Minute {
 				continue
 			}
 		}

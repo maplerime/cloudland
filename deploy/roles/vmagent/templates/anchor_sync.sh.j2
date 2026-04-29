@@ -5,7 +5,8 @@
 # Logic: queries anchor series active in [14d] but not refreshed in [7d],
 # then re-imports them with the current timestamp to prevent expiry.
 
-VM_API_URL="{{ vm_api_url }}"
+VM_QUERY_URL="{{ vm_query_url }}"
+VM_IMPORT_URL="{{ vm_import_url }}"
 BATCH_SIZE=500
 BATCH_SLEEP="0.05"   # seconds between batches (50ms)
 ANCHOR_TYPES=("cpu" "mem" "bw_in" "bw_out")
@@ -51,7 +52,7 @@ for TYPE in "${ANCHOR_TYPES[@]}"; do
     QUERY="last_over_time(${METRIC_NAME}{region=\"${REGION}\"}[14d]) > 0 unless last_over_time(${METRIC_NAME}{region=\"${REGION}\"}[7d]) > 0"
 
     RESPONSE=$(curl -sf --max-time 30 \
-        "${VM_API_URL}/api/v1/query" \
+        "${VM_QUERY_URL}/api/v1/query" \
         --data-urlencode "query=${QUERY}" 2>&1)
     CURL_RC=$?
 
@@ -108,7 +109,7 @@ for TYPE in "${ANCHOR_TYPES[@]}"; do
                 -X POST \
                 -H "Content-Type: text/plain" \
                 --data-binary @- \
-                "${VM_API_URL}/api/v1/import/prometheus" 2>&1)
+                "${VM_IMPORT_URL}/api/v1/import/prometheus" 2>&1)
             if [ $? -ne 0 ]; then
                 log_error "Import batch ${BATCH_NUM} failed for ${TYPE}: ${IMPORT_RESP}"
                 TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
@@ -129,7 +130,7 @@ for TYPE in "${ANCHOR_TYPES[@]}"; do
             -X POST \
             -H "Content-Type: text/plain" \
             --data-binary @- \
-            "${VM_API_URL}/api/v1/import/prometheus" 2>&1)
+            "${VM_IMPORT_URL}/api/v1/import/prometheus" 2>&1)
         if [ $? -ne 0 ]; then
             log_error "Import final batch ${BATCH_NUM} failed for ${TYPE}: ${IMPORT_RESP}"
             TOTAL_ERRORS=$((TOTAL_ERRORS + 1))
