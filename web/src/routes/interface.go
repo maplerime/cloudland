@@ -280,6 +280,40 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				logger.Errorf("Failed to detach floating ip, %v", err)
 				return
 			}
+
+			// Clean up old second addresses before resetting the interface
+			for _, addr := range iface.SecondAddresses {
+				// Reset second_interface to 0
+				err = db.Model(addr).Updates(map[string]interface{}{"second_interface": 0}).Error
+				if err != nil {
+					logger.Errorf("Failed to reset second_interface for address %d, %v", addr.ID, err)
+					err = NewCLError(ErrAddressUpdateFailed, "Failed to reset second_interface", err)
+					return
+				}
+				// If this address is associated with a floating interface, convert the floating ip to PublicFloating type
+				if addr.Interface > 0 {
+					addrIface := &model.Interface{Model: model.Model{ID: addr.Interface}}
+					if err = db.Model(addrIface).Take(addrIface).Error; err != nil {
+						logger.Errorf("Failed to query interface %d, %v", addr.Interface, err)
+						return
+					}
+					if addrIface.FloatingIp > 0 {
+						floatingIp := &model.FloatingIp{Model: model.Model{ID: addrIface.FloatingIp}}
+						err = db.Model(floatingIp).Updates(map[string]interface{}{
+							"instance_id": 0,
+							"router_id":   0,
+							"int_address": "",
+							"type":        string(PublicFloating),
+						}).Error
+						if err != nil {
+							logger.Errorf("Failed to convert floating ip %d to PublicFloating type, %v", addrIface.FloatingIp, err)
+							err = NewCLError(ErrFIPUpdateFailed, "Failed to convert floating ip type", err)
+							return
+						}
+					}
+				}
+			}
+
 			if err = db.Model(iface).Association("Security_Groups").Replace([]*model.SecurityGroup{}).Error; err != nil {
 				logger.Debug("Failed to save interface", err)
 				return
@@ -290,7 +324,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				logger.Error("Failed to generate random Mac address, %v", err)
 				return
 			}
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
+			err = db.Model(iface).Updates(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
 				return

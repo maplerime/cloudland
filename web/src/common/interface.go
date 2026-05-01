@@ -206,38 +206,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 		return
 	}
 	primarySubnet = primaryIface.Address.Subnet
-	for _, address := range primaryIface.SecondAddresses {
-		err = db.Model(address).Updates(map[string]interface{}{"second_interface": 0}).Error
-		if err != nil {
-			logger.Error("Update interface ", err)
-			return
-		}
-		if address.Interface > 0 {
-			iface := &model.Interface{Model: model.Model{ID: address.Interface}}
-			if err = db.Model(iface).Take(iface).Error; err != nil {
-				logger.Errorf("Failed to query interface, %v", err)
-				return
-			}
-			if iface.FloatingIp > 0 {
-				floatingIp := &model.FloatingIp{Model: model.Model{ID: iface.FloatingIp}}
-				err = db.Model(floatingIp).Updates(map[string]interface{}{
-					"instance_id": 0,
-					"router_id":   0,
-					"int_address": "",
-					"type":        string(PublicFloating)}).Error
-				if err != nil {
-					logger.Error("Failed to update floating ip ", err)
-					return
-				}
-				for _, fip := range floatingIps {
-					if fip.ID == iface.FloatingIp {
-						fip.InstanceID = 0
-						break
-					}
-				}
-			}
-		}
-	}
 	primaryIface.SecondAddresses = nil
 	for i, fip := range floatingIps {
 		if !updatePrimary && fip.InstanceID > 0 {
@@ -248,7 +216,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			return
 		}
 		fip.Instance = instance
-		iface := fip.Interface
+		fipIface := fip.Interface
 		if i == 0 {
 			primaryIface.Instance = instance.ID
 			primaryIface.Name = "eth0"
@@ -259,7 +227,12 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			if primaryUUID != "" {
 				primaryIface.UUID = primaryUUID
 			}
-			err = db.Model(primaryIface).Updates(primaryIface).Error
+			err = db.Model(primaryIface).Updates(map[string]interface{}{
+				"instance": primaryIface.Instance,
+				"name": primaryIface.Name,
+				"primary_if": primaryIface.PrimaryIf,
+				"mac_addr": primaryIface.MacAddr,
+				"uuid": primaryIface.UUID}).Error
 			if err != nil {
 				logger.Errorf("Failed to update interface, %v", err)
 				return
@@ -291,13 +264,13 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			}
 			primaryIface.SecondAddresses = append(primaryIface.SecondAddresses, secondAddr)
 			fip.InstanceID = instance.ID
-			fip.IntAddress = iface.Address.Address
+			fip.IntAddress = fipIface.Address.Address
 			fip.Type = string(PublicReserved)
 			fip.Instance = nil
 			err = db.Model(&model.FloatingIp{Model: model.Model{ID: fip.ID}}).Updates(map[string]interface{}{
 				"instance_id": instance.ID,
 				"router_id":   0,
-				"int_address": iface.Address.Address,
+				"int_address": fipIface.Address.Address,
 				"type":        string(PublicReserved),
 			}).Error
 			if err != nil {
