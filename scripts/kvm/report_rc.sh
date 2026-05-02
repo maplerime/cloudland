@@ -138,6 +138,8 @@ function router_status()
 
 function check_system_router()
 {
+    sudo systemctl status NetworkManager >/dev/null
+    [ $? -ne 0 ] && sudo systemctl restart NetworkManager
     sudo ip netns exec router-0 ip r | grep default
     if [ $? -ne 0 ]; then
         sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
