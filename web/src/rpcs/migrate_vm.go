@@ -129,26 +129,28 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Invalid instance ID", err)
 		return
 	}
-        errHndl := ctx.Value("error")
-        if errHndl != nil {
+	errHndl := ctx.Value("error")
+	if errHndl != nil {
 		reason := "Resource is not enough"
-                err = db.Model(instance).Updates(map[string]interface{}{
-                        "status": "rollback",
-                        "reason": reason}).Error
-                if err != nil {
-                        logger.Error("Failed to update instance", err)
-                }
+		err = db.Model(instance).Updates(map[string]interface{}{
+			"status": "rollback",
+			"reason": reason}).Error
+		if err != nil {
+			logger.Error("Failed to update instance", err)
+		}
 		err = db.Model(migration).Update(map[string]interface{}{"status": "failed"}).Error
 		if err != nil {
 			logger.Error("Failed to update migration", err)
 		}
-                return
-        }
+		return
+	}
 
 	// Use defer to handle status updates, ensuring both migration and task status
 	// are set to "failed" if any error occurs during the function execution.
 	defer func() {
-		taskStatus = "completed"
+		if status != "failed" {
+			taskStatus = "completed"
+		}
 		migration.Status = status
 		if err != nil {
 			taskStatus = "failed"
@@ -263,6 +265,13 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		err = execSourceMigrate(ctx, instance, migration, task2.ID, "/opt/cloudland/scripts/backend/source_migration.sh", migration.Type)
 		if err != nil {
 			logger.Error("Failed to exec source migration", err)
+			if migration.Type == "cold" {
+				_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
+				if err != nil {
+					logger.Error("Failed to sync vm info", err)
+					return
+				}
+			}
 			err = db.Model(&model.Task{}).Where("id = ?", task2.ID).Update(map[string]interface{}{"status": "failed", "message": err.Error()}).Error
 			return
 		}

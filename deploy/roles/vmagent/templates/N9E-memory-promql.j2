@@ -1,0 +1,9 @@
+label_replace(
+  sum by (region, domain) (
+    avg_over_time(libvirt_domain_memory_stats_used_percent{job="prometheus_libvirt_exporter"}[{{ .duration }}m])
+  ) {{ .operator }} on(region, domain) group_left(instance_id, tenant_id, rule_uuid)
+  (
+    last_over_time(vm_mem_anchor{rule_uuid="{{ .rule_uuid }}"}[14d]) > 0
+  ),
+  "alert_type", "memory", "", ""
+)

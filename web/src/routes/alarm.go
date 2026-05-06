@@ -117,29 +117,19 @@ type (
 	}
 
 	CPURule struct {
-		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Over         int       `json:"over" gorm:"check:over >= 1"`
-		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
-		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
-		CreatedAt    time.Time `gorm:"autoCreateTime"`
+		ID        int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name      string    `json:"name" gorm:"size:255"`
+		Duration  int       `json:"duration" gorm:"check:duration >= 1"`
+		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	MemoryRule struct {
-		ID           int       `gorm:"primaryKey;autoIncrement"`
-		GroupUUID    string    `gorm:"column:group_uuid;type:varchar(36);index"`
-		Name         string    `json:"name" gorm:"size:255"`
-		Limit        int       `json:"limit" gorm:"column:limit;check:limit >= 1"` // Threshold value
-		Rule         string    `json:"rule" gorm:"type:varchar(8);column:rule"`    // Comparison operator: gt/lt
-		Duration     int       `json:"duration" gorm:"check:duration >= 1"`        // Duration in minutes
-		Over         int       `json:"over" gorm:"check:over >= 1"`
-		DownTo       int       `json:"down_to" gorm:"check:down_to >= 0"`
-		DownDuration int       `json:"down_duration" gorm:"check:down_duration >= 1"`
-		CreatedAt    time.Time `gorm:"autoCreateTime"`
+		ID        int       `gorm:"primaryKey;autoIncrement"`
+		GroupUUID string    `gorm:"column:group_uuid;type:varchar(36);index"`
+		Name      string    `json:"name" gorm:"size:255"`
+		Duration  int       `json:"duration" gorm:"check:duration >= 1"`
+		CreatedAt time.Time `gorm:"autoCreateTime"`
 	}
 
 	BWRule struct {
@@ -147,21 +137,10 @@ type (
 		GroupUUID string `gorm:"column:group_uuid;type:varchar(36);index"`
 		Name      string `gorm:"size:255"`
 
-		InEnabled      bool   `gorm:"default:false"`
-		InThreshold    int    `gorm:"check:in_threshold >= 0"`
-		InDuration     int    `gorm:"check:in_duration >= 0"`
-		InOverType     string `gorm:"type:varchar(20);default:'absolute'"`
-		InDownTo       int    `gorm:"default:0"`
-		InDownDuration int    `gorm:"default:0"`
-
-		OutEnabled      bool   `gorm:"default:false"`
-		OutThreshold    int    `gorm:"check:out_threshold >= 0"`
-		OutDuration     int    `gorm:"check:out_duration >= 0"`
-		OutOverType     string `gorm:"type:varchar(20);default:'absolute'"`
-		OutDownTo       int    `gorm:"default:0"`
-		OutDownDuration int    `gorm:"default:0"`
-
-		CreatedAt time.Time `gorm:"autoCreateTime"`
+		Direction       string    `gorm:"type:varchar(8)"`         // in or out
+		Duration        int       `gorm:"check:duration >= 0"`     // Duration in seconds
+		DurationMinutes int       `gorm:"column:duration_minutes"` // Duration in minutes for N9E
+		CreatedAt       time.Time `gorm:"autoCreateTime"`
 	}
 	Alert struct {
 		ID            uint   `gorm:"primaryKey;autoIncrement"`
@@ -298,6 +277,16 @@ func GetPrometheusSSHPort() int {
 
 func IsRemotePrometheus() bool {
 	return isRemotePrometheus
+}
+
+// GetVMByUUID retrieves a VM instance by its UUID
+func (a *AlarmOperator) GetVMByUUID(ctx context.Context, vmUUID string) (*model.Instance, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var instance model.Instance
+	if err := db.Where("id = ?", vmUUID).First(&instance).Error; err != nil {
+		return nil, err
+	}
+	return &instance, nil
 }
 
 func (a *AlarmOperator) GetCPURulesByGroupID(ctx context.Context, groupUUID string, rules *[]model.CPURuleDetail) error {
@@ -629,6 +618,54 @@ func (a *AlarmOperator) GetLinkedVMs(ctx context.Context, groupUUID string) ([]m
 		return nil, err
 	}
 	return links, nil
+}
+
+// GetLinkedVMsByRuleIDOrOwner queries VM links by rule_id or owner
+// Returns a map: rule_uuid -> list of VMRuleLink with RuleGroup info
+func (a *AlarmOperator) GetLinkedVMsByRuleIDOrOwner(ctx context.Context, ruleID, owner string) (map[string][]model.VMRuleLink, error) {
+	ctx, db := common.GetContextDB(ctx)
+
+	// Build query with JOIN to get rule group info
+	query := db.Table("vm_rule_links").
+		Select("vm_rule_links.*, rule_group_v2.rule_id, rule_group_v2.owner, rule_group_v2.name as rule_name").
+		Joins("INNER JOIN rule_group_v2 ON vm_rule_links.group_uuid = rule_group_v2.uuid")
+
+	// Apply filters
+	if ruleID != "" && owner != "" {
+		// Both specified: filter by both
+		query = query.Where("rule_group_v2.rule_id = ? AND rule_group_v2.owner = ?", ruleID, owner)
+	} else if ruleID != "" {
+		// Only rule_id specified
+		query = query.Where("rule_group_v2.rule_id = ?", ruleID)
+	} else if owner != "" {
+		// Only owner specified
+		query = query.Where("rule_group_v2.owner = ?", owner)
+	} else {
+		// Neither specified: return all
+		logger.Infof("Querying all VM links from database")
+	}
+
+	var results []struct {
+		model.VMRuleLink
+		RuleID   string `gorm:"column:rule_id"`
+		Owner    string `gorm:"column:owner"`
+		RuleName string `gorm:"column:rule_name"`
+	}
+
+	if err := query.Scan(&results).Error; err != nil {
+		logger.Errorf("Failed to query VM links: ruleID=%s, owner=%s, error=%v", ruleID, owner, err)
+		return nil, err
+	}
+
+	// Group by group_uuid
+	linkMap := make(map[string][]model.VMRuleLink)
+	for _, r := range results {
+		linkMap[r.GroupUUID] = append(linkMap[r.GroupUUID], r.VMRuleLink)
+	}
+
+	logger.Infof("Queried VM links from DB: ruleID=%s, owner=%s, found %d groups with %d total links",
+		ruleID, owner, len(linkMap), len(results))
+	return linkMap, nil
 }
 
 // GetRuleIDsByInstance retrieves all rule IDs associated with a single instance
@@ -1068,12 +1105,9 @@ func (a *AlarmOperator) CreateCPURules(ctx context.Context, groupUUID string, ru
 	return db.Transaction(func(tx *gorm.DB) error {
 		for i := range rules {
 			rule := &CPURule{
-				GroupUUID:    groupUUID,
-				Name:         rules[i].Name,
-				Duration:     rules[i].Duration,
-				Over:         rules[i].Over,
-				DownDuration: rules[i].DownDuration,
-				DownTo:       rules[i].DownTo,
+				GroupUUID: groupUUID,
+				Name:      rules[i].Name,
+				Duration:  rules[i].Duration,
 			}
 			if err := tx.Create(rule).Error; err != nil {
 				logger.Errorf("create cpu rule failed: groupUUID=%s, rule=%+v, error=%v", groupUUID, rules[i], err)

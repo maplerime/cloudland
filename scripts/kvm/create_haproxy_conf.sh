@@ -104,9 +104,13 @@ EOF
     j=0
     while [ $j -lt $nbackend ]; do
         backend=$(jq -r .[$j] <<< $backends)
-        read -d'\n' -r backend < <(jq -r ".backend_url" <<<$backend)
+        read -d'\n' -r backend_url ssl< <(jq -r ".backend_url, .ssl" <<<$backend)
+        ssl_option=""
+        if [ "$ssl" == "true" ]; then
+            ssl_option=" ssl verify none"
+        fi
         cat >>$lb_dir/haproxy.conf <<EOF
-    server ${name}-$j $backend check weight 100 maxconn 1000
+    server ${name}-$j $backend_url check weight 100 maxconn 1000$ssl_option
 EOF
         let j=$j+1
     done

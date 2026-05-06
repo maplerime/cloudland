@@ -76,11 +76,12 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			continue
 		}
 		if instance.Status == "migrating" {
-			if time.Since(instance.UpdatedAt) < 12*time.Minute {
+			if time.Since(instance.UpdatedAt) < 6*time.Minute {
 				continue
 			}
 		}
 		if instance.Status.String() != status {
+			instance.Status = model.InstanceStatus(status)
 			err = db.Model(instance).Update(map[string]interface{}{
 				"status": status,
 			}).Error
@@ -98,8 +99,8 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 		}
 		if instance.Hyper != hyperID {
+			instance.Hyper = hyperID
 			if instance.Hyper >= 0 {
-				instance.Hyper = hyperID
 				err = syncMigration(ctx, instance)
 				if err != nil {
 					logger.Error("Failed to sync migration info", err)

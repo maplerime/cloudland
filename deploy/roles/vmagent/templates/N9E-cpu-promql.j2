@@ -1,0 +1,20 @@
+label_replace(
+  (
+    (
+      sum by (region, domain) (
+        rate(libvirt_domain_info_cpu_time_seconds_total{job="prometheus_libvirt_exporter"}[{{ .duration }}m])
+      )
+      /
+      clamp_min(
+        sum by (region, domain) (
+          libvirt_domain_info_virtual_cpus{job="prometheus_libvirt_exporter"}
+        ),
+        1
+      )
+    ) * 100
+  ) {{ .operator }} on(region, domain) group_left(instance_id, tenant_id, rule_uuid)
+  (
+    last_over_time(vm_cpu_anchor{rule_uuid="{{ .rule_uuid }}"}[14d]) > 0
+  ),
+  "alert_type", "cpu", "", ""
+)

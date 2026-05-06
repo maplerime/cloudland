@@ -11,7 +11,7 @@ total_cpu=$(cat /proc/cpuinfo | grep -c processor)
 memory=0
 if [ -z "$system_reserved_memory" ]; then
     let system_reserved_memory=$(cat /proc/meminfo | grep MemTotal | awk '{print $2}')/4
-    [ $system_reserved_memory -gt 32000000 ] && system_reserved_memory=32000000
+    [ $system_reserved_memory -gt 64000000 ] && system_reserved_memory=64000000
 fi
 total_memory=$(( $(free | grep 'Mem:' | awk '{print $2}') - $system_reserved_memory ))
 disk=0
@@ -29,6 +29,7 @@ total_load=0
 # Hugepage collection
 hp_2m_free=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages 2>/dev/null || echo 0)
 hp_2m_total=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0)
+<<<<<<< HEAD
 hp_1g_free=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/free_hugepages 2>/dev/null || echo 0)
 hp_1g_total=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || echo 0)
 hp_size_kb=0
@@ -49,6 +50,8 @@ cpu_idle=$(awk -v s1="$_cpu_stat1" -v s2="$_cpu_stat2" 'BEGIN {
     for(i=1;i<=7;i++){dtotal+=b[i]-a[i]}; didle=b[4]-a[4]
     printf "%.1f", (dtotal>0)?didle/dtotal*100:100
 }')
+=======
+>>>>>>> staging
 vtep_ip=$(ifconfig $vxlan_interface | grep 'inet ' | awk '{print $2}')
 
 function probe_arp()
@@ -278,6 +281,10 @@ function calc_resource()
     memory=${memory%.*}
     free_mem=$(cat /proc/meminfo | grep -i MemFree | awk '{print $2}')
     [ $memory -lt $free_mem ] && memory=$free_mem
+    if [ -n "$wds_address" ]; then
+        total_memory=$(( hp_2m_total * 2048 ))
+        memory=$(( hp_2m_free * 2048 ))
+    fi
     if [ $(( $(date +"%s") % 10 )) -gt 7 ]; then
 	rm -f $run_dir/old_resource_list
     fi

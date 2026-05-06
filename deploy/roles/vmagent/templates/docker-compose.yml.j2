@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  vmagent:
+    image: victoriametrics/vmagent:{{ vmagent_version }}
+    container_name: vmagent
+    restart: always
+    ports:
+      - "{{ vmagent_port }}:{{ vmagent_port }}"
+    volumes:
+      - {{ vmagent_base_dir }}:{{ vmagent_base_dir }}
+    env_file:
+      - {{ vmagent_base_dir }}/.env
+    command:
+      - "-promscrape.config={{ vmagent_base_dir }}/vmagent.yml"
+      - "-remoteWrite.relabelConfig={{ vmagent_base_dir }}/relabel_rules.yml"
+      - "-remoteWrite.tmpDataPath={{ vmagent_base_dir }}/vmagentdata"
+      - "-remoteWrite.maxDiskUsagePerURL={{ final_disk_usage_limit }}"
+      - "-remoteWrite.url={{ n9e_vm_remotewrite_url }}"
+      - "-loggerFormat=json"

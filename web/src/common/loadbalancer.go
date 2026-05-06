@@ -10,6 +10,7 @@ package common
 type BackendConfig struct {
 	BackendURL string `json:"backend_url"`
 	Status     string `json:"status"`
+	SSL        bool   `json:"ssl"`
 }
 
 // ListenerConfig represents a listener configuration with its backends

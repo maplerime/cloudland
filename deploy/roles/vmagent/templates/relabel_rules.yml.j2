@@ -1,0 +1,6 @@
+- source_labels: [__name__]
+  regex: '^(up|libvirt_.*|domain_north_south_.*|node_.*|conntrack_.*|vm_interface_bandwidth_config_mbps|vm_instance_map)$'
+  action: keep
+- source_labels: [__name__]
+  regex: '^libvirt_domain_block_meta$'
+  action: drop

@@ -90,14 +90,14 @@ func CreateCGWDS(ctx context.Context, args []string) (status string, err error) 
 	if status == "available" {
 		// Update to available status with WDS CG ID
 		// 更新为可用状态并设置 WDS CG ID
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status":    model.CGStatusAvailable,
 			"wds_cg_id": wdsCgID,
 		}).Error
 	} else {
 		// Update to error status
 		// 更新为错误状态
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
 		logger.Errorf("CG creation failed: %s", message)
@@ -179,7 +179,7 @@ func DeleteCGWDS(ctx context.Context, args []string) (status string, err error) 
 	} else {
 		// Update status to error
 		// 更新状态为错误
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
 		if err != nil {
@@ -235,13 +235,13 @@ func AddVolumesToCGWDS(ctx context.Context, args []string) (status string, err e
 	if status == "available" {
 		// Update to available status
 		// 更新为可用状态
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusAvailable,
 		}).Error
 	} else {
 		// Update to error status
 		// 更新为错误状态
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
 		logger.Errorf("Add volumes to CG failed: %s", message)
@@ -299,13 +299,13 @@ func RemoveVolumesFromCGWDS(ctx context.Context, args []string) (status string, 
 	if status == "available" {
 		// Update to available status
 		// 更新为可用状态
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusAvailable,
 		}).Error
 	} else {
 		// Update to error status
 		// 更新为错误状态
-		err = db.Model(cg).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cgID).Updates(map[string]interface{}{
 			"status": model.CGStatusError,
 		}).Error
 		logger.Errorf("Remove volumes from CG failed: %s", message)
@@ -378,7 +378,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	if status == "available" {
 		// Update to available status with WDS snapshot ID
 		// 更新为可用状态并设置 WDS 快照 ID
-		err = db.Model(snapshot).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("id = ?", snapshotID).Updates(map[string]interface{}{
 			"status":      model.CGSnapshotStatusAvailable,
 			"wds_snap_id": wdsSnapID,
 			"size":        size,
@@ -386,7 +386,7 @@ func CreateCGSnapshotWDS(ctx context.Context, args []string) (status string, err
 	} else {
 		// Update to error status
 		// 更新为错误状态
-		err = db.Model(snapshot).Updates(map[string]interface{}{
+		err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("id = ?", snapshotID).Updates(map[string]interface{}{
 			"status": model.CGSnapshotStatusError,
 		}).Error
 		logger.Errorf("CG snapshot creation failed: %s", message)
@@ -583,7 +583,7 @@ func RestoreCGSnapshotWDS(ctx context.Context, args []string) (status string, er
 
 	// Always restore snapshot status to available (restore failure doesn't mean snapshot is broken)
 	// 无论恢复成功或失败，快照状态都恢复为 available（恢复失败不代表快照本身有问题）
-	err = db.Model(snapshot).Updates(map[string]interface{}{
+	err = db.Model(&model.ConsistencyGroupSnapshot{}).Where("id = ?", snapshotID).Updates(map[string]interface{}{
 		"status": model.CGSnapshotStatusAvailable,
 	}).Error
 	if status != "available" {

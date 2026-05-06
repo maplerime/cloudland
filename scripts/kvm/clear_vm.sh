@@ -15,10 +15,7 @@ vm_xml=$(virsh dumpxml $vm_ID)
 # Call generate_vm_instance_map.sh to remove mapping before VM deletion
 ./generate_vm_instance_map.sh remove $vm_ID
 
-virsh undefine $vm_ID
-if [ $? -ne 0 ]; then
-    virsh undefine --nvram $vm_ID
-fi
+virsh undefine --nvram $vm_ID
 cmd="virsh destroy $vm_ID"
 result=$(eval "$cmd")
 

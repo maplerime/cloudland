@@ -14,7 +14,7 @@ wds_volume_id=$4
 get_wds_token
 
 # check existing vhost and uss binding first, if exists remove them
-vhost_str=$(wds_curl GET /api/v2/block/volumes/$wds_volume_id/vhost)
+vhost_str=$(wds_curl GET api/v2/block/volumes/$wds_volume_id/vhost)
 count=$(echo $vhost_str | jq -r '.count')
 ret_code=$(echo $vhost_str | jq -r '.ret_code')
 vhost_id=$(echo $vhost_str | jq -r '.vhosts[0].id')

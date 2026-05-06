@@ -118,3 +118,10 @@
   become: yes
   roles:
     - {role: metering_hyper, become: yes, tags: [monitor, metering_hyper]}
+
+# deploy vmagent for VM monitoring and alerting
+- name: deploy vmagent
+  hosts: vmagent
+  become: yes
+  roles:
+    - {role: vmagent, become: yes, tags: [vmagent, vmagent_install, vmagent_sd_update]}

@@ -3,7 +3,7 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_mac> <local_ip> <peer_mac> <peer_ip> <role>"
+[ $# -lt 8 ] && die "$0 <router> <vrrp_ID> <vrrp_vlan> <local_mac> <local_ip> <peer_mac> <peer_ip> <role> [reply]"
 
 router=$1
 [ "${router/router-/}" = "$router" ] && router=router-$1
@@ -14,6 +14,7 @@ local_ip=$5
 peer_mac=$6
 peer_ip=$7
 role=$8
+reply=$9
 
 ./create_local_router.sh $router
 ./create_link.sh $vrrp_vlan
@@ -36,4 +37,6 @@ ip netns exec $router iptables -C INPUT -d $ns_ip -m conntrack --ctstate NEW -j 
 read -d'\n' -r gateway < <(ipcalc -nb $local_ip | awk '/HostMin/ {print $2}')
 ./set_subnet_gw.sh $router $vrrp_vlan $gateway/$prefix
 
-echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role' '$local_mac'"
+if [ "$reply" = "true" ]; then
+    echo "|:-COMMAND-:| $(basename $0) '$vrrp_ID' '$SCI_CLIENT_ID' '$role' '$local_mac'"
+fi

@@ -240,7 +240,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	migration := &model.Migration{}
 	ctx, db := GetContextDB(ctx)
-	err = db.Preload("Phases", "name = 'Prepare_Source' and status = 'failed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
+	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			err = nil
@@ -249,11 +249,34 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 		logger.Error("Failed to get migrations", err)
 		return
 	}
-	for _, task := range migration.Phases {
-		err = execSourceMigrate(ctx, instance, migration, task.ID, "/opt/cloudland/scripts/backend/source_migration.sh", "cold")
+	if len(migration.Phases) > 0 {
+		for _, task := range migration.Phases {
+			err = execSourceMigrate(ctx, instance, migration, task.ID, "/opt/cloudland/scripts/backend/source_migration.sh", "cold")
+			if err != nil {
+				logger.Error("Failed to exec source migration", err)
+				return
+			}
+		}
+		return
+	}
+	if instance.Status == "shutoff" {
+		err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and target_hyper = ? and status != 'completed'", instance.ID, instance.Hyper).Last(migration).Error
 		if err != nil {
-			logger.Error("Failed to exec source migration", err)
+			if gorm.IsRecordNotFoundError(err) {
+				err = nil
+				return
+			}
+			logger.Error("Failed to get migrations", err)
 			return
+		}
+		for _, task := range migration.Phases {
+			control := fmt.Sprintf("inter=%d", migration.TargetHyper)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d'", migration.ID, task.ID, instance.ID)
+			err = HyperExecute(ctx, control, command)
+			if err != nil {
+				logger.Error("Execute clear target failed", err)
+				return
+			}
 		}
 	}
 	return
