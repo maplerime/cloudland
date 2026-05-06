@@ -727,7 +727,7 @@ definitions:
         type: string
       instance_uuid:
         type: string
-      is_resque:
+      is_rescue:
         type: boolean
       name:
         maxLength: 32
@@ -960,9 +960,13 @@ definitions:
   apis.InstanceRescuePayload:
     properties:
       password:
+        maxLength: 64
+        minLength: 8
         type: string
       rescue_image:
         $ref: '#/definitions/common.BaseReference'
+    required:
+    - password
     type: object
   apis.InstanceResizePayload:
     properties:
@@ -1985,6 +1989,27 @@ definitions:
         type: array
       updated_at:
         type: string
+    type: object
+  apis.ValidatePayload:
+    properties:
+      disk_gb:
+        minimum: 0
+        type: integer
+      hyper_id:
+        type: integer
+      memory_mb:
+        minimum: 1
+        type: integer
+      vcpus:
+        minimum: 1
+        type: integer
+      zone_id:
+        type: integer
+    required:
+    - disk_gb
+    - hyper_id
+    - memory_mb
+    - vcpus
     type: object
   apis.VersionResponse:
     properties:
@@ -5002,6 +5027,84 @@ paths:
       summary: patch a org
       tags:
       - Authorization
+  /placement/available:
+    get:
+      consumes:
+      - application/json
+      description: Runs the full filter+weigher chain and returns all passing hypers
+        sorted by score
+      parameters:
+      - description: Zone ID
+        in: query
+        name: zone_id
+        required: true
+        type: integer
+      - description: Number of vCPUs
+        in: query
+        name: vcpus
+        required: true
+        type: integer
+      - description: Memory in MB
+        in: query
+        name: memory_mb
+        required: true
+        type: integer
+      - description: Disk in GB
+        in: query
+        name: disk_gb
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Query available placement candidates
+      tags:
+      - Placement
+  /placement/validate:
+    post:
+      consumes:
+      - application/json
+      description: Checks if the specified hyper passes the filter chain for the given
+        VM spec
+      parameters:
+      - description: Validation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ValidatePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Validate hyper resource availability
+      tags:
+      - Placement
   /security_groups:
     get:
       consumes:

@@ -70,6 +70,9 @@
 		<a {{ if eq .Link "/alarms/node" }} class="active item" {{ else }} class="item" {{ end }} href="/alarms/node">
             {{.i18n.Tr "NodeAlarmRules"}}
         </a>
+		<a {{ if eq .Link "/placement" }} class="active item" {{ else }} class="item" {{ end }} href="/placement">
+            {{.i18n.Tr "Placement"}}
+        </a>
 
 		{{ end }}
     </div>
