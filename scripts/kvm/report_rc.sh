@@ -29,7 +29,6 @@ total_load=0
 # Hugepage collection
 hp_2m_free=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/free_hugepages 2>/dev/null || echo 0)
 hp_2m_total=$(cat /sys/kernel/mm/hugepages/hugepages-2048kB/nr_hugepages 2>/dev/null || echo 0)
-<<<<<<< HEAD
 hp_1g_free=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/free_hugepages 2>/dev/null || echo 0)
 hp_1g_total=$(cat /sys/kernel/mm/hugepages/hugepages-1048576kB/nr_hugepages 2>/dev/null || echo 0)
 hp_size_kb=0
@@ -50,8 +49,6 @@ cpu_idle=$(awk -v s1="$_cpu_stat1" -v s2="$_cpu_stat2" 'BEGIN {
     for(i=1;i<=7;i++){dtotal+=b[i]-a[i]}; didle=b[4]-a[4]
     printf "%.1f", (dtotal>0)?didle/dtotal*100:100
 }')
-=======
->>>>>>> staging
 vtep_ip=$(ifconfig $vxlan_interface | grep 'inet ' | awk '{print $2}')
 
 function probe_arp()
