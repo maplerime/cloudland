@@ -257,6 +257,18 @@ function calc_resource()
     if [ -n "$wds_address" ]; then
         total_memory=$(( hp_2m_total * 2048 ))
         memory=$(( hp_2m_free * 2048 ))
+        # Shutoff VMs release hugepages back to the kernel free pool, but the
+        # scheduler must keep their memory reserved so they can be restarted on
+        # this node. Subtract their configured memory from the reported free.
+        shutoff_hp_mem=0
+        for inst in $(sudo virsh list --all | grep 'shut off' | awk '{print $2}'); do
+            xml="$xml_dir/$inst/$inst.xml"
+            [ -f "$xml" ] || continue
+            vmem=$(xmllint --xpath 'string(/domain/memory)' "$xml" 2>/dev/null)
+            [ -n "$vmem" ] && shutoff_hp_mem=$(( shutoff_hp_mem + vmem ))
+        done
+        memory=$(( memory - shutoff_hp_mem ))
+        [ $memory -lt 0 ] && memory=0
     fi
     if [ $(( $(date +"%s") % 10 )) -gt 7 ]; then
 	rm -f $run_dir/old_resource_list
