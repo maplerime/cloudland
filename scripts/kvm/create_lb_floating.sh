@@ -46,7 +46,6 @@ ip netns exec $router ip rule del from $ext_ip lookup $table
 ip netns exec $router ip rule add from $ext_ip lookup $table
 ip netns exec $router ip rule del to $ext_ip lookup $table
 ip netns exec $router ip rule add to $ext_ip lookup $table
-async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
 
 if [ "$inbound" -gt 0 ]; then
     ip netns exec $router tc qdisc add dev $ext_dev root handle 1: htb default 10
