@@ -138,6 +138,8 @@ function router_status()
 
 function check_system_router()
 {
+    sudo systemctl status NetworkManager >/dev/null
+    [ $? -ne 0 ] && sudo systemctl restart NetworkManager
     sudo ip netns exec router-0 ip r | grep default
     if [ $? -ne 0 ]; then
         sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
@@ -162,25 +164,19 @@ function check_conntrack()
     sudo $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
 }
 
-function check_sync_flag()
-{
-    flag_file=$run_dir/need_to_sync
-    boot_file=/proc/sys/kernel/random/boot_id
-    diff $flag_file $boot_file
-    return $?
-}
-
 function recover_loadbalancer()
 {
-    check_sync_flag
-    [ $? -eq 0 ] && return
+    lb_flag_file=$run_dir/need_to_sync_lb
+    [ -f "$lb_flag_file" ] && return
     echo "|:-COMMAND-:| recover_loadbalancer.sh '$SCI_CLIENT_ID'"
-    sudo cp $boot_file $flag_file
+    touch $lb_flag_file
 }
 
 function sync_instance()
 {
-    check_sync_flag
+    flag_file=$run_dir/need_to_sync
+    boot_file=/proc/sys/kernel/random/boot_id
+    diff $flag_file $boot_file
     [ $? -eq 0 ] && return
     sudo iptables-restore </etc/iptables.rules
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
@@ -202,6 +198,7 @@ function sync_instance()
         sudo virsh start inst-$inst_id
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
+    sudo cp $boot_file $flag_file
 }
 
 function sync_delayed_job()
