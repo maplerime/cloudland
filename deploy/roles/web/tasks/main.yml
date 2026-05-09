@@ -58,7 +58,7 @@
     dest: /opt
     mode: preserve
   tags: [console]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 - name: generate console proxy certs
   script: console_cert.sh

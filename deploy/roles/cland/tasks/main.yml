@@ -16,7 +16,7 @@
   with_items:
     - {src: '/opt/cloudland', dest: '/opt', owner: 'cland'}
   tags: [sync]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 - name: copy sci binaries
   copy: 
@@ -24,7 +24,7 @@
     dest: /opt
     mode: preserve
   tags: [sci]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 - name: create directores
   file:
@@ -60,7 +60,7 @@
     - {src: '/opt/cloudland/scripts', dest: '/opt/cloudland', owner: 'cland'}
     - {src: '/opt/sci', dest: '/opt', owner: 'root'}
   tags: [fe_bin]
-  when: inventory_hostname != ansible_hostname
+  when: inventory_hostname != ansible_facts['hostname']
 
 - name: generate host file
   template:
@@ -90,4 +90,5 @@
     enabled: yes
     daemon_reload: yes
     state: started
+  when: not ansible_check_mode
   tags: [fe_srv]

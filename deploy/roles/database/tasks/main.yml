@@ -3,10 +3,24 @@
     name: ['postgresql-all']
     state: present
 
+- name: set pg version for older Ubuntu
+  set_fact:
+    pg_version: 14
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '<')
+
+- name: set pg version for Ubuntu 26+
+  set_fact:
+    pg_version: 18
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '>=')
+
 - name: pg hba config
   template:
     src: pg_hba.conf.j2
-    dest: /etc/postgresql/14/main/pg_hba.conf
+    dest: /etc/postgresql/{{ pg_version }}/main/pg_hba.conf
   tags: [db_conf]
 
 - name: start postgresql service
