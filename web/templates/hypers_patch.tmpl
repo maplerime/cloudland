@@ -19,6 +19,18 @@
                         <label for="host_ip">{{.i18n.Tr "HostIP"}}</label>
                         <input id="host_ip" name="host_ip" value="{{ .Hyper.HostIP }}" disabled>
                     </div>
+                    <div class="inline field">
+                        <label for="route_ip">{{.i18n.Tr "RouteIP"}}</label>
+                        <input id="route_ip" name="route_ip" value="{{ .Hyper.RouteIP }}" placeholder="{{.i18n.Tr "Leave empty to auto-assign from subnet"}}">
+                    </div>
+                    <div class="required inline field">
+                        <label for="subnet_id">{{.i18n.Tr "Subnet"}}</label>
+                        <select name="subnet_id" id="subnet_id" class="ui selection dropdown">
+                            {{ range .Subnets }}
+                                <option value="{{ .ID }}" {{ if eq $.CurrentSubnetID .ID }}selected{{end}}>{{ .Name }} ({{ .Network }}/{{ .Netmask }})</option>
+                            {{ end }}
+                        </select>
+                    </div>
                     <div class="required inline field">
                         <label for="status">{{.i18n.Tr "Status"}}</label>
                         <select name="status" id="status" class="ui selection dropdown">
