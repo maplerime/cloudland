@@ -227,12 +227,12 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			if primaryUUID != "" {
 				primaryIface.UUID = primaryUUID
 			}
-			err = db.Model(primaryIface).Updates(map[string]interface{}{
-				"instance": primaryIface.Instance,
-				"name": primaryIface.Name,
+			err = db.Model(&model.Interface{}).Where("id = ?", primaryIface.ID).Updates(map[string]interface{}{
+				"instance":   primaryIface.Instance,
+				"name":       primaryIface.Name,
 				"primary_if": primaryIface.PrimaryIf,
-				"mac_addr": primaryIface.MacAddr,
-				"uuid": primaryIface.UUID}).Error
+				"mac_addr":   primaryIface.MacAddr,
+				"uuid":       primaryIface.UUID}).Error
 			if err != nil {
 				logger.Errorf("Failed to update interface, %v", err)
 				return
@@ -241,7 +241,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			fip.IntAddress = primaryIface.Address.Address
 			fip.Type = string(PublicReserved)
 			fip.Instance = nil
-			err = db.Model(fip).Updates(map[string]interface{}{
+			err = db.Model(&model.FloatingIp{}).Where("id = ?", fip.ID).Updates(map[string]interface{}{
 				"instance_id": instance.ID,
 				"router_id":   0,
 				"int_address": primaryIface.Address.Address,
@@ -398,6 +398,16 @@ func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 		logger.Error("Failed to Update addresses, %v", err)
 		return
 	}
+	// Release addresses that only have a second_interface reference to this iface
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update second_addresses (no primary), %v", err)
+		return
+	}
+	// Clear second_interface on addresses that still have a primary interface
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update second_addresses (has primary), %v", err)
+		return
+	}
 	return
 }
 
@@ -459,7 +469,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 		if iface.PrimaryIf {
 			if iface.Name != "eth0" {
 				iface.Name = "eth0"
-				err = db.Model(iface).Updates(map[string]interface{}{"name": iface.Name}).Error
+				err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{"name": iface.Name}).Error
 				if err != nil {
 					logger.Error("Update interface name ", err)
 					return

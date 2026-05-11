@@ -14,6 +14,7 @@ ip netns add $router
 ip netns exec $router ip link set lo up
 
 ./create_veth.sh $router ext-$ext_vlan link-$ext_vlan
+ip netns exec $router ip addr flush dev link-$ext_vlan
 ip netns exec $router ip addr add $ext_ip dev link-$ext_vlan
 ip netns exec $router ip route replace default via $gateway
 route_ip=${ext_ip%/*}

@@ -85,7 +85,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 				return
 			}
 		} else {
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
+			err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
 				return

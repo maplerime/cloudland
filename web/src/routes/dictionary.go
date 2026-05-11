@@ -123,28 +123,29 @@ func (a *DictionaryAdmin) Update(ctx context.Context, dictionaries *model.Dictio
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the dictionary", nil)
 		return
 	}
+	updates := map[string]interface{}{}
 	if category != "" && dictionaries.Category != category {
-		dictionaries.Category = category
+		updates["category"] = category
 	}
 	if name != "" && dictionaries.Name != name {
-		dictionaries.Name = name
+		updates["name"] = name
 	}
 	if value != "" && dictionaries.Value != value {
-		dictionaries.Value = value
+		updates["value"] = value
 	}
 	if shortname != "" && dictionaries.ShortName != shortname {
-		dictionaries.ShortName = shortname
+		updates["short_name"] = shortname
 	}
 	if subtype1 != "" && dictionaries.SubType1 != subtype1 {
-		dictionaries.SubType1 = subtype1
+		updates["sub_type1"] = subtype1
 	}
 	if subtype2 != "" && dictionaries.SubType2 != subtype2 {
-		dictionaries.SubType2 = subtype2
+		updates["sub_type2"] = subtype2
 	}
 	if subtype3 != "" && dictionaries.SubType3 != subtype3 {
-		dictionaries.SubType3 = subtype3
+		updates["sub_type3"] = subtype3
 	}
-	err = db.Model(dictionaries).Updates(dictionaries).Error
+	err = db.Model(&model.Dictionary{}).Where("id = ?", dictionaries.ID).Updates(updates).Error
 	if err != nil {
 		logger.Errorf("DictionaryAdmin.Update: save error, err=%v", err)
 		return nil, NewCLError(ErrDictionaryUpdateFailed, "Failed to update dictionary", err)

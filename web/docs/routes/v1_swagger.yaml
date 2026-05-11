@@ -113,6 +113,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - endpoint
     - name
@@ -615,10 +617,14 @@ definitions:
         type: number
       remark:
         type: string
+      route_ip:
+        type: string
       status:
         maximum: 1
         minimum: 0
         type: integer
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
       zone_id:
         minimum: 1
         type: integer
@@ -727,7 +733,7 @@ definitions:
         type: string
       instance_uuid:
         type: string
-      is_resque:
+      is_rescue:
         type: boolean
       name:
         maxLength: 32
@@ -960,9 +966,13 @@ definitions:
   apis.InstanceRescuePayload:
     properties:
       password:
+        maxLength: 64
+        minLength: 8
         type: string
       rescue_image:
         $ref: '#/definitions/common.BaseReference'
+    required:
+    - password
     type: object
   apis.InstanceResizePayload:
     properties:
@@ -1665,6 +1675,8 @@ definitions:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string

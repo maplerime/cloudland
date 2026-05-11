@@ -245,8 +245,8 @@ func Register() (r *gin.Engine) {
 
 			// N9E Anchor Management APIs
 			metricsGroup.POST("/alarm/anchor/link", alarmAPI.LinkVMsToRule)
-			metricsGroup.GET("/alarm/anchor/links", alarmAPI.GetRuleLinks)           // Query from VictoriaMetrics
-			metricsGroup.GET("/alarm/anchor/dblinks", alarmAPI.GetDBLinks)           // Query from CloudLand DB
+			metricsGroup.GET("/alarm/anchor/links", alarmAPI.GetRuleLinks) // Query from VictoriaMetrics
+			metricsGroup.GET("/alarm/anchor/dblinks", alarmAPI.GetDBLinks) // Query from CloudLand DB
 			metricsGroup.DELETE("/alarm/anchor/unlink", alarmAPI.UnlinkVMsFromRule)
 			metricsGroup.POST("/alarm/anchor/sync", alarmAPI.SyncAnchorThresholds)
 			metricsGroup.POST("/alarm/anchor/recover", alarmAPI.RecoverAnchorThresholds)

@@ -5791,6 +5791,9 @@ const docTemplatealarm_v1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6531,10 +6534,16 @@ const docTemplatealarm_v1 = `{
                 "remark": {
                     "type": "string"
                 },
+                "route_ip": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "integer",
                     "maximum": 1,
                     "minimum": 0
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "zone_id": {
                     "type": "integer",
@@ -6702,7 +6711,7 @@ const docTemplatealarm_v1 = `{
                 "instance_uuid": {
                     "type": "string"
                 },
-                "is_resque": {
+                "is_rescue": {
                     "type": "boolean"
                 },
                 "name": {
@@ -7021,9 +7030,14 @@ const docTemplatealarm_v1 = `{
         },
         "apis.InstanceRescuePayload": {
             "type": "object",
+            "required": [
+                "password"
+            ],
             "properties": {
                 "password": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 8
                 },
                 "rescue_image": {
                     "$ref": "#/definitions/common.BaseReference"
@@ -8060,7 +8074,9 @@ const docTemplatealarm_v1 = `{
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
