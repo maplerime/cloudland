@@ -398,6 +398,16 @@ func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 		logger.Error("Failed to Update addresses, %v", err)
 		return
 	}
+	// Release addresses that only have a second_interface reference to this iface
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update second_addresses (no primary), %v", err)
+		return
+	}
+	// Clear second_interface on addresses that still have a primary interface
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update second_addresses (has primary), %v", err)
+		return
+	}
 	return
 }
 

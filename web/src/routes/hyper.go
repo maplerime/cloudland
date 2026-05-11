@@ -281,7 +281,7 @@ func (a *HyperAdmin) UpdateRouteIP(ctx context.Context, hyper *model.Hyper, newR
 	if newRouteIP != "" {
 		// Validate the specified IP belongs to the selected subnet and is available
 		address := &model.Address{}
-		err = db.Where("address = ? AND subnet_id = ? AND allocated = ?", newRouteIP, subnetID, false).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("address = ? AND subnet_id = ? AND allocated = ?", newRouteIP, subnetID, false).Take(address).Error
 		if err != nil {
 			return fmt.Errorf("Address %s is not available in subnet %s", newRouteIP, subnet.Name)
 		}
