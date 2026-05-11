@@ -128,6 +128,11 @@
         cloudland_rest_port: "8255"
         cloudland_admin_user: "admin"
         cloudland_admin_password: "{{ admin_passwd }}"
+        wds_endpoint: "{{ wds_address | default('') }}"
+        wds_host: "{{ (wds_address | regex_replace('^https?://', '') | regex_replace('/.*$', '') | regex_replace(':\\d+$', '')) if (wds_address is defined and (wds_address | length) > 0) else '' }}"
+        wds_port: "{{ wds_monitor_access_port | default('9090') }}"
+        wds_username: "{{ wds_admin | default('') }}"
+        wds_password: "{{ wds_pass | default('') }}"
         exporter_image: "reg-staging.raksmart.com:8443/petacloud/petacloud-exporter"
         exporter_image_tag: "latest"
         cloudland_exporter_port: 9102
@@ -209,7 +214,7 @@
     # ------------------------------------------------------------------------
     - name: Wait for exporter to be ready
       uri:
-        url: "http://localhost:{{ cloudland_exporter_port }}/metrics"
+        url: "http://localhost:{{ cloudland_exporter_port }}/metrics/cloudland"
         method: GET
         status_code: 200
         timeout: 5
@@ -220,7 +225,7 @@
       ignore_errors: true
 
     - name: Verify exporter is exposing CloudLand metrics
-      shell: "curl -s http://localhost:{{ cloudland_exporter_port }}/metrics | grep -q cloudland_hypervisor_scrape_success"
+      shell: "curl -s http://localhost:{{ cloudland_exporter_port }}/metrics/cloudland | grep -q cloudland_hypervisor_scrape_success"
       register: metrics_check
       changed_when: false
       failed_when: false
