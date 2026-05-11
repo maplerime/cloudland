@@ -80,11 +80,11 @@ type FloatingIpPayload struct {
 }
 
 type FloatingIpPatchPayload struct {
-	Instance *BaseID `json:"instance" binding:"omitempty"`
-	LoadBalancer    *BaseID          `json:"load_balancer" binding:"omitempty"`
-	Inbound  *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
-	Outbound *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
-	Group    *BaseID `json:"group" binding:"omitempty"`
+	Instance     *BaseID `json:"instance" binding:"omitempty"`
+	LoadBalancer *BaseID `json:"load_balancer" binding:"omitempty"`
+	Inbound      *int32  `json:"inbound" binding:"omitempty,min=1,max=20000"`
+	Outbound     *int32  `json:"outbound" binding:"omitempty,min=1,max=20000"`
+	Group        *BaseID `json:"group" binding:"omitempty"`
 }
 
 // SiteAttachPayload represents the payload for site attach floating IPs

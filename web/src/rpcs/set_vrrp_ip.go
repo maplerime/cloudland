@@ -69,7 +69,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 	}
 	macAddr := args[4]
 	err = db.Model(&model.Interface{}).Where("type = 'vrrp' and name = ? and device = ?", role, vrrpID).Updates(map[string]interface{}{
-		"hyper": hyperID,
+		"hyper":    hyperID,
 		"mac_addr": macAddr,
 	}).Error
 	if err != nil {
@@ -85,7 +85,7 @@ func SetVrrpIp(ctx context.Context, args []string) (status string, err error) {
 		logger.Errorf("Duplicated vrrp interface, need to clean vrrp interface %d on hyper %d", vrrpIface.ID, hyperID)
 		role2 := "MASTER"
 		if role == "MASTER" {
-		    role2 = "BACKUP"
+			role2 = "BACKUP"
 		}
 		vrrpIface2 := &model.Interface{}
 		err = db.Preload("Address").Preload("Address.Subnet").Where("type = 'vrrp' and name = ? and device = ?", role2, vrrpID).Take(vrrpIface2).Error

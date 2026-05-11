@@ -21,11 +21,11 @@ type BaseSearchParams struct {
 // InstanceSearchParams extends BaseSearchParams with instance-specific filters.
 type InstanceSearchParams struct {
 	BaseSearchParams
-	RouterID int64    // filter by VPC router ID (exact)
-	ImageIDs []int64  // filter by image ID (IN)
-	IP       string   // fuzzy match on interface/address IP
-	HyperIDs []int32  // filter by hypervisor host ID (IN)
-	ZoneIDs  []int64  // filter by zone ID (IN)
+	RouterID int64   // filter by VPC router ID (exact)
+	ImageIDs []int64 // filter by image ID (IN)
+	IP       string  // fuzzy match on interface/address IP
+	HyperIDs []int32 // filter by hypervisor host ID (IN)
+	ZoneIDs  []int64 // filter by zone ID (IN)
 }
 
 // VolumeSearchParams extends BaseSearchParams with volume-specific filters.

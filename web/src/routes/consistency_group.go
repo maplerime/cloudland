@@ -319,7 +319,7 @@ func (a *ConsistencyGroupAdmin) Update(ctx context.Context, id int64, name, desc
 	}
 
 	if len(updates) > 0 {
-		if err = db.Model(cg).Updates(updates).Error; err != nil {
+		if err = db.Model(&model.ConsistencyGroup{}).Where("id = ?", cg.ID).Updates(updates).Error; err != nil {
 			logger.Errorf("Failed to update consistency group ID %d: %+v", id, err)
 			err = NewCLError(ErrCGUpdateFailed, "Failed to update consistency group", err)
 			return

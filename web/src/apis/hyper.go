@@ -58,14 +58,14 @@ type HyperPayload struct {
 }
 
 type HyperPatchPayload struct {
-	Status       *int32          `json:"status" binding:"omitempty,min=0,max=1"`
-	ZoneID       *int64          `json:"zone_id" binding:"omitempty,min=1"`
-	RouteIP      *string         `json:"route_ip"`
-	Subnet       *BaseReference  `json:"subnet" binding:"omitempty"`
-	CpuOverRate  *float32        `json:"cpu_over_rate" binding:"omitempty,min=1"`
-	MemOverRate  *float32        `json:"mem_over_rate" binding:"omitempty,min=1"`
-	DiskOverRate *float32        `json:"disk_over_rate" binding:"omitempty,min=1"`
-	Remark       *string         `json:"remark"`
+	Status       *int32         `json:"status" binding:"omitempty,min=0,max=1"`
+	ZoneID       *int64         `json:"zone_id" binding:"omitempty,min=1"`
+	RouteIP      *string        `json:"route_ip"`
+	Subnet       *BaseReference `json:"subnet" binding:"omitempty"`
+	CpuOverRate  *float32       `json:"cpu_over_rate" binding:"omitempty,min=1"`
+	MemOverRate  *float32       `json:"mem_over_rate" binding:"omitempty,min=1"`
+	DiskOverRate *float32       `json:"disk_over_rate" binding:"omitempty,min=1"`
+	Remark       *string        `json:"remark"`
 }
 
 // @Summary get a hypervisor

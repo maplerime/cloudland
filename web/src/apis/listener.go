@@ -248,7 +248,7 @@ func (v *ListenerAPI) getListenerResponse(ctx context.Context, listener *model.L
 			CreatedAt: listener.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: listener.UpdatedAt.Format(TimeStringForMat),
 		},
-		Mode: listener.Mode,
+		Mode:   listener.Mode,
 		Port:   listener.Port,
 		Status: listener.Status,
 	}

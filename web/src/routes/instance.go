@@ -439,7 +439,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 	if instance.Hostname != hostname {
 		instance.Hostname = hostname
 	}
-	if err = db.Model(instance).Updates(instance).Error; err != nil {
+	if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{"hostname": instance.Hostname}).Error; err != nil {
 		logger.Error("Failed to save instance", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
@@ -1212,27 +1212,26 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	if cleanupErr := instanceAdmin.CleanupInstanceRuleLinks(ctx, instance.UUID); cleanupErr != nil {
 		logger.Error("Failed to cleanup rule links", cleanupErr)
 	}
+	instance.Status = model.InstanceStatusDeleting
+	err = db.Model(instance).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
+	if err != nil {
+		logger.Errorf("Failed to mark vm as deleting ", err)
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
+	}
 
 	// Build imagePrefix for async snapshot cleanup (same rule as Create)
 	imagePrefix := ""
 	if instance.Image != nil {
 		imagePrefix = fmt.Sprintf("image-%d-%s", instance.Image.ID, strings.Split(instance.Image.UUID, "-")[0])
 	}
-
-	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	if instance.Hyper == -1 {
-		control = "toall="
-	}
 	moreAddrsJson, err := json.Marshal(moreAddresses)
 	if err != nil {
 		logger.Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
-	instance.Status = model.InstanceStatusDeleting
-	err = db.Model(instance).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
-	if err != nil {
-		logger.Errorf("Failed to mark vm as deleting ", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	if instance.Hyper == -1 {
+		control = "toall="
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)

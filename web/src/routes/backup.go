@@ -547,16 +547,17 @@ func (a *BackupAdmin) Update(ctx context.Context, id int64, name, path string, s
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update the backup", nil)
 		return
 	}
+	updates := map[string]interface{}{}
 	if name != "" && name != backup.Name {
-		backup.Name = name
+		updates["name"] = name
 	}
 	if path != "" && path != backup.Path {
-		backup.Path = path
+		updates["path"] = path
 	}
 	if status != "" && status != backup.Status {
-		backup.Status = status
+		updates["status"] = status
 	}
-	if err = db.Model(backup).Updates(backup).Error; err != nil {
+	if err = db.Model(&model.VolumeBackup{}).Where("id = ?", backup.ID).Updates(updates).Error; err != nil {
 		logger.Error("DB: update backup failed", err)
 		err = NewCLError(ErrDatabaseError, "Failed to update backup", err)
 		return

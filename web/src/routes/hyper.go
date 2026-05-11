@@ -58,8 +58,6 @@ func (a *HyperAdmin) List(ctx context.Context, offset, limit int64, order, query
 	return
 }
 
-
-
 func (a *HyperAdmin) SetStatus(ctx context.Context, hostID int32, status int32) (err error) {
 	hyper, err := a.GetHyperByHostid(ctx, hostID)
 	if err != nil {
@@ -217,7 +215,6 @@ func (a *HyperAdmin) GetHyperByHostIP(ctx context.Context, hostIP string) (hyper
 	return
 }
 
-
 func (a *HyperAdmin) cleanupSystemInterfaces(ctx context.Context, hostid int32) (err error) {
 	_, db := GetContextDB(ctx)
 	oldIfaces := []*model.Interface{}
@@ -256,9 +253,9 @@ func (a *HyperAdmin) UpdateRouteIP(ctx context.Context, hyper *model.Hyper, newR
 
 	// Create new system interface
 	iface := &model.Interface{
-		Name:   "system",
-		Type:   "system",
-		Mtu:    1450,
+		Name: "system",
+		Type: "system",
+		Mtu:  1450,
 	}
 	err = db.Create(iface).Error
 	if err != nil {
@@ -514,4 +511,3 @@ func (v *HyperView) Patch(c *macaron.Context, store session.Store) {
 	}
 	c.Redirect("/hypers")
 }
-

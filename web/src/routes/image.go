@@ -343,17 +343,18 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update image", nil)
 		return
 	}
+	updates := map[string]interface{}{}
 	if osCode != "" {
-		image.OSCode = osCode
+		updates["os_code"] = osCode
 	}
 	if name != "" {
-		image.Name = name
+		updates["name"] = name
 	}
 	if osVersion != "" {
-		image.OsVersion = osVersion
+		updates["os_version"] = osVersion
 	}
 	if userName != "" {
-		image.UserName = userName
+		updates["user_name"] = userName
 	}
 
 	if uuid != "" {
@@ -362,11 +363,11 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 			err = NewCLError(ErrInvalidParameter, "Invalid UUID format", nil)
 			return
 		}
-		image.UUID = uuid
+		updates["uuid"] = uuid
 	}
 
 	if osFamily != "" {
-		image.OsFamily = osFamily
+		updates["os_family"] = osFamily
 	}
 
 	if image.Status != "available" {
@@ -375,7 +376,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		return
 	}
 
-	err = db.Model(image).Updates(image).Error
+	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(updates).Error
 	if err != nil {
 		logger.Error("Failed to save image", err)
 		return NewCLError(ErrImageUpdateFailed, "Failed to save image", err)
@@ -419,7 +420,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
 		}
 		storage.Status = model.StorageStatusSyncing
-		if err = db.Model(storage).Updates(storage).Error; err != nil {
+		if err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{"status": model.StorageStatusSyncing}).Error; err != nil {
 			logger.Error("Failed to update image storage status", err)
 			return NewCLError(ErrImageStorageUpdateFailed, "Failed to update image storage status", err)
 		}
