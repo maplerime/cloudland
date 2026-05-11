@@ -1228,17 +1228,17 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
 	}
+	instance.Status = model.InstanceStatusDeleting
+	err = db.Model(instance).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
+	if err != nil {
+		logger.Errorf("Failed to mark vm as deleting ", err)
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)
 		return
-	}
-	instance.Status = model.InstanceStatusDeleting
-	err = db.Model(instance).Updates(instance).Error
-	if err != nil {
-		logger.Errorf("Failed to mark vm as deleting ", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
 	}
 	return
 }
