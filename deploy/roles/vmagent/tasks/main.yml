@@ -13,7 +13,6 @@
     vmagent_base_dir: "/opt/vmagent"
     vmagent_scrape_interval: "30s"
     vmagent_scrape_timeout: "20s"
-    vmagent_enable_cloudland_global_service_metrics: "{{ enable_cloudland_global_service_metrics | default(false) }}"
   tags: [vmagent, vmagent_install, vmagent_sd_update]
 
 # ============================================

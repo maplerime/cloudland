@@ -214,7 +214,7 @@
     # ------------------------------------------------------------------------
     - name: Wait for exporter to be ready
       uri:
-        url: "http://localhost:{{ cloudland_exporter_port }}/metrics/cloudland"
+        url: "http://localhost:{{ cloudland_exporter_port }}/metrics"
         method: GET
         status_code: 200
         timeout: 5
@@ -225,7 +225,7 @@
       ignore_errors: true
 
     - name: Verify exporter is exposing CloudLand metrics
-      shell: "curl -s http://localhost:{{ cloudland_exporter_port }}/metrics/cloudland | grep -q cloudland_hypervisor_scrape_success"
+      shell: "curl -s http://localhost:{{ cloudland_exporter_port }}/metrics | grep -q cloudland_hypervisor_scrape_success"
       register: metrics_check
       changed_when: false
       failed_when: false

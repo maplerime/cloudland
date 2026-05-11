@@ -2,7 +2,6 @@
   set_fact:
     scrape_interval: 30
     alarm_rules_manager_port: 8256
-    monitor_enable_cloudland_global_service_metrics: "{{ enable_cloudland_global_service_metrics | default(false) }}"
 
 - name: Set prometheus_server_ip from monitor group
   set_fact:
@@ -53,9 +52,9 @@
 - name: Generate CloudLand exporters config block
   set_fact:
     cloudland_exporters_block: |
-      - job_name: 'clexporter-cloudland'
+      - job_name: 'clexporter'
         scrape_interval: 60s
-        metrics_path: '/metrics/cloudland'
+        metrics_path: '/metrics'
         scrape_timeout: 30s
         honor_labels: true
         file_sd_configs:
@@ -69,16 +68,6 @@
         file_sd_configs:
           - files: ['/etc/prometheus/lists/cloudland_exporters.json']
             refresh_interval: 30s
-      {% if monitor_enable_cloudland_global_service_metrics | bool %}
-      - job_name: 'clexporter-global-service'
-        scrape_interval: 60s
-        metrics_path: '/metrics/global-service'
-        scrape_timeout: 20s
-        honor_labels: true
-        file_sd_configs:
-          - files: ['/etc/prometheus/lists/cloudland_exporters.json']
-            refresh_interval: 30s
-      {% endif %}
 
 - name: Validate Alertmanager variables
   fail:
