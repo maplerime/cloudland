@@ -218,88 +218,23 @@ func (a *HyperAdmin) GetHyperByHostIP(ctx context.Context, hostIP string) (hyper
 }
 
 
-func (a *HyperAdmin) ValidateRouteIPSubnet(ctx context.Context, routeIP string, subnetID int64) (err error) {
+func (a *HyperAdmin) cleanupSystemInterfaces(ctx context.Context, hostid int32) (err error) {
 	_, db := GetContextDB(ctx)
-	subnet, err := subnetAdmin.Get(ctx, subnetID)
+	oldIfaces := []*model.Interface{}
+	err = db.Where("hyper = ? AND type = ?", hostid, "system").Find(&oldIfaces).Error
 	if err != nil {
-		return fmt.Errorf("Subnet not found: %v", err)
+		return
 	}
-	// Check the address exists in the selected subnet
-	address := &model.Address{}
-	err = db.Where("address = ? AND subnet_id = ? AND allocated = ?", routeIP, subnetID, false).Take(address).Error
-	if err != nil {
-		return fmt.Errorf("Address %s is not available in subnet %s", routeIP, subnet.Name)
-	}
-	return nil
-}
-
-func (a *HyperAdmin) UpdateRouteIP(ctx context.Context, hyper *model.Hyper, newRouteIP string) (err error) {
-	ctx, db, newTransaction := StartTransaction(ctx)
-	defer func() {
-		if newTransaction {
-			EndTransaction(ctx, err)
+	for _, oldIface := range oldIfaces {
+		err = DeleteInterface(ctx, oldIface)
+		if err != nil {
+			return
 		}
-	}()
-
-	// Find the system interface for this hyper
-	iface := &model.Interface{}
-	err = db.Preload("Address").Preload("Address.Subnet").Where("hyper = ? AND type = ?", hyper.Hostid, "system").Take(iface).Error
-	if err != nil {
-		logger.Error("Failed to find system interface for hyper", hyper.Hostid, err)
-		return NewCLError(ErrInterfaceNotFound, "System interface not found for hypervisor", err)
 	}
-
-	// Validate the new address exists and is available
-	address := &model.Address{}
-	err = db.Preload("Subnet").Where("address = ? AND allocated = ?", newRouteIP, false).Take(address).Error
-	if err != nil {
-		return fmt.Errorf("Address %s is not available", newRouteIP)
-	}
-
-	// Deallocate old address
-	err = db.Model(&model.Address{}).Where("id = ?", iface.AddressID).Updates(map[string]interface{}{
-		"allocated": false, "interface": 0,
-	}).Error
-	if err != nil {
-		return fmt.Errorf("Failed to release old address: %v", err)
-	}
-
-	// Allocate new address to the interface
-	err = db.Model(&model.Address{}).Where("id = ?", address.ID).Updates(map[string]interface{}{
-		"allocated": true, "interface": iface.ID, "type": "native",
-	}).Error
-	if err != nil {
-		return fmt.Errorf("Failed to allocate new address: %v", err)
-	}
-
-	// Update interface's address and subnet
-	err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{
-		"address_id": address.ID, "subnet": address.Subnet.ID,
-	}).Error
-	if err != nil {
-		return fmt.Errorf("Failed to update interface: %v", err)
-	}
-
-	// Update hyper's RouteIP
-	err = db.Model(&model.Hyper{}).Where("id = ?", hyper.ID).Update("route_ip", newRouteIP).Error
-	if err != nil {
-		return fmt.Errorf("Failed to update hypervisor RouteIP: %v", err)
-	}
-
-	// Execute system_router.sh to apply the change on the hypervisor
-	subnet := address.Subnet
-	control := fmt.Sprintf("inter=%d", hyper.Hostid)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/system_router.sh '%d' '%s' '%s'", subnet.Vlan, newRouteIP, subnet.Gateway)
-	err = HyperExecute(ctx, control, command)
-	if err != nil {
-		logger.Error("Failed to execute system_router.sh", err)
-		return fmt.Errorf("Failed to apply route IP change: %v", err)
-	}
-
 	return
 }
 
-func (a *HyperAdmin) UpdateRouteIPFromSubnet(ctx context.Context, hyper *model.Hyper, subnetID int64) (err error) {
+func (a *HyperAdmin) UpdateRouteIP(ctx context.Context, hyper *model.Hyper, newRouteIP string, subnetID int64) (err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -307,12 +242,10 @@ func (a *HyperAdmin) UpdateRouteIPFromSubnet(ctx context.Context, hyper *model.H
 		}
 	}()
 
-	// Find the system interface for this hyper
-	iface := &model.Interface{}
-	err = db.Preload("Address").Preload("Address.Subnet").Where("hyper = ? AND type = ?", hyper.Hostid, "system").Take(iface).Error
+	// Clean up all existing system interfaces for this hyper
+	err = a.cleanupSystemInterfaces(ctx, hyper.Hostid)
 	if err != nil {
-		logger.Error("Failed to find system interface for hyper", hyper.Hostid, err)
-		return NewCLError(ErrInterfaceNotFound, "System interface not found for hypervisor", err)
+		return fmt.Errorf("Failed to cleanup old system interfaces: %v", err)
 	}
 
 	// Get the target subnet
@@ -321,39 +254,72 @@ func (a *HyperAdmin) UpdateRouteIPFromSubnet(ctx context.Context, hyper *model.H
 		return fmt.Errorf("Subnet %d not found: %v", subnetID, err)
 	}
 
-	// Allocate a new address from the subnet
-	newAddr, err := AllocateAddress(ctx, subnet, iface.ID, "", "native")
-	if err != nil {
-		return fmt.Errorf("Failed to allocate address from subnet %s: %v", subnet.Name, err)
+	// Create new system interface
+	iface := &model.Interface{
+		Name:   "system",
+		Type:   "system",
+		Mtu:    1450,
 	}
-
-	// Deallocate old address
-	err = db.Model(&model.Address{}).Where("id = ?", iface.AddressID).Updates(map[string]interface{}{
-		"allocated": false, "interface": 0,
+	err = db.Create(iface).Error
+	if err != nil {
+		return fmt.Errorf("Failed to create system interface: %v", err)
+	}
+	// Force-set fields that may be zero values (GORM v1 skips zero values on Create)
+	err = db.Model(iface).Updates(map[string]interface{}{
+		"owner":     1,
+		"hyper":     hyper.Hostid,
+		"subnet":    subnet.ID,
+		"router_id": subnet.RouterID,
 	}).Error
 	if err != nil {
-		return fmt.Errorf("Failed to release old address: %v", err)
+		return fmt.Errorf("Failed to update system interface: %v", err)
 	}
 
-	// Update interface's address and subnet
+	var routeIPAddr string
+	var addressID int64
+
+	if newRouteIP != "" {
+		// Validate the specified IP belongs to the selected subnet and is available
+		address := &model.Address{}
+		err = db.Where("address = ? AND subnet_id = ? AND allocated = ?", newRouteIP, subnetID, false).Take(address).Error
+		if err != nil {
+			return fmt.Errorf("Address %s is not available in subnet %s", newRouteIP, subnet.Name)
+		}
+		routeIPAddr = newRouteIP
+		addressID = address.ID
+		// Bind address to the interface
+		err = db.Model(&model.Address{}).Where("id = ?", address.ID).Updates(map[string]interface{}{
+			"allocated": true, "interface": iface.ID, "type": "native",
+		}).Error
+		if err != nil {
+			return fmt.Errorf("Failed to allocate address: %v", err)
+		}
+	} else {
+		// Auto-assign from the selected subnet
+		newAddr, allocErr := AllocateAddress(ctx, subnet, iface.ID, "", "native")
+		if allocErr != nil {
+			return fmt.Errorf("Failed to allocate address from subnet %s: %v", subnet.Name, allocErr)
+		}
+		routeIPAddr = newAddr.Address
+		addressID = newAddr.ID
+	}
+
 	err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{
-		"address_id": newAddr.ID, "subnet": subnet.ID,
+		"address_id": addressID,
 	}).Error
 	if err != nil {
 		return fmt.Errorf("Failed to update interface: %v", err)
 	}
 
-	newRouteIP := newAddr.Address
-
 	// Update hyper's RouteIP
-	err = db.Model(&model.Hyper{}).Where("id = ?", hyper.ID).Update("route_ip", newRouteIP).Error
+	err = db.Model(&model.Hyper{}).Where("id = ?", hyper.ID).Update("route_ip", routeIPAddr).Error
 	if err != nil {
 		return fmt.Errorf("Failed to update hypervisor RouteIP: %v", err)
 	}
 
 	// Execute system_router.sh to apply the change
 	control := fmt.Sprintf("inter=%d", hyper.Hostid)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/system_router.sh '%d' '%s' '%s'", subnet.Vlan, newRouteIP, subnet.Gateway)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/system_router.sh '%d' '%s' '%s'", subnet.Vlan, routeIPAddr, subnet.Gateway)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Failed to execute system_router.sh", err)
@@ -447,12 +413,14 @@ func (v *HyperView) Edit(c *macaron.Context, store session.Store) {
 	}
 	c.Data["Subnets"] = subnets
 
-	// Load current system interface subnet
-	_, db := GetContextDB(c.Req.Context())
-	iface := &model.Interface{}
-	err = db.Preload("Address").Preload("Address.Subnet").Where("hyper = ? AND type = ?", hyper.Hostid, "system").Take(iface).Error
-	if err == nil && iface.Address != nil && iface.Address.Subnet != nil {
-		c.Data["CurrentSubnetID"] = iface.Address.Subnet.ID
+	// Determine current subnet from RouteIP
+	if hyper.RouteIP != "" {
+		_, db := GetContextDB(c.Req.Context())
+		address := &model.Address{}
+		err = db.Preload("Subnet").Where("address = ?", hyper.RouteIP).Take(address).Error
+		if err == nil && address.Subnet != nil {
+			c.Data["CurrentSubnetID"] = address.Subnet.ID
+		}
 	}
 
 	c.HTML(200, "hypers_patch")
@@ -538,25 +506,10 @@ func (v *HyperView) Patch(c *macaron.Context, store session.Store) {
 	}
 	// Handle RouteIP change
 	if routeIP != hyper.RouteIP {
-		if routeIP == "" {
-			// RouteIP cleared, auto-assign from selected subnet
-			if err := hyperAdmin.UpdateRouteIPFromSubnet(c.Req.Context(), hyper, subnetID); err != nil {
-				c.Data["ErrorMsg"] = fmt.Sprintf("Failed to allocate RouteIP from subnet: %v", err)
-				c.HTML(500, "error")
-				return
-			}
-		} else {
-			// Validate the specified RouteIP belongs to the selected subnet
-			if err := hyperAdmin.ValidateRouteIPSubnet(c.Req.Context(), routeIP, subnetID); err != nil {
-				c.Data["ErrorMsg"] = err.Error()
-				c.HTML(http.StatusBadRequest, "error")
-				return
-			}
-			if err := hyperAdmin.UpdateRouteIP(c.Req.Context(), hyper, routeIP); err != nil {
-				c.Data["ErrorMsg"] = fmt.Sprintf("Failed to update RouteIP: %v", err)
-				c.HTML(500, "error")
-				return
-			}
+		if err := hyperAdmin.UpdateRouteIP(c.Req.Context(), hyper, routeIP, subnetID); err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
 		}
 	}
 	c.Redirect("/hypers")
