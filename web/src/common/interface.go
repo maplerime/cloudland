@@ -200,7 +200,7 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 		primaryIface = floatingIps[0].Interface
 		updatePrimary = true
 	}
-	err = db.Model(primaryIface.Address).Updates(map[string]interface{}{"second_interface": 0}).Error
+	err = db.Model(&model.Address{}).Where("id = ?", primaryIface.Address.ID).Updates(map[string]interface{}{"second_interface": 0}).Error
 	if err != nil {
 		logger.Error("Update interface ", err)
 		return
