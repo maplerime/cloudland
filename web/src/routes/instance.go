@@ -149,7 +149,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 
 	driver := GetVolumeDriver()
 	var poolRelation map[string]PoolRelationItem
-	if driver != "local" {
+	if driver != "local" && poolID != "local" {
 		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
 		if poolID == "" {
 			poolID = defaultPoolID
@@ -189,7 +189,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		total := 0
 
-		if driver == "local" {
+		if poolID == "local" {
 			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 				logger.Error("Failed to query total instances with the image", err)
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
@@ -565,7 +565,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
-	driver := GetVolumeDriver()
+	driver := bootVolume.GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
 	imageVolumeID := ""
 	total := 0

@@ -50,6 +50,7 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 			EndTransaction(ctx, err)
 		}
 	}()
+	hyper := ctx.Value("hostid").(int32)
 	logger.Debug("CreateVolumeLocal", args)
 	argn := len(args)
 	if argn < 5 {
@@ -70,7 +71,7 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 	}
 	path := args[2]
 	status = args[3]
-	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
+	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status, "hyper": hyper}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return
