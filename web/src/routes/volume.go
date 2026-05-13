@@ -428,13 +428,15 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 	control := fmt.Sprintf("inter=")
-	vol_driver := GetVolumeDriver()
+	volDriver := volume.GetVolumeDriver()
 	uuid := volume.UUID
-	if vol_driver != "local" {
+	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
+	} else {
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
-	logger.Debug("Delete volume", vol_driver, volume.ID, uuid, volume.GetVolumePath())
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, uuid, volume.GetVolumePath())
+	logger.Debug("Delete volume", volDriver, volume.ID, uuid, volume.GetVolumePath())
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", volDriver, volume.ID, uuid, volume.GetVolumePath())
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete volume execution failed", err)
