@@ -43,22 +43,27 @@ func updateInstance(ctx context.Context, volume *model.Volume, status string, re
 }
 
 func CreateVolumeLocal(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_volume.sh 5 /volume-12.disk available reason
+	//|:-COMMAND-:| create_volume.sh hyper 5 /volume-12.disk available reason
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
 			EndTransaction(ctx, err)
 		}
 	}()
-	hyper := ctx.Value("hostid").(int32)
 	logger.Debug("CreateVolumeLocal", args)
 	argn := len(args)
-	if argn < 5 {
+	if argn < 6 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
 	}
-	volID, err := strconv.ParseInt(args[1], 10, 64)
+	parsedHyperID, err := strconv.ParseInt(args[1], 10, 32)
+	if err != nil {
+		logger.Error("Invalid hypervisor ID", err)
+		return
+	}
+	hyper := int32(parsedHyperID)
+	volID, err := strconv.ParseInt(args[2], 10, 64)
 	if err != nil {
 		logger.Error("Invalid volume ID", err)
 		return
@@ -69,14 +74,14 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 		logger.Error("Invalid volume ID", err)
 		return
 	}
-	path := args[2]
-	status = args[3]
+	path := args[3]
+	status = args[4]
 	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status, "hyper": hyper}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return
 	}
-	if err = updateInstance(ctx, volume, status, args[4]); err != nil {
+	if err = updateInstance(ctx, volume, status, args[5]); err != nil {
 		logger.Error("Update instance status failed", err)
 		return
 	}

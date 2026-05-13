@@ -46,7 +46,7 @@ if [ -z "$wds_address" ]; then
         vm_img=$image_dir/$vm_ID.disk
         if [ ! -s "$image_cache/$img_name" ]; then
             echo "Image is not available!"
-            echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'image $img_name not available!'"
+            echo "|:-COMMAND-:| create_volume_local '$SCI_CLIENT_ID' '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'image $img_name not available!'"
             exit -1
         fi
         format=$(qemu-img info $image_cache/$img_name | grep 'file format' | cut -d' ' -f3)
@@ -54,13 +54,13 @@ if [ -z "$wds_address" ]; then
         result=$(eval "$cmd")
         vsize=$(qemu-img info $vm_img | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
         if [ "$vsize" -gt "$fsize" ]; then
-            echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'flavor is smaller than image size'"
+            echo "|:-COMMAND-:| create_volume_local '$SCI_CLIENT_ID' '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'flavor is smaller than image size'"
             exit -1
         fi
         qemu-img resize -q $vm_img "${disk_size}G" &> /dev/null
     fi
     vol_state=attached
-    echo "|:-COMMAND-:| create_volume_local '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'success'"
+    echo "|:-COMMAND-:| create_volume_local '$SCI_CLIENT_ID' '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'success'"
 else
     get_wds_token
     image=$(basename $img_name .raw)
