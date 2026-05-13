@@ -52,6 +52,7 @@ type ImagePayload struct {
 	Name         string         `json:"name" binding:"required,min=2,max=32"`
 	OSCode       string         `json:"os_code" binding:"required,oneof=linux windows other"`
 	DownloadURL  string         `json:"download_url" binding:"required,http_url"`
+	Zone         string         `json:"zone" binding:"omitempty,min=1,max=32"`
 	OSVersion    string         `json:"os_version" binding:"required,min=2,max=32"`
 	User         string         `json:"user" binding:"required,min=2,max=32"`
 	InstanceUUID string         `json:"instance_uuid"`
@@ -221,6 +222,15 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input UUID", nil)
 		return
 	}
+	if payload.Zone == "" {
+		payload.Zone = routes.DefaultZoneName
+	}
+	zone, err := zoneAdmin.GetZoneByName(ctx, payload.Zone)
+	if err != nil {
+		logger.Errorf("Failed to get zone %+v, %+v", payload.Zone, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid zone", err)
+		return
+	}
 	var rescueImage *model.Image
 	if payload.RescueImage != nil {
 		rescueImage, err = imageAdmin.GetImage(ctx, payload.RescueImage)
@@ -231,7 +241,7 @@ func (v *ImageAPI) Create(c *gin.Context) {
 		}
 	}
 	logger.Debugf("Creating image with payload %+v", payload)
-	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, payload.IsRescue, instanceID, payload.UUID, rescueImage, payload.OsFamily)
+	image, err := imageAdmin.Create(ctx, payload.OSCode, payload.Name, payload.OSVersion, "kvm-x86_64", payload.User, payload.DownloadURL, "x86_64", payload.BootLoader, payload.IsRescue, instanceID, payload.UUID, rescueImage, payload.OsFamily, zone)
 	if err != nil {
 		logger.Errorf("Not able to create image %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
