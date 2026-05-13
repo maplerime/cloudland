@@ -298,6 +298,10 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				}
 			}
 		}
+		// Clear in-memory InstanceID so DerivePublicInterface re-processes secondary IPs
+		for i := 1; i < len(publicIps); i++ {
+			publicIps[i].InstanceID = 0
+		}
 
 		if iface.FloatingIp != publicIps[0].ID {
 			var floatingIp *model.FloatingIp
