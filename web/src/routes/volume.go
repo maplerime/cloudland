@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
+
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
@@ -157,14 +159,18 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	newPoolID := poolID
 	if poolID != "" {
 		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
-		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+		if dictErr == nil && (dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL || dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP) {
 			if dictionary.Value != "" {
 				newPoolID = dictionary.Value
 			}
 		}
 	}
+	newPoolID = strings.TrimSpace(newPoolID)
 
-	driver := "wds_vhost"
+	driver := GetVolumeDriver()
+	if newPoolID == "local" {
+		driver = "local"
+	}
 	control := ""
 	var bootVolume *model.Volume
 	if instance != nil {
@@ -181,26 +187,39 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		}
 	}
 
-	if newPoolID == "local" {
+	if driver == "local" {
 		if instance == nil {
-			err = NewCLError(ErrInvalidParameter, "Local storage pool requires an instance", nil)
-			return
+			if newPoolID == "local" {
+				err = NewCLError(ErrInvalidParameter, "Local storage pool requires an instance", nil)
+				return
+			}
+			var zone *model.Zone
+			zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
+			if err != nil {
+				return
+			}
+			var hyperGroup string
+			hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
+			if err != nil {
+				return
+			}
+			control = fmt.Sprintf("select=%s", hyperGroup)
+		} else {
+			bootVolumeDriver := bootVolume.GetVolumeDriver()
+			if bootVolumeDriver == "" {
+				err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
+				return
+			}
+			if bootVolumeDriver != driver {
+				err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
+				return
+			}
+			if instance.Hyper < 0 {
+				err = NewCLError(ErrInstanceInvalidState, "Instance has no valid hypervisor", nil)
+				return
+			}
+			control = fmt.Sprintf("inter=%d", instance.Hyper)
 		}
-		bootVolumeDriver := bootVolume.GetVolumeDriver()
-		if bootVolumeDriver == "" {
-			err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
-			return
-		}
-		if bootVolumeDriver != "local" {
-			err = NewCLError(ErrVolumeHyperMismatch, "Local storage pool requires instance with local boot volume", nil)
-			return
-		}
-		if instance.Hyper < 0 {
-			err = NewCLError(ErrInstanceInvalidState, "Instance has no valid hypervisor", nil)
-			return
-		}
-		driver = "local"
-		control = fmt.Sprintf("inter=%d", instance.Hyper)
 	} else {
 		if instance != nil {
 			bootVolumeDriver := bootVolume.GetVolumeDriver()
@@ -208,8 +227,8 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 				err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
 				return
 			}
-			if bootVolumeDriver == "local" {
-				err = NewCLError(ErrVolumeHyperMismatch, "WDS storage pool requires instance with non-local boot volume", nil)
+			if bootVolumeDriver != driver {
+				err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
 				return
 			}
 		}
@@ -234,7 +253,7 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		driver, volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
+		driver, volume.ID, volume.Size, volume.UUID, volume.IopsLimit, volume.IopsBurst, volume.BpsLimit, volume.BpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)
