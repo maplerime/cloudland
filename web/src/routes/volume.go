@@ -356,6 +356,11 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
 			return
 		}
+		if volDriver == "local" && volume.Hyper != instance.Hyper {
+			logger.Errorf("Local volume hyper(%d) does not match instance hyper(%d)", volume.Hyper, instance.Hyper)
+			err = NewCLError(ErrVolumeHyperMismatch, "Local volume and instance are not on the same hypervisor", nil)
+			return
+		}
 		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
 			logger.Error("Cannot attach volume to a paused/rescuing instance", instID)
 			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused/rescuing instance", nil)
