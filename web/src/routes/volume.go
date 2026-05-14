@@ -308,9 +308,9 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	if name != "" {
 		volume.Name = name
 	}
-	vol_driver := GetVolumeDriver()
+	volDriver := volume.GetVolumeDriver()
 	uuid := volume.UUID
-	if vol_driver != "local" {
+	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
 	}
 	if volume.InstanceID != instID && volume.IsBusy() {
@@ -338,7 +338,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			return
 		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", volDriver, volume.Instance.ID, volume.ID, uuid)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Detach volume execution failed", err)
@@ -363,7 +363,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		// RN-156: append the volume UUID to the command
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", volDriver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Create volume execution failed", err)
