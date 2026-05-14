@@ -189,37 +189,24 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 
 	if driver == "local" {
 		if instance == nil {
-			if newPoolID == "local" {
-				err = NewCLError(ErrInvalidParameter, "Local storage pool requires an instance", nil)
-				return
-			}
-			var zone *model.Zone
-			zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
-			if err != nil {
-				return
-			}
-			var hyperGroup string
-			hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
-			if err != nil {
-				return
-			}
-			control = fmt.Sprintf("select=%s", hyperGroup)
-		} else {
-			bootVolumeDriver := bootVolume.GetVolumeDriver()
-			if bootVolumeDriver == "" {
-				err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
-				return
-			}
-			if bootVolumeDriver != driver {
-				err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
-				return
-			}
-			if instance.Hyper < 0 {
-				err = NewCLError(ErrInstanceInvalidState, "Instance has no valid hypervisor", nil)
-				return
-			}
-			control = fmt.Sprintf("inter=%d", instance.Hyper)
+			logger.Error("Local volume must be created with an instance")
+			err = NewCLError(ErrInvalidParameter, "Local volume must be created with an instance", nil)
+			return
 		}
+		bootVolumeDriver := bootVolume.GetVolumeDriver()
+		if bootVolumeDriver == "" {
+			err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
+			return
+		}
+		if bootVolumeDriver != driver {
+			err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
+			return
+		}
+		if instance.Hyper < 0 {
+			err = NewCLError(ErrInstanceInvalidState, "Instance has no valid hypervisor", nil)
+			return
+		}
+		control = fmt.Sprintf("inter=%d", instance.Hyper)
 	} else {
 		if instance != nil {
 			bootVolumeDriver := bootVolume.GetVolumeDriver()
