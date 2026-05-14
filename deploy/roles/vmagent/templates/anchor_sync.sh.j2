@@ -5,8 +5,9 @@
 # Logic: queries anchor series active in [14d] but not refreshed in [7d],
 # then re-imports them with the current timestamp to prevent expiry.
 
-VM_QUERY_URL="{{ vm_query_url }}"
-VM_IMPORT_URL="{{ vm_import_url }}"
+VM_QUERY_URL="{{ vm_query_url | default(vm_api_url, true) }}"
+VM_IMPORT_URL="{{ vm_import_url | default(vm_api_url, true) }}"
+VM_DELETE_URL="{{ vm_delete_url | default(vm_api_url, true) }}"
 BATCH_SIZE=500
 BATCH_SLEEP="0.05"   # seconds between batches (50ms)
 ANCHOR_TYPES=("cpu" "mem" "bw_in" "bw_out")

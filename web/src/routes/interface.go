@@ -256,7 +256,7 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *
 func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp, secgroups []*model.SecurityGroup) (iface2 *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
-		err = db.Model(site).Updates(map[string]interface{}{"interface": 0}).Error
+		err = db.Model(&model.Subnet{}).Where("id = ?", site.ID).Updates(map[string]interface{}{"interface": 0}).Error
 		if err != nil {
 			logger.Error("Failed to update site subnets", err)
 			err = NewCLError(ErrSiteSubnetUpdateFailed, "Failed to update site subnets", err)
@@ -268,6 +268,41 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 	if len(publicIps) > 0 {
 		primaryMac := iface.MacAddr
 		primaryUUID := iface.UUID
+		// Clean up old second addresses regardless of whether the first IP changed
+		for _, addr := range iface.SecondAddresses {
+			err = db.Model(&model.Address{}).Where("id = ?", addr.ID).Updates(map[string]interface{}{"second_interface": 0}).Error
+			if err != nil {
+				logger.Errorf("Failed to reset second_interface for address %d, %v", addr.ID, err)
+				err = NewCLError(ErrAddressUpdateFailed, "Failed to reset second_interface", err)
+				return
+			}
+			if addr.Interface > 0 {
+				addrIface := &model.Interface{Model: model.Model{ID: addr.Interface}}
+				if err = db.Model(addrIface).Take(addrIface).Error; err != nil {
+					logger.Errorf("Failed to query interface %d, %v", addr.Interface, err)
+					return
+				}
+				if addrIface.FloatingIp > 0 {
+					floatingIp := &model.FloatingIp{Model: model.Model{ID: addrIface.FloatingIp}}
+					err = db.Model(floatingIp).Updates(map[string]interface{}{
+						"instance_id": 0,
+						"router_id":   0,
+						"int_address": "",
+						"type":        string(PublicFloating),
+					}).Error
+					if err != nil {
+						logger.Errorf("Failed to convert floating ip %d to PublicFloating type, %v", addrIface.FloatingIp, err)
+						err = NewCLError(ErrFIPUpdateFailed, "Failed to convert floating ip type", err)
+						return
+					}
+				}
+			}
+		}
+		// Clear in-memory InstanceID so DerivePublicInterface re-processes secondary IPs
+		for i := 1; i < len(publicIps); i++ {
+			publicIps[i].InstanceID = 0
+		}
+
 		if iface.FloatingIp != publicIps[0].ID {
 			var floatingIp *model.FloatingIp
 			floatingIp, err = floatingIpAdmin.Get(ctx, iface.FloatingIp)
@@ -280,6 +315,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				logger.Errorf("Failed to detach floating ip, %v", err)
 				return
 			}
+
 			if err = db.Model(iface).Association("Security_Groups").Replace([]*model.SecurityGroup{}).Error; err != nil {
 				logger.Debug("Failed to save interface", err)
 				return
@@ -290,7 +326,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 				logger.Error("Failed to generate random Mac address, %v", err)
 				return
 			}
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
+			err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{"instance": 0, "uuid": uuid.New().String(), "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false, "mac_addr": mac}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
 				return

@@ -215,6 +215,117 @@ func (a *HyperAdmin) GetHyperByHostIP(ctx context.Context, hostIP string) (hyper
 	return
 }
 
+func (a *HyperAdmin) cleanupSystemInterfaces(ctx context.Context, hostid int32) (err error) {
+	_, db := GetContextDB(ctx)
+	oldIfaces := []*model.Interface{}
+	err = db.Where("hyper = ? AND type = ?", hostid, "system").Find(&oldIfaces).Error
+	if err != nil {
+		return
+	}
+	for _, oldIface := range oldIfaces {
+		err = DeleteInterface(ctx, oldIface)
+		if err != nil {
+			return
+		}
+	}
+	return
+}
+
+func (a *HyperAdmin) UpdateRouteIP(ctx context.Context, hyper *model.Hyper, newRouteIP string, subnetID int64) (err error) {
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+
+	// Clean up all existing system interfaces for this hyper
+	err = a.cleanupSystemInterfaces(ctx, hyper.Hostid)
+	if err != nil {
+		return fmt.Errorf("Failed to cleanup old system interfaces: %v", err)
+	}
+
+	// Get the target subnet
+	subnet, err := subnetAdmin.Get(ctx, subnetID)
+	if err != nil {
+		return fmt.Errorf("Subnet %d not found: %v", subnetID, err)
+	}
+
+	// Create new system interface
+	iface := &model.Interface{
+		Name: "system",
+		Type: "system",
+		Mtu:  1450,
+	}
+	err = db.Create(iface).Error
+	if err != nil {
+		return fmt.Errorf("Failed to create system interface: %v", err)
+	}
+	// Force-set fields that may be zero values (GORM v1 skips zero values on Create)
+	err = db.Model(iface).Updates(map[string]interface{}{
+		"owner":     1,
+		"hyper":     hyper.Hostid,
+		"subnet":    subnet.ID,
+		"router_id": subnet.RouterID,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("Failed to update system interface: %v", err)
+	}
+
+	var routeIPAddr string
+	var addressID int64
+
+	if newRouteIP != "" {
+		// Validate the specified IP belongs to the selected subnet and is available
+		address := &model.Address{}
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("address = ? AND subnet_id = ? AND allocated = ?", newRouteIP, subnetID, false).Take(address).Error
+		if err != nil {
+			return fmt.Errorf("Address %s is not available in subnet %s", newRouteIP, subnet.Name)
+		}
+		routeIPAddr = newRouteIP
+		addressID = address.ID
+		// Bind address to the interface
+		err = db.Model(&model.Address{}).Where("id = ?", address.ID).Updates(map[string]interface{}{
+			"allocated": true, "interface": iface.ID, "type": "native",
+		}).Error
+		if err != nil {
+			return fmt.Errorf("Failed to allocate address: %v", err)
+		}
+	} else {
+		// Auto-assign from the selected subnet
+		newAddr, allocErr := AllocateAddress(ctx, subnet, iface.ID, "", "native")
+		if allocErr != nil {
+			return fmt.Errorf("Failed to allocate address from subnet %s: %v", subnet.Name, allocErr)
+		}
+		routeIPAddr = newAddr.Address
+		addressID = newAddr.ID
+	}
+
+	err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Updates(map[string]interface{}{
+		"address_id": addressID,
+	}).Error
+	if err != nil {
+		return fmt.Errorf("Failed to update interface: %v", err)
+	}
+
+	// Update hyper's RouteIP
+	err = db.Model(&model.Hyper{}).Where("id = ?", hyper.ID).Update("route_ip", routeIPAddr).Error
+	if err != nil {
+		return fmt.Errorf("Failed to update hypervisor RouteIP: %v", err)
+	}
+
+	// Execute system_router.sh to apply the change
+	control := fmt.Sprintf("inter=%d", hyper.Hostid)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/system_router.sh '%d' '%s' '%s'", subnet.Vlan, routeIPAddr, subnet.Gateway)
+	err = HyperExecute(ctx, control, command)
+	if err != nil {
+		logger.Error("Failed to execute system_router.sh", err)
+		return fmt.Errorf("Failed to apply route IP change: %v", err)
+	}
+
+	return
+}
+
 func (v *HyperView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Admin)
@@ -249,8 +360,8 @@ func (v *HyperView) List(c *macaron.Context, store session.Store) {
 	c.Data["Hypers"] = hypers
 	c.Data["Query"] = query
 	SetPaginationData(c, "hypers", total, limit, offset, listConfig,
-		`["Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"]`,
-		[]string{"Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"})
+		`["Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "RouteIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"]`,
+		[]string{"Hostid", "Hostname", "Parentid", "CpuModel", "HostIP", "RouteIP", "Status", "Zone", "Cpu", "Memory", "Disk", "OverCommitRates", "Remark", "Action"})
 
 	c.HTML(200, "hypers")
 }
@@ -288,6 +399,27 @@ func (v *HyperView) Edit(c *macaron.Context, store session.Store) {
 
 	c.Data["Hyper"] = hyper
 	c.Data["Zones"] = zones
+
+	// Load public subnets for RouteIP selection
+	_, subnets, err := subnetAdmin.List(c.Req.Context(), 0, -1, "", "", "type = 'public'")
+	if err != nil {
+		logger.Error("Failed to load public subnets", err)
+		c.Data["ErrorMsg"] = "Failed to load public subnets"
+		c.HTML(500, "error")
+		return
+	}
+	c.Data["Subnets"] = subnets
+
+	// Determine current subnet from RouteIP
+	if hyper.RouteIP != "" {
+		_, db := GetContextDB(c.Req.Context())
+		address := &model.Address{}
+		err = db.Preload("Subnet").Where("address = ?", hyper.RouteIP).Take(address).Error
+		if err == nil && address.Subnet != nil {
+			c.Data["CurrentSubnetID"] = address.Subnet.ID
+		}
+	}
+
 	c.HTML(200, "hypers_patch")
 }
 
@@ -331,6 +463,8 @@ func (v *HyperView) Patch(c *macaron.Context, store session.Store) {
 	memOverRate := c.QueryFloat64("mem_over_rate")
 	diskOverRate := c.QueryFloat64("disk_over_rate")
 	remark := c.QueryTrim("remark")
+	routeIP := c.QueryTrim("route_ip")
+	subnetID := c.QueryInt64("subnet_id")
 	if status < 0 || status > 1 {
 		c.Data["ErrorMsg"] = "Invalid status value"
 		c.HTML(400, "error")
@@ -366,6 +500,14 @@ func (v *HyperView) Patch(c *macaron.Context, store session.Store) {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(500, "error")
 		return
+	}
+	// Handle RouteIP change
+	if routeIP != hyper.RouteIP {
+		if err := hyperAdmin.UpdateRouteIP(c.Req.Context(), hyper, routeIP, subnetID); err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
 	}
 	c.Redirect("/hypers")
 }

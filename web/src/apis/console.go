@@ -9,8 +9,9 @@ package apis
 
 import (
 	"fmt"
-	"github.com/spf13/viper"
 	"net/http"
+
+	"github.com/spf13/viper"
 
 	. "web/src/common"
 	"web/src/routes"

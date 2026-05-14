@@ -54,6 +54,17 @@
     cloudland_exporters_block: |
       - job_name: 'cloudland_exporter'
         scrape_interval: 60s
+        metrics_path: '/metrics'
+        scrape_timeout: 30s
+        honor_labels: true
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/cloudland_exporters.json']
+            refresh_interval: 30s
+      - job_name: 'cloudland_volume_exporter'
+        scrape_interval: 60s
+        metrics_path: '/metrics/cloudland/volume'
+        scrape_timeout: 20s
+        honor_labels: true
         file_sd_configs:
           - files: ['/etc/prometheus/lists/cloudland_exporters.json']
             refresh_interval: 30s

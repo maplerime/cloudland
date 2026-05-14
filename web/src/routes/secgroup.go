@@ -98,16 +98,17 @@ func (a *SecgroupAdmin) Update(ctx context.Context, secgroup *model.SecurityGrou
 			EndTransaction(ctx, err)
 		}
 	}()
+	updates := map[string]interface{}{}
 	if name != "" && secgroup.Name != name {
-		secgroup.Name = name
+		updates["name"] = name
 	}
 	if isDefault && secgroup.IsDefault != isDefault {
-		secgroup.IsDefault = isDefault
+		updates["is_default"] = isDefault
 		if isDefault {
 			a.Switch(ctx, secgroup, secgroup.Router)
 		}
 	}
-	err = db.Model(secgroup).Updates(secgroup).Error
+	err = db.Model(&model.SecurityGroup{}).Where("id = ?", secgroup.ID).Updates(updates).Error
 	if err != nil {
 		logger.Error("Failed to save security group", err)
 		err = NewCLError(ErrSecurityGroupUpdateFailed, "Failed to update security group", err)

@@ -138,6 +138,8 @@ function router_status()
 
 function check_system_router()
 {
+    sudo systemctl status NetworkManager >/dev/null
+    [ $? -ne 0 ] && sudo systemctl restart NetworkManager
     sudo ip netns exec router-0 ip r | grep default
     if [ $? -ne 0 ]; then
         sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
@@ -162,25 +164,19 @@ function check_conntrack()
     sudo $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
 }
 
-function check_sync_flag()
-{
-    flag_file=$run_dir/need_to_sync
-    boot_file=/proc/sys/kernel/random/boot_id
-    diff $flag_file $boot_file
-    return $?
-}
-
 function recover_loadbalancer()
 {
-    check_sync_flag
-    [ $? -eq 0 ] && return
+    lb_flag_file=$run_dir/need_to_sync_lb
+    [ -f "$lb_flag_file" ] && return
     echo "|:-COMMAND-:| recover_loadbalancer.sh '$SCI_CLIENT_ID'"
-    sudo cp $boot_file $flag_file
+    touch $lb_flag_file
 }
 
 function sync_instance()
 {
-    check_sync_flag
+    flag_file=$run_dir/need_to_sync
+    boot_file=/proc/sys/kernel/random/boot_id
+    diff $flag_file $boot_file
     [ $? -eq 0 ] && return
     sudo iptables-restore </etc/iptables.rules
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
@@ -202,6 +198,7 @@ function sync_instance()
         sudo virsh start inst-$inst_id
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
+    sudo cp $boot_file $flag_file
 }
 
 function sync_delayed_job()
@@ -257,6 +254,18 @@ function calc_resource()
     if [ -n "$wds_address" ]; then
         total_memory=$(( hp_2m_total * 2048 ))
         memory=$(( hp_2m_free * 2048 ))
+        # Shutoff VMs release hugepages back to the kernel free pool, but the
+        # scheduler must keep their memory reserved so they can be restarted on
+        # this node. Subtract their configured memory from the reported free.
+        shutoff_hp_mem=0
+        for inst in $(sudo virsh list --all | grep 'shut off' | awk '{print $2}'); do
+            xml="$xml_dir/$inst/$inst.xml"
+            [ -f "$xml" ] || continue
+            vmem=$(xmllint --xpath 'string(/domain/memory)' "$xml" 2>/dev/null)
+            [ -n "$vmem" ] && shutoff_hp_mem=$(( shutoff_hp_mem + vmem ))
+        done
+        memory=$(( memory - shutoff_hp_mem ))
+        [ $memory -lt 0 ] && memory=0
     fi
     if [ $(( $(date +"%s") % 10 )) -gt 7 ]; then
 	rm -f $run_dir/old_resource_list
