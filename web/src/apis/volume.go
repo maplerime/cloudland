@@ -26,14 +26,15 @@ var volumeAdmin = &routes.VolumeAdmin{}
 type VolumeAPI struct{}
 
 type VolumePayload struct {
-	Count     int    `json:"count" binding:"omitempty,gte=1,lte=16"`
-	Name      string `json:"name" binding:"required"`
-	Size      int32  `json:"size" binding:"required"`
-	PoolID    string `json:"pool_id" binding:"omitempty"`
-	IopsLimit int32  `json:"iops_limit" binding:"omitempty,gte=0,lte=10000000"`
-	IopsBurst int32  `json:"iops_burst" binding:"omitempty,gte=0"`
-	BpsLimit  int32  `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
-	BpsBurst  int32  `json:"bps_burst" binding:"omitempty,gte=0"`
+	Count     int     `json:"count" binding:"omitempty,gte=1,lte=16"`
+	Name      string  `json:"name" binding:"required"`
+	Size      int32   `json:"size" binding:"required"`
+	PoolID    string  `json:"pool_id" binding:"omitempty"`
+	IopsLimit int32   `json:"iops_limit" binding:"omitempty,gte=0,lte=10000000"`
+	IopsBurst int32   `json:"iops_burst" binding:"omitempty,gte=0"`
+	BpsLimit  int32   `json:"bps_limit" binding:"omitempty,gte=0,lte=102400"` // in MB/s
+	BpsBurst  int32   `json:"bps_burst" binding:"omitempty,gte=0"`
+	Instance  *BaseID `json:"instance" binding:"omitempty"`
 }
 
 type VolumeQosPayload struct {

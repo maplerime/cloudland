@@ -535,7 +535,7 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		}
 	}
 	control := fmt.Sprintf("inter=")
-	volDriver := GetVolumeDriver()
+	volDriver := volume.GetVolumeDriver()
 	uuid := volume.UUID
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()

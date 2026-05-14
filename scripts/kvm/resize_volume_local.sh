@@ -22,6 +22,7 @@ fi
 
 # if volume attached to a VM, stop the VM first
 if [ "$vm_ID" != "0" ]; then
+    ./action_vm.sh $ID stop
     ./action_vm.sh $vm_ID hard_stop
 fi
 old_size=$(qemu-img info -U $vol_path | grep 'virtual size:' | cut -d' ' -f5 | tr -d '(')
