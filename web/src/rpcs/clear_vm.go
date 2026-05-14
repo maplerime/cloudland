@@ -11,10 +11,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"web/src/routes"
 
 	. "web/src/common"
 	"web/src/model"
 )
+
+var volumeAdmin = &routes.VolumeAdmin{}
 
 func init() {
 	Add("clear_vm", ClearVM)
@@ -169,6 +172,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	if err = db.Delete(instance).Error; err != nil {
 		logger.Error("Failed to delete instance, %v", err)
+		return
+	}
+	if err = volumeAdmin.UpdateDataVolumeStatus(ctx, instance.ID, model.VolumeStatusAvailable); err != nil {
+		logger.Error("Failed to update attached volumes", err)
 		return
 	}
 	// Unscoped update
