@@ -11,10 +11,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"web/src/routes"
 
 	. "web/src/common"
 	"web/src/model"
 )
+
+var volumeAdmin = &routes.VolumeAdmin{}
 
 func init() {
 	Add("clear_vm", ClearVM)
@@ -129,22 +132,6 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 	return
 }
 
-func updateAttachedVolumes(ctx context.Context, instanceID int64) (err error) {
-	_, db := GetContextDB(ctx)
-	err = db.Model(&model.Volume{}).
-		Where("instance_id = ? and booting = ?", instanceID, false).
-		Updates(map[string]interface{}{
-			"instance_id": 0,
-			"target":      "",
-			"status":      model.VolumeStatusAvailable,
-		}).Error
-	if err != nil {
-		logger.Error("Failed to update attached data volumes", err)
-		return
-	}
-	return
-}
-
 func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| clear_vm.sh '127'
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -187,7 +174,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to delete instance, %v", err)
 		return
 	}
-	if err = updateAttachedVolumes(ctx, instance.ID); err != nil {
+	if err = volumeAdmin.UpdateDataVolumeStatus(ctx, instance.ID, model.VolumeStatusAvailable); err != nil {
 		logger.Error("Failed to update attached volumes", err)
 		return
 	}
