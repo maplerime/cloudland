@@ -237,8 +237,17 @@ func (v *VolumeAPI) Create(c *gin.Context) {
 		return
 	}
 	logger.Debugf("Creating volume with %+v", payload)
+	var instance *model.Instance
+	if payload.Instance != nil {
+		instance, err = instanceAdmin.GetInstanceByUUID(ctx, payload.Instance.ID)
+		if err != nil {
+			logger.Errorf("Failed to get instance, %+v", err)
+			ErrorResponse(c, http.StatusBadRequest, "Failed to get instance", err)
+			return
+		}
+	}
 	volume, err := volumeAdmin.Create(ctx, payload.Name, payload.Size,
-		payload.IopsLimit, payload.IopsBurst, payload.BpsLimit, payload.BpsBurst, payload.PoolID)
+		payload.IopsLimit, payload.IopsBurst, payload.BpsLimit, payload.BpsBurst, payload.PoolID, instance)
 	if err != nil {
 		logger.Errorf("Failed to create volume: %+v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create volume", err)

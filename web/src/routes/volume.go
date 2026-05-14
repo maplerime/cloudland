@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
-
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
@@ -145,7 +144,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 }
 
 func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
-	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
+	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string, instance *model.Instance) (volume *model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	// check the permission
 	permit := memberShip.CheckPermission(model.Writer)
@@ -165,16 +164,77 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		}
 	}
 
+	driver := "wds_vhost"
+	control := ""
+	var bootVolume *model.Volume
+	if instance != nil {
+		for _, volume := range instance.Volumes {
+			if volume.Booting {
+				bootVolume = volume
+				break
+			}
+		}
+		if bootVolume == nil {
+			logger.Error("Instance has no boot volume")
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			return
+		}
+	}
+
+	if newPoolID == "local" {
+		if instance == nil {
+			err = NewCLError(ErrInvalidParameter, "Local storage pool requires an instance", nil)
+			return
+		}
+		bootVolumeDriver := bootVolume.GetVolumeDriver()
+		if bootVolumeDriver == "" {
+			err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
+			return
+		}
+		if bootVolumeDriver != "local" {
+			err = NewCLError(ErrVolumeHyperMismatch, "Local storage pool requires instance with local boot volume", nil)
+			return
+		}
+		if instance.Hyper < 0 {
+			err = NewCLError(ErrInstanceInvalidState, "Instance has no valid hypervisor", nil)
+			return
+		}
+		driver = "local"
+		control = fmt.Sprintf("inter=%d", instance.Hyper)
+	} else {
+		if instance != nil {
+			bootVolumeDriver := bootVolume.GetVolumeDriver()
+			if bootVolumeDriver == "" {
+				err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
+				return
+			}
+			if bootVolumeDriver == "local" {
+				err = NewCLError(ErrVolumeHyperMismatch, "WDS storage pool requires instance with non-local boot volume", nil)
+				return
+			}
+		}
+		var zone *model.Zone
+		zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
+		if err != nil {
+			return
+		}
+		var hyperGroup string
+		hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
+		if err != nil {
+			return
+		}
+		control = fmt.Sprintf("select=%s", hyperGroup)
+	}
+
 	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst)
 	if err != nil {
 		logger.Error("DB create volume failed", err)
 		return
 	}
 
-	control := fmt.Sprintf("inter=")
 	// RN-156: append the volume UUID to the command
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
+		driver, volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)
@@ -990,7 +1050,18 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 		return
 	}
 	poolID := c.QueryTrim("pool")
-	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, poolID)
+	instanceID := c.QueryInt64("instance_id")
+	var instance *model.Instance
+	if instanceID > 0 {
+		instance, err = instanceAdmin.Get(c.Req.Context(), instanceID)
+		if err != nil {
+			logger.Error("Failed to get instance", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+	}
+	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, poolID, instance)
 	if err != nil {
 		logger.Error("Create volume failed", err)
 		c.Data["ErrorMsg"] = err.Error()
