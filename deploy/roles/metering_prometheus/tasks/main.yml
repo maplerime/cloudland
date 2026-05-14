@@ -18,11 +18,11 @@
             insecure_skip_verify: true
           queue_config:
             batch_send_deadline: 5m
-            max_samples_per_send: 10000
+            max_samples_per_send: 50000
             max_shards: 1
           write_relabel_configs:
             - source_labels: [__name__]
-              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|vm_instance_map'
+              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|vm_instance_map|cloud_snapshot_snap_size_bytes|cloud_snapshot_data_size_bytes'
               action: keep
   when: metering_server_url is defined
 
