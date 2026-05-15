@@ -1,0 +1,26 @@
+/*
+Copyright <holder> All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package model
+
+import (
+	"time"
+	"web/src/dbs"
+)
+
+type APIKey struct {
+	Model
+	Owner       int64  `gorm:"default:1"` /* The organization ID of the resource */
+	APIKey      string `gorm:"size:64;unique_index"`
+	APIKeyHash  string `gorm:"size:64;unique_index"`
+	Description string `gorm:"size:255"`
+	ExpiresAt   time.Time
+	Active      bool `gorm:"default:true"`
+}
+
+func init() {
+	dbs.AutoMigrate(&APIKey{})
+}
