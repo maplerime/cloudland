@@ -4,16 +4,17 @@ cd $(dirname $0)
 source ../cloudrc
 
 # volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID
-[ $# -lt 8 ] && echo "$0 <vol_ID> <size> <vol_UUID> <iops_limit> <iops_burst> <bps_limit> <bps_brust> <pool_ID>" && exit -1
+[ $# -lt 8 ] && echo "$0 <vol_ID> <size> <inst_ID> <vol_UUID> <iops_limit> <iops_burst> <bps_limit> <bps_brust> <pool_ID>" && exit -1
 
 vol_ID=$1
 size=$2
-vol_UUID=$3
-iops_limit=$4
-iops_burst=$5
-bps_limit=$6
-bps_burst=$7
-pool_ID=$8
+inst_ID=$3
+vol_UUID=$4
+iops_limit=$5
+iops_burst=$6
+bps_limit=$7
+bps_burst=$8
+pool_ID=$9
 
 state='error'
 
@@ -58,3 +59,7 @@ fi
 state='available'
 
 echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' 'wds_vhost://$pool_ID/$wds_volume_id' 'success'"
+
+if [ -n "$inst_ID" ] && [ "$inst_ID" != "0" ]; then
+    ./attach_volume_wds_vhost.sh "$inst_ID" "$vol_ID" "wds_vhost://$pool_ID/$wds_volume_id" "$wds_volume_id"
+fi

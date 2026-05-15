@@ -3,12 +3,11 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 4 ] && echo "$0 <vm_ID> <volume_ID> <volume_path> <volume_uuid>" && exit -1
+[ $# -lt 4 ] && echo "$0 <vm_ID> <volume_ID> <volume_path>" && exit -1
 
 vm_ID=inst-$1
 vol_ID=$2
 vol_path=$volume_dir/$3
-vol_uuid=$4
 vol_xml=$xml_dir/$vm_ID/disk-${vol_ID}.xml
 cp $template_dir/volume.xml $vol_xml
 count=$(virsh dumpxml $vm_ID | grep -c "<disk type='network' device='disk'>")

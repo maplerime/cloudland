@@ -172,11 +172,13 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		driver = "local"
 	}
 	control := ""
-	var bootVolume *model.Volume
+
+	// if instance is provided, we will use the instance's hypervisor and driver by default
 	if instance != nil {
-		for _, volume := range instance.Volumes {
-			if volume.Booting {
-				bootVolume = volume
+		var bootVolume *model.Volume
+		for _, v := range instance.Volumes {
+			if v.Booting {
+				bootVolume = v
 				break
 			}
 		}
@@ -185,40 +187,32 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 			return
 		}
-	}
-
-	if driver == "local" {
-		if instance == nil {
-			logger.Error("Local volume must be created with an instance")
-			err = NewCLError(ErrInvalidParameter, "Local volume must be created with an instance", nil)
+		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
+			logger.Error("Cannot attach volume to a paused/rescuing instance", instance.ID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused/rescuing instance", nil)
 			return
 		}
 		bootVolumeDriver := bootVolume.GetVolumeDriver()
 		if bootVolumeDriver == "" {
+			logger.Error("Instance boot volume driver is not ready")
 			err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
 			return
 		}
 		if bootVolumeDriver != driver {
+			logger.Errorf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver)
 			err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
 			return
 		}
-		if instance.Hyper < 0 {
-			err = NewCLError(ErrInstanceInvalidState, "Instance has no valid hypervisor", nil)
+		control = fmt.Sprintf("inter=%d", instance.Hyper)
+
+	} else {
+		if driver == "local" {
+			logger.Error("Local volume must be created with an instance")
+			err = NewCLError(ErrInvalidParameter, "Local volume must be created with an instance", nil)
 			return
 		}
-		control = fmt.Sprintf("inter=%d", instance.Hyper)
-	} else {
-		if instance != nil {
-			bootVolumeDriver := bootVolume.GetVolumeDriver()
-			if bootVolumeDriver == "" {
-				err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
-				return
-			}
-			if bootVolumeDriver != driver {
-				err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
-				return
-			}
-		}
+
+		// if using wds storage, we need to exclude local driver zones, so we directly use the hyper group of zone0 to create volume
 		var zone *model.Zone
 		zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
 		if err != nil {
@@ -239,8 +233,12 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	}
 
 	// RN-156: append the volume UUID to the command
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		driver, volume.ID, volume.Size, volume.UUID, volume.IopsLimit, volume.IopsBurst, volume.BpsLimit, volume.BpsBurst, newPoolID)
+	attachInstanceID := int64(0)
+	if instance != nil {
+		attachInstanceID = instance.ID
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
+		driver, volume.ID, volume.Size, attachInstanceID, volume.UUID, volume.IopsLimit, volume.IopsBurst, volume.BpsLimit, volume.BpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)
