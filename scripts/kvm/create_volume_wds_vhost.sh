@@ -4,7 +4,7 @@ cd $(dirname $0)
 source ../cloudrc
 
 # volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, poolID
-[ $# -lt 8 ] && echo "$0 <vol_ID> <size> <inst_ID> <vol_UUID> <iops_limit> <iops_burst> <bps_limit> <bps_brust> <pool_ID>" && exit -1
+[ $# -lt 9 ] && echo "$0 <vol_ID> <size> <inst_ID> <vol_UUID> <iops_limit> <iops_burst> <bps_limit> <bps_brust> <pool_ID>" && exit -1
 
 vol_ID=$1
 size=$2

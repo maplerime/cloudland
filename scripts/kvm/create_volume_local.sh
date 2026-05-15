@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 2 ] && echo "$0 <vol_ID> <size> <inst_ID>" && exit -1
+[ $# -lt 3 ] && echo "$0 <vol_ID> <size> <inst_ID>" && exit -1
 
 vol_ID=$1
 size=$2
