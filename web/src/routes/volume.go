@@ -213,9 +213,8 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		}
 
 		// if using wds storage, we need to exclude local driver zones, so we directly use the hyper group of zone0 to create volume
-		// TODO
 		var zone *model.Zone
-		zone, err = zoneAdmin.GetZoneByName(ctx, "zone1")
+		zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
 		if err != nil {
 			return
 		}

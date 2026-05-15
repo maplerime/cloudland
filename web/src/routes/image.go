@@ -31,7 +31,7 @@ var (
 	imageView  = &ImageView{}
 )
 
-const DefaultZoneName = "zone0"
+const DefaultZoneName = "zone1"
 
 type ImageAdmin struct{}
 type ImageView struct{}
