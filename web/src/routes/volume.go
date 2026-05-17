@@ -39,6 +39,24 @@ func GetVolumeDriver() (driver string) {
 	return
 }
 
+func getDefaultZoneHyperGroup(ctx context.Context) (hyperGroup string, err error) {
+	var zone *model.Zone
+	zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
+	if err != nil {
+		logger.Error("GetZoneByName failed", err)
+		err = NewCLError(ErrZoneNotFound, "Default zone not found", err)
+		return
+	}
+
+	hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
+	if err != nil {
+		logger.Error("No valid hypervisor", err)
+		err = NewCLError(ErrHypervisorNotFound, "No valid hypervisor", err)
+		return
+	}
+	return
+}
+
 func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, err error) {
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume ID: %d", id), nil)
@@ -212,15 +230,10 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 			return
 		}
 
-		// if using wds storage, we need to exclude local driver zones, so we directly use the hyper group of zone0 to create volume
-		var zone *model.Zone
-		zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
-		if err != nil {
-			return
-		}
 		var hyperGroup string
-		hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
+		hyperGroup, err = getDefaultZoneHyperGroup(ctx)
 		if err != nil {
+			logger.Error("Failed to get default zone hypergroup", err)
 			return
 		}
 		control = fmt.Sprintf("select=%s", hyperGroup)
@@ -415,9 +428,21 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		//volume.InstanceID = 0
 	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == model.VolumeStatusAvailable {
 		instance := &model.Instance{Model: model.Model{ID: instID}}
-		if err = db.Model(instance).Take(instance).Error; err != nil {
+		if err = db.Preload("Volumes").Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		var bootVolume *model.Volume
+		for _, v := range instance.Volumes {
+			if v.Booting {
+				bootVolume = v
+				break
+			}
+		}
+		if bootVolume.GetVolumeDriver() != volDriver {
+			logger.Errorf("Volume storage driver %s does not match instance boot volume driver %s", volDriver, bootVolume.GetVolumeDriver())
+			err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", volDriver, bootVolume.GetVolumeDriver()), nil)
 			return
 		}
 		if volDriver == "local" && volume.Hyper != instance.Hyper {
@@ -501,6 +526,13 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	uuid := volume.UUID
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
+		var hyperGroup string
+		hyperGroup, err = getDefaultZoneHyperGroup(ctx)
+		if err != nil {
+			logger.Error("Failed to get default zone hypergroup", err)
+			return
+		}
+		control = fmt.Sprintf("select=%s", hyperGroup)
 	} else {
 		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
@@ -608,9 +640,15 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	uuid := volume.UUID
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
-	}
-	if volume.InstanceID != 0 {
-		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
+		var hyperGroup string
+		hyperGroup, err = getDefaultZoneHyperGroup(ctx)
+		if err != nil {
+			logger.Error("Failed to get default zone hypergroup", err)
+			return
+		}
+		control = fmt.Sprintf("select=%s", hyperGroup)
+	} else {
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
 	err = HyperExecute(ctx, control, command)
