@@ -44,10 +44,7 @@ func authorizeWithAPIKey(c *gin.Context, fullKey string) {
 		c.Abort()
 		return
 	}
-	realOrg := c.Request.Header.Get("X-Resource-Org")
-	if realOrg == "" {
-		realOrg = user.Username
-	}
+	realOrg := user.Username
 	org, err := orgAdmin.GetOrgByName(c.Request.Context(), realOrg)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid resource org", err)

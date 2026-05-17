@@ -186,7 +186,7 @@ func (v *APIKeyAPI) Delete(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to delete API key", err)
 		return
 	}
-	c.JSON(http.StatusNoContent, nil)
+	c.Status(http.StatusNoContent)
 }
 
 func (v *APIKeyAPI) toResponse(_ context.Context, k *model.APIKey, plainKey string) *APIKeyResponse {

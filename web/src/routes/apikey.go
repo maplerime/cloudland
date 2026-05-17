@@ -21,8 +21,6 @@ import (
 	"web/src/model"
 )
 
-var apiKeyAdmin = &APIKeyAdmin{}
-
 type APIKeyAdmin struct{}
 
 // GenerateAPIKey creates a new key in format cl_<uuid>_<32-byte-hex>.
