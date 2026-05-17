@@ -46,6 +46,7 @@ if [ -z "$wds_address" ]; then
         result=$(eval "$cmd")
         vol_state=attached
     fi
+    disk_source=$image_dir/$vm_ID.disk
     disk_template=$template_dir/volume.xml
 else
     get_wds_token
@@ -85,7 +86,7 @@ else
     if [ "$boot_loader" = "uefi" ]; then
         template=$template_dir/wds_template_uefi_with_qa.xml
     fi
-    disk_vhost=$(ls /var/run/wds/instance-$ID-volume-$disk_ID-*)
+    disk_source=$(ls /var/run/wds/instance-$ID-volume-$disk_ID-*)
     disk_template=$template_dir/wds_volume.xml
 fi
 
@@ -147,7 +148,7 @@ virsh define $vm_xml
 disk_xml=$xml_dir/$vm_ID/disk-${disk_ID}-rescue.xml
 cp $disk_template $disk_xml
 
-sed -i "s#VM_UNIX_SOCK#$disk_vhost#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $disk_xml
+sed -i "s#VM_UNIX_SOCK#$disk_source#g;s#VOLUME_SOURCE#$disk_source#g;s#VOLUME_TARGET#vdb#g;s/VHOST_QUEUE_NUM/$vhost_queue_num/g" $disk_xml
 
 virsh attach-device $vm_rescue $disk_xml --config --persistent
 
