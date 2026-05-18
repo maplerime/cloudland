@@ -13,6 +13,7 @@ func init() {
 		&N9ECPURule{},
 		&N9EMemoryRule{},
 		&N9EBandwidthRule{},
+		&N9EDiskRule{},
 		&N9EVMRuleLink{},
 	)
 }
@@ -104,6 +105,27 @@ type N9EBandwidthRule struct {
 	Operator        string `gorm:"type:varchar(4);default:'>'"`                     // Comparison operator: >, <, >=
 
 	Enabled bool `gorm:"default:true"`
+}
+
+// ============================================
+// N9E Disk Rule (Level 2)
+// ============================================
+func (N9EDiskRule) TableName() string {
+	return "n9e_disk_rule"
+}
+
+type N9EDiskRule struct {
+	Model
+	RuleID            string `gorm:"column:rule_id;type:varchar(36);index"`          // User-specified business rule ID
+	BusinessGroupUUID string `gorm:"column:business_group_uuid;type:varchar(36);index;not null;references:n9e_business_group(uuid)"`
+	N9EAlertRuleID    int64  `gorm:"column:n9e_alert_rule_id;index"`                 // Alert Rule ID returned by N9E system
+	Name              string `gorm:"type:varchar(128);column:name"`
+	Owner             string `gorm:"type:varchar(255);index"`
+
+	// Disk rule parameters
+	Duration        int  `gorm:"check:duration >= 1"` // Duration in seconds
+	DurationMinutes int  `gorm:"column:duration_minutes"`
+	Enabled         bool `gorm:"default:true"`
 }
 
 // ============================================

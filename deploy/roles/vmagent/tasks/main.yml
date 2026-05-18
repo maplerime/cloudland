@@ -339,6 +339,7 @@
       - N9E-memory-promql.j2
       - N9E-bandwidth-in-promql.j2
       - N9E-bandwidth-out-promql.j2
+      - N9E-disk-promql.j2
   tags: [vmagent, vmagent_install]
 
 # ============================================
@@ -351,7 +352,6 @@
     state: present
     update_cache: yes
   tags: [vmagent, vmagent_install]
-
 - name: Deploy anchor_sync.sh script
   become: true
   template:
