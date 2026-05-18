@@ -35,6 +35,7 @@ const (
 	RuleTypeCPU                = "cpu"
 	RuleTypeMemory             = "memory"
 	RuleTypeBW                 = "bw"
+	RuleTypeDisk               = "disk"
 	RuleTypeCompute            = "compute_node"
 	RuleTypeControl            = "control_node"
 	RuleTypeAvailable          = "node_available"
@@ -1007,6 +1008,12 @@ func (a *AlarmOperator) DeleteRuleGroupWithDependencies(ctx context.Context, gro
 				logger.Errorf("bw rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
 				return fmt.Errorf("bw rules delete failed: %w", err)
 			}
+		case "disk":
+			if err := tx.Where("group_uuid = ?", groupUUID).
+				Delete(&model.DiskRuleDetail{}).Error; err != nil {
+				logger.Errorf("disk rules delete failed: group_uuid=%s, error=%v", groupUUID, err)
+				return fmt.Errorf("disk rules delete failed: %w", err)
+			}
 		default:
 			return fmt.Errorf("unknow type: %s", ruleType)
 		}
@@ -1091,6 +1098,70 @@ func (a *AlarmOperator) GetMemoryRuleDetails(ctx context.Context, groupUUID stri
 		logger.Errorf("query Memory rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
 	}
 	return details, nil
+}
+
+func (a *AlarmOperator) UpdateDiskRuleN9EID(ctx context.Context, groupUUID string, n9eID int64) error {
+	ctx, db := common.GetContextDB(ctx)
+	if err := db.Model(&model.DiskRuleDetail{}).Where("group_uuid = ?", groupUUID).
+		Update("n9e_alert_rule_id", n9eID).Error; err != nil {
+		logger.Errorf("update disk rule n9e_id failed: groupUUID=%s, n9eID=%d, error=%v", groupUUID, n9eID, err)
+		return fmt.Errorf("update disk rule n9e_id failed: %w", err)
+	}
+	return nil
+}
+
+func (a *AlarmOperator) CreateDiskRuleDetail(ctx context.Context, detail *model.DiskRuleDetail) error {
+	ctx, db := common.GetContextDB(ctx)
+	detail.UUID = uuid.NewString()
+	if err := db.Create(detail).Error; err != nil {
+		logger.Errorf("create disk rule detail failed: groupUUID=%s, name=%s, error=%v", detail.GroupUUID, detail.Name, err)
+		return fmt.Errorf("create disk rule detail failed: %w", err)
+	}
+	return nil
+}
+
+func (a *AlarmOperator) GetDiskRuleDetails(ctx context.Context, groupUUID string) ([]model.DiskRuleDetail, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var details []model.DiskRuleDetail
+	if err := db.Where("group_uuid = ?", groupUUID).Find(&details).Error; err != nil {
+		logger.Errorf("query disk rules detail failed: groupUUID=%s, error=%v", groupUUID, err)
+	}
+	return details, nil
+}
+
+// GetBootVolumeInfoByInstanceUUID returns the boot volume's target_device and volume_id
+// for a given instance UUID. volume_id is non-empty for WDS volumes (path starts with "wds"),
+// and empty for local volumes.
+// targetDevice: if empty, queries the boot volume (booting=true);
+//               if non-empty (e.g. "vda", "vdb"), queries the volume matching that target device.
+func GetVolumeInfoByInstanceUUID(ctx context.Context, instanceUUID, targetDevice string) (resolvedTargetDevice, volumeID string, err error) {
+	ctx, db := common.GetContextDB(ctx)
+	var instance model.Instance
+	if err = db.Where("uuid = ?", instanceUUID).First(&instance).Error; err != nil {
+		logger.Errorf("query instance failed: uuid=%s, error=%v", instanceUUID, err)
+		return "", "", err
+	}
+
+	var vol model.Volume
+	if targetDevice == "" {
+		// No target specified: use the boot volume
+		if err = db.Where("instance_id = ? AND booting = ?", instance.ID, true).First(&vol).Error; err != nil {
+			logger.Errorf("query boot volume failed: instanceID=%d, error=%v", instance.ID, err)
+			return "", "", err
+		}
+	} else {
+		// Specific target device requested (e.g. "vda", "vdb")
+		if err = db.Where("instance_id = ? AND target = ?", instance.ID, targetDevice).First(&vol).Error; err != nil {
+			logger.Errorf("query volume failed: instanceID=%d, target=%s, error=%v", instance.ID, targetDevice, err)
+			return "", "", err
+		}
+	}
+
+	resolvedTargetDevice = vol.Target
+	if strings.HasPrefix(vol.Path, "wds") {
+		volumeID = vol.Path
+	}
+	return resolvedTargetDevice, volumeID, nil
 }
 
 func (a *AlarmOperator) IncrementTriggerCount(ctx context.Context, groupID string) error {
