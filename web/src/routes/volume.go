@@ -678,6 +678,22 @@ func (a *VolumeAdmin) ListVolume(ctx context.Context, offset, limit int64, order
 	return
 }
 
+func (a *VolumeAdmin) UpdateDataVolumeStatus(ctx context.Context, instanceID int64, status model.VolumeStatus) (err error) {
+	_, db := GetContextDB(ctx)
+	err = db.Model(&model.Volume{}).
+		Where("instance_id = ? and booting = ?", instanceID, false).
+		Updates(map[string]interface{}{
+			"instance_id": 0,
+			"target":      "",
+			"status":      status,
+		}).Error
+	if err != nil {
+		logger.Error("Failed to update attached data volumes", err)
+		return
+	}
+	return
+}
+
 func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)

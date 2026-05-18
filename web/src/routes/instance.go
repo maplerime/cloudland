@@ -1197,12 +1197,6 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 					logger.Error("DB: delete boot volume failed", err)
 					return NewCLError(ErrBootVolumeDeleteFailed, "Delete boot volume failed", err)
 				}
-			} else {
-				_, err = volumeAdmin.Update(ctx, volume.ID, "", 0)
-				if err != nil {
-					logger.Error("Failed to detach volume, %v", err)
-					return
-				}
 			}
 		}
 		instance.Volumes = nil
