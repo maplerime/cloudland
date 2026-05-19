@@ -30,24 +30,33 @@ if [ "$allow_spoofing" = true ]; then
 else
     apply_fw -A $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
     apply_fw -A $chain_as -j DROP
-    more_addresses=$(cat)
-    naddrs=$(jq length <<< $more_addresses)
-    if [ $naddrs -gt 0 ]; then
-        for i in {1..300}; do
-            bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
-            [ -n "$bridge" ] && break
-            sleep 2
-        done
-        i=0
-        while [ $i -lt $naddrs ]; do
-            read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
-            read -d'\n' -r ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
-            apply_fw -I $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
-            ./send_spoof_arp.py $bridge $ip $mac &
-            let i=$i+1
-        done
-    fi
+    # ebtables: allow ARP only with matching MAC+IP, drop all other ARP
+    ebtables -A FORWARD -p ARP -i $vnic --arp-mac-src $mac --arp-ip-src $ip -j ACCEPT
+    ebtables -A FORWARD -p ARP -i $vnic -j DROP
 fi
+
+more_addresses=$(cat)
+naddrs=$(jq length <<< $more_addresses)
+ip_count=$((1 + naddrs))
+
+if [ "$allow_spoofing" != true ] && [ $naddrs -gt 0 ]; then
+    for i in {1..300}; do
+        bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
+        [ -n "$bridge" ] && break
+        sleep 2
+    done
+    i=0
+    while [ $i -lt $naddrs ]; do
+        read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
+        read -d'\n' -r extra_ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
+        apply_fw -I $chain_as -s $extra_ip/32 -m mac --mac-source $mac -j RETURN
+        ebtables -I FORWARD -p ARP -i $vnic --arp-mac-src $mac --arp-ip-src $extra_ip -j ACCEPT
+        ./send_spoof_arp.py $bridge $extra_ip $mac &
+        let i=$i+1
+    done
+fi
+
+./limit_arp_rate.sh $vnic add $ip_count
 
 apply_fw -N $chain_out
 apply_fw -F $chain_out
