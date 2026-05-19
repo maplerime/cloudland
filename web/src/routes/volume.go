@@ -39,24 +39,6 @@ func GetVolumeDriver() (driver string) {
 	return
 }
 
-func getDefaultZoneHyperGroup(ctx context.Context) (hyperGroup string, err error) {
-	var zone *model.Zone
-	zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
-	if err != nil {
-		logger.Error("GetZoneByName failed", err)
-		err = NewCLError(ErrZoneNotFound, "Default zone not found", err)
-		return
-	}
-
-	hyperGroup, err = GetHyperGroup(ctx, zone.ID, -1)
-	if err != nil {
-		logger.Error("No valid hypervisor", err)
-		err = NewCLError(ErrHypervisorNotFound, "No valid hypervisor", err)
-		return
-	}
-	return
-}
-
 func (a *VolumeAdmin) Get(ctx context.Context, id int64) (volume *model.Volume, err error) {
 	if id <= 0 {
 		err = NewCLError(ErrInvalidParameter, fmt.Sprintf("Invalid volume ID: %d", id), nil)
@@ -230,13 +212,11 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 			return
 		}
 
-		var hyperGroup string
-		hyperGroup, err = getDefaultZoneHyperGroup(ctx)
+		control, err = GetWDSControl(ctx)
 		if err != nil {
-			logger.Error("Failed to get default zone hypergroup", err)
+			logger.Error("Failed to get WDS default zone control", err)
 			return
 		}
-		control = fmt.Sprintf("select=%s", hyperGroup)
 	}
 
 	volume, err = a.CreateVolume(ctx, name, size, 0, false, iopsLimit, iopsBurst, bpsLimit, bpsBurst)
@@ -526,13 +506,11 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 	uuid := volume.UUID
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
-		var hyperGroup string
-		hyperGroup, err = getDefaultZoneHyperGroup(ctx)
+		control, err = GetWDSControl(ctx)
 		if err != nil {
-			logger.Error("Failed to get default zone hypergroup", err)
+			logger.Error("Failed to get WDS default zone control", err)
 			return
 		}
-		control = fmt.Sprintf("select=%s", hyperGroup)
 	} else {
 		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
@@ -640,13 +618,11 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 	uuid := volume.UUID
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
-		var hyperGroup string
-		hyperGroup, err = getDefaultZoneHyperGroup(ctx)
+		control, err = GetWDSControl(ctx)
 		if err != nil {
-			logger.Error("Failed to get default zone hypergroup", err)
+			logger.Error("Failed to get WDS default zone control", err)
 			return
 		}
-		control = fmt.Sprintf("select=%s", hyperGroup)
 	} else {
 		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}

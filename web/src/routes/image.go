@@ -31,8 +31,6 @@ var (
 	imageView  = &ImageView{}
 )
 
-const DefaultZoneName = "zone1"
-
 type ImageAdmin struct{}
 type ImageView struct{}
 
@@ -41,8 +39,8 @@ func FileExist(filename string) bool {
 	return !os.IsNotExist(err)
 }
 
-func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, isRescue bool, instID int64, uuid string, rescueImage *model.Image, osFamily string, zone *model.Zone) (image *model.Image, err error) {
-	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid, osFamily, zone.Name)
+func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtType, userName, url, architecture, bootLoader string, isRescue bool, instID int64, uuid string, rescueImage *model.Image, osFamily string) (image *model.Image, err error) {
+	logger.Debugf("Creating image %s %s %s %s %s %s %s %s %t %d %s %s", osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instID, uuid, osFamily)
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -120,9 +118,12 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		storageID = storage.ID
 	}
 
-	hyperGroup, err := GetHyperGroup(ctx, zone.ID, -1)
 	prefix := strings.Split(image.UUID, "-")[0]
-	control := "select=" + hyperGroup
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
@@ -552,17 +553,8 @@ func (v *ImageView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusInternalServerError, "error")
 		return
 	}
-	zones := []*model.Zone{}
-	err = db.Find(&zones).Error
-	if err != nil {
-		logger.Error("Failed to query zones", err)
-		c.Data["ErrorMsg"] = "Failed to load zones"
-		c.HTML(http.StatusInternalServerError, "error")
-		return
-	}
 
 	c.Data["OsFamilies"] = osFamilies
-	c.Data["Zones"] = zones
 	c.HTML(200, "images_new")
 }
 
@@ -598,10 +590,10 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 	if isRescueStr == "true" {
 		isRescue = true
 	}
-	var err error
 	rescueImageID := c.QueryInt64("rescueImage")
 	var rescueImage *model.Image
 	if rescueImageID > 0 {
+		var err error
 		rescueImage, err = imageAdmin.Get(ctx, rescueImageID)
 		if err != nil {
 			c.Data["ErrorMsg"] = "Invalid image"
@@ -610,21 +602,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 		}
 	}
 
-	zoneID := c.QueryInt64("zone")
-	var zone *model.Zone
-	if zoneID == 0 {
-		zone, err = zoneAdmin.GetZoneByName(ctx, DefaultZoneName)
-	} else {
-		zone, err = zoneAdmin.Get(ctx, zoneID)
-	}
-	if err != nil {
-		logger.Error("No valid zone", err)
-		c.Data["ErrorMsg"] = "No valid zone"
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-
-	_, err = imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage, osFamily, zone)
+	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage, osFamily)
 	if err != nil {
 		logger.Error("Create image failed", err)
 		c.Data["ErrorMsg"] = err.Error()
