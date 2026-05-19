@@ -4,8 +4,8 @@ cd `dirname $0`
 source ../cloudrc
 
 # Limit ARP packet rate on a VM interface using tc ingress policing
-# Rate and burst are auto-calculated from IP count:
-#   per IP: ~10 ARP/s (4kbit), burst ~10 packets (420 bytes)
+# Rate is auto-calculated from IP count, burst is fixed:
+#   per IP: 5 ARP/s (2kbit), burst: 10 packets (420 bytes)
 # Usage:
 # $0 <nic_name> add <ip_count>    # Add ARP rate limit scaled by IP count
 # $0 <nic_name> delete            # Remove ARP rate limit
@@ -22,9 +22,9 @@ if [ "$action" = "delete" ]; then
     filter_count=$(tc filter show dev $nic_name parent ffff: 2>/dev/null | grep -c "filter" || true)
     [ "$filter_count" -eq 0 ] && tc qdisc del dev $nic_name handle ffff: ingress 2>/dev/null
 elif [ "$action" = "add" ]; then
-    # rate: per IP ~4kbit, burst: per IP ~420 bytes (10 ARP packets)
-    rate=$((${ip_count} * 4))kbit
-    burst=$((${ip_count} * 420))
+    # rate: per IP 5 ARP/s (2kbit), burst: per-IP rate + 10 extra ARP packets
+    rate=$((${ip_count} * 2))kbit
+    burst=$((${ip_count} * 5 * 42 + 20 * 42))
     # Add ingress qdisc if not present
     tc qdisc add dev $nic_name handle ffff: ingress 2>/dev/null || true
     # Remove existing ARP filter if any
