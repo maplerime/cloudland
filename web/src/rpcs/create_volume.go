@@ -76,7 +76,7 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 	}
 	path := args[3]
 	status = args[4]
-	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status, "hyper": hyper}).Error
+	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status, "hyper": hyper, "pool_id": "local"}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return
