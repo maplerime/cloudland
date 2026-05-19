@@ -8725,6 +8725,9 @@ const docTemplatealarm_v1 = `{
                     "maximum": 16,
                     "minimum": 1
                 },
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
+                },
                 "iops_burst": {
                     "type": "integer",
                     "minimum": 0

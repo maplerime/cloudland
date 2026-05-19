@@ -565,7 +565,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
-	driver := GetVolumeDriver()
+	driver := bootVolume.GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
 	imageVolumeID := ""
 	total := 0

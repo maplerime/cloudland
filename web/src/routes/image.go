@@ -118,9 +118,12 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		storageID = storage.ID
 	}
 
-	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
-	control := "inter="
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
@@ -598,6 +601,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
+
 	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage, osFamily)
 	if err != nil {
 		logger.Error("Create image failed", err)

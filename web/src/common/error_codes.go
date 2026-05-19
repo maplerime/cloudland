@@ -104,6 +104,7 @@ const (
 	ErrVolumeIsBusy             ErrCode = 121014
 	ErrVolumeIsRestoring        ErrCode = 121015
 	ErrVolumeInConsistencyGroup ErrCode = 121016 // volume is in a consistency group, cannot be deleted
+	ErrVolumeHyperMismatch      ErrCode = 121017 // local volume and instance are on different hypervisors
 
 	// Snapshot/Backup related errors (1251xx)
 	ErrBackupNotFound                      ErrCode = 125100
