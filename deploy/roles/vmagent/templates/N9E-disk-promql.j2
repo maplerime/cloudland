@@ -1,0 +1,32 @@
+label_replace(
+  (
+    (
+      (last_over_time(vm_disk_anchor{rule_uuid="{{ .rule_uuid }}", volume_id=~".+"}[14d]) > 0) * 0
+      + on(volume_id) group_left()
+      (
+        100 *
+        max by (volume_id)(cloudland_volume_capacity_used_bytes)
+        / on(volume_id)
+        max by (volume_id)(cloudland_volume_capacity_total_bytes)
+      )
+    )
+    or
+    (
+      (last_over_time(vm_disk_anchor{rule_uuid="{{ .rule_uuid }}", volume_id=""}[14d]) > 0) * 0
+      + on(domain, target_device) group_left()
+      (
+        100 *
+        max by (domain, target_device)(
+          avg_over_time(libvirt_domain_block_stats_allocation{job="prometheus_libvirt_exporter"}[{{ .duration }}m])
+        )
+        / on(domain, target_device)
+        max by (domain, target_device)(
+          avg_over_time(libvirt_domain_block_stats_capacity_bytes{job="prometheus_libvirt_exporter"}[{{ .duration }}m])
+        )
+      )
+    )
+  )
+  >
+  (last_over_time(vm_disk_anchor{rule_uuid="{{ .rule_uuid }}"}[14d]) > 0),
+  "alert_type", "disk", "", ""
+)

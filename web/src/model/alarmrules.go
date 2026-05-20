@@ -17,6 +17,7 @@ func init() {
 		&CPURuleDetail{},
 		&MemoryRuleDetail{},
 		&BWRuleDetail{},
+		&DiskRuleDetail{},
 		&VMRuleLink{},
 		&NodeAlarmRule{},
 	)
@@ -157,6 +158,23 @@ type VMRuleLink struct {
 	GroupUUID string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
 	VMUUID    string `gorm:"column:vm_uuid;type:varchar(36);index"`
 	Interface string `gorm:"type:varchar(32)"`
+}
+
+// ============================================
+// Disk Rule Detail (second layer)
+// Type = "disk" in RuleGroupV2
+// ============================================
+func (DiskRuleDetail) TableName() string {
+	return "disk_rule_detail"
+}
+
+type DiskRuleDetail struct {
+	Model
+	GroupUUID      string `gorm:"column:group_uuid;type:varchar(36);index;not null;references:rule_group_v2(uuid)"`
+	Name           string `gorm:"type:varchar(128);column:name"`
+	Duration       int    `gorm:"check:duration >= 1"` // evaluation window, seconds
+	N9EAlertRuleID int64  `gorm:"column:n9e_alert_rule_id"` // N9E rule ID for deletion
+	// NOTE: threshold is NOT stored here; it lives in each VM's anchor label in VictoriaMetrics
 }
 
 type NodeAlarmRule struct {

@@ -243,6 +243,11 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
 
+			metricsGroup.POST("/alarm/disk/rules", alarmAPI.CreateDiskRule)
+			metricsGroup.GET("/alarm/disk/rules", alarmAPI.GetDiskRules)
+			metricsGroup.GET("/alarm/disk/rule/:uuid", alarmAPI.GetDiskRules)
+			metricsGroup.DELETE("/alarm/disk/rule/:uuid", alarmAPI.DeleteDiskRule)
+
 			// N9E Anchor Management APIs
 			metricsGroup.POST("/alarm/anchor/link", alarmAPI.LinkVMsToRule)
 			metricsGroup.GET("/alarm/anchor/links", alarmAPI.GetRuleLinks) // Query from VictoriaMetrics
