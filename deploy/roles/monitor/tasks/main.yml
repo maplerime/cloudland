@@ -9,7 +9,7 @@
 
 - name: Gather IP addresses from hyper group
   set_fact:
-    hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
+    hyper_ips: "{{ (((groups['hyper'] | default([])) + (groups['hyper_localdisk'] | default([]))) | unique | list) | map('extract', hostvars, 'ansible_host') | list }}"
 
 - name: Gather IP addresses from cland group
   set_fact:
