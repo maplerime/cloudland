@@ -1077,7 +1077,7 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "../volumes"
 	name := c.QueryTrim("name")
 	size := c.QueryTrim("size")
-	vsize, err := strconv.Atoi(size)
+	vsize, err := strconv.ParseInt(size, 10, 32)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
