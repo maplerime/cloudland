@@ -20,12 +20,12 @@
 # ============================================
 - name: Gather hyper nodes IP addresses
   set_fact:
-    vmagent_hyper_ips: "{{ groups['hyper'] | map('extract', hostvars, 'ansible_host') | list }}"
+    vmagent_hyper_ips: "{{ (((groups['hyper'] | default([])) + (groups['hyper_localdisk'] | default([]))) | unique | list) | map('extract', hostvars, 'ansible_host') | list }}"
   tags: [vmagent, vmagent_sd_update]
 
 - name: Gather hyper nodes hostnames
   set_fact:
-    vmagent_hyper_hostnames: "{{ groups['hyper'] | map('extract', hostvars, 'inventory_hostname') | list }}"
+    vmagent_hyper_hostnames: "{{ (((groups['hyper'] | default([])) + (groups['hyper_localdisk'] | default([]))) | unique | list) | map('extract', hostvars, 'inventory_hostname') | list }}"
   tags: [vmagent, vmagent_sd_update]
 
 - name: Gather cland nodes IP addresses

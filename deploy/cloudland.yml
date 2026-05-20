@@ -74,13 +74,13 @@
 
 # deploy monitor for hyper nodes
 - name: install monitor for hyper
-  hosts: hyper
+  hosts: hyper:hyper_localdisk
   roles:
     - {role: monitor_hyper, become: yes, tags: [monitor]}
 
 # update prometheus file_sd target json
 - name: update prometheus monitor sd
-  hosts: hyper:cland
+  hosts: hyper:hyper_localdisk:cland
   tasks:
     - name: render prometheus file_sd json
       include_role:
@@ -114,7 +114,7 @@
 
 # deploy metering for hyper nodes
 - name: install metering for hyper
-  hosts: hyper
+  hosts: hyper:hyper_localdisk
   become: yes
   roles:
     - {role: metering_hyper, become: yes, tags: [monitor, metering_hyper]}
