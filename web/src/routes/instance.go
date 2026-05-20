@@ -149,11 +149,14 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 
 	driver := GetVolumeDriver()
 	var poolRelation map[string]PoolRelationItem
-	if driver != "local" {
-		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-		if poolID == "" {
-			poolID = defaultPoolID
+	if poolID == "" {
+		if driver == "local" {
+			poolID = "local"
+		} else {
+			poolID = viper.GetString("volume.default_pool_id")
 		}
+	}
+	if poolID != "local" {
 		poolIDs := []string{}
 		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
 		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
@@ -189,7 +192,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		total := 0
 
-		if driver == "local" {
+		if poolID == "local" {
 			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 				logger.Error("Failed to query total instances with the image", err)
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
