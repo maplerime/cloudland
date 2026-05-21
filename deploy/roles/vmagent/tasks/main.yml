@@ -130,12 +130,25 @@
         state: present
         update_cache: yes
 
+- name: Install Docker SDK for Python on Ubuntu 26+
+  become: true
+  apt:
+    name: python3-docker
+    state: present
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '>=')
+  tags: [vmagent, vmagent_install]
+
 - name: Install Docker SDK for Python
   become: true
   pip:
     name: docker
     executable: pip3
     state: present
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '<')
   tags: [vmagent, vmagent_install]
 
 - name: Ensure Docker service is running
