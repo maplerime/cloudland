@@ -153,7 +153,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if driver == "local" {
 			poolID = "local"
 		} else {
-			poolID = viper.GetString("volume.default_pool_id")
+			poolID = viper.GetString("volume.default_wds_pool_id")
 		}
 	}
 	if poolID != "local" {
