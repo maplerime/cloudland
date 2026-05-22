@@ -1145,7 +1145,13 @@ func GetVolumeInfoByInstanceUUID(ctx context.Context, instanceUUID, targetDevice
 
 	resolvedTargetDevice = vol.Target
 	if strings.HasPrefix(vol.Path, "wds") {
-		volumeID = vol.Path
+		path := strings.TrimSpace(vol.Path)
+		path = strings.TrimRight(path, "/")
+		if idx := strings.LastIndex(path, "/"); idx >= 0 && idx < len(path)-1 {
+			volumeID = path[idx+1:]
+		} else {
+			volumeID = path
+		}
 	}
 	return resolvedTargetDevice, volumeID, nil
 }
