@@ -5,9 +5,13 @@ label_replace(
       + on(volume_id) group_left()
       (
         100 *
-        max by (volume_id)(cloudland_volume_capacity_used_bytes)
+        max by (volume_id)(
+          label_replace(cloudland_volume_capacity_used_bytes, "volume_id", "$1", "volume_wds_id", "(.+)")
+        )
         / on(volume_id)
-        max by (volume_id)(cloudland_volume_capacity_total_bytes)
+        max by (volume_id)(
+          label_replace(cloudland_volume_capacity_total_bytes, "volume_id", "$1", "volume_wds_id", "(.+)")
+        )
       )
     )
     or

@@ -1545,7 +1545,7 @@ func (am *AnchorManager) QueryTypedAnchorLinksByOwner(ctx context.Context, ancho
 
 // QueryAllTypedAnchorLinks 查询所有类型所有活跃 anchor，按 rule_uuid 分组。
 func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[string][]AnchorResult, error) {
-	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out"}
+	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out", "disk"}
 	ruleMap := make(map[string][]AnchorResult)
 
 	for _, anchorType := range allAnchorTypes {
@@ -1617,7 +1617,7 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 // in alert PromQL expressions and need to be re-imported with a fresh timestamp.
 // Returns map[anchorType][]AnchorResult; partial results + first error on failure.
 func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]AnchorResult, error) {
-	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out"}
+	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out", "disk"}
 	result := make(map[string][]AnchorResult)
 	var firstErr error
 
@@ -2412,10 +2412,11 @@ func (o *N9EOperator) CreateVMRuleLink(ctx context.Context, link *model.N9EVMRul
 	err := db.Where("rule_uuid = ? AND vm_uuid = ? AND interface = ? AND deleted_at IS NULL",
 		link.RuleUUID, link.VMUUID, link.Interface).First(&existing).Error
 	if err == nil {
-		// Record exists: update threshold and tenant_id
+		// Record exists: update threshold, tenant_id and disk volume snapshot
 		return false, db.Model(&existing).Updates(map[string]interface{}{
 			"threshold": link.Threshold,
 			"tenant_id": link.TenantID,
+			"volume_id": link.VolumeID,
 		}).Error
 	}
 	return true, db.Create(link).Error

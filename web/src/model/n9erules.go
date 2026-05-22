@@ -116,9 +116,9 @@ func (N9EDiskRule) TableName() string {
 
 type N9EDiskRule struct {
 	Model
-	RuleID            string `gorm:"column:rule_id;type:varchar(36);index"`          // User-specified business rule ID
+	RuleID            string `gorm:"column:rule_id;type:varchar(36);index"` // User-specified business rule ID
 	BusinessGroupUUID string `gorm:"column:business_group_uuid;type:varchar(36);index;not null;references:n9e_business_group(uuid)"`
-	N9EAlertRuleID    int64  `gorm:"column:n9e_alert_rule_id;index"`                 // Alert Rule ID returned by N9E system
+	N9EAlertRuleID    int64  `gorm:"column:n9e_alert_rule_id;index"` // Alert Rule ID returned by N9E system
 	Name              string `gorm:"type:varchar(128);column:name"`
 	Owner             string `gorm:"type:varchar(255);index"`
 
@@ -138,11 +138,12 @@ func (N9EVMRuleLink) TableName() string {
 
 type N9EVMRuleLink struct {
 	Model
-	RuleType          string  `gorm:"type:varchar(32);index"`                            // cpu, memory, bandwidth
+	RuleType          string  `gorm:"type:varchar(32);index"`                            // cpu, memory, bandwidth, disk
 	RuleUUID          string  `gorm:"column:rule_uuid;type:varchar(36);index;not null"`  // UUID of the associated specific Rule
 	BusinessGroupUUID string  `gorm:"column:business_group_uuid;type:varchar(36);index"` // For convenient querying
 	VMUUID            string  `gorm:"column:vm_uuid;type:varchar(36);index"`             // VM instance UUID
-	Interface         string  `gorm:"type:varchar(32)"`                                  // eth0, eth1, etc
+	Interface         string  `gorm:"type:varchar(32)"`                                  // NIC for bandwidth; target_device for disk
+	VolumeID          string  `gorm:"column:volume_id;type:varchar(255)"`                // Disk only: WDS volume ID, local disk is empty
 	Owner             string  `gorm:"type:varchar(255);index"`                           // Owner
 	Threshold         float64 `gorm:"column:threshold;default:0"`                        // Anchor threshold value, used for DB→VM recovery
 	TenantID          string  `gorm:"column:tenant_id;type:varchar(36)"`                 // Tenant UUID, cached for recovery without VM lookup

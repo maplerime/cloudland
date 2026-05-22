@@ -3841,9 +3841,11 @@ func (a *AlarmAPI) LinkVMsToRule(c *gin.Context) {
 	updatedCount := 0
 	for i, vm := range req.VMs {
 		iface := vm.Interface
+		volumeID := ""
 		if isDiskRule {
 			// For disk: Interface stores resolved target_device (e.g. "vda")
 			iface = anchorInstances[i].Interface
+			volumeID = anchorInstances[i].VolumeID
 		}
 		link := &model.N9EVMRuleLink{
 			RuleType:          req.RuleType,
@@ -3851,6 +3853,7 @@ func (a *AlarmAPI) LinkVMsToRule(c *gin.Context) {
 			BusinessGroupUUID: businessGroupUUID,
 			VMUUID:            vm.InstanceID,
 			Interface:         iface,
+			VolumeID:          volumeID,
 			Owner:             owner,
 			Threshold:         req.Threshold,
 			TenantID:          req.TenantID,
@@ -4431,6 +4434,25 @@ func (a *AlarmAPI) RecoverAnchorThresholds(c *gin.Context) {
 			continue
 		}
 
+		// Disk recovery is driven by link-table snapshots.
+		// target_device/volume_id are persisted during LinkVMsToRule and reused here directly.
+		diskTargetDevice := link.Interface
+		diskVolumeID := link.VolumeID
+		if anchorType == "disk" && diskVolumeID != "" {
+			normalized := strings.TrimSpace(diskVolumeID)
+			normalized = strings.TrimRight(normalized, "/")
+			if idx := strings.LastIndex(normalized, "/"); idx >= 0 && idx < len(normalized)-1 {
+				normalized = normalized[idx+1:]
+			}
+			diskVolumeID = normalized
+		}
+		if anchorType == "disk" && diskTargetDevice == "" {
+			// Legacy/dirty records without persisted target_device cannot be recovered deterministically.
+			logger.Warningf("Skipping disk link without target_device snapshot: rule=%s vm=%s", link.RuleUUID, link.VMUUID)
+			skipped++
+			continue
+		}
+
 		// Resolve domain/region from VictoriaMetrics vm_instance_map; fallback to DB
 		domain, _, region, metaErr := a.anchorManager.GetInstanceMetadata(ctx, link.VMUUID)
 		if metaErr != nil {
@@ -4449,10 +4471,16 @@ func (a *AlarmAPI) RecoverAnchorThresholds(c *gin.Context) {
 			Domain:     domain,
 			InstanceID: link.VMUUID,
 			Interface:  link.Interface,
+			VolumeID:   link.VolumeID,
 			Owner:      link.Owner,
 			TenantID:   link.TenantID,
 			Threshold:  link.Threshold,
 		})
+		if anchorType == "disk" {
+			last := len(anchorBatches[anchorType]) - 1
+			anchorBatches[anchorType][last].Interface = diskTargetDevice
+			anchorBatches[anchorType][last].VolumeID = diskVolumeID
+		}
 	}
 
 	// Step 2: write each anchor type batch to VictoriaMetrics
