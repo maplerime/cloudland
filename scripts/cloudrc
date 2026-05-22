@@ -345,7 +345,7 @@ function get_next_disk_target()
 {
     local vm_ID=$1
     local last
-    local letters="abcdefghijklmnopqrstuvwxyz"
+    local next
 
     last=$(virsh dumpxml "$vm_ID" |
         xmllint --xpath "//disk[@device='disk']/target/@dev" - 2>/dev/null |
@@ -355,8 +355,7 @@ function get_next_disk_target()
 
     log_debug $vm_ID "Current max disk target: $last"
     last=${last#vd}
-    letters=${letters#*$last}
-    local next="vd${letters:0:1}"
+    next=vd$(printf "\\$(printf '%03o' "$(( $(printf '%d' "'$last") + 1 ))")")
     log_debug $vm_ID "Next available disk target: $next"
     echo "$next"
 }
