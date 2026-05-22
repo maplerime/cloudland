@@ -34,8 +34,7 @@ if [ "$ret_code" == "0" ] && [ "$count" -gt 0 ]; then
     fi
 fi
 
-count=$(virsh dumpxml $vm_ID | grep -c "<disk type='vhostuser' device='disk'")
-let letter=97+$count
+device=$(get_next_disk_target "$vm_ID")
 vhost_name=instance-$ID-vol-$vol_ID
 uss_id=$(get_uss_gateway)
 vhost_id=$(wds_curl POST "api/v2/sync/block/vhost" "{\"name\": \"$vhost_name\"}" | jq -r .id)
@@ -49,7 +48,6 @@ ux_sock=/var/run/wds/$vhost_name
 
 vol_xml=$xml_dir/$vm_ID/disk-${vol_ID}.xml
 cp $template_dir/wds_volume.xml $vol_xml
-device=vd$(printf "\\$(printf '%03o' "$letter")")
 
 # dumpxml instance xml to find cpu count
 cpu_count=$(virsh dumpxml $vm_ID | grep "<vcpu" | sed -e 's/.*<vcpu[^>]*>\([0-9]*\)<\/vcpu>.*/\1/')
