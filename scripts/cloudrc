@@ -344,18 +344,20 @@ function sync_vm()
 function get_next_disk_target()
 {
     local vm_ID=$1
-    local last
-    local next
+    local used
+    local dev
+    local next_dev
+    local letter
 
-    last=$(virsh dumpxml "$vm_ID" |
-        xmllint --xpath "//disk[@device='disk']/target/@dev" - 2>/dev/null |
-        grep -o "vd[a-z]" |
-        sort |
-        tail -n 1)
+    used=$(virsh domblklist "$vm_ID" --details | awk '$2=="disk" {print $3}' | grep '^vd')
 
-    log_debug $vm_ID "Current max disk target: $last"
-    last=${last#vd}
-    next=vd$(printf "\\$(printf '%03o' "$(( $(printf '%d' "'$last") + 1 ))")")
-    log_debug $vm_ID "Next available disk target: $next"
-    echo "$next"
+    for letter in {b..z}; do
+        dev="vd${letter}"
+        if ! echo "$used" | grep -q "^${dev}$"; then
+            next_dev=$dev
+            break
+        fi
+    done
+    log_debug $vm_ID "Next available disk target: $next_dev"
+    echo "$next_dev"
 }
