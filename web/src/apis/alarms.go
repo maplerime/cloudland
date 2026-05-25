@@ -3924,6 +3924,7 @@ func (a *AlarmAPI) GetRuleLinks(c *gin.Context) {
 			"domain":      vm.Domain,
 			"instance_id": vm.InstanceID,
 			"interface":   vm.Interface, // 带宽 anchor 有此字段，CPU/内存为空字符串
+			"volume_id":   vm.VolumeID,
 			"owner":       vm.Owner,
 			"tenant_id":   vm.TenantID,
 			"threshold":   vm.Threshold,
