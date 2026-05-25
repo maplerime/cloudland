@@ -314,7 +314,12 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
 		volume.IopsLimit = iopsLimit
 		volume.BpsLimit = bpsLimit
-		control := fmt.Sprintf("inter=")
+		control := ""
+		control, err = GetWDSControl(ctx)
+		if err != nil {
+			logger.Error("Failed to get WDS default zone control", err)
+			return
+		}
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
