@@ -217,6 +217,11 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/tasks", taskAPI.List)
 		authGroup.GET("/api/v1/tasks/:id", taskAPI.Get)
 
+		authGroup.GET("/api/v1/ip-whitelist", ipWhitelistAPI.List)
+		authGroup.POST("/api/v1/ip-whitelist", ipWhitelistAPI.Create)
+		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
+		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
+
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{
 			metricsGroup.POST("/instances/cpu/his_data", monitorAPI.GetCPU)
