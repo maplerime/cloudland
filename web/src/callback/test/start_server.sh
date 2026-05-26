@@ -11,7 +11,7 @@ echo "Quick Start Script"
 echo "=================================="
 echo ""
 
-# 检查是否已编译
+# Check whether binary exists.
 if [ ! -f "callback_test_server" ]; then
     echo "Building test server..."
     go build -o callback_test_server callback_test_server.go
@@ -23,7 +23,7 @@ if [ ! -f "callback_test_server" ]; then
     echo ""
 fi
 
-# 解析命令行参数
+# Parse CLI args.
 PORT=8080
 VERBOSE=""
 
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# 启动服务器
+# Start server.
 echo "Starting server on port $PORT..."
 echo ""
 echo "To test the server, open another terminal and run:"

@@ -5,7 +5,7 @@ SPDX-License-Identifier: Apache-2.0
 
 package callback
 
-// 统一放这里，避免每个函数里重复定义 type， 这些字段都是事件的payload
+// Shared row structs for event payload extraction.
 type InstanceRow struct {
 	ID         int64
 	UUID       string

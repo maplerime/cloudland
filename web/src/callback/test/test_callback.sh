@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # CloudLand Callback Test Script
-# 用于测试 callback 功能，发送模拟的资源变化事件
+# Sends simulated resource change events to test callback flow
 
 SERVER_URL="${1:-http://localhost:8080/api/v1/resource-changes}"
 
@@ -11,7 +11,7 @@ echo "=================================="
 echo "Target URL: $SERVER_URL"
 echo ""
 
-# 测试 1: 虚拟机启动事件
+# Test 1: Instance launch event
 echo "[Test 1] Sending instance launch event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
@@ -39,7 +39,7 @@ curl -s -X POST "$SERVER_URL" \
 echo ""
 sleep 1
 
-# 测试 2: 卷创建事件
+# Test 2: Volume create event
 echo "[Test 2] Sending volume create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
@@ -66,7 +66,7 @@ curl -s -X POST "$SERVER_URL" \
 echo ""
 sleep 1
 
-# 测试 3: 卷挂载事件
+# Test 3: Volume attach event
 echo "[Test 3] Sending volume attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
@@ -92,7 +92,7 @@ curl -s -X POST "$SERVER_URL" \
 echo ""
 sleep 1
 
-# 测试 4: 镜像创建事件
+# Test 4: Image create event
 echo "[Test 4] Sending image create event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
@@ -118,7 +118,7 @@ curl -s -X POST "$SERVER_URL" \
 echo ""
 sleep 1
 
-# 测试 5: 网络接口挂载事件
+# Test 5: Interface attach event
 echo "[Test 5] Sending interface attach event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
@@ -144,7 +144,7 @@ curl -s -X POST "$SERVER_URL" \
 echo ""
 sleep 1
 
-# 测试 6: 虚拟机关机事件
+# Test 6: Instance shutdown event
 echo "[Test 6] Sending instance shutdown event..."
 curl -s -X POST "$SERVER_URL" \
   -H "Content-Type: application/json" \
@@ -168,7 +168,7 @@ curl -s -X POST "$SERVER_URL" \
   }' | jq .
 echo ""
 
-# 查看统计信息
+# Check statistics
 echo "=================================="
 echo "Checking server statistics..."
 echo "=================================="

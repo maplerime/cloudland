@@ -14,7 +14,7 @@ var (
 	once       sync.Once
 )
 
-// InitQueue 初始化队列
+// InitQueue initializes event queue.
 func InitQueue(size int) {
 	once.Do(func() {
 		eventQueue = make(chan *Event, size)
@@ -22,39 +22,39 @@ func InitQueue(size int) {
 	})
 }
 
-// PushEvent 推送事件到队列 (非阻塞)
-// 返回 true 表示成功推送，false 表示队列已满或事件无效
+// PushEvent pushes an event into queue in non-blocking mode.
+// Returns true on success, false if queue is full or event is invalid.
 func PushEvent(event *Event) bool {
-	// 队列未初始化
+	// Queue not initialized.
 	if eventQueue == nil {
 		logger.Warning("Event queue not initialized, skipping event push")
 		return false
 	}
 
-	// 事件为 nil
+	// Nil event.
 	if event == nil {
 		logger.Warning("Nil event provided, skipping event push")
 		return false
 	}
 
-	// 非阻塞推送
+	// Non-blocking push.
 	select {
 	case eventQueue <- event:
 		logger.Debugf("Event pushed to queue: %s/%s", event.EventType, event.Resource.ID)
 		return true
 	default:
-		// 队列满了，记录警告并丢弃事件
+		// Queue full: warn and drop the event.
 		logger.Warningf("Event queue is full, dropping event: %s/%s", event.EventType, event.Resource.ID)
 		return false
 	}
 }
 
-// GetEventQueue 获取队列 (供 worker 使用)
+// GetEventQueue returns queue for workers.
 func GetEventQueue() <-chan *Event {
 	return eventQueue
 }
 
-// GetQueueLength 获取当前队列长度 (用于监控)
+// GetQueueLength returns current queue length for monitoring.
 func GetQueueLength() int {
 	if eventQueue == nil {
 		return 0

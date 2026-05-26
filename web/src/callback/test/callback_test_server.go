@@ -19,45 +19,44 @@ import (
 	"time"
 )
 
-// ResourceChangeEvent 接收的资源变化事件结构
+// Resource is the received resource object.
 type Resource struct {
-	Type   string            `json:"type"`           // 资源类型
-	ID     string            `json:"id"`             // 资源 UUID
-	Region string            `json:"region"`         // 资源所属区域
-	Name   string            `json:"name,omitempty"` // 资源名称
-	Tags   map[string]string `json:"tags,omitempty"` // 资源标签
+	Type   string            `json:"type"`           // Resource type
+	ID     string            `json:"id"`             // Resource UUID
+	Region string            `json:"region"`         // Resource region
+	Name   string            `json:"name,omitempty"` // Resource name
+	Tags   map[string]string `json:"tags,omitempty"` // Resource tags
 }
 
-// Cloudland event structure to be sent to callback URL
+// Cloudland event structure sent to callback URL.
 type Event struct {
 	EventType  string                 `json:"event_type"`  // Event type (e.g., "instance.created")
 	Source     string                 `json:"source"`      // Source system (e.g., "cloudland", "monitoring")
 	OccurredAt time.Time              `json:"occurred_at"` // When the event occurred
 	TenantID   string                 `json:"tenant_id"`   // The tenantID in Cloudland
 	Resource   Resource               `json:"resource"`
-	Data       map[string]interface{} `json:"data"`               // Event data payload as JSON
+	Data       map[string]interface{} `json:"data"`               // Event payload as JSON
 	Metadata   map[string]interface{} `json:"metadata,omitempty"` // Additional metadata
-	// RetryCount 重试次数 (内部使用，不序列化)
-	RetryCount int `json:"-"`
+	RetryCount int                    `json:"-"`                  // Internal retry count (not serialized)
 }
 
 var (
-	// 统计信息
+	// Statistics.
 	totalReceived uint64
 	totalSuccess  uint64
 	totalFailed   uint64
 )
 
-// handleCallback 处理回调请求
+// handleCallback handles callback request.
 func handleCallback(w http.ResponseWriter, r *http.Request) {
-	// 只接受 POST 请求
+	// POST only.
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		atomic.AddUint64(&totalFailed, 1)
 		return
 	}
 
-	// 读取请求体
+	// Read body.
 	body, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		log.Printf("ERROR: Failed to read request body: %v\n", err)
@@ -67,7 +66,7 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// 解析 JSON
+	// Parse JSON.
 	var event Event
 	if err := json.Unmarshal(body, &event); err != nil {
 		log.Printf("ERROR: Failed to parse JSON: %v\n", err)
@@ -77,13 +76,13 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 增加接收计数
+	// Increase received count.
 	received := atomic.AddUint64(&totalReceived, 1)
 
-	// 打印事件信息
+	// Print event.
 	printEvent(received, &event)
 
-	// 成功响应
+	// Success response.
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	response := map[string]interface{}{
@@ -96,7 +95,7 @@ func handleCallback(w http.ResponseWriter, r *http.Request) {
 	atomic.AddUint64(&totalSuccess, 1)
 }
 
-// printEvent 打印事件详细信息
+// printEvent prints event details.
 func printEvent(count uint64, event *Event) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Printf("Event #%d received at %s\n", count, time.Now().Format("2006-01-02 15:04:05.000"))
@@ -119,7 +118,7 @@ func printEvent(count uint64, event *Event) {
 	fmt.Println(strings.Repeat("=", 80))
 }
 
-// handleStats 处理统计请求
+// handleStats handles stats request.
 func handleStats(w http.ResponseWriter, r *http.Request) {
 	stats := map[string]interface{}{
 		"total_received": atomic.LoadUint64(&totalReceived),
@@ -133,7 +132,7 @@ func handleStats(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(stats)
 }
 
-// handleHealth 健康检查
+// handleHealth handles health check.
 func handleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -147,7 +146,7 @@ func handleHealth(w http.ResponseWriter, r *http.Request) {
 var startTime time.Time
 
 func main() {
-	// 命令行参数
+	// CLI flags.
 	port := flag.Int("port", 8080, "HTTP server port")
 	host := flag.String("host", "0.0.0.0", "HTTP server host")
 	verbose := flag.Bool("verbose", false, "Enable verbose logging")
@@ -155,16 +154,16 @@ func main() {
 
 	startTime = time.Now()
 
-	// 设置日志
+	// Setup logging.
 	log.SetOutput(os.Stdout)
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 
-	// 注册路由
+	// Register routes.
 	http.HandleFunc("/api/v1/resource-changes", handleCallback)
 	http.HandleFunc("/stats", handleStats)
 	http.HandleFunc("/health", handleHealth)
 
-	// 打印启动信息
+	// Startup information.
 	addr := fmt.Sprintf("%s:%d", *host, *port)
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Println("CloudLand Callback Test Server")
@@ -181,7 +180,7 @@ func main() {
 	fmt.Println(strings.Repeat("=", 80))
 	fmt.Printf("\nWaiting for events...\n")
 
-	// 启动定时统计输出
+	// Periodic stats logging.
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
@@ -195,6 +194,6 @@ func main() {
 		}
 	}()
 
-	// 启动 HTTP 服务器
+	// Start HTTP server.
 	log.Fatal(http.ListenAndServe(addr, nil))
 }

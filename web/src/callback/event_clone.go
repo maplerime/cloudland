@@ -5,14 +5,14 @@ SPDX-License-Identifier: Apache-2.0
 
 package callback
 
-// Clone 深拷贝 Event（只拷贝一层 map 即可）
+// Clone deep-copies Event (one-level map copy is enough).
 func (e *Event) Clone() *Event {
 	if e == nil {
 		return nil
 	}
 	cp := *e
 
-	// Tags 深拷贝
+	// Deep copy tags.
 	if e.Resource.Tags != nil {
 		tags := make(map[string]string, len(e.Resource.Tags))
 		for k, v := range e.Resource.Tags {
@@ -21,7 +21,7 @@ func (e *Event) Clone() *Event {
 		cp.Resource.Tags = tags
 	}
 
-	// Data 深拷贝（标量足够）
+	// Deep copy data (scalar values are sufficient).
 	if e.Data != nil {
 		m := make(map[string]interface{}, len(e.Data))
 		for k, v := range e.Data {
@@ -30,7 +30,7 @@ func (e *Event) Clone() *Event {
 		cp.Data = m
 	}
 
-	// Metadata 深拷贝（标量足够）
+	// Deep copy metadata (scalar values are sufficient).
 	if e.Metadata != nil {
 		m := make(map[string]interface{}, len(e.Metadata))
 		for k, v := range e.Metadata {

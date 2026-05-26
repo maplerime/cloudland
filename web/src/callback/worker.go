@@ -20,7 +20,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-// StartWorkers 启动多个 worker goroutine（外部用 GetWorkerCount() 传参即可）
+// StartWorkers starts multiple worker goroutines.
 func StartWorkers(ctx context.Context, count int) {
 	if count <= 0 {
 		count = 1
@@ -58,13 +58,13 @@ func worker(ctx context.Context, id int) {
 				continue
 			}
 
-			// 支持 enabled 动态开关
+			// Respect dynamic enabled switch.
 			if !IsEnabled() {
-				// 关闭时直接丢
+				// Drop immediately when disabled.
 				continue
 			}
 
-			// 支持 url / timeout / retry_* 动态读取（热更新）
+			// Dynamically read url/timeout/retry_* (hot-reload).
 			callbackURL := GetCallbackURL()
 			if callbackURL == "" {
 				logger.Errorf("Worker %d: callback URL not configured; drop: %s/%s",
@@ -73,7 +73,7 @@ func worker(ctx context.Context, id int) {
 			}
 			apiKey := GetAPIKey()
 			if apiKey == "" {
-				// 没有api_key, 则不发送
+				// Do not send without api_key.
 				logger.Errorf("Worker %d: api_key not configured; drop: %s/%s",
 					id, event.EventType, event.Resource.ID)
 				continue
@@ -92,27 +92,27 @@ func worker(ctx context.Context, id int) {
 				retryInterval = 5 * time.Second
 			}
 
-			// 开始发一次
+			// Initial send attempt.
 			if err := sendEvent(ctx, client, callbackURL, apiKey, reqTimeout, event); err != nil {
 				logger.Errorf("Worker %d: send failed: %s/%s err=%v",
 					id, event.EventType, event.Resource.ID, err)
 
-				// 重试次数由配置 retry_max 决定
+				// Retry count is controlled by retry_max.
 				if event.RetryCount >= retryMax {
 					logger.Warningf("Worker %d: drop after %d retries: %s/%s",
 						id, retryMax, event.EventType, event.Resource.ID)
 					continue
 				}
 
-				// 不阻塞 worker：用副本 + AfterFunc 回灌队列
+				// Do not block worker: clone and requeue via AfterFunc.
 				next := event.Clone()
 				next.RetryCount++
 
 				delay := retryInterval
-				// 可选：线性退避（不算过度设计） => 5s,10s,15s...
+				// Optional linear backoff: 5s, 10s, 15s...
 				delay = delay * time.Duration(next.RetryCount)
 
-				// 设置一个上限避免延迟过长（60秒）
+				// Cap the delay to avoid too long waits (60s).
 				if delay > 60*time.Second {
 					delay = 60 * time.Second
 				}
@@ -121,11 +121,11 @@ func worker(ctx context.Context, id int) {
 					id, delay, next.RetryCount, retryMax, next.EventType, next.Resource.ID)
 
 				time.AfterFunc(delay, func() {
-					// 停机或禁用时不回灌
+					// Do not requeue during shutdown or when disabled.
 					if ctx.Err() != nil || !IsEnabled() {
 						return
 					}
-					_ = PushEvent(next) // PushEvent 非阻塞，失败就丢
+					_ = PushEvent(next) // Non-blocking push; drop if it fails.
 				})
 				continue
 			}
@@ -185,10 +185,7 @@ func sendEvent(
 	return nil
 }
 
-// --------------------
-// Shared HTTP client (singleton)
-// --------------------
-
+// Shared HTTP client (singleton).
 var (
 	httpClientOnce sync.Once
 	httpClient     *http.Client

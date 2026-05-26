@@ -17,9 +17,9 @@ import (
 	"github.com/jinzhu/gorm"
 )
 
-const source = "Cloudland" // 事件来源系统名称
+const source = "Cloudland" // Event source system name
 
-// ResourceMetadata 定义资源元数据
+// ResourceMetadata defines resource metadata.
 type ResourceMetadata struct {
 	ResourceType ResourceType
 	IDArgIndex   int
@@ -27,12 +27,12 @@ type ResourceMetadata struct {
 	Extractor    ResourceExtractor
 }
 
-// ResourceExtractor 自定义资源信息提取函数
+// ResourceExtractor is a custom extractor for resource information.
 type ResourceExtractor func(ctx context.Context, args []string) (*ResourceChangeEvent, error)
 
-// commandMetadataRegistry Command 到资源的映射注册表
+// commandMetadataRegistry maps command to resource metadata.
 var commandMetadataRegistry = map[string]*ResourceMetadata{
-	// ==================== 虚拟机相关 ====================
+	// ==================== Instance ====================
 	"launch_vm": {
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   1,
@@ -49,8 +49,8 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ActionType:   ActionMigrated,
 	},
 
-	// ==================== 存储卷相关 ====================
-	"create_volume_local": { // create volume local 测试不到
+	// ==================== Volume ====================
+	"create_volume_local": { // create volume local is not covered by current tests
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
 		ActionType:   ActionCreated,
@@ -86,7 +86,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ActionType:   ActionResized,
 	},
 
-	// ==================== 镜像相关 ====================
+	// ==================== Image ====================
 	"create_image": {
 		ResourceType: ResourceTypeImage,
 		IDArgIndex:   1,
@@ -98,7 +98,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		ActionType:   ActionCaptured,
 	},
 
-	// ==================== 网络接口相关 ====================
+	// ==================== Interface ====================
 	"attach_vm_nic": {
 		ResourceType: ResourceTypeInterface,
 		IDArgIndex:   1,
@@ -106,7 +106,7 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 	},
 }
 
-// 这些命令是 debug mode 下的频繁上报命令，不做事件推送处理
+// These are high-frequency debug-mode report commands and are not pushed as events.
 var notTrackedCommands = map[string]bool{
 	"report_rc":     true,
 	"hyper_status":  true,
@@ -114,9 +114,9 @@ var notTrackedCommands = map[string]bool{
 	"inst_status":   true,
 }
 
-// ExtractAndPushEvent 提取资源信息并推送事件 (核心函数)
+// ExtractAndPushEvent extracts resource info and pushes event (core function).
 func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execError error) {
-	// 如果没有callback的配置，则不做任何处理
+	// Skip processing when callback is not enabled.
 	if !IsEnabled() {
 		return
 	}
@@ -127,7 +127,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 
 	metadata, exists := commandMetadataRegistry[cmd]
 	if !exists {
-		// 比如report_rc 等命令，量大不需要打印日志，不做事件推送
+		// Commands like report_rc are high volume and should not be logged or pushed.
 		if !notTrackedCommands[cmd] {
 			logger.Debugf("Command %s not registered in metadata registry", cmd)
 		}
@@ -138,10 +138,10 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 	var err error
 
 	if metadata.Extractor != nil {
-		// 自定义提取器, 扩展使用
+		// Custom extractor for extension use.
 		rcEvent, err = metadata.Extractor(ctx, args)
 	} else {
-		// 默认提取器
+		// Default extractor.
 		rcEvent, err = defaultExtractor(ctx, metadata, args)
 	}
 
@@ -174,7 +174,7 @@ func ExtractAndPushEvent(ctx context.Context, cmd string, args []string, execErr
 	}
 }
 
-// defaultExtractor 默认的资源信息提取器
+// defaultExtractor is the default resource info extractor.
 func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []string) (*ResourceChangeEvent, error) {
 	if metadata.IDArgIndex >= len(args) {
 		logger.Debugf("IDArgIndex %d out of range for args length %d", metadata.IDArgIndex, len(args))
@@ -216,7 +216,7 @@ func compactSQL(s string) string {
 	return strings.TrimSpace(s)
 }
 
-// --------------------- 各种资源类型的提取器 (Raw + join org uuid) ---------------------
+// --------------------- Extractors for different resource types (Raw + join org uuid) ---------------------
 
 func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	traceID := fmt.Sprintf("inst-%d-%d", resourceID, time.Now().UnixNano())
@@ -231,14 +231,14 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, e
 		return nil, err
 	}
 
-	// Scan 查不到时通常是零值，这里是“查不到就返回错误”的行为
+	// When Scan finds nothing, fields are usually zero values; treat as not found error.
 	if row.ID == 0 || row.UUID == "" {
 		logger.Errorf("[%s] extractInstanceInfo: not found id=%d elapsed=%s", traceID, resourceID, time.Since(start))
 		return nil, gorm.ErrRecordNotFound
 	}
 
 	if row.TenantUUID == "" {
-		// 兜底日志，防范特殊defect
+		// Fallback log for unusual defects.
 		logger.Warningf("[%s] extractInstanceInfo: tenant uuid empty (owner_id=%d) inst_uuid=%s elapsed=%s",
 			traceID, row.Owner, row.UUID, time.Since(start))
 	} else {
@@ -284,7 +284,7 @@ func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, err
 	}
 
 	if row.TenantUUID == "" {
-		// 兜底日志，防范特殊defect
+		// Fallback log for unusual defects.
 		logger.Warningf("[%s] extractVolumeInfo: tenant uuid empty (owner_id=%d) volume_uuid=%s elapsed=%s",
 			traceID, row.Owner, row.UUID, time.Since(start))
 	} else {
@@ -330,7 +330,7 @@ func extractImageInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, erro
 	}
 
 	if row.TenantUUID == "" {
-		// 兜底日志，防范特殊defect
+		// Fallback log for unusual defects.
 		logger.Warningf("[%s] extractImageInfo: tenant uuid empty (owner_id=%d) img_uuid=%s elapsed=%s",
 			traceID, row.Owner, row.UUID, time.Since(start))
 	} else {
@@ -373,7 +373,7 @@ func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string) (*Resour
 	traceID := fmt.Sprintf("nic-%d-%s-%d", resourceID, strings.ReplaceAll(macAddr, ":", ""), time.Now().UnixNano())
 	start := time.Now()
 
-	// 仍然先校验 instance 是否存在（instance not found 时返回明确错误）
+	// Still validate instance existence first (return explicit error if not found).
 	{
 		type instExists struct {
 			ID int64
@@ -406,13 +406,13 @@ func extractInterfaceInfo(db *gorm.DB, resourceID int64, args []string) (*Resour
 		return nil, fmt.Errorf("interface with mac %s not found", macAddr)
 	}
 
-	// Interface 没有明确 status 字段, 逻辑判断如下：
+	// Interface has no explicit status field; derive status using this logic:
 	status := "active"
 	if row.Hyper == -1 {
 		status = "unattached"
 	}
 	if row.TenantUUID == "" {
-		// 兜底日志，防范特殊defect
+		// Fallback log for unusual defects.
 		logger.Warningf("[%s] extractInterfaceInfo: tenant uuid empty (owner_id=%d) nic_uuid=%s elapsed=%s",
 			traceID, row.Owner, row.UUID, time.Since(start))
 	} else {
