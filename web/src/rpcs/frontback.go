@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"web/src/callback"
 	. "web/src/common"
 	"web/src/model"
 
@@ -128,8 +129,12 @@ func (fb *FrontbackService) dispatchExecute(ctx context.Context, cmd string, arg
 	if cmd != "report_rc" {
 		logger.Debugf("RPC callback: [%s] %+v", cmd, args)
 	}
+	// 执行命令
 	if command := Get(cmd); command != nil {
 		status, err = command(ctx, args)
+
+		// 命令执行完成后，提取资源信息并推送事件到回调队列
+		callback.ExtractAndPushEvent(ctx, cmd, args, err)
 	} else {
 		err = fmt.Errorf("no command %s found", cmd)
 		logger.Error("Command dispatch error: ", err)
