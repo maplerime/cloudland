@@ -18,9 +18,11 @@ import (
 
 var ipWhitelistAdmin = &IPWhitelistAdmin{}
 
+const defaultIPWhitelistThreshold int64 = 3000
+
 type IPWhitelistAdmin struct{}
 
-func (a *IPWhitelistAdmin) Create(ctx context.Context, instanceUUID, ip, reason string) (entry *model.IPWhitelist, err error) {
+func (a *IPWhitelistAdmin) Create(ctx context.Context, instanceUUID, ip string, threshold int64, reason string) (entry *model.IPWhitelist, err error) {
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -33,6 +35,7 @@ func (a *IPWhitelistAdmin) Create(ctx context.Context, instanceUUID, ip, reason 
 		Owner:        memberShip.OrgID,
 		InstanceUUID: instanceUUID,
 		IP:           ip,
+		Threshold:    threshold,
 		Reason:       reason,
 	}
 	if err = db.Create(entry).Error; err != nil {
@@ -127,6 +130,7 @@ type whitelistPayload struct {
 type whitelistEntry struct {
 	InstanceUUID string `json:"instance_uuid"`
 	IP           string `json:"ip"`
+	Threshold    int64  `json:"threshold"`
 	Reason       string `json:"reason"`
 }
 
@@ -147,9 +151,14 @@ func (a *IPWhitelistAdmin) broadcastAll(ctx context.Context) (err error) {
 		Whitelist: make([]whitelistEntry, 0, len(entries)),
 	}
 	for _, e := range entries {
+		threshold := e.Threshold
+		if threshold < 1 {
+			threshold = defaultIPWhitelistThreshold
+		}
 		payload.Whitelist = append(payload.Whitelist, whitelistEntry{
 			InstanceUUID: e.InstanceUUID,
 			IP:           e.IP,
+			Threshold:    threshold,
 			Reason:       e.Reason,
 		})
 	}

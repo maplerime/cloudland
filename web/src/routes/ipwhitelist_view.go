@@ -9,6 +9,7 @@ package routes
 import (
 	"fmt"
 	"net/http"
+	"strconv"
 
 	. "web/src/common"
 	"web/src/model"
@@ -38,8 +39,8 @@ func (v *IPWhitelistView) List(c *macaron.Context, store session.Store) {
 	c.Data["IPWhitelists"] = entries
 	c.Data["Query"] = query
 	SetPaginationData(c, "ip_whitelists", total, limit, offset, listConfig,
-		`["UUID", "InstanceUUID", "IP", "Reason", "Delete"]`,
-		[]string{"ID", "UUID", "InstanceUUID", "IP", "Reason", "Owner", "CreatedAt", "Delete"})
+		`["UUID", "InstanceUUID", "IP", "Threshold", "Reason", "Delete"]`,
+		[]string{"ID", "UUID", "InstanceUUID", "IP", "Threshold", "Reason", "Owner", "CreatedAt", "Delete"})
 	c.HTML(200, "ip_whitelists")
 }
 
@@ -60,13 +61,20 @@ func (v *IPWhitelistView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "../ip-whitelists"
 	instanceUUID := c.QueryTrim("instance_uuid")
 	ip := c.QueryTrim("ip")
+	thresholdStr := c.QueryTrim("threshold")
 	reason := c.QueryTrim("reason")
 	if instanceUUID == "" || ip == "" {
 		c.Data["ErrorMsg"] = "instance_uuid and ip are required"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err := ipWhitelistAdmin.Create(ctx, instanceUUID, ip, reason)
+	threshold, parseErr := strconv.ParseInt(thresholdStr, 10, 64)
+	if parseErr != nil || threshold < 1 {
+		c.Data["ErrorMsg"] = "threshold must be an integer greater than or equal to 1"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	_, err := ipWhitelistAdmin.Create(ctx, instanceUUID, ip, threshold, reason)
 	if err != nil {
 		logger.Errorf("Failed to create ip whitelist entry: %v", err)
 		c.Data["ErrorMsg"] = err.Error()

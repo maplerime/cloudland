@@ -24,11 +24,26 @@ THRESHOLD_DST=$3
 BLOCK_SCRIPT="./block_ip.sh"
 WHITELIST_FILE="/opt/cloudland/conf/ip_whitelist.json"
 
-# Return 0 (true) if the given IP is in the local whitelist file
-is_whitelisted() {
+get_effective_threshold() {
     local check_ip="$1"
-    [ -f "$WHITELIST_FILE" ] || return 1
-    jq -e --arg ip "$check_ip" '.whitelist[] | select(.ip == $ip)' "$WHITELIST_FILE" > /dev/null 2>&1
+    local default_threshold="$2"
+    local threshold="$default_threshold"
+
+    if [ -f "$WHITELIST_FILE" ]; then
+        local custom_threshold
+        custom_threshold=$(jq -r --arg ip "$check_ip" '.whitelist[] | select(.ip == $ip) | .threshold // empty' "$WHITELIST_FILE" 2>/dev/null | head -1)
+        if [[ "$custom_threshold" =~ ^-?[0-9]+$ ]]; then
+            threshold="$custom_threshold"
+        fi
+    fi
+
+    if ! [[ "$threshold" =~ ^-?[0-9]+$ ]]; then
+        threshold="$default_threshold"
+    fi
+    if [ "$threshold" -lt 1 ]; then
+        threshold=1
+    fi
+    echo "$threshold"
 }
 
 # Get half-open connections, extract src/dst IPs, count and sort
@@ -37,9 +52,9 @@ result=$(echo "$conn_rest" | grep -E 'SYN_SENT.*UNREPLIED' | awk '{print $5, $6}
 if [ -n "$result" ]; then
     blocked_count=0
     echo "$result" | while read count src dst; do
-        if [ "$count" -gt "$THRESHOLD_SRC_DST" ]; then
-            log "CRITICAL: Blocking syn attack from src $src to dst $dst (count: $count)"
-            if is_whitelisted "$src"; then log "INFO: $src is whitelisted, skipping block"; continue; fi
+        effective_threshold=$(get_effective_threshold "$src" "$THRESHOLD_SRC_DST")
+        if [ "$count" -gt "$effective_threshold" ]; then
+            log "CRITICAL: Blocking syn attack from src $src to dst $dst (count: $count, threshold: $effective_threshold)"
             $BLOCK_SCRIPT "$src" "block_src"
             ((blocked_count++))
         fi
@@ -51,9 +66,9 @@ result=$(echo "$conn_rest" | grep -E 'SYN_SENT.*UNREPLIED' | awk '{print $5}' | 
 if [ -n "$result" ]; then
     blocked_count=0
     echo "$result" | while read count src; do
-        if [ "$count" -gt "$THRESHOLD_SRC" ]; then
-            log "CRITICAL: Blocking syn attack from src $src (count: $count)"
-            if is_whitelisted "$src"; then log "INFO: $src is whitelisted, skipping block"; continue; fi
+        effective_threshold=$(get_effective_threshold "$src" "$THRESHOLD_SRC")
+        if [ "$count" -gt "$effective_threshold" ]; then
+            log "CRITICAL: Blocking syn attack from src $src (count: $count, threshold: $effective_threshold)"
             $BLOCK_SCRIPT "$src" "block_src"
             ((blocked_count++))
         fi
@@ -65,9 +80,9 @@ result=$(echo "$conn_rest" | grep -E 'SYN_SENT.*UNREPLIED' | awk '{print $6}' | 
 if [ -n "$result" ]; then
     blocked_count=0
     echo "$result" | while read count dst; do
-        if [ "$count" -gt "$THRESHOLD_DST" ]; then
-            log "CRITICAL: Blocking syn attack to dst $dst (count: $count)"
-            if is_whitelisted "$dst"; then log "INFO: $dst is whitelisted, skipping block"; continue; fi
+        effective_threshold=$(get_effective_threshold "$dst" "$THRESHOLD_DST")
+        if [ "$count" -gt "$effective_threshold" ]; then
+            log "CRITICAL: Blocking syn attack to dst $dst (count: $count, threshold: $effective_threshold)"
             $BLOCK_SCRIPT "$dst" "block_dst"
             ((blocked_count++))
         fi
