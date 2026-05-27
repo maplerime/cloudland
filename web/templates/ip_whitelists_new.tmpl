@@ -19,6 +19,10 @@
                                     <label for="ip">{{.i18n.Tr "IP"}}</label>
                                     <input id="ip" name="ip" required placeholder="e.g. 192.168.1.100">
                                 </div>
+                                <div class="required inline field">
+                                    <label for="threshold">{{.i18n.Tr "Threshold"}}</label>
+                                    <input id="threshold" name="threshold" type="number" min="1" required placeholder="e.g. 5000">
+                                </div>
                                 <div class="inline field">
                                     <label for="reason">{{.i18n.Tr "Reason"}}</label>
                                     <input id="reason" name="reason" placeholder="Optional reason">

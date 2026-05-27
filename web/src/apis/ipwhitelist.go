@@ -24,6 +24,7 @@ type IPWhitelistAPI struct{}
 type IPWhitelistPayload struct {
 	InstanceUUID string `json:"instance_uuid" binding:"required"`
 	IP           string `json:"ip" binding:"required"`
+	Threshold    int64  `json:"threshold"`
 	Reason       string `json:"reason"`
 }
 
@@ -31,6 +32,7 @@ type IPWhitelistResponse struct {
 	UUID         string `json:"uuid"`
 	InstanceUUID string `json:"instance_uuid"`
 	IP           string `json:"ip"`
+	Threshold    int64  `json:"threshold"`
 	Reason       string `json:"reason"`
 	CreatedAt    string `json:"created_at"`
 }
@@ -50,7 +52,11 @@ func (a *IPWhitelistAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	entry, err := ipWhitelistAdminAPI.Create(ctx, payload.InstanceUUID, payload.IP, payload.Reason)
+	if payload.Threshold < 1 {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid threshold", nil)
+		return
+	}
+	entry, err := ipWhitelistAdminAPI.Create(ctx, payload.InstanceUUID, payload.IP, payload.Threshold, payload.Reason)
 	if err != nil {
 		logger.Errorf("Failed to create ip whitelist entry: %v", err)
 		ErrorResponse(c, http.StatusBadRequest, "Failed to create ip whitelist entry", err)
@@ -60,6 +66,7 @@ func (a *IPWhitelistAPI) Create(c *gin.Context) {
 		UUID:         entry.UUID,
 		InstanceUUID: entry.InstanceUUID,
 		IP:           entry.IP,
+		Threshold:    entry.Threshold,
 		Reason:       entry.Reason,
 		CreatedAt:    entry.CreatedAt.Format(TimeStringForMat),
 	})
@@ -97,6 +104,7 @@ func (a *IPWhitelistAPI) List(c *gin.Context) {
 			UUID:         e.UUID,
 			InstanceUUID: e.InstanceUUID,
 			IP:           e.IP,
+			Threshold:    e.Threshold,
 			Reason:       e.Reason,
 			CreatedAt:    e.CreatedAt.Format(TimeStringForMat),
 		})
@@ -123,13 +131,6 @@ func (a *IPWhitelistAPI) Refresh(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to query whitelist", err)
 		return
 	}
-	if len(entries) == 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "whitelist is empty, nothing to broadcast"})
-		return
-	}
-	// Reuse Create flow to trigger broadcast; just call broadcastAll via a dummy Create+Delete cycle
-	// Instead, directly trigger broadcast by calling Delete+Create won't work cleanly.
-	// The simplest safe approach: re-call broadcastAll via a helper.
 	if err := ipWhitelistAdminAPI.BroadcastAll(ctx); err != nil {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to broadcast whitelist", err)
 		return

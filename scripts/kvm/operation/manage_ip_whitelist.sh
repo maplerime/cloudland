@@ -6,18 +6,15 @@
 #   manage_ip_whitelist.sh refresh <base64_encoded_json>
 #
 # The JSON format is:
-#   {"whitelist": [{"instance_uuid": "...", "ip": "...", "reason": "..."}, ...]}
+#   {"whitelist": [{"instance_uuid": "...", "ip": "...", "threshold": 1000, "reason": "..."}, ...]}
 #
 # On refresh:
 #   - Writes the new whitelist JSON to WHITELIST_FILE
-#   - For any IP in the old blacklist that now appears in the whitelist,
-#     calls unblock_ip.sh to remove it from the ipset.
 
 cd "$(dirname "$0")"
 source ../../cloudrc
 
 WHITELIST_FILE="/opt/cloudland/conf/ip_whitelist.json"
-UNBLOCK_SCRIPT="./unblock_ip.sh"
 
 LOG_DIR="/opt/cloudland/log"
 LOG_FILE="$LOG_DIR/ip_whitelist.log"
@@ -49,21 +46,6 @@ case "$ACTION" in
         if ! echo "$NEW_JSON" | jq empty > /dev/null 2>&1; then
             log "ERROR: Decoded data is not valid JSON"
             exit 1
-        fi
-
-        # If ipset blacklist exists, unblock any IPs that are now whitelisted
-        if ipset list blacklist &>/dev/null 2>&1; then
-            NEW_IPS=$(echo "$NEW_JSON" | jq -r '.whitelist[].ip' 2>/dev/null)
-            for wl_ip in $NEW_IPS; do
-                if ipset test blacklist "$wl_ip" > /dev/null 2>&1; then
-                    log "INFO: IP $wl_ip is now whitelisted, removing from blacklist"
-                    if [ -x "$UNBLOCK_SCRIPT" ]; then
-                        "$UNBLOCK_SCRIPT" "$wl_ip"
-                    else
-                        ipset del blacklist "$wl_ip" 2>/dev/null || true
-                    fi
-                fi
-            done
         fi
 
         echo "$NEW_JSON" > "$WHITELIST_FILE"
