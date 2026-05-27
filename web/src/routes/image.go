@@ -118,9 +118,12 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		storageID = storage.ID
 	}
 
-	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
-	control := "inter="
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
@@ -407,6 +410,11 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		logger.Error("Source volume ID not found for image")
 		return NewCLError(ErrImageStorageNotFound, "Source volume ID not found for image", err)
 	}
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	for _, storage := range storages {
 		// ignore already synced or syncing storages
 		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
@@ -414,7 +422,6 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 			continue
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d' '%s'", image.ID, prefix, storage.PoolID, storage.ID, sourceVolumeID)
 		if storage.PoolID == defaultPoolID {
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
@@ -598,6 +605,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
+
 	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage, osFamily)
 	if err != nil {
 		logger.Error("Create image failed", err)

@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -149,9 +148,9 @@ func NewN9EClient(clusterURL, username, password string, userGroupID int64, temp
 	ctx := context.Background()
 	if id, err := client.GetDataSourceByName(ctx, datasourceName); err == nil {
 		client.datasourceID = id
-		log.Printf("[N9E] Datasource initialized: %s (id=%d)", datasourceName, id)
+		logger.Infof("Datasource initialized: %s (id=%d)", datasourceName, id)
 	} else {
-		log.Printf("[N9E] WARNING: Failed to initialize datasource %s: %v", datasourceName, err)
+		logger.Warningf("Failed to initialize datasource %s: %v", datasourceName, err)
 	}
 
 	return client
@@ -200,7 +199,7 @@ func (c *N9EClient) GetNotifyRuleIDByName(ctx context.Context) (int64, error) {
 			c.cacheMutex.Lock()
 			c.notifyRuleID = item.ID
 			c.cacheMutex.Unlock()
-			log.Printf("[N9E] Resolved notify rule %q -> id=%d", c.notifyRuleName, item.ID)
+			logger.Infof("Resolved notify rule %q -> id=%d", c.notifyRuleName, item.ID)
 			return item.ID, nil
 		}
 	}
@@ -251,7 +250,7 @@ func (c *N9EClient) authenticate(ctx context.Context) error {
 	c.tokenExpiry = time.Now().Add(time.Duration(tokenResp.Dat.ExpiresIn-300) * time.Second)
 	c.tokenMutex.Unlock()
 
-	log.Printf("N9E authentication successful, token expires at: %v", c.tokenExpiry)
+	logger.Infof("N9E authentication successful, token expires at: %v", c.tokenExpiry)
 	return nil
 }
 
@@ -290,7 +289,7 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 
 	// Idempotent check: if rule with same name already exists, return its ID
 	if existingID, err := c.GetAlertRuleByName(ctx, rule.GroupID, rule.RuleName); err == nil {
-		log.Printf("[N9E] Alert rule %q already exists in group %d (id=%d), returning existing ID", rule.RuleName, rule.GroupID, existingID)
+		logger.Infof("Alert rule %q already exists in group %d (id=%d), returning existing ID", rule.RuleName, rule.GroupID, existingID)
 		return existingID, nil
 	}
 
@@ -326,7 +325,7 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 		if id, err := c.GetDataSourceByName(ctx, c.datasourceName); err == nil && id > 0 {
 			dsID = id
 		} else {
-			log.Printf("[N9E] Warning: could not resolve datasource %q: %v", c.datasourceName, err)
+			logger.Warningf("[N9E] Warning: could not resolve datasource %q: %v", c.datasourceName, err)
 		}
 	}
 	if dsID != 0 {
@@ -338,7 +337,7 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 				{MatchType: 0, Op: "in", Values: []int64{dsID}},
 			}
 		}
-		log.Printf("[N9E] Bound datasource %q (id=%d) to alert rule %q", c.datasourceName, dsID, rule.RuleName)
+		logger.Infof("Bound datasource %q (id=%d) to alert rule %q", c.datasourceName, dsID, rule.RuleName)
 	}
 
 	// Inject notify rule if configured
@@ -346,16 +345,16 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 		if notifyID, err := c.GetNotifyRuleIDByName(ctx); err == nil && notifyID > 0 {
 			rule.NotifyRuleIDs = []int64{notifyID}
 			rule.NotifyVersion = 1
-			log.Printf("[N9E] Bound notify rule %q (id=%d) to alert rule %q", c.notifyRuleName, notifyID, rule.RuleName)
+			logger.Infof("Bound notify rule %q (id=%d) to alert rule %q", c.notifyRuleName, notifyID, rule.RuleName)
 		} else {
-			log.Printf("[N9E] Warning: could not resolve notify rule %q: %v", c.notifyRuleName, err)
+			logger.Warningf("[N9E] Warning: could not resolve notify rule %q: %v", c.notifyRuleName, err)
 		}
 	}
 
 	// Log the PromQL being sent (for debugging)
 	if len(rule.RuleConfig.Queries) > 0 {
-		log.Printf("Creating N9E rule: %s, PromQL length: %d bytes", rule.RuleName, len(rule.RuleConfig.Queries[0].PromQL))
-		log.Printf("PromQL preview: %.200s...", rule.RuleConfig.Queries[0].PromQL)
+		logger.Infof("Creating N9E rule: %s, PromQL length: %d bytes", rule.RuleName, len(rule.RuleConfig.Queries[0].PromQL))
+		logger.Infof("PromQL preview: %.200s...", rule.RuleConfig.Queries[0].PromQL)
 	}
 
 	// N9E expects an array of rules
@@ -366,7 +365,7 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 	}
 
 	// Log the JSON payload size
-	log.Printf("JSON payload size: %d bytes", len(jsonData))
+	logger.Infof("JSON payload size: %d bytes", len(jsonData))
 
 	req, err := http.NewRequestWithContext(ctx, "POST", createURL, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -385,16 +384,16 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 	body, _ := io.ReadAll(resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("N9E API error response (status %d): %s", resp.StatusCode, string(body))
+		logger.Warningf("N9E API error response (status %d): %s", resp.StatusCode, string(body))
 		return 0, fmt.Errorf("create rule failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
 	// Log response for debugging
-	log.Printf("N9E API response (status %d, length %d bytes): %.500s", resp.StatusCode, len(body), string(body))
+	logger.Infof("N9E API response (status %d, length %d bytes): %.500s", resp.StatusCode, len(body), string(body))
 
 	var ruleResp N9ERuleResponse
 	if err := json.Unmarshal(body, &ruleResp); err != nil {
-		log.Printf("Failed to decode N9E response, raw body: %s", string(body))
+		logger.Warningf("Failed to decode N9E response, raw body: %s", string(body))
 		return 0, fmt.Errorf("failed to decode response: %v", err)
 	}
 
@@ -407,16 +406,16 @@ func (c *N9EClient) CreateAlertRule(ctx context.Context, rule N9EAlertRule) (int
 		return 0, fmt.Errorf("N9E rule creation error: %s", errMsg)
 	}
 
-	log.Printf("Created N9E alert rule: %s, querying for ID...", rule.RuleName)
+	logger.Infof("Created N9E alert rule: %s, querying for ID...", rule.RuleName)
 
 	// Query N9E to get the auto-assigned rule ID
 	ruleID, err := c.GetAlertRuleByName(ctx, rule.GroupID, rule.RuleName)
 	if err != nil {
-		log.Printf("Warning: Rule created but failed to get ID: %v", err)
+		logger.Warningf("Rule created but failed to get ID: %v", err)
 		return 0, fmt.Errorf("rule created but failed to get ID: %v", err)
 	}
 
-	log.Printf("N9E rule '%s' created successfully with ID: %d", rule.RuleName, ruleID)
+	logger.Infof("N9E rule '%s' created successfully with ID: %d", rule.RuleName, ruleID)
 	return ruleID, nil
 }
 
@@ -457,7 +456,7 @@ func (c *N9EClient) DeleteAlertRule(ctx context.Context, businessGroupID, ruleID
 		return fmt.Errorf("delete rule failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("Deleted N9E alert rule ID: %d", ruleID)
+	logger.Infof("Deleted N9E alert rule ID: %d", ruleID)
 	return nil
 }
 
@@ -543,7 +542,7 @@ func (c *N9EClient) GetAlertRuleByName(ctx context.Context, groupID int64, ruleN
 	// Find the rule by name
 	for _, rule := range listResp.Dat {
 		if rule.Name == ruleName {
-			log.Printf("Found N9E rule '%s' with ID: %d", ruleName, rule.ID)
+			logger.Infof("Found N9E rule '%s' with ID: %d", ruleName, rule.ID)
 			return rule.ID, nil
 		}
 	}
@@ -610,7 +609,7 @@ func (c *N9EClient) QueryDataSources(ctx context.Context) ([]N9EDataSource, erro
 		return nil, fmt.Errorf("N9E API error: %s", result.Error)
 	}
 
-	log.Printf("[N9E] Queried %d datasources", len(result.Data))
+	logger.Infof("Queried %d datasources", len(result.Data))
 	return result.Data, nil
 }
 
@@ -621,7 +620,7 @@ func (c *N9EClient) GetDataSourceByName(ctx context.Context, name string) (int64
 		return c.datasourceID, nil
 	}
 
-	log.Printf("[N9E] Querying datasource: %s", name)
+	logger.Infof("Querying datasource: %s", name)
 	datasources, err := c.QueryDataSources(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query datasources: %w", err)
@@ -629,7 +628,7 @@ func (c *N9EClient) GetDataSourceByName(ctx context.Context, name string) (int64
 
 	for _, ds := range datasources {
 		if ds.Name == name {
-			log.Printf("[N9E] Datasource found: %s (id=%d)", name, ds.ID)
+			logger.Infof("Datasource found: %s (id=%d)", name, ds.ID)
 			// Update cache
 			c.datasourceID = ds.ID
 			c.datasourceName = name
@@ -727,7 +726,7 @@ func (c *N9EClient) GetBusinessGroupByName(ctx context.Context, name string) (in
 	}
 	c.cacheMutex.RUnlock()
 
-	log.Printf("[N9E] Querying business group for owner: %s", name)
+	logger.Infof("Querying business group for owner: %s", name)
 	groups, err := c.QueryBusinessGroups(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("failed to query business groups: %w", err)
@@ -769,7 +768,7 @@ func (c *N9EClient) CreateBusinessGroup(ctx context.Context, regionName string) 
 		return 0, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	log.Printf("[N9E] Creating business group: %s", regionName)
+	logger.Infof("Creating business group: %s", regionName)
 	apiURL := fmt.Sprintf("%s/api/n9e/busi-groups", c.clusterURL)
 	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, bytes.NewReader(payload))
 	if err != nil {
@@ -803,7 +802,7 @@ func (c *N9EClient) CreateBusinessGroup(ctx context.Context, regionName string) 
 		return 0, fmt.Errorf("N9E API error: %s", result.Err)
 	}
 
-	log.Printf("[N9E] Business group created successfully: %s", regionName)
+	logger.Infof("Business group created successfully: %s", regionName)
 
 	// Query back to get the ID
 	id, err := c.GetBusinessGroupByName(ctx, regionName)
@@ -811,7 +810,7 @@ func (c *N9EClient) CreateBusinessGroup(ctx context.Context, regionName string) 
 		return 0, fmt.Errorf("failed to query created business group: %w", err)
 	}
 
-	log.Printf("[N9E] Business group ID: %d", id)
+	logger.Infof("Business group ID: %d", id)
 	return id, nil
 }
 
@@ -829,7 +828,7 @@ func (c *N9EClient) GetOrCreateBusinessGroup(ctx context.Context, regionName str
 	if err != nil {
 		// If creation failed, try querying again (maybe created by concurrent request)
 		if id2, err2 := c.GetBusinessGroupByName(ctx, regionName); err2 == nil {
-			log.Printf("[N9E] Business group created by concurrent request: %s (id=%d)", regionName, id2)
+			logger.Infof("Business group created by concurrent request: %s (id=%d)", regionName, id2)
 			return id2, nil
 		}
 		return 0, fmt.Errorf("failed to create business group: %w", err)
@@ -873,7 +872,7 @@ func (c *N9EClient) DeleteBusinessGroupByID(ctx context.Context, id int64) error
 	}
 	c.cacheMutex.Unlock()
 
-	log.Printf("[N9E] Deleted business group ID: %d", id)
+	logger.Infof("Deleted business group ID: %d", id)
 	return nil
 }
 
@@ -983,7 +982,7 @@ func (am *AnchorManager) QueryAnchorLinks(ctx context.Context, ruleUUID string) 
 		})
 	}
 
-	log.Printf("Queried %d VMs bound to rule %s", len(vms), ruleUUID)
+	logger.Infof("Queried %d VMs bound to rule %s", len(vms), ruleUUID)
 	return vms, nil
 }
 
@@ -1043,7 +1042,7 @@ func (am *AnchorManager) QueryAnchorLinksByOwner(ctx context.Context, owner stri
 		ruleMap[ruleUUID] = append(ruleMap[ruleUUID], vm)
 	}
 
-	log.Printf("Queried %d rules with VMs for owner %s", len(ruleMap), owner)
+	logger.Infof("Queried %d rules with VMs for owner %s", len(ruleMap), owner)
 	return ruleMap, nil
 }
 
@@ -1103,7 +1102,7 @@ func (am *AnchorManager) QueryAllAnchorLinks(ctx context.Context) (map[string][]
 		ruleMap[ruleUUID] = append(ruleMap[ruleUUID], vm)
 	}
 
-	log.Printf("Queried all anchor links: %d rules with VMs", len(ruleMap))
+	logger.Infof("Queried all anchor links: %d rules with VMs", len(ruleMap))
 	return ruleMap, nil
 }
 
@@ -1147,7 +1146,7 @@ func (am *AnchorManager) importToVM(ctx context.Context, metrics string) error {
 		return fmt.Errorf("import failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	log.Printf("Successfully imported anchor metrics to VictoriaMetrics")
+	logger.Infof("Successfully imported anchor metrics to VictoriaMetrics")
 	return nil
 }
 
@@ -1165,6 +1164,7 @@ type AnchorInstance struct {
 	Domain     string
 	InstanceID string
 	Interface  string // 网卡接口名，带宽 anchor 使用
+	VolumeID   string // 磁盘 anchor 使用 (WDS 为卷ID, local 为空)
 	Owner      string
 	TenantID   string // 租户UUID，写入 tenant_id label
 	Threshold  float64
@@ -1177,6 +1177,7 @@ type AnchorResult struct {
 	Domain     string
 	InstanceID string
 	Interface  string // 网卡接口名，从 interface label 读取
+	VolumeID   string // 磁盘 anchor 使用
 	Owner      string
 	TenantID   string // 租户UUID，从 tenant_id label 读取
 	Threshold  float64
@@ -1190,7 +1191,7 @@ func (am *AnchorManager) WriteAnchorThresholdBatch(ctx context.Context, anchorTy
 		return nil
 	}
 	metrics := am.buildThresholdAnchorMetrics(anchorType, instances)
-	log.Printf("[AnchorManager] Writing %d %s anchor thresholds", len(instances), anchorType)
+	logger.Debugf("Writing %d %s anchor thresholds", len(instances), anchorType)
 	return am.importToVM(ctx, metrics)
 }
 
@@ -1201,7 +1202,7 @@ func (am *AnchorManager) ClearAnchorThresholds(ctx context.Context, anchorType s
 		return nil
 	}
 	metrics := am.buildClearAnchorMetrics(anchorType, instances)
-	log.Printf("[AnchorManager] Clearing %d %s anchor thresholds", len(instances), anchorType)
+	logger.Debugf("Clearing %d %s anchor thresholds", len(instances), anchorType)
 	return am.importToVM(ctx, metrics)
 }
 
@@ -1249,7 +1250,7 @@ func (am *AnchorManager) DeleteAnchorSeries(ctx context.Context, anchorType, rul
 		return fmt.Errorf("delete_series failed with status %d: %s", resp.StatusCode, string(respBody))
 	}
 
-	log.Printf("[AnchorManager] DeleteAnchorSeries: deleted %s matcher=%s", anchorType, matcher)
+	logger.Debugf("DeleteAnchorSeries: deleted %s matcher=%s", anchorType, matcher)
 	return nil
 }
 
@@ -1316,13 +1317,14 @@ func (am *AnchorManager) QueryAnchorsByType(ctx context.Context, anchorType, own
 			Domain:     r.Metric["domain"],
 			InstanceID: r.Metric["instance_id"],
 			Interface:  r.Metric["target_device"], // 带宽 anchor 有此 label（target_device），其他类型为空字符串
+			VolumeID:   r.Metric["volume_id"],
 			Owner:      r.Metric["owner"],
 			TenantID:   r.Metric["tenant_id"],
 			Threshold:  threshold,
 		})
 	}
 
-	log.Printf("[AnchorManager] Queried %d %s anchors (owner=%q)", len(anchors), anchorType, owner)
+	logger.Debugf("Queried %d %s anchors (owner=%q)", len(anchors), anchorType, owner)
 	return anchors, nil
 }
 
@@ -1383,13 +1385,14 @@ func (am *AnchorManager) QueryTypedAnchorLinksByRule(ctx context.Context, anchor
 			Domain:     r.Metric["domain"],
 			InstanceID: r.Metric["instance_id"],
 			Interface:  r.Metric["target_device"],
+			VolumeID:   r.Metric["volume_id"],
 			Owner:      r.Metric["owner"],
 			TenantID:   r.Metric["tenant_id"],
 			Threshold:  threshold,
 		})
 	}
 
-	log.Printf("[AnchorManager] QueryTypedAnchorLinksByRule: anchorType=%s ruleUUID=%s found=%d", anchorType, ruleUUID, len(anchors))
+	logger.Debugf("QueryTypedAnchorLinksByRule: anchorType=%s ruleUUID=%s found=%d", anchorType, ruleUUID, len(anchors))
 	return anchors, nil
 }
 
@@ -1464,13 +1467,14 @@ func (am *AnchorManager) QueryAnchorByInstance(ctx context.Context, anchorType, 
 			Domain:     r.Metric["domain"],
 			InstanceID: r.Metric["instance_id"],
 			Interface:  r.Metric["target_device"],
+			VolumeID:   r.Metric["volume_id"],
 			Owner:      r.Metric["owner"],
 			TenantID:   r.Metric["tenant_id"],
 			Threshold:  threshold,
 		})
 	}
 
-	log.Printf("[AnchorManager] QueryAnchorByInstance: anchorType=%s ruleUUID=%s instanceID=%s interface=%q found=%d",
+	logger.Debugf("QueryAnchorByInstance: anchorType=%s ruleUUID=%s instanceID=%s interface=%q found=%d",
 		anchorType, ruleUUID, instanceID, interfaceName, len(anchors))
 	return anchors, nil
 }
@@ -1532,19 +1536,20 @@ func (am *AnchorManager) QueryTypedAnchorLinksByOwner(ctx context.Context, ancho
 			Domain:     r.Metric["domain"],
 			InstanceID: r.Metric["instance_id"],
 			Interface:  r.Metric["target_device"],
+			VolumeID:   r.Metric["volume_id"],
 			Owner:      r.Metric["owner"],
 			TenantID:   r.Metric["tenant_id"],
 			Threshold:  threshold,
 		})
 	}
 
-	log.Printf("[AnchorManager] QueryTypedAnchorLinksByOwner: anchorType=%s owner=%s rules=%d", anchorType, owner, len(ruleMap))
+	logger.Debugf("QueryTypedAnchorLinksByOwner: anchorType=%s owner=%s rules=%d", anchorType, owner, len(ruleMap))
 	return ruleMap, nil
 }
 
 // QueryAllTypedAnchorLinks 查询所有类型所有活跃 anchor，按 rule_uuid 分组。
 func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[string][]AnchorResult, error) {
-	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out"}
+	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out", "disk"}
 	ruleMap := make(map[string][]AnchorResult)
 
 	for _, anchorType := range allAnchorTypes {
@@ -1554,13 +1559,13 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 
 		req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 		if err != nil {
-			log.Printf("[AnchorManager] QueryAllTypedAnchorLinks: failed to create request for %s: %v", anchorType, err)
+			logger.Warningf("QueryAllTypedAnchorLinks: failed to create request for %s: %v", anchorType, err)
 			continue
 		}
 
 		resp, err := am.httpClient.Do(req)
 		if err != nil {
-			log.Printf("[AnchorManager] QueryAllTypedAnchorLinks: request failed for %s: %v", anchorType, err)
+			logger.Warningf("QueryAllTypedAnchorLinks: request failed for %s: %v", anchorType, err)
 			continue
 		}
 
@@ -1577,7 +1582,7 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 			resp.Body.Close()
-			log.Printf("[AnchorManager] QueryAllTypedAnchorLinks: decode failed for %s: %v", anchorType, err)
+			logger.Warningf("QueryAllTypedAnchorLinks: decode failed for %s: %v", anchorType, err)
 			continue
 		}
 		resp.Body.Close()
@@ -1600,6 +1605,7 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 				Domain:     r.Metric["domain"],
 				InstanceID: r.Metric["instance_id"],
 				Interface:  r.Metric["target_device"],
+				VolumeID:   r.Metric["volume_id"],
 				Owner:      r.Metric["owner"],
 				TenantID:   r.Metric["tenant_id"],
 				Threshold:  threshold,
@@ -1607,7 +1613,7 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 		}
 	}
 
-	log.Printf("[AnchorManager] QueryAllTypedAnchorLinks: total rules=%d", len(ruleMap))
+	logger.Debugf("QueryAllTypedAnchorLinks: total rules=%d", len(ruleMap))
 	return ruleMap, nil
 }
 
@@ -1616,7 +1622,7 @@ func (am *AnchorManager) QueryAllTypedAnchorLinks(ctx context.Context) (map[stri
 // in alert PromQL expressions and need to be re-imported with a fresh timestamp.
 // Returns map[anchorType][]AnchorResult; partial results + first error on failure.
 func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]AnchorResult, error) {
-	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out"}
+	allAnchorTypes := []string{"cpu", "mem", "bw_in", "bw_out", "disk"}
 	result := make(map[string][]AnchorResult)
 	var firstErr error
 
@@ -1631,7 +1637,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 
 		req, err := http.NewRequestWithContext(ctx, "GET", queryURL, nil)
 		if err != nil {
-			log.Printf("[AnchorManager] QueryStaleAnchors: failed to create request for %s: %v", anchorType, err)
+			logger.Warningf("QueryStaleAnchors: failed to create request for %s: %v", anchorType, err)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -1640,7 +1646,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 
 		resp, err := am.httpClient.Do(req)
 		if err != nil {
-			log.Printf("[AnchorManager] QueryStaleAnchors: request failed for %s: %v", anchorType, err)
+			logger.Warningf("QueryStaleAnchors: request failed for %s: %v", anchorType, err)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -1660,7 +1666,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 
 		if err := json.NewDecoder(resp.Body).Decode(&vmResult); err != nil {
 			resp.Body.Close()
-			log.Printf("[AnchorManager] QueryStaleAnchors: decode failed for %s: %v", anchorType, err)
+			logger.Warningf("QueryStaleAnchors: decode failed for %s: %v", anchorType, err)
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -1669,7 +1675,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 		resp.Body.Close()
 
 		if vmResult.Status != "success" {
-			log.Printf("[AnchorManager] QueryStaleAnchors: non-success for %s: %s", anchorType, vmResult.Status)
+			logger.Debugf("QueryStaleAnchors: non-success for %s: %s", anchorType, vmResult.Status)
 			continue
 		}
 
@@ -1687,6 +1693,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 				Domain:     r.Metric["domain"],
 				InstanceID: r.Metric["instance_id"],
 				Interface:  r.Metric["target_device"],
+				VolumeID:   r.Metric["volume_id"],
 				Owner:      r.Metric["owner"],
 				TenantID:   r.Metric["tenant_id"],
 				Threshold:  threshold,
@@ -1694,7 +1701,7 @@ func (am *AnchorManager) QueryStaleAnchors(ctx context.Context) (map[string][]An
 		}
 
 		result[anchorType] = anchors
-		log.Printf("[AnchorManager] QueryStaleAnchors: anchorType=%s stale=%d", anchorType, len(anchors))
+		logger.Debugf("QueryStaleAnchors: anchorType=%s stale=%d", anchorType, len(anchors))
 	}
 
 	return result, firstErr
@@ -1738,7 +1745,7 @@ func (am *AnchorManager) SyncStaleAnchorsBatch(ctx context.Context, staleAnchors
 			batch := instances[start:end]
 
 			if err := am.WriteAnchorThresholdBatch(ctx, anchorType, batch); err != nil {
-				log.Printf("[AnchorManager] SyncStaleAnchorsBatch: batch write failed for %s (offset=%d): %v", anchorType, start, err)
+				logger.Warningf("SyncStaleAnchorsBatch: batch write failed for %s (offset=%d): %v", anchorType, start, err)
 				if firstErr == nil {
 					firstErr = err
 				}
@@ -1753,7 +1760,7 @@ func (am *AnchorManager) SyncStaleAnchorsBatch(ctx context.Context, staleAnchors
 		}
 
 		refreshed[anchorType] = count
-		log.Printf("[AnchorManager] SyncStaleAnchorsBatch: anchorType=%s refreshed=%d/%d", anchorType, count, len(instances))
+		logger.Debugf("SyncStaleAnchorsBatch: anchorType=%s refreshed=%d/%d", anchorType, count, len(instances))
 	}
 
 	return refreshed, firstErr
@@ -1768,15 +1775,23 @@ func (am *AnchorManager) buildThresholdAnchorMetrics(anchorType string, instance
 	metricName := fmt.Sprintf("vm_%s_anchor", anchorType)
 	timestamp := time.Now().UnixMilli()
 	isBandwidth := anchorType == "bw_in" || anchorType == "bw_out"
+	isDisk := anchorType == "disk"
 
 	for _, inst := range instances {
 		var line string
-		if isBandwidth {
+		switch {
+		case isBandwidth:
 			line = fmt.Sprintf(
 				`%s{rule_uuid="%s",region="%s",domain="%s",instance_id="%s",target_device="%s",owner="%s",tenant_id="%s"} %g %d`,
 				metricName, inst.RuleUUID, inst.Region, inst.Domain, inst.InstanceID, inst.Interface, inst.Owner, inst.TenantID, inst.Threshold, timestamp,
 			)
-		} else {
+		case isDisk:
+			// Disk anchor labels: volume_id (WDS) or empty (local), target_device (e.g. hdd)
+			line = fmt.Sprintf(
+				`%s{rule_uuid="%s",region="%s",domain="%s",instance_id="%s",volume_id="%s",target_device="%s",owner="%s",tenant_id="%s"} %g %d`,
+				metricName, inst.RuleUUID, inst.Region, inst.Domain, inst.InstanceID, inst.VolumeID, inst.Interface, inst.Owner, inst.TenantID, inst.Threshold, timestamp,
+			)
+		default:
 			line = fmt.Sprintf(
 				`%s{rule_uuid="%s",region="%s",domain="%s",instance_id="%s",owner="%s",tenant_id="%s"} %g %d`,
 				metricName, inst.RuleUUID, inst.Region, inst.Domain, inst.InstanceID, inst.Owner, inst.TenantID, inst.Threshold, timestamp,
@@ -1795,15 +1810,22 @@ func (am *AnchorManager) buildClearAnchorMetrics(anchorType string, instances []
 	metricName := fmt.Sprintf("vm_%s_anchor", anchorType)
 	timestamp := time.Now().UnixMilli()
 	isBandwidth := anchorType == "bw_in" || anchorType == "bw_out"
+	isDisk := anchorType == "disk"
 
 	for _, inst := range instances {
 		var line string
-		if isBandwidth {
+		switch {
+		case isBandwidth:
 			line = fmt.Sprintf(
 				`%s{rule_uuid="%s",region="%s",domain="%s",instance_id="%s",target_device="%s",owner="%s",tenant_id="%s"} 0 %d`,
 				metricName, inst.RuleUUID, inst.Region, inst.Domain, inst.InstanceID, inst.Interface, inst.Owner, inst.TenantID, timestamp,
 			)
-		} else {
+		case isDisk:
+			line = fmt.Sprintf(
+				`%s{rule_uuid="%s",region="%s",domain="%s",instance_id="%s",volume_id="%s",target_device="%s",owner="%s",tenant_id="%s"} 0 %d`,
+				metricName, inst.RuleUUID, inst.Region, inst.Domain, inst.InstanceID, inst.VolumeID, inst.Interface, inst.Owner, inst.TenantID, timestamp,
+			)
+		default:
 			line = fmt.Sprintf(
 				`%s{rule_uuid="%s",region="%s",domain="%s",instance_id="%s",owner="%s",tenant_id="%s"} 0 %d`,
 				metricName, inst.RuleUUID, inst.Region, inst.Domain, inst.InstanceID, inst.Owner, inst.TenantID, timestamp,
@@ -1832,7 +1854,7 @@ func NewN9ETemplateRenderer(templatePath string) *N9ETemplateRenderer {
 }
 
 // RenderN9EPromQL renders a N9E PromQL template with given parameters
-// ruleType: "cpu", "memory", "bandwidth", "bandwidth-in", or "bandwidth-out"
+// ruleType: "cpu", "memory", "bandwidth", "bandwidth-in", "bandwidth-out", or "disk"
 // ruleUUID: unique identifier for the rule
 // params: map of template variables (duration, operator, threshold)
 func (r *N9ETemplateRenderer) RenderN9EPromQL(ruleType, ruleUUID string, params map[string]interface{}) (string, error) {
@@ -1847,6 +1869,8 @@ func (r *N9ETemplateRenderer) RenderN9EPromQL(ruleType, ruleUUID string, params 
 		templateFile = "N9E-bandwidth-in-promql.j2"
 	case "bandwidth-out":
 		templateFile = "N9E-bandwidth-out-promql.j2"
+	case "disk":
+		templateFile = "N9E-disk-promql.j2"
 	default:
 		return "", fmt.Errorf("unsupported rule type: %s", ruleType)
 	}
@@ -1890,7 +1914,7 @@ func (r *N9ETemplateRenderer) RenderN9EPromQL(ruleType, ruleUUID string, params 
 		return "", fmt.Errorf("invalid rendered PromQL: %v", err)
 	}
 
-	log.Printf("Rendered N9E PromQL for rule type: %s, UUID: %s, length: %d bytes", ruleType, ruleUUID, len(promql))
+	logger.Debugf("Rendered N9E PromQL for rule type: %s, UUID: %s, length: %d bytes", ruleType, ruleUUID, len(promql))
 
 	return promql, nil
 }
@@ -2028,7 +2052,7 @@ func (a *AlarmOperator) UpdateRuleGroupN9ERuleID(ctx context.Context, groupUUID,
 			Update("n9e_rule_id", n9eRuleID)
 
 		if result.Error != nil {
-			log.Printf("Failed to update N9ERuleID for group %s: %v", groupUUID, result.Error)
+			logger.Warningf("Failed to update N9ERuleID for group %s: %v", groupUUID, result.Error)
 			return fmt.Errorf("failed to update N9ERuleID: %w", result.Error)
 		}
 
@@ -2036,7 +2060,7 @@ func (a *AlarmOperator) UpdateRuleGroupN9ERuleID(ctx context.Context, groupUUID,
 			return fmt.Errorf("rule group not found: %s", groupUUID)
 		}
 
-		log.Printf("Updated N9ERuleID=%s for group UUID=%s", n9eRuleID, groupUUID)
+		logger.Infof("Updated N9ERuleID=%s for group UUID=%s", n9eRuleID, groupUUID)
 		return nil
 	})
 }
@@ -2096,11 +2120,11 @@ func (o *N9EOperator) DeleteBusinessGroup(ctx context.Context, uuid string) erro
 	return db.Where("uuid = ?", uuid).Delete(&model.N9EBusinessGroup{}).Error
 }
 
-// CountRulesByBusinessGroupUUID counts all rules (CPU/Memory/BW) for a business group
+// CountRulesByBusinessGroupUUID counts all rules (CPU/Memory/BW/Disk) for a business group
 func (o *N9EOperator) CountRulesByBusinessGroupUUID(ctx context.Context, businessGroupUUID string) (int, error) {
 	ctx, db := common.GetContextDB(ctx)
 
-	var cpuCount, memoryCount, bwCount int64
+	var cpuCount, memoryCount, bwCount, diskCount int64
 
 	if err := db.Model(&model.N9ECPURule{}).Where("business_group_uuid = ?", businessGroupUUID).Count(&cpuCount).Error; err != nil {
 		return 0, err
@@ -2114,7 +2138,11 @@ func (o *N9EOperator) CountRulesByBusinessGroupUUID(ctx context.Context, busines
 		return 0, err
 	}
 
-	return int(cpuCount + memoryCount + bwCount), nil
+	if err := db.Model(&model.N9EDiskRule{}).Where("business_group_uuid = ?", businessGroupUUID).Count(&diskCount).Error; err != nil {
+		return 0, err
+	}
+
+	return int(cpuCount + memoryCount + bwCount + diskCount), nil
 }
 
 // ============================================================================
@@ -2313,13 +2341,91 @@ func (o *N9EOperator) DeleteBandwidthRule(ctx context.Context, uuid string) erro
 }
 
 // ============================================================================
+// Disk Rule Operations
+// ============================================================================
+
+// CreateDiskRule creates a new N9E disk rule record
+func (o *N9EOperator) CreateDiskRule(ctx context.Context, rule *model.N9EDiskRule) error {
+	ctx, db := common.GetContextDB(ctx)
+	return db.Create(rule).Error
+}
+
+// GetDiskRuleByUUID retrieves a disk rule by rule_id
+func (o *N9EOperator) GetDiskRuleByUUID(ctx context.Context, ruleID string) (*model.N9EDiskRule, error) {
+	ctx, db := common.GetContextDB(ctx)
+	var rule model.N9EDiskRule
+	err := db.Where("rule_id = ?", ruleID).First(&rule).Error
+	if err != nil {
+		return nil, err
+	}
+	return &rule, nil
+}
+
+// ListDiskRules lists disk rules with pagination and filtering
+func (o *N9EOperator) ListDiskRules(ctx context.Context, params ListN9ERulesParams) ([]model.N9EDiskRule, int, error) {
+	ctx, db := common.GetContextDB(ctx)
+
+	query := db.Model(&model.N9EDiskRule{})
+
+	if params.BusinessGroupUUID != "" {
+		query = query.Where("business_group_uuid = ?", params.BusinessGroupUUID)
+	}
+	if params.Owner != "" {
+		query = query.Where("owner = ?", params.Owner)
+	}
+	if params.UUID != "" {
+		query = query.Where("uuid = ?", params.UUID)
+	}
+
+	var total int
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var rules []model.N9EDiskRule
+	offset := (params.Page - 1) * params.PageSize
+	err := query.Offset(offset).Limit(params.PageSize).
+		Order("created_at DESC").
+		Find(&rules).Error
+
+	return rules, total, err
+}
+
+// UpdateDiskRuleN9EID updates the N9E alert rule ID
+func (o *N9EOperator) UpdateDiskRuleN9EID(ctx context.Context, ruleID string, n9eAlertRuleID int64) error {
+	ctx, db := common.GetContextDB(ctx)
+	return db.Model(&model.N9EDiskRule{}).
+		Where("rule_id = ?", ruleID).
+		Update("n9e_alert_rule_id", n9eAlertRuleID).Error
+}
+
+// DeleteDiskRule soft deletes a disk rule
+func (o *N9EOperator) DeleteDiskRule(ctx context.Context, ruleID string) error {
+	ctx, db := common.GetContextDB(ctx)
+	return db.Where("rule_id = ?", ruleID).Delete(&model.N9EDiskRule{}).Error
+}
+
+// ============================================================================
 // VM Rule Link Operations
 // ============================================================================
 
 // CreateVMRuleLink creates a new VM-rule link record
-func (o *N9EOperator) CreateVMRuleLink(ctx context.Context, link *model.N9EVMRuleLink) error {
+// CreateVMRuleLink upserts a VM rule link.
+// Returns (true, nil) if a new record was created, (false, nil) if an existing record was updated.
+func (o *N9EOperator) CreateVMRuleLink(ctx context.Context, link *model.N9EVMRuleLink) (bool, error) {
 	ctx, db := common.GetContextDB(ctx)
-	return db.Create(link).Error
+	var existing model.N9EVMRuleLink
+	err := db.Where("rule_uuid = ? AND vm_uuid = ? AND interface = ? AND deleted_at IS NULL",
+		link.RuleUUID, link.VMUUID, link.Interface).First(&existing).Error
+	if err == nil {
+		// Record exists: update threshold, tenant_id and disk volume snapshot
+		return false, db.Model(&existing).Updates(map[string]interface{}{
+			"threshold": link.Threshold,
+			"tenant_id": link.TenantID,
+			"volume_id": link.VolumeID,
+		}).Error
+	}
+	return true, db.Create(link).Error
 }
 
 // GetVMRuleLinks retrieves all VM links for a rule

@@ -10,7 +10,7 @@ VM_IMPORT_URL="{{ vm_import_url | default(vm_api_url, true) }}"
 VM_DELETE_URL="{{ vm_delete_url | default(vm_api_url, true) }}"
 BATCH_SIZE=500
 BATCH_SLEEP="0.05"   # seconds between batches (50ms)
-ANCHOR_TYPES=("cpu" "mem" "bw_in" "bw_out")
+ANCHOR_TYPES=("cpu" "mem" "bw_in" "bw_out" "disk")
 SD_CONFIG="/opt/vmagent/sd_configs/libvirt_nodes.json"
 
 log_info()  { echo "[INFO]  $(date '+%Y-%m-%d %H:%M:%S') $*"; }

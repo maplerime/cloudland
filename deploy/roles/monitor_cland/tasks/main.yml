@@ -1,6 +1,6 @@
 - name: Check if current host also hyper
   set_fact:
-     is_current_in_hyper: "{{ inventory_hostname in groups['hyper'] }}"
+     is_current_in_hyper: "{{ inventory_hostname in (((groups['hyper'] | default([])) + (groups['hyper_localdisk'] | default([]))) | unique | list) }}"
   tags: [monitor]
 
 - name: Check if current host is in cland group
