@@ -28,9 +28,10 @@
                                     <th data-column="ID">{{.i18n.Tr "ID"}}</th>
                                     {{ end }}
                                     <th data-column="UUID">{{.i18n.Tr "UUID"}}</th>
-                                    <th data-column="InstanceUUID">{{.i18n.Tr "InstanceUUID"}}</th>
-                                    <th data-column="IP">{{.i18n.Tr "IP"}}</th>
-                                    <th data-column="Reason">{{.i18n.Tr "Reason"}}</th>
+	                                    <th data-column="InstanceUUID">{{.i18n.Tr "InstanceUUID"}}</th>
+	                                    <th data-column="IP">{{.i18n.Tr "IP"}}</th>
+	                                    <th data-column="Threshold">{{.i18n.Tr "Threshold"}}</th>
+	                                    <th data-column="Reason">{{.i18n.Tr "Reason"}}</th>
                                     {{ if $.IsAdmin }}
                                     <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
                                     {{ end }}
@@ -45,10 +46,11 @@
                                     {{ if $.IsAdmin }}
                                     <td data-column="ID">{{.ID}}</td>
                                     {{ end }}
-                                    <td data-column="UUID">{{.UUID}}</td>
-                                    <td data-column="InstanceUUID">{{.InstanceUUID}}</td>
-                                    <td data-column="IP">{{.IP}}</td>
-                                    <td data-column="Reason">{{.Reason}}</td>
+	                                    <td data-column="UUID">{{.UUID}}</td>
+	                                    <td data-column="InstanceUUID">{{.InstanceUUID}}</td>
+	                                    <td data-column="IP">{{.IP}}</td>
+	                                    <td data-column="Threshold">{{.Threshold}}</td>
+	                                    <td data-column="Reason">{{.Reason}}</td>
                                     {{ if $.IsAdmin }}
                                     <td data-column="Owner">{{ if .OwnerInfo }}{{.OwnerInfo.Name}}{{ end }}</td>
                                     {{ end }}
