@@ -22,6 +22,8 @@ ip netns list | grep -q $router
 rtID=$(( $ext_vlan % 250 + 2 ))
 table=fip-$ext_vlan
 rt_file=/etc/iproute2/rt_tables
+mkdir -p /etc/iproute2
+touch $rt_file
 grep "^$rtID $table" $rt_file
 if [ $? -ne 0 ]; then
     for i in {1..250}; do
@@ -46,7 +48,6 @@ ip netns exec $router ip rule del from $ext_ip lookup $table
 ip netns exec $router ip rule add from $ext_ip lookup $table
 ip netns exec $router ip rule del to $ext_ip lookup $table
 ip netns exec $router ip rule add to $ext_ip lookup $table
-async_exec ip netns exec $router arping -c 1 -A -U -I $ext_dev $ext_ip
 
 if [ "$inbound" -gt 0 ]; then
     ip netns exec $router tc qdisc add dev $ext_dev root handle 1: htb default 10

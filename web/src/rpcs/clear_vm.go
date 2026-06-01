@@ -11,10 +11,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"web/src/routes"
 
 	. "web/src/common"
 	"web/src/model"
 )
+
+var volumeAdmin = &routes.VolumeAdmin{}
 
 func init() {
 	Add("clear_vm", ClearVM)
@@ -85,7 +88,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 				return
 			}
 		} else {
-			err = db.Model(iface).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
+			err = db.Model(&model.Interface{}).Where("id = ?", iface.ID).Update(map[string]interface{}{"instance": 0, "primary_if": false, "name": "fip", "inbound": 0, "outbound": 0, "allow_spoofing": false}).Error
 			if err != nil {
 				logger.Error("Failed to Update addresses, %v", err)
 				return
@@ -169,6 +172,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	if err = db.Delete(instance).Error; err != nil {
 		logger.Error("Failed to delete instance, %v", err)
+		return
+	}
+	if err = volumeAdmin.UpdateDataVolumeStatus(ctx, instance.ID, model.VolumeStatusAvailable); err != nil {
+		logger.Error("Failed to update attached volumes", err)
 		return
 	}
 	// Unscoped update

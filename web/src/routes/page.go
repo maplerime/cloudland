@@ -10,9 +10,9 @@ const (
 
 // Page represents a single page in pagination
 type Page struct {
-	Number    int  // Page number
-	Offset    int  // Offset in the data
-	IsCurrent bool // Mark if this is the current page
+	Number     int  // Page number
+	Offset     int  // Offset in the data
+	IsCurrent  bool // Mark if this is the current page
 	IsEllipsis bool // Mark if this is an ellipsis placeholder
 }
 
@@ -58,13 +58,13 @@ func GetSmartPaginationInfo(total, limit, offset int64) *PageInfo {
 
 	// Initialize PageInfo
 	info := &PageInfo{
-		Pages:       make([]*Page, 0),
-		TotalPages:  totalPages,
-		CurrentPage: currentPage,
-		HasPrevious: currentPage > 1,
-		HasNext:     currentPage < totalPages,
+		Pages:        make([]*Page, 0),
+		TotalPages:   totalPages,
+		CurrentPage:  currentPage,
+		HasPrevious:  currentPage > 1,
+		HasNext:      currentPage < totalPages,
 		PreviousPage: 0,
-		NextPage:    0,
+		NextPage:     0,
 	}
 
 	// Set previous and next page numbers and precompute offsets

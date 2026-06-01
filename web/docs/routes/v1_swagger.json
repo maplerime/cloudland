@@ -5836,6 +5836,9 @@
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6576,10 +6579,16 @@
                 "remark": {
                     "type": "string"
                 },
+                "route_ip": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "integer",
                     "maximum": 1,
                     "minimum": 0
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "zone_id": {
                     "type": "integer",
@@ -8110,7 +8119,9 @@
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -8787,6 +8798,9 @@
                     "type": "integer",
                     "maximum": 16,
                     "minimum": 1
+                },
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
                 },
                 "iops_burst": {
                     "type": "integer",

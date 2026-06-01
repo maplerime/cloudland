@@ -14,6 +14,10 @@ ip netns add $router
 ip netns exec $router ip link set lo up
 
 ./create_veth.sh $router ext-$ext_vlan link-$ext_vlan
+for dev in $(ip netns exec $router ip -o link show | awk -F': ' '{print $2}' | cut -d'@' -f1 | grep '^link-'); do
+    [ "$dev" != "link-$ext_vlan" ] && ip netns exec $router ip link del $dev
+done
+ip netns exec $router ip addr flush dev link-$ext_vlan
 ip netns exec $router ip addr add $ext_ip dev link-$ext_vlan
 ip netns exec $router ip route replace default via $gateway
 route_ip=${ext_ip%/*}

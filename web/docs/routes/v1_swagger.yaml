@@ -113,6 +113,8 @@ definitions:
         maxLength: 32
         minLength: 2
         type: string
+      ssl:
+        type: boolean
     required:
     - endpoint
     - name
@@ -615,10 +617,14 @@ definitions:
         type: number
       remark:
         type: string
+      route_ip:
+        type: string
       status:
         maximum: 1
         minimum: 0
         type: integer
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
       zone_id:
         minimum: 1
         type: integer
@@ -1669,6 +1675,8 @@ definitions:
         - tcp
         - udp
         - icmp
+        - gre
+        - ipv6
         type: string
       remote_cidr:
         type: string
@@ -2123,6 +2131,8 @@ definitions:
         maximum: 16
         minimum: 1
         type: integer
+      instance:
+        $ref: '#/definitions/common.BaseID'
       iops_burst:
         minimum: 0
         type: integer

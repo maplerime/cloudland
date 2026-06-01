@@ -118,9 +118,12 @@ func (a *ImageAdmin) Create(ctx context.Context, osCode, name, osVersion, virtTy
 		storageID = storage.ID
 	}
 
-	// create with default pool id
 	prefix := strings.Split(image.UUID, "-")[0]
-	control := "inter="
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_image.sh '%d' '%s' '%s' '%d'", image.ID, prefix, url, storageID)
 	if instID > 0 {
 		bootVolumeUUID := ""
@@ -343,17 +346,18 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		err = NewCLError(ErrPermissionDenied, "Not authorized to update image", nil)
 		return
 	}
+	updates := map[string]interface{}{}
 	if osCode != "" {
-		image.OSCode = osCode
+		updates["os_code"] = osCode
 	}
 	if name != "" {
-		image.Name = name
+		updates["name"] = name
 	}
 	if osVersion != "" {
-		image.OsVersion = osVersion
+		updates["os_version"] = osVersion
 	}
 	if userName != "" {
-		image.UserName = userName
+		updates["user_name"] = userName
 	}
 
 	if uuid != "" {
@@ -362,11 +366,11 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 			err = NewCLError(ErrInvalidParameter, "Invalid UUID format", nil)
 			return
 		}
-		image.UUID = uuid
+		updates["uuid"] = uuid
 	}
 
 	if osFamily != "" {
-		image.OsFamily = osFamily
+		updates["os_family"] = osFamily
 	}
 
 	if image.Status != "available" {
@@ -375,7 +379,7 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		return
 	}
 
-	err = db.Model(image).Updates(image).Error
+	err = db.Model(&model.Image{}).Where("id = ?", image.ID).Updates(updates).Error
 	if err != nil {
 		logger.Error("Failed to save image", err)
 		return NewCLError(ErrImageUpdateFailed, "Failed to save image", err)
@@ -406,6 +410,11 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 		logger.Error("Source volume ID not found for image")
 		return NewCLError(ErrImageStorageNotFound, "Source volume ID not found for image", err)
 	}
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	for _, storage := range storages {
 		// ignore already synced or syncing storages
 		if storage.Status == model.StorageStatusSynced || storage.Status == model.StorageStatusSyncing {
@@ -413,13 +422,12 @@ func (a *ImageAdmin) Update(ctx context.Context, image *model.Image, osCode, nam
 			continue
 		}
 		prefix := strings.Split(image.UUID, "-")[0]
-		control := "inter="
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clone_image.sh '%d' '%s' '%s' '%d' '%s'", image.ID, prefix, storage.PoolID, storage.ID, sourceVolumeID)
 		if storage.PoolID == defaultPoolID {
 			command = fmt.Sprintf("/opt/cloudland/scripts/backend/sync_image_info.sh '%d' '%s' '%s' '%d'", image.ID, prefix, storage.PoolID, storage.ID)
 		}
 		storage.Status = model.StorageStatusSyncing
-		if err = db.Model(storage).Updates(storage).Error; err != nil {
+		if err = db.Model(&model.ImageStorage{}).Where("id = ?", storage.ID).Updates(map[string]interface{}{"status": model.StorageStatusSyncing}).Error; err != nil {
 			logger.Error("Failed to update image storage status", err)
 			return NewCLError(ErrImageStorageUpdateFailed, "Failed to update image storage status", err)
 		}
@@ -597,6 +605,7 @@ func (v *ImageView) Create(c *macaron.Context, store session.Store) {
 			return
 		}
 	}
+
 	_, err := imageAdmin.Create(c.Req.Context(), osCode, name, osVersion, virtType, userName, url, architecture, bootLoader, isRescue, instance, uuid, rescueImage, osFamily)
 	if err != nil {
 		logger.Error("Create image failed", err)

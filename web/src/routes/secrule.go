@@ -117,7 +117,14 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 		err = NewCLError(ErrInvalidParameter, "PortMax should be greater than PortMin", nil)
 		return
 	}
-	err = db.Model(secrule).Updates(secrule).Error
+	err = db.Model(&model.SecurityRule{}).Where("id = ?", secrule.ID).Updates(map[string]interface{}{
+		"remote_ip": secrule.RemoteIp,
+		"direction": secrule.Direction,
+		"protocol":  secrule.Protocol,
+		"name":      secrule.Name,
+		"port_min":  secrule.PortMin,
+		"port_max":  secrule.PortMax,
+	}).Error
 	if err != nil {
 		logger.Error("DB failed to save security rule ", err)
 		err = NewCLError(ErrSecurityRuleUpdateFailed, "Failed to update security rule", err)

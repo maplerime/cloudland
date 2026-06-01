@@ -32,7 +32,7 @@ RPCSvc:
         # Log Level: The level at which to log. This accepts logging specifications
         # Valid Levels: "CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG"
         Log:
-            LogFile: ./clexporter.log
+            LogFile: ./logs/clexporter.log
             # Log Level: The level at which to log. This accepts logging specifications
             # Valid Levels: "CRITICAL", "ERROR", "WARNING", "NOTICE", "INFO", "DEBUG"
             LogLevel: debug
@@ -48,7 +48,7 @@ RPCSvc:
         Profile:
             Enabled: false
             Address: 0.0.0.0:6060
-DebugMode: true
+DebugMode: false
 
 # CloudLand Exporter Configuration
 CloudLand:
@@ -68,3 +68,34 @@ CloudLand:
         Timeout: 30
         # Scrape interval for metrics collection in seconds
         ScrapeInterval: 60
+    # WDS Configuration
+    WDS:
+        # WDS API endpoint from netconf.yml
+        Endpoint: "{{ wds_endpoint }}"
+        # WDS host parsed from endpoint (e.g. https://10.9.8.99 -> 10.9.8.99)
+        Host: "{{ wds_host }}"
+        # WDS monitor access port
+        Port: "{{ wds_port }}"
+        # WDS API username
+        Username: "{{ wds_username }}"
+        # WDS API password
+        Password: "{{ wds_password }}"
+        # Optional persistent version file path for volume snapshot sequence
+        # Default: /opt/petacloud-exporter/logs/volume_snapshot.version (inside container)
+        VersionFilePath: ""
+        # HTTP timeout in seconds for WDS API/Prometheus requests
+        TimeoutSeconds: 8
+        # Cache TTL in seconds for volume_wds_id -> volume_name
+        VolumeNameCacheTTLSeconds: 600
+        # Max concurrent requests when converting volume_wds_id to volume_name
+        MaxConcurrentResolve: 10
+        # Batch size for one WDS Prometheus query (effective range: 50~100, values are clamped)
+        QueryBatchSize: 100
+        # Scheme for WDS Prometheus queries (http or https) 
+        # If Prometheus TLS is enabled, this should be set to https
+        PrometheusScheme: "http"
+        # Prometheus query_range step in seconds for IOPS/throughput/latency queries.
+        # Capacity queries use 2x this value. Default: 15.
+        PrometheusStepSeconds: 15
+        # Max duration in seconds for one collection cycle (0 = auto: 90% of scrape interval)
+        MaxCollectDurationSeconds: 0

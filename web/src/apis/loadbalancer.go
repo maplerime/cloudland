@@ -29,28 +29,28 @@ type LoadBalancerAPI struct{}
 
 type LoadBalancerResponse struct {
 	*ResourceReference
-	FloatingIps        []*FloatingIpInfo    `json:"floating_ips,omitempty"`
-	Listeners        []*ListenerResponse    `json:"listeners,omitempty"`
-	VPC              *ResourceReference `json:"vpc,omitempty"`
-	Status    string             `json:"status"`
+	FloatingIps []*FloatingIpInfo   `json:"floating_ips,omitempty"`
+	Listeners   []*ListenerResponse `json:"listeners,omitempty"`
+	VPC         *ResourceReference  `json:"vpc,omitempty"`
+	Status      string              `json:"status"`
 }
 
 type LoadBalancerListResponse struct {
-	Offset         int                      `json:"offset"`
-	Total          int                      `json:"total"`
-	Limit          int                      `json:"limit"`
+	Offset        int                     `json:"offset"`
+	Total         int                     `json:"total"`
+	Limit         int                     `json:"limit"`
 	LoadBalancers []*LoadBalancerResponse `json:"load_balancers"`
 }
 
 type LoadBalancerPayload struct {
-	Name      string         `json:"name" binding:"required,min=2,max=32"`
-	VPC       *BaseReference `json:"vpc" binding:"required"`
-	Zone      string         `json:"zone" binding:"omitempty,min=1,max=32"`
+	Name string         `json:"name" binding:"required,min=2,max=32"`
+	VPC  *BaseReference `json:"vpc" binding:"required"`
+	Zone string         `json:"zone" binding:"omitempty,min=1,max=32"`
 }
 
 type LoadBalancerPatchPayload struct {
-	Name      string `json:"name" binding:"required,min=2,max=32"`
-	Action    string `json:"action" binding:"omitempty,oneof=enable disable"`
+	Name   string `json:"name" binding:"required,min=2,max=32"`
+	Action string `json:"action" binding:"omitempty,oneof=enable disable"`
 }
 
 // @Summary get a loadBalancer
@@ -110,12 +110,12 @@ func (v *LoadBalancerAPI) Patch(c *gin.Context) {
 	}
 	logger.Debugf("Patching loadBalancer %s with %+v", uuID, payload)
 	/*
-	err = loadBalancerAdmin.Update(ctx, loadBalancer, payload.Name, payload.IsDefault)
-	if err != nil {
-		logger.Errorf("Failed to patch loadBalancer %s, %+v", uuID, err)
-		ErrorResponse(c, http.StatusBadRequest, "Patch load balancer failed", err)
-		return
-	}
+		err = loadBalancerAdmin.Update(ctx, loadBalancer, payload.Name, payload.IsDefault)
+		if err != nil {
+			logger.Errorf("Failed to patch loadBalancer %s, %+v", uuID, err)
+			ErrorResponse(c, http.StatusBadRequest, "Patch load balancer failed", err)
+			return
+		}
 	*/
 	loadBalancerResp, err := v.getLoadBalancerResponse(ctx, loadBalancer)
 	if err != nil {

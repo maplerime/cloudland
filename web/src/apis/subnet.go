@@ -338,7 +338,7 @@ func (v *SubnetAPI) List(c *gin.Context) {
 	offsetStr := c.DefaultQuery("offset", "0")
 	limitStr := c.DefaultQuery("limit", "50")
 	queryStr := c.DefaultQuery("query", "")
-	groupID := strings.TrimSpace(c.DefaultQuery("group_id", "")) // Retrieve group_id from query params
+	groupID := strings.TrimSpace(c.DefaultQuery("group_id", ""))         // Retrieve group_id from query params
 	ipGroupType := strings.TrimSpace(c.DefaultQuery("ipgroup_type", "")) // Filter by ipgroup type
 	offset, err := strconv.Atoi(offsetStr)
 	if err != nil {

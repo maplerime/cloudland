@@ -71,6 +71,7 @@ vrrp_instance load_balancer_${vrrp_ID} {
     virtual_ipaddress {
 EOF
 export ROUTES_FILE=$vrrp_dir/routes
+export KEEPALIVE_CONF=$vrrp_dir/keepalived.conf
 rm -f $ROUTES_FILE
 i=0
 while [ $i -lt $nvip ]; do

@@ -80,6 +80,7 @@
 									<th data-column="Bootable">{{.i18n.Tr "Bootable"}}</th>
 			                        <th data-column="AttachedAs">{{.i18n.Tr "Attached_as"}}</th>
 						{{ if $.IsAdmin }}
+						            <th data-column="Hyper">{{.i18n.Tr "Hyper"}}</th>
 			                        <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
 						{{ end }}
                                     <th data-column="Action">{{.i18n.Tr "Action"}}</th>
@@ -102,6 +103,7 @@
 									<td data-column="Bootable">{{.Booting}}</td>
 			                        <td data-column="AttachedAs">{{ if .Instance }} {{.Instance.ID}}-{{.Instance.Hostname}}:{{.Target}} {{ end }}</td>
 						{{ if $.IsAdmin }}
+						            <td data-column="Hyper">{{.Hyper}}</td>
 			                        <td data-column="Owner">{{.OwnerInfo.Name}}</td>
 						{{ end }}
 						            <td data-column="Action">

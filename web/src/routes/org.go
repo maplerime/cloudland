@@ -81,7 +81,7 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 		return
 	}
 	user.Owner = org.ID
-	err = db.Model(user).Updates(user).Error
+	err = db.Model(&model.User{}).Where("id = ?", user.ID).Updates(map[string]interface{}{"owner": org.ID}).Error
 	if err != nil {
 		logger.Error("DB failed to update user owner", err)
 		err = NewCLError(ErrUserUpdateFailed, "Failed to update user owner", err)

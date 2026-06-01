@@ -151,11 +151,14 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 
 	driver := GetVolumeDriver()
 	var poolRelation map[string]PoolRelationItem
-	if driver != "local" {
-		defaultPoolID := viper.GetString("volume.default_wds_pool_id")
-		if poolID == "" {
-			poolID = defaultPoolID
+	if poolID == "" {
+		if driver == "local" {
+			poolID = "local"
+		} else {
+			poolID = viper.GetString("volume.default_wds_pool_id")
 		}
+	}
+	if poolID != "local" {
 		poolIDs := []string{}
 		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
 		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
@@ -191,7 +194,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		}
 		total := 0
 
-		if driver == "local" {
+		if poolID == "local" {
 			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
 				logger.Error("Failed to query total instances with the image", err)
 				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
@@ -465,7 +468,7 @@ func (a *InstanceAdmin) Update(ctx context.Context, instance *model.Instance, ho
 	if instance.Hostname != hostname {
 		instance.Hostname = hostname
 	}
-	if err = db.Model(instance).Updates(instance).Error; err != nil {
+	if err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{"hostname": instance.Hostname}).Error; err != nil {
 		logger.Error("Failed to save instance", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 	}
@@ -680,7 +683,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
-	driver := GetVolumeDriver()
+	driver := bootVolume.GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
 	imageVolumeID := ""
 	total := 0
@@ -1312,12 +1315,6 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 					logger.Error("DB: delete boot volume failed", err)
 					return NewCLError(ErrBootVolumeDeleteFailed, "Delete boot volume failed", err)
 				}
-			} else {
-				_, err = volumeAdmin.Update(ctx, volume.ID, "", 0)
-				if err != nil {
-					logger.Error("Failed to detach volume, %v", err)
-					return
-				}
 			}
 		}
 		instance.Volumes = nil
@@ -1327,33 +1324,37 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	if cleanupErr := instanceAdmin.CleanupInstanceRuleLinks(ctx, instance.UUID); cleanupErr != nil {
 		logger.Error("Failed to cleanup rule links", cleanupErr)
 	}
+	instance.Status = model.InstanceStatusDeleting
+	err = db.Model(instance).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
+	if err != nil {
+		logger.Errorf("Failed to mark vm as deleting ", err)
+		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
+	}
+
+	// Cleanup ip whitelist entries for this instance
+	if cleanupErr := ipWhitelistAdmin.DeleteByInstanceUUID(ctx, instance.UUID); cleanupErr != nil {
+		logger.Error("Failed to cleanup ip whitelist entries", cleanupErr)
+	}
 
 	// Build imagePrefix for async snapshot cleanup (same rule as Create)
 	imagePrefix := ""
 	if instance.Image != nil {
 		imagePrefix = fmt.Sprintf("image-%d-%s", instance.Image.ID, strings.Split(instance.Image.UUID, "-")[0])
 	}
-
-	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	if instance.Hyper == -1 {
-		control = "toall="
-	}
 	moreAddrsJson, err := json.Marshal(moreAddresses)
 	if err != nil {
 		logger.Errorf("Failed to marshal sites info, %v", err)
 		return NewCLError(ErrJSONMarshalFailed, "Failed to marshal sites info", err)
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	if instance.Hyper == -1 {
+		control = "toall="
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)
 		return
-	}
-	instance.Status = model.InstanceStatusDeleting
-	err = db.Model(instance).Updates(instance).Error
-	if err != nil {
-		logger.Errorf("Failed to mark vm as deleting ", err)
-		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
 	}
 	return
 }

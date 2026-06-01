@@ -31,10 +31,23 @@
   ignore_errors: yes
   tags: [be_pkg]
 
+- name: install pyparsing
+  apt:
+    name: python3-pyparsing
+    state: present
+  ignore_errors: yes
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '>=')
+  tags: [be_pkg]
+
 - pip:
     name: pyparsing
     executable: pip3
   ignore_errors: yes
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '<')
   tags: [be_pkg]
 
 - name: creates cloudland directory
@@ -115,7 +128,7 @@
   tags: [be_conf, scripts, scripts_only]
 
 - name: register network_device
-  script: get_netdev.sh "{{ hostvars[inventory_hostname]['ansible_env'].SSH_CONNECTION.split(' ')[2] }}"
+  script: get_netdev.sh "{{ hostvars[inventory_hostname]['ansible_facts']['env']['SSH_CONNECTION'].split(' ')[2] }}"
   register: netdev
 
 - name: create cloudrc local file for kvm
@@ -185,6 +198,7 @@
     state: restarted
   with_items:
     - "scid"
+  when: not ansible_check_mode
   tags: [be_srv, sci, start_sci]
 
 - name: start cloudlet services
@@ -195,6 +209,7 @@
     state: restarted
   with_items:
     - "cloudlet"
+  when: not ansible_check_mode
   tags: [be_srv, cloudlet]
 
 - name: set compute libvirt service
@@ -205,6 +220,7 @@
     state: restarted
   with_items:
     - "libvirtd"
+  when: not ansible_check_mode
   tags: [be_srv]
 
 - name: undefine default libvirt network
@@ -231,6 +247,7 @@
     need_reboot: "{{ need_to_reboot.stdout_lines[0] }}"
   ansible.builtin.reboot:
   when:
+    - not ansible_check_mode
     - need_reboot == 'need_to_reboot'
     - inventory_hostname != ansible_hostname
   tags: [netplan]
@@ -243,6 +260,7 @@
     state: stopped
   with_items:
     - "systemd-networkd"
+  when: not ansible_check_mode
   tags: [be_srv, netplan]
 
 - name: Create .ssh directory if not exists
@@ -250,6 +268,7 @@
     path: ~/.ssh
     state: directory
     mode: "0700"
+  when: not ansible_check_mode
   tags: [ssh_key]
 
 - name: Add SSH public key to authorized_keys
@@ -257,6 +276,7 @@
     user: root
     state: present
     key: "{{ lookup('file', '/tmp/.ssh/cland.key.pub') }}"
+  when: not ansible_check_mode
   tags: [ssh_key]
 
 - name: Copy private key to target nodes
@@ -264,6 +284,7 @@
     src: /tmp/.ssh/cland.key
     dest: ~/.ssh/id_rsa
     mode: "0600"
+  when: not ansible_check_mode
   tags: [ssh_key]
 
 - name: Remove pub key if present

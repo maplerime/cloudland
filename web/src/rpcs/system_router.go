@@ -74,7 +74,7 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 		}
 	} else {
 		address := &model.Address{}
-		err = db.Preload("Subnet").Where("address = ?", hyper.RouteIP).Take(address).Error
+		err = db.Set("gorm:query_option", "FOR UPDATE").Preload("Subnet").Where("address = ?", hyper.RouteIP).Take(address).Error
 		if err != nil {
 			logger.Error("Failed to get hyper address", err)
 			return

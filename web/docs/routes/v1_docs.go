@@ -5843,6 +5843,9 @@ const docTemplatev1 = `{
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                },
+                "ssl": {
+                    "type": "boolean"
                 }
             }
         },
@@ -6583,10 +6586,16 @@ const docTemplatev1 = `{
                 "remark": {
                     "type": "string"
                 },
+                "route_ip": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "integer",
                     "maximum": 1,
                     "minimum": 0
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
                 },
                 "zone_id": {
                     "type": "integer",
@@ -8117,7 +8126,9 @@ const docTemplatev1 = `{
                     "enum": [
                         "tcp",
                         "udp",
-                        "icmp"
+                        "icmp",
+                        "gre",
+                        "ipv6"
                     ]
                 },
                 "remote_cidr": {
@@ -8794,6 +8805,9 @@ const docTemplatev1 = `{
                     "type": "integer",
                     "maximum": 16,
                     "minimum": 1
+                },
+                "instance": {
+                    "$ref": "#/definitions/common.BaseID"
                 },
                 "iops_burst": {
                     "type": "integer",

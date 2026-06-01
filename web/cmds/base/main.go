@@ -15,6 +15,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	"web/src/callback"
 	"web/src/routes"
 	"web/src/rpcs"
 	"web/src/scheduler"
@@ -43,7 +44,24 @@ func RunDaemon(cmd *cobra.Command, args []string) (err error) {
 	if err := scheduler.InitPlacementConfig("conf/placement.toml"); err != nil {
 		rlog.MustGetLogger("main").Errorf("Failed to init placement config: %v", err)
 	}
-	g, _ := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(context.Background())
+
+	// Initialize and start callback workers when enabled.
+	if callback.IsEnabled() {
+		if err := callback.ValidateConfig(); err != nil {
+			return err
+		}
+
+		// Initialize event queue.
+		queueSize := callback.GetQueueSize()
+		callback.InitQueue(queueSize)
+
+		// Start callback workers with the daemon lifecycle context.
+		workerCount := callback.GetWorkerCount()
+		callback.StartWorkers(ctx, workerCount)
+	}
+
+	// Start Web UI and RPC services.
 	g.Go(routes.Run)
 	g.Go(rpcs.Run)
 	return g.Wait()

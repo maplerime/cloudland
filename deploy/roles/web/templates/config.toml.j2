@@ -52,6 +52,18 @@ query_url = "{{ vm_query_url }}"
 import_url = "{{ vm_import_url }}"
 delete_url = "{{ vm_delete_url }}"
 
+[callback]
+enabled = {{ callback_enabled | default(false) | string | lower }}
+url = "{{ ps_api_endpoint }}"
+api_key = "{{ ps_api_key }}"
+region = "{{ region_name }}"
+tls_insecure_skip_verify = true
+workers = 3
+queue_size = 10000
+timeout = 30
+retry_max = 3
+retry_interval = 5
+
 [admin]
 password = "{{ admin_passwd }}"
 
