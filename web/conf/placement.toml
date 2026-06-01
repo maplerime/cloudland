@@ -13,6 +13,15 @@
 
 [placement]
 
+# enabled —— 全局 placement 总开关（默认 true）
+#
+# true：启用 placement 智能调度（filter_chain + weigher_chain）。
+# false：整个集群禁用 placement，所有 zone 的调度回退到 GetHyperGroup（SCI select=）。
+# 可被 per-zone 的 enabled 覆盖（见文件末尾 zone 配置）：例如全局 true、个别 zone 关闭。
+# ★ 注意：禁用应使用此开关，不要把 filter_chain / weigher_chain 设为空数组——
+#   空数组会被配置校验拒绝（filter_chain/weigher_chain must not be empty）。
+enabled = true
+
 # log2db —— 是否将调度决策记录到数据库
 #
 # true：每次调度决策都会记录到 placement_decisions 表
@@ -213,7 +222,11 @@ spread_multiplier = -1.0
 
 ##############################################################################
 # per-zone 覆盖配置
-# 格式：[placement.zone.<zone_id>]，zone_id 为 Cloudland 数据库中的 zone 整数 ID
+# 格式：[placement.zone.<zone_id>]，<zone_id> 必须是 Cloudland 数据库中 zone 的整数 ID。
+#   ⚠️ 必须用 zone 的整数 ID，不能用 zone 名称。
+#      例如 zone "local0" 的 ID=9，应写 [placement.zone.9]，而不是 [placement.zone.local0]。
+#      运行时按 strconv.FormatInt(zoneID) 转成字符串查表，用 zone 名会静默匹配不到、
+#      只打一条 Debug 日志并回退全局配置（不报错，容易误以为已生效）。
 # 只需写需要覆盖的字段，其余字段自动回退到全局配置
 # 修改后通过 /placement/reload 即可生效，无需重启服务
 # 查看某 zone 生效配置：GET /placement/config?zone_id=<zone_id>
@@ -256,3 +269,9 @@ fallback_filter = "overcommit"
 [placement.zone.2.overcommit]
 enabled = true
 vcpu_delta_ratio_pct = 10.0
+
+# zone ID=3 —— 禁用 placement 示例：该 zone 回退到旧的 GetHyperGroup（SCI select=）
+# [placement.zone.3]
+# enabled = false   # SelectHost 立即返回 ErrPlacementDisabled，调用方回退 GetHyperGroup
+# 其余字段（filter_chain 等）此时无意义，无需填写。
+# 切勿用空数组 filter_chain=[] / weigher_chain=[] 来"禁用"——会被校验拒绝。

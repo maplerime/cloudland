@@ -286,7 +286,12 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 				HugepageSizeKB: reqHugepageSizeKB,
 			})
 			if err != nil {
-				logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)
+				if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+					// Placement intentionally disabled for this zone — expected, not an error
+					logger.Infof("Placement disabled for zone %d, using GetHyperGroup for instance %d", zoneID, instance.ID)
+				} else {
+					logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)
+				}
 				selectedHyperID = -1
 				// Fall through to hyperGroup fallback below
 			}
@@ -561,6 +566,14 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 				HugepageSizeKB: reqHugepageSizeKB,
 			})
 			if err != nil {
+				if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+					// Placement is disabled for this zone, so resize auto-migration
+					// (which depends on placement to pick a target) is unavailable.
+					logger.Infof("Resize: placement disabled for zone %d, cannot auto-select migration target for instance %d", instance.ZoneID, instance.ID)
+					err = NewCLError(ErrInsufficientResource,
+						fmt.Sprintf("Current hyper has insufficient resources and placement is disabled for this zone, cannot auto-migrate: %v", validateErr), err)
+					return
+				}
 				logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
 				err = NewCLError(ErrInsufficientResource,
 					fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)

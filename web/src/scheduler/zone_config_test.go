@@ -7,7 +7,10 @@ SPDX-License-Identifier: Apache-2.0
 package scheduler
 
 import (
+	"context"
 	"testing"
+
+	. "web/src/common"
 )
 
 // ptr helpers to create pointer values inline
@@ -238,5 +241,74 @@ func TestDefaultConfig_NoZoneFilter(t *testing.T) {
 		if name == "zone" {
 			t.Errorf("defaultConfig FilterChain must not contain 'zone' (v2.1 design); got: %v", cfg.FilterChain)
 		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// placement enable switch (global + per-zone)
+// ---------------------------------------------------------------------------
+
+func TestDefaultConfig_EnabledByDefault(t *testing.T) {
+	cfg := defaultConfig()
+	if !cfg.Enabled {
+		t.Error("expected placement to be enabled by default")
+	}
+}
+
+func TestMergeZoneConfig_EnabledOverride(t *testing.T) {
+	global := defaultConfig()
+	zone := &ZonePlacementConfig{
+		Enabled: ptrBool(false),
+	}
+	merged := mergeZoneConfig(global, zone)
+	if merged.Enabled {
+		t.Error("expected merged.Enabled=false when zone disables placement")
+	}
+	// global must not be mutated
+	if !global.Enabled {
+		t.Error("global config must not be mutated by merge")
+	}
+}
+
+func TestMergeZoneConfig_EnabledInherited(t *testing.T) {
+	global := defaultConfig()
+	// zone does not set Enabled → inherit global (true)
+	merged := mergeZoneConfig(global, &ZonePlacementConfig{})
+	if !merged.Enabled {
+		t.Error("expected merged.Enabled to inherit global default (true)")
+	}
+}
+
+func TestResolveZoneConfig_ZoneDisabled(t *testing.T) {
+	makeTestSnapshot(map[string]*ZonePlacementConfig{
+		"1": {Enabled: ptrBool(false)},
+	})
+
+	cfg := ResolveZoneConfig(1)
+	if cfg.Enabled {
+		t.Error("expected resolved config for zone 1 to be disabled")
+	}
+}
+
+func TestSelectHost_ZoneDisabled(t *testing.T) {
+	cfg := defaultConfig()
+	cfg.Log2DB = false // avoid DB write in recordDecision (not reached, but defensive)
+	cfg.Zones = map[string]*ZonePlacementConfig{
+		"1": {Enabled: ptrBool(false)},
+	}
+	activeSnapshot.Store(buildSnapshot(cfg, "test"))
+
+	_, err := SelectHost(context.Background(), &PlacementRequest{
+		ZoneID: 1, VCPUs: 1, MemMB: 1024, DiskGB: 10,
+	})
+	if err == nil {
+		t.Fatal("expected error when placement is disabled for the zone")
+	}
+	clErr, ok := err.(*CLError)
+	if !ok {
+		t.Fatalf("expected *CLError, got %T: %v", err, err)
+	}
+	if clErr.Code != ErrPlacementDisabled {
+		t.Errorf("expected ErrPlacementDisabled (172006), got %d", clErr.Code)
 	}
 }

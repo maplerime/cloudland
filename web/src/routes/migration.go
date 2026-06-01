@@ -152,8 +152,14 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				HugepageSizeKB: reqHugepageSizeKB,
 			})
 			if schedErr != nil {
-				logger.Warningf("Scheduler failed for migration of instance %d, falling back to GetHyperGroup: %v",
-					instance.ID, schedErr)
+				if clErr, ok := schedErr.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+					// Placement intentionally disabled for this zone — expected, not an error
+					logger.Infof("Placement disabled for zone %d, using GetHyperGroup for migration of instance %d",
+						instance.ZoneID, instance.ID)
+				} else {
+					logger.Warningf("Scheduler failed for migration of instance %d, falling back to GetHyperGroup: %v",
+						instance.ID, schedErr)
+				}
 				var hyperGroup string
 				hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
 				if err != nil {
