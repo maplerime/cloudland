@@ -18,6 +18,7 @@ import (
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
+	"web/src/scheduler"
 
 	"github.com/go-macaron/session"
 	macaron "gopkg.in/macaron.v1"
@@ -58,6 +59,21 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			err = NewCLError(ErrHypervisorInvalidState, "Target hypervisor is in wrong state", nil)
 			logger.Error("Target hypervisor is in wrong state")
 			return
+		}
+		// Validate target hyper resources for each instance
+		for _, inst := range instances {
+			validateErr := scheduler.ValidateHostForVM(ctx, tgtHyper, &scheduler.PlacementRequest{
+				VCPUs:  inst.Cpu,
+				MemMB:  int64(inst.Memory),
+				DiskGB: int64(inst.Disk),
+				ZoneID: inst.ZoneID,
+			})
+			if validateErr != nil {
+				logger.Errorf("Target hyper %d has insufficient resources for instance %d: %v", tgtHyper, inst.ID, validateErr)
+				err = NewCLError(ErrPlacementInsufficientResource,
+					fmt.Sprintf("Target hyper %d has insufficient resources for instance %d", tgtHyper, inst.ID), validateErr)
+				return
+			}
 		}
 	}
 	for _, instance := range instances {
@@ -125,25 +141,43 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		poolID := bootVolume.GetVolumePoolID()
 		control := fmt.Sprintf("inter=%d", tgtHyper)
 		if tgtHyper == -1 {
-			var hyperGroup string
-			hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
-			if err != nil {
-				task1.Summary = "No qualified target"
-				task1.Status = "not_doing"
-				migration.Status = "not_doing"
-				mErr := db.Model(&model.Migration{}).Where("id = ?", migration.ID).Updates(map[string]interface{}{
-					"status": migration.Status,
-				}).Error
-				if mErr != nil {
-					logger.Error("Failed to update save migration, %v", mErr)
-					err = NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
-					return
+			// Try placement scheduler first, fallback to GetHyperGroup (SCI select=)
+			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
+			selectedHyperID, schedErr := scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+				VCPUs:          instance.Cpu,
+				MemMB:          int64(instance.Memory),
+				DiskGB:         int64(instance.Disk),
+				ZoneID:         instance.ZoneID,
+				ExcludeHypers:  []int32{instance.Hyper},
+				HugepageSizeKB: reqHugepageSizeKB,
+			})
+			if schedErr != nil {
+				logger.Warningf("Scheduler failed for migration of instance %d, falling back to GetHyperGroup: %v",
+					instance.ID, schedErr)
+				var hyperGroup string
+				hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
+				if err != nil {
+					task1.Summary = "No qualified target"
+					task1.Status = "not_doing"
+					migration.Status = "not_doing"
+					mErr := db.Model(&model.Migration{}).Where("id = ?", migration.ID).Updates(map[string]interface{}{
+						"status": migration.Status,
+					}).Error
+					if mErr != nil {
+						logger.Error("Failed to update save migration, %v", mErr)
+						err = NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
+						return
+					}
+					err = nil
+					continue
 				}
-				err = nil
-				continue
+				rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
+				control = "select=" + hyperGroup + " " + rcNeeded
+			} else {
+				migration.TargetHyper = selectedHyperID
+				control = fmt.Sprintf("inter=%d", selectedHyperID)
+				logger.Infof("Scheduler selected hyper %d for migration of instance %d", selectedHyperID, instance.ID)
 			}
-			rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-			control = "select=" + hyperGroup + " " + rcNeeded
 		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {

@@ -18,7 +18,12 @@ import (
 	"web/src/callback"
 	"web/src/routes"
 	"web/src/rpcs"
+	"web/src/scheduler"
 	rlog "web/src/utils/log"
+
+	// Register scheduler filters and weighers via init()
+	_ "web/src/scheduler/filters"
+	_ "web/src/scheduler/weighers"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -35,6 +40,10 @@ var (
 )
 
 func RunDaemon(cmd *cobra.Command, args []string) (err error) {
+	// Initialize placement scheduler config
+	if err := scheduler.InitPlacementConfig("conf/placement.toml"); err != nil {
+		rlog.MustGetLogger("main").Errorf("Failed to init placement config: %v", err)
+	}
 	g, ctx := errgroup.WithContext(context.Background())
 
 	// Initialize and start callback workers when enabled.
