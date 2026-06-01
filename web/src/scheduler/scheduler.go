@@ -42,6 +42,17 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	//    a reload without needing to re-start the service.
 	cfg := ResolveZoneConfig(req.ZoneID)
 
+	// Placement switch: when disabled for this zone (or globally), return a sentinel
+	// error immediately so callers fall back to GetHyperGroup (SCI select=). This is
+	// the supported way to disable placement — empty filter_chain/weigher_chain is
+	// rejected by config validation. Returning here (before the DecisionLog defer) keeps
+	// disabled zones out of the decision log.
+	if !cfg.Enabled {
+		logger.Debugf("SelectHost: placement disabled for zone_id=%d", req.ZoneID)
+		return -1, NewCLError(ErrPlacementDisabled,
+			fmt.Sprintf("placement disabled for zone_id=%d", req.ZoneID), nil)
+	}
+
 	// Initialize decision log
 	dlog := &DecisionLog{
 		Timestamp:    startTime,

@@ -9,6 +9,11 @@ package scheduler
 // ZonePlacementConfig is a per-zone override config.
 // All fields are pointers; nil means "not set, fall back to global value".
 type ZonePlacementConfig struct {
+	// Overrides global enabled switch if non-nil.
+	// false = placement is disabled for this zone; SelectHost returns
+	// ErrPlacementDisabled and callers fall back to GetHyperGroup.
+	Enabled *bool `mapstructure:"enabled"`
+
 	// Overrides global filter_chain if non-nil (whole list replaced, not appended)
 	FilterChain *[]string `mapstructure:"filter_chain"`
 
@@ -49,6 +54,10 @@ type ZonePlacementConfig struct {
 
 // PlacementConfig holds all scheduler configuration, loaded from placement.toml.
 type PlacementConfig struct {
+	// Global placement switch, default true. false = disable placement
+	// cluster-wide (every zone falls back to GetHyperGroup). Overridable per zone.
+	Enabled bool `mapstructure:"enabled"`
+
 	// Log placement decision to DB
 	Log2DB bool `mapstructure:"log2db"`
 	// Filter chain: executed in order, names correspond to RegisterFilter keys.
@@ -115,7 +124,8 @@ type PlacementRequest struct {
 
 func defaultConfig() *PlacementConfig {
 	cfg := &PlacementConfig{
-		Log2DB: true,
+		Enabled: true,
+		Log2DB:  true,
 		// "zone" filter removed: DB query already scopes hosts to the requested zone.
 		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity"},
 		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},

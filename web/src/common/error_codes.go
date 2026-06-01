@@ -275,11 +275,12 @@ const (
 
 	// Placement/Scheduler related errors (172xxx)
 	// Scheduler core errors (1720xx) — returned by SelectHost at runtime
-	ErrPlacementNotReady            ErrCode = 172001 // scheduler not initialized (no active config snapshot)
-	ErrPlacementNoHyperNodes        ErrCode = 172002 // no active hyper nodes found in the requested zone
-	ErrPlacementNoValidHost         ErrCode = 172003 // all candidate hosts eliminated by filter chain
-	ErrPlacementHostStateLoadFailed ErrCode = 172004 // failed to load host states from database
+	ErrPlacementNotReady             ErrCode = 172001 // scheduler not initialized (no active config snapshot)
+	ErrPlacementNoHyperNodes         ErrCode = 172002 // no active hyper nodes found in the requested zone
+	ErrPlacementNoValidHost          ErrCode = 172003 // all candidate hosts eliminated by filter chain
+	ErrPlacementHostStateLoadFailed  ErrCode = 172004 // failed to load host states from database
 	ErrPlacementInsufficientResource ErrCode = 172005 // specified hyper has insufficient resources for the VM
+	ErrPlacementDisabled             ErrCode = 172006 // placement disabled for this zone (or globally); caller falls back to GetHyperGroup
 
 	// Placement config errors (1721xx) — returned by InitPlacementConfig / ReloadConfig
 	ErrPlacementConfigNotInit     ErrCode = 172101 // ReloadConfig called before InitPlacementConfig

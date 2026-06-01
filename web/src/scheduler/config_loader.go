@@ -279,6 +279,10 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 	// Merged config does not carry the zones table (prevents recursive resolution)
 	merged.Zones = nil
 
+	if zone.Enabled != nil {
+		merged.Enabled = *zone.Enabled
+		logger.Debugf("mergeZoneConfig: override enabled=%v", merged.Enabled)
+	}
 	if zone.FilterChain != nil {
 		merged.FilterChain = *zone.FilterChain
 		logger.Debugf("mergeZoneConfig: override filter_chain=%v", merged.FilterChain)
