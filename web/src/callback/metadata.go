@@ -85,11 +85,6 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		IDArgIndex:   2,
 		ActionType:   ActionDetached,
 	},
-	"delete_volume": {
-		ResourceType: ResourceTypeVolume,
-		IDArgIndex:   1,
-		ActionType:   ActionDeleted,
-	},
 	"resize_volume": {
 		ResourceType: ResourceTypeVolume,
 		IDArgIndex:   1,
@@ -204,7 +199,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 	case ResourceTypeInstance:
 		return extractInstanceInfo(db, resourceID, metadata.ActionType == ActionDeleted)
 	case ResourceTypeVolume:
-		return extractVolumeInfo(db, resourceID, metadata.ActionType == ActionDeleted)
+		return extractVolumeInfo(db, resourceID)
 	case ResourceTypeImage:
 		return extractImageInfo(db, resourceID)
 	case ResourceTypeInterface:
@@ -279,18 +274,14 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool) (*Resourc
 	}, nil
 }
 
-func extractVolumeInfo(db *gorm.DB, resourceID int64, unscoped bool) (*ResourceChangeEvent, error) {
+func extractVolumeInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
 	traceID := fmt.Sprintf("vol-%d-%d", resourceID, time.Now().UnixNano())
 	start := time.Now()
 
 	row := &VolumeRow{}
-	logger.Debugf("[%s] extractVolumeInfo: unscoped=%v sql=%s args=[%d]", traceID, unscoped, compactSQL(sqlSelectVolumeByID), resourceID)
+	logger.Debugf("[%s] extractVolumeInfo: sql=%s args=[%d]", traceID, compactSQL(sqlSelectVolumeByID), resourceID)
 
-	query := db
-	if unscoped {
-		query = db.Unscoped()
-	}
-	if err := query.Raw(sqlSelectVolumeByID, resourceID).Scan(row).Error; err != nil {
+	if err := db.Raw(sqlSelectVolumeByID, resourceID).Scan(row).Error; err != nil {
 		logger.Errorf("[%s] extractVolumeInfo: query failed id=%d err=%v elapsed=%s",
 			traceID, resourceID, err, time.Since(start))
 		return nil, err
