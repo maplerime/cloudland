@@ -27,13 +27,13 @@ type VolumeRow struct {
 	Owner      int64
 	TenantUUID string `gorm:"column:tenant_uuid"`
 
-	Name       string
-	Status     string
-	Size       int32
-	InstanceID int64 `gorm:"column:instance_id"`
-	Target     string
-	Format     string
-	Path       string
+	Name         string
+	Status       string
+	Size         int32
+	InstanceUUID string `gorm:"column:instance_uuid"`
+	Target       string
+	Format       string
+	Path         string
 }
 
 type ImageRow struct {
@@ -56,9 +56,16 @@ type InterfaceRow struct {
 	Owner      int64
 	TenantUUID string `gorm:"column:tenant_uuid"`
 
-	Name     string
-	MacAddr  string `gorm:"column:mac_addr"`
-	Instance int64  `gorm:"column:instance"`
-	Hyper    int32
-	Type     string
+	Name         string
+	MacAddr      string `gorm:"column:mac_addr"`
+	InstanceUUID string `gorm:"column:instance_uuid"`
+	Hyper        int32
+	Type         string
+
+	PrimaryIf  bool   `gorm:"column:primary_if"`
+	Inbound    int32  `gorm:"column:inbound"`
+	Outbound   int32  `gorm:"column:outbound"`
+	IpAddress  string `gorm:"column:ip_address"`
+	SubnetUUID string `gorm:"column:subnet_uuid"`
+	SubnetName string `gorm:"column:subnet_name"`
 }
