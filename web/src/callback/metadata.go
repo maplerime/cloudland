@@ -43,6 +43,11 @@ var commandMetadataRegistry = map[string]*ResourceMetadata{
 		IDArgIndex:   1,
 		ActionType:   ActionStateChanged,
 	},
+	"clear_vm": {
+		ResourceType: ResourceTypeInstance,
+		IDArgIndex:   1,
+		ActionType:   ActionDeleted,
+	},
 	"migrate_vm": {
 		ResourceType: ResourceTypeInstance,
 		IDArgIndex:   3,
@@ -192,7 +197,7 @@ func defaultExtractor(ctx context.Context, metadata *ResourceMetadata, args []st
 
 	switch metadata.ResourceType {
 	case ResourceTypeInstance:
-		return extractInstanceInfo(db, resourceID)
+		return extractInstanceInfo(db, resourceID, metadata.ActionType == ActionDeleted)
 	case ResourceTypeVolume:
 		return extractVolumeInfo(db, resourceID)
 	case ResourceTypeImage:
@@ -218,14 +223,18 @@ func compactSQL(s string) string {
 
 // --------------------- Extractors for different resource types (Raw + join org uuid) ---------------------
 
-func extractInstanceInfo(db *gorm.DB, resourceID int64) (*ResourceChangeEvent, error) {
+func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool) (*ResourceChangeEvent, error) {
 	traceID := fmt.Sprintf("inst-%d-%d", resourceID, time.Now().UnixNano())
 	start := time.Now()
 
 	row := &InstanceRow{}
-	logger.Debugf("[%s] extractInstanceInfo: sql=%s args=[%d]", traceID, compactSQL(sqlSelectInstanceByID), resourceID)
+	logger.Debugf("[%s] extractInstanceInfo: unscoped=%v sql=%s args=[%d]", traceID, unscoped, compactSQL(sqlSelectInstanceByID), resourceID)
 
-	if err := db.Raw(sqlSelectInstanceByID, resourceID).Scan(row).Error; err != nil {
+	query := db
+	if unscoped {
+		query = db.Unscoped()
+	}
+	if err := query.Raw(sqlSelectInstanceByID, resourceID).Scan(row).Error; err != nil {
 		logger.Errorf("[%s] extractInstanceInfo: query failed id=%d err=%v elapsed=%s",
 			traceID, resourceID, err, time.Since(start))
 		return nil, err
