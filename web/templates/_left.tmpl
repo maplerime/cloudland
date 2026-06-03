@@ -10,6 +10,9 @@
         <a {{ if eq .Link "/keys" }} class="active item" {{ else }} class="item" {{ end }} href="/keys">
             {{.i18n.Tr "Keys"}}
         </a>
+        <a {{ if eq .Link "/api_keys" }} class="active item" {{ else }} class="item" {{ end }} href="/api_keys">
+            {{.i18n.Tr "API_Keys"}}
+        </a>
         <a {{ if eq .Link "/dictionaries" }} class="active item" {{ else }} class="item" {{ end }} href="/dictionaries">
             {{.i18n.Tr "Dictionaries"}}
         </a>

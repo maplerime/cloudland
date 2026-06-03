@@ -1,0 +1,47 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+            {{template "_left" .}}
+            <div class="user signup">
+                <div class="ui middle very relaxed page grid">
+                    <div class="">
+                        <form class="ui form" action="{{.Link}}" method="post">
+                            <h3 class="ui top attached header">
+                                {{.i18n.Tr "Edit API Key"}}
+                            </h3>
+                            <div class="ui attached segment">
+                                <div class="inline field">
+                                    <label>{{.i18n.Tr "Name"}}</label>
+                                    <input type="text" readonly value="{{.APIKey.Name}}">
+                                </div>
+                                <div class="inline field">
+                                    <label>{{.i18n.Tr "UUID"}}</label>
+                                    <input type="text" readonly value="{{.APIKey.UUID}}">
+                                </div>
+                                <div class="inline field">
+                                    <label for="disabled">{{.i18n.Tr "Disabled"}}</label>
+                                    <div class="ui selection dropdown">
+                                        <input id="disabled" name="disabled" type="hidden" value="{{ if .APIKey.Disabled }}true{{ else }}false{{ end }}">
+                                        <i class="dropdown icon"></i>
+                                        <div class="default text">{{ if .APIKey.Disabled }}{{$.i18n.Tr "Disabled"}}{{ else }}{{$.i18n.Tr "Enabled"}}{{ end }}</div>
+                                        <div class="menu">
+                                            <div class="item" data-value="false" data-text="Enabled">{{.i18n.Tr "Enabled"}}</div>
+                                            <div class="item" data-value="true" data-text="Disabled">{{.i18n.Tr "Disabled"}}</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="inline field">
+                                    <label></label>
+                                    <button class="ui green button">{{.i18n.Tr "Update"}}</button>
+                                    <a class="ui button" href="/api_keys">{{.i18n.Tr "Cancel"}}</a>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{{template "_footer" .}}

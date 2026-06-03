@@ -10,18 +10,28 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-macaron/session"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	macaron "gopkg.in/macaron.v1"
 
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
 )
 
+var (
+	apiKeyAdmin = &APIKeyAdmin{}
+	apiKeyView  = &APIKeyView{}
+)
+
 type APIKeyAdmin struct{}
+type APIKeyView struct{}
 
 // GenerateAPIKey creates a new key in format cl_<uuid>_<32-byte-hex>.
 // Returns full plain-text key (show once), UUID lookup key, and bcrypt hash.
@@ -213,4 +223,135 @@ func (a *APIKeyAdmin) ValidateAPIKey(fullKey string) (apiKey *model.APIKey, err 
 		return
 	}
 	return
+}
+
+func (v *APIKeyView) List(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	if !memberShip.CheckPermission(model.Reader) {
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	listConfig, offset, limit := GetPaginationParams(c, "api_keys")
+	order := c.QueryTrim("order")
+	if order == "" {
+		order = "-created_at"
+	}
+	query := c.QueryTrim("q")
+	total, keys, err := apiKeyAdmin.List(c.Req.Context(), offset, limit, order, query)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
+	c.Data["APIKeys"] = keys
+	c.Data["Query"] = query
+	SetPaginationData(c, "api_keys", total, limit, offset, listConfig,
+		`["Name", "ExpiresAt", "Disabled", "CreatedAt", "Action"]`,
+		[]string{"UUID", "Name", "ExpiresAt", "Disabled", "CreatedAt", "Action"})
+	c.HTML(200, "api_keys")
+}
+
+func (v *APIKeyView) New(c *macaron.Context, store session.Store) {
+	memberShip := GetMemberShip(c.Req.Context())
+	if !memberShip.CheckPermission(model.Writer) {
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.HTML(200, "api_keys_new")
+}
+
+func (v *APIKeyView) Create(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Writer) {
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	name := c.QueryTrim("name")
+	description := c.QueryTrim("description")
+	expiresAtStr := c.QueryTrim("expires_at")
+	var expiresAt *time.Time
+	if expiresAtStr != "" {
+		t, err := time.Parse(TimeStringForMat, expiresAtStr)
+		if err != nil {
+			c.Data["ErrorMsg"] = "Invalid expires_at format, expected: " + TimeStringForMat
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		expiresAt = &t
+	}
+	apiKey, plainKey, err := apiKeyAdmin.Create(ctx, name, description, expiresAt)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(500, "500")
+		return
+	}
+	c.Data["APIKey"] = apiKey
+	c.Data["PlainKey"] = plainKey
+	c.HTML(200, "api_keys_created")
+}
+
+func (v *APIKeyView) Edit(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Writer) {
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	uuID := c.Params("id")
+	apiKey, err := apiKeyAdmin.GetByUUID(ctx, uuID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Data["APIKey"] = apiKey
+	c.HTML(200, "api_keys_patch")
+}
+
+func (v *APIKeyView) Patch(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Writer) {
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	uuID := c.Params("id")
+	disabledStr := c.QueryTrim("disabled")
+	disabled, err := strconv.ParseBool(disabledStr)
+	if err != nil {
+		c.Data["ErrorMsg"] = "Invalid disabled value"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	_, err = apiKeyAdmin.Update(ctx, uuID, disabled)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect("../api_keys")
+}
+
+func (v *APIKeyView) Delete(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	uuID := c.Params("id")
+	if uuID == "" {
+		c.Data["ErrorMsg"] = "ID is empty"
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	if err := apiKeyAdmin.Delete(ctx, uuID); err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.Error(http.StatusBadRequest)
+		return
+	}
+	c.JSON(200, map[string]interface{}{
+		"redirect": "api_keys",
+	})
 }

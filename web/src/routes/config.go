@@ -270,6 +270,20 @@ var GlobalListConfigs = map[string]ListConfig{
 		DefaultLimit: 20,
 		PageSizes:    []int64{10, 20, 50, 100},
 	},
+	"api_keys": {
+		Name: "api_keys",
+		FilterFields: []FilterField{
+			{
+				Name:        "name",
+				Label:       "Key Name",
+				Type:        "text",
+				Options:     []string{},
+				Placeholder: "Enter Key Name",
+			},
+		},
+		DefaultLimit: 20,
+		PageSizes:    []int64{10, 20, 50, 100},
+	},
 	"floatingips": {
 		Name: "floatingips",
 		FilterFields: []FilterField{
