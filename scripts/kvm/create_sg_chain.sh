@@ -56,7 +56,7 @@ if [ "$allow_spoofing" != true ] && [ $naddrs -gt 0 ]; then
     done
 fi
 
-./limit_arp_rate.sh $vnic add $ip_count
+#./limit_arp_rate.sh $vnic add $ip_count
 
 apply_fw -N $chain_out
 apply_fw -F $chain_out
