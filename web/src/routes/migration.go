@@ -60,21 +60,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Error("Target hypervisor is in wrong state")
 			return
 		}
-		// Validate target hyper resources for each instance
-		for _, inst := range instances {
-			validateErr := scheduler.ValidateHostForVM(ctx, tgtHyper, &scheduler.PlacementRequest{
-				VCPUs:  inst.Cpu,
-				MemMB:  int64(inst.Memory),
-				DiskGB: int64(inst.Disk),
-				ZoneID: inst.ZoneID,
-			})
-			if validateErr != nil {
-				logger.Errorf("Target hyper %d has insufficient resources for instance %d: %v", tgtHyper, inst.ID, validateErr)
-				err = NewCLError(ErrPlacementInsufficientResource,
-					fmt.Sprintf("Target hyper %d has insufficient resources for instance %d", tgtHyper, inst.ID), validateErr)
-				return
-			}
-		}
 	}
 	for _, instance := range instances {
 		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
