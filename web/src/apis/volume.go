@@ -22,6 +22,7 @@ import (
 
 var volumeAPI = &VolumeAPI{}
 var volumeAdmin = &routes.VolumeAdmin{}
+var backupAdmin = &routes.BackupAdmin{}
 
 type VolumeAPI struct{}
 

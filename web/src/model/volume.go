@@ -52,7 +52,7 @@ const (
 
 type Volume struct {
 	Model
-	Owner int64  `gorm:"default:1","index"` /* The organization ID of the resource */
+	Owner int64  `gorm:"default:1";"index"` /* The organization ID of the resource */
 	Name  string `gorm:"type:varchar(128)"`
 	/*
 		The path of the volume, format is:
@@ -226,4 +226,14 @@ func parseOriginID(path string, id string) string {
 
 func init() {
 	dbs.AutoMigrate(&Volume{}, &VolumeBackup{})
+}
+
+type ScheduledVolumeBackup struct {
+	Model
+	Owner      int64 `gorm:"default:1;index"` /* The organization ID of the resource */
+	VolumeID   int64
+	Volume     *Volume `gorm:"foreignkey:VolumeID; index"`
+	BackupType string  `gorm:"type:varchar(32)"` // snapshot or backup
+	Status     string  `gorm:"type:varchar(32)"` // disabled, active
+	WDSTaskID  string  `gorm:"type:varchar(64)"`
 }

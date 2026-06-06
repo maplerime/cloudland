@@ -38,8 +38,17 @@ func (a *BackupAdmin) CreateBackupByID(ctx context.Context, volumeID int64, pool
 		logger.Error("Failed to get volume", err)
 		return
 	}
-	// check the permission
-	return a.createBackup(ctx, volume, poolID, name)
+	return a.createBackup(ctx, volume, poolID, name, model.TaskSourceManual)
+}
+
+func (a *BackupAdmin) CreateBackupByIDForScheduler(ctx context.Context, volumeID int64, poolID string, name string) (backup *model.VolumeBackup, err error) {
+	logger.Debugf("Scheduler backup volume by ID %d to pool %s", volumeID, poolID)
+	volume, err := volumeAdmin.Get(ctx, volumeID)
+	if err != nil {
+		logger.Error("Failed to get volume", err)
+		return
+	}
+	return a.createBackup(ctx, volume, poolID, name, model.TaskSourceScheduler)
 }
 
 func (a *BackupAdmin) CreateBackupByUUID(ctx context.Context, uuid string, poolID string, name string) (backup *model.VolumeBackup, err error) {
@@ -49,11 +58,10 @@ func (a *BackupAdmin) CreateBackupByUUID(ctx context.Context, uuid string, poolI
 		logger.Error("Failed to get volume", err)
 		return
 	}
-	// check the permission
-	return a.createBackup(ctx, volume, poolID, name)
+	return a.createBackup(ctx, volume, poolID, name, model.TaskSourceManual)
 }
 
-func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, poolID string, name string) (backup *model.VolumeBackup, err error) {
+func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, poolID string, name string, source model.TaskSource) (backup *model.VolumeBackup, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
 	if !permit {
@@ -80,7 +88,7 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		return
 	}
 
-	backup, task, err := a.createBackupModel(ctx, name, "backup", volume, "")
+	backup, task, err := a.createBackupModel(ctx, name, "backup", volume, "", source)
 	if err != nil {
 		logger.Errorf("Failed to create backup record for volume(%s), %+v", volume.UUID, err)
 		err = NewCLError(ErrDatabaseError, "Failed to create backup record", err)
@@ -153,7 +161,17 @@ func (a *BackupAdmin) CreateSnapshotByID(ctx context.Context, volumeID int64, na
 		logger.Error("Failed to get volume", err)
 		return
 	}
-	return a.createSnapshot(ctx, name, volume)
+	return a.createSnapshot(ctx, name, volume, model.TaskSourceManual)
+}
+
+func (a *BackupAdmin) CreateSnapshotByIDForScheduler(ctx context.Context, volumeID int64, name string) (backup *model.VolumeBackup, err error) {
+	logger.Debugf("Scheduler snapshot volume by ID %d", volumeID)
+	volume, err := volumeAdmin.Get(ctx, volumeID)
+	if err != nil {
+		logger.Error("Failed to get volume", err)
+		return
+	}
+	return a.createSnapshot(ctx, name, volume, model.TaskSourceScheduler)
 }
 
 func (a *BackupAdmin) CreateSnapshotByUUID(ctx context.Context, uuid, name string) (backup *model.VolumeBackup, err error) {
@@ -163,10 +181,10 @@ func (a *BackupAdmin) CreateSnapshotByUUID(ctx context.Context, uuid, name strin
 		logger.Error("Failed to get volume", err)
 		return
 	}
-	return a.createSnapshot(ctx, name, volume)
+	return a.createSnapshot(ctx, name, volume, model.TaskSourceManual)
 }
 
-func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *model.Volume) (snapshot *model.VolumeBackup, err error) {
+func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *model.Volume, source model.TaskSource) (snapshot *model.VolumeBackup, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
 	if !permit {
@@ -185,7 +203,7 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 		err = NewCLError(ErrVolumeIsBusy, msg, nil)
 		return
 	}
-	snapshot, task, err := a.createBackupModel(ctx, name, "snapshot", volume, "")
+	snapshot, task, err := a.createBackupModel(ctx, name, "snapshot", volume, "", source)
 	if err != nil {
 		logger.Error("Failed to create snapshot", err)
 		err = NewCLError(ErrDatabaseError, "Failed to create snapshot record", err)
@@ -217,7 +235,7 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 	return
 }
 
-func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType string, volume *model.Volume, poolID string) (backup *model.VolumeBackup, task *model.Task, err error) {
+func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType string, volume *model.Volume, poolID string, source model.TaskSource) (backup *model.VolumeBackup, task *model.Task, err error) {
 	logger.Debugf("Creating backup model for volume %s", volume.UUID)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -239,13 +257,17 @@ func (a *BackupAdmin) createBackupModel(ctx context.Context, name, backupType st
 		return
 	}
 	backup.Volume = volume
+	action := model.TaskActionBackup
+	if backupType == "snapshot" {
+		action = model.TaskActionSnapshot
+	}
 	task = &model.Task{
 		Owner:     memberShip.OrgID,
 		Name:      fmt.Sprintf("create_%s_%s", backupType, volume.UUID),
 		Summary:   fmt.Sprintf("Taking %s(%s [%d]) for volume %s to pool %s", backupType, name, backup.ID, volume.UUID, poolID),
 		Status:    model.TaskStatusRunning,
-		Source:    model.TaskSourceManual,
-		Action:    model.TaskActionBackup,
+		Source:    source,
+		Action:    action,
 		Resources: fmt.Sprintf(`["%d"]`, backup.ID),
 	}
 	err = db.Create(task).Error

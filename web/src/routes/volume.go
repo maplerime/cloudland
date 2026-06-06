@@ -1155,3 +1155,31 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 		c.Redirect(redirectTo)
 	}
 }
+
+func (a *VolumeAdmin) Restore(ctx context.Context, volume *model.Volume, backup *model.VolumeBackup) (err error) {
+	logger.Debugf("Restore volume %s from backup %s", volume.UUID, backup.UUID)
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	if !permit {
+		logger.Errorf("Not authorized to restore volume(%s)", volume.UUID)
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	control := fmt.Sprintf("inter=")
+	vol_driver := volume.GetVolumeDriver()
+	if vol_driver != "local" {
+		volume_wds_uuid := volume.GetOriginVolumeID()
+		snapshot_wds_uuid := backup.GetOriginBackupID()
+		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/vol_restore_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, volume_wds_uuid, snapshot_wds_uuid)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Restore volume execution failed", err)
+			return
+		}
+	} else {
+		logger.Error("Restore not supported for local volume")
+		err = fmt.Errorf("Restore not supported for local volume")
+		return
+	}
+	return
+}

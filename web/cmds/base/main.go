@@ -64,6 +64,7 @@ func RunDaemon(cmd *cobra.Command, args []string) (err error) {
 	// Start Web UI and RPC services.
 	g.Go(routes.Run)
 	g.Go(rpcs.Run)
+	g.Go(routes.RunScheduler)
 	return g.Wait()
 }
 
