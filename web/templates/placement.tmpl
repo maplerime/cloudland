@@ -74,11 +74,19 @@
                     <div class="ui attached table segment">
                         <table class="ui very basic definition table">
                             <tbody>
-                                <tr><td>Hugepage</td><td>{{.PlacementConfig.Weighers.HugepageMultiplier}}</td></tr>
-                                <tr><td>RAM</td><td>{{.PlacementConfig.Weighers.RAMMultiplier}}</td></tr>
-                                <tr><td>CPU Load</td><td>{{.PlacementConfig.Weighers.CPULoadMultiplier}}</td></tr>
-                                <tr><td>Overcommit Penalty</td><td>{{.PlacementConfig.Weighers.OvercommitPenaltyMultiplier}}</td></tr>
-                                <tr><td>Spread</td><td>{{.PlacementConfig.Weighers.SpreadMultiplier}}</td></tr>
+                                {{range .PlacementConfig.WeigherChain}}
+                                <tr>
+                                    <td>{{.}}</td>
+                                    <td>
+                                        {{if eq . "hugepage"}}{{$.PlacementConfig.Weighers.HugepageMultiplier}}
+                                        {{else if eq . "ram"}}{{$.PlacementConfig.Weighers.RAMMultiplier}}
+                                        {{else if eq . "cpu_load"}}{{$.PlacementConfig.Weighers.CPULoadMultiplier}}
+                                        {{else if eq . "overcommit_penalty"}}{{$.PlacementConfig.Weighers.OvercommitPenaltyMultiplier}}
+                                        {{else if eq . "spread"}}{{$.PlacementConfig.Weighers.SpreadMultiplier}}
+                                        {{else}}—{{end}}
+                                    </td>
+                                </tr>
+                                {{end}}
                             </tbody>
                         </table>
                     </div>
