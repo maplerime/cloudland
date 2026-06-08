@@ -18,8 +18,10 @@ LIMIT 1
 const sqlSelectVolumeByID = `
 	SELECT v.id, v.uuid, v.owner, v.name, v.status, v.size,
 			v.instance_id, v.target, v.format, v.path,
+			i.uuid AS instance_uuid,
 			o.uuid AS tenant_uuid
 	FROM volumes v
+	LEFT JOIN instances i ON i.id = v.instance_id
 	LEFT JOIN organizations o ON o.id = v.owner
 	WHERE v.id = ?
 `
@@ -37,8 +39,15 @@ LIMIT 1
 const sqlSelectInterfaceByID = `
 SELECT n.id, n.uuid, n.owner,
 		n.name, n.mac_addr, n.instance, n.hyper, n.type,
-		o.uuid AS tenant_uuid
+		n.primary_if, n.inbound, n.outbound,
+		a.address AS ip_address,
+		s.uuid   AS subnet_uuid, s.name AS subnet_name,
+		i.uuid   AS instance_uuid,
+		o.uuid   AS tenant_uuid
 FROM interfaces n
+LEFT JOIN instances i      ON i.id = n.instance
+LEFT JOIN addresses a      ON a.interface = n.id AND a.allocated = true
+LEFT JOIN subnets    s     ON s.id = a.subnet_id
 LEFT JOIN organizations o ON o.id = n.owner
 WHERE n.instance = ? AND n.mac_addr = ?
 LIMIT 1 
