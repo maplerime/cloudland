@@ -13,6 +13,7 @@ import (
 	"time"
 
 	. "web/src/common"
+	"web/src/model"
 
 	"github.com/jinzhu/gorm"
 )
@@ -221,6 +222,16 @@ func compactSQL(s string) string {
 	return strings.TrimSpace(s)
 }
 
+func enrichMigrationMetadata(data map[string]interface{}, migration *model.Migration) {
+	if data == nil || migration == nil {
+		return
+	}
+	data["force"] = migration.Force
+	if migration.Type != "" {
+		data["migration_type"] = migration.Type
+	}
+}
+
 // --------------------- Extractors for different resource types (Raw + join org uuid) ---------------------
 
 func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []string, actionType string) (*ResourceChangeEvent, error) {
@@ -274,7 +285,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 		"disk":     row.Disk,
 	}
 
-	// Migration event: enrich with source / target hyper hostnames.
+	// Migration event: enrich with source / target hyper hostnames and migration flags.
 	if actionType == ActionMigrated && len(args) > 1 {
 		if migrationID, err := strconv.ParseInt(args[1], 10, 64); err == nil {
 			type migRow struct {
@@ -286,6 +297,12 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 			if err := db.Raw(qMig, migrationID).Scan(mr).Error; err != nil {
 				logger.Warningf("[%s] extractInstanceInfo: migration query failed id=%d: %v", traceID, migrationID, err)
 			} else {
+				if mr.TargetHyper <= 0 && len(args) > 4 {
+					if fallbackHyperID, parseErr := strconv.ParseInt(args[4], 10, 64); parseErr == nil {
+						mr.TargetHyper = int32(fallbackHyperID)
+					}
+				}
+
 				type hyperName struct {
 					Hostname string
 				}
@@ -308,6 +325,18 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 					}
 				}
 				logger.Debugf("[%s] extractInstanceInfo: migration nodes source=%v target=%v", traceID, data["source_node"], data["target_node"])
+			}
+
+			// Enrich migration metadata (force / type) — non-blocking, best-effort.
+			type migMeta struct {
+				Force bool
+				Type  string
+			}
+			mm := &migMeta{}
+			if err := db.Raw(`SELECT force, type FROM migrations WHERE id = ? LIMIT 1`, migrationID).Scan(mm).Error; err != nil {
+				logger.Warningf("[%s] extractInstanceInfo: migration metadata query failed id=%d: %v", traceID, migrationID, err)
+			} else {
+				enrichMigrationMetadata(data, &model.Migration{Force: mm.Force, Type: mm.Type})
 			}
 		}
 	}
