@@ -275,3 +275,13 @@ vcpu_delta_ratio_pct = 10.0
 # enabled = false   # SelectHost 立即返回 ErrPlacementDisabled，调用方回退 GetHyperGroup
 # 其余字段（filter_chain 等）此时无意义，无需填写。
 # 切勿用空数组 filter_chain=[] / weigher_chain=[] 来"禁用"——会被校验拒绝。
+
+##############################################################################
+#
+# Disable placement for specific zone
+#
+##############################################################################
+
+# zone ID=11 —— local disk zone, placement disabled
+[placement.zone.11]
+enabled = true

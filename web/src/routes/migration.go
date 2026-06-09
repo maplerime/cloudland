@@ -137,17 +137,30 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				HugepageSizeKB: reqHugepageSizeKB,
 			})
 			if schedErr != nil {
+				needFallBack := false
+				markTaskFail := false
 				if clErr, ok := schedErr.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
 					// Placement intentionally disabled for this zone — expected, not an error
 					logger.Infof("Placement disabled for zone %d, using GetHyperGroup for migration of instance %d",
 						instance.ZoneID, instance.ID)
+					needFallBack = true
 				} else {
-					logger.Warningf("Scheduler failed for migration of instance %d, falling back to GetHyperGroup: %v",
-						instance.ID, schedErr)
+					logger.Warningf("Scheduler failed for migration of instance %d, should mark migration task %d not_doing: %v",
+						instance.ID, migration.ID, schedErr)
+					markTaskFail = true
 				}
-				var hyperGroup string
-				hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
-				if err != nil {
+				if needFallBack {
+					var hyperGroup string
+					hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
+					if err != nil {
+						logger.Errorf("GetHyperGroup failed for migration of instance %d, should mark migration task %d not_doing, error: %v", instance.ID, migration.ID, err)
+						markTaskFail = true
+					} else {
+						rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
+						control = "select=" + hyperGroup + " " + rcNeeded
+					}
+				}
+				if markTaskFail {
 					task1.Summary = "No qualified target"
 					task1.Status = "not_doing"
 					migration.Status = "not_doing"
@@ -162,8 +175,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 					err = nil
 					continue
 				}
-				rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-				control = "select=" + hyperGroup + " " + rcNeeded
 			} else {
 				migration.TargetHyper = selectedHyperID
 				control = fmt.Sprintf("inter=%d", selectedHyperID)
