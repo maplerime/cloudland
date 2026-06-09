@@ -28,10 +28,10 @@ apply_fw -D secgroup-chain -m physdev --physdev-out $vnic --physdev-is-bridged -
 apply_fw -D secgroup-chain -m physdev --physdev-in $vnic --physdev-is-bridged -j $chain_out
 apply_fw -D INPUT -m physdev --physdev-in $vnic --physdev-is-bridged -j $chain_out
 
-# ebtables: remove all ARP filtering rules for this vnic
-ebtables -L FORWARD 2>/dev/null | grep "^-p ARP -i ${vnic} " | while IFS= read -r rule; do
-    ebtables -D FORWARD $rule 2>/dev/null
-done
+# nftables: remove ARP filtering for this vnic
+nft delete element bridge cloudland arp_dispatch { $vnic } 2>/dev/null
+nft delete chain bridge cloudland arp-$vnic 2>/dev/null
+nft delete set bridge cloudland set-$vnic 2>/dev/null
 
 # tc: remove ARP rate limiter
 ../../kvm/limit_arp_rate.sh $vnic delete
