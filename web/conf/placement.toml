@@ -284,4 +284,4 @@ vcpu_delta_ratio_pct = 10.0
 
 # zone ID=11 —— local disk zone, placement disabled
 [placement.zone.11]
-enabled = true
+enabled = false
