@@ -33,9 +33,6 @@ nft delete element bridge cloudland arp_dispatch { $vnic } 2>/dev/null
 nft delete chain bridge cloudland arp-$vnic 2>/dev/null
 nft delete set bridge cloudland set-$vnic 2>/dev/null
 
-# tc: remove ARP rate limiter
-../../kvm/limit_arp_rate.sh $vnic delete
-
 apply_fw -F $chain_in
 apply_fw -F $chain_as
 apply_fw -F $chain_out
