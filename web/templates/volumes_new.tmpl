@@ -38,6 +38,21 @@
                                     </div>
                                 </div>
 								<div class="inline field">
+									<label for="instance_id">{{.i18n.Tr "Attached to Instance"}}</label>
+									<div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
+										<input type="text" id="instanceSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
+										<i class="search icon link" onclick="$('#instanceSearch').trigger('input')"></i>
+									</div>
+									<div class="ui selection dropdown" id="instanceDropdown">
+									  <input id="instance_id" name="instance_id" type="hidden">
+									  <i class="dropdown icon"></i>
+									  <div data-value=0 class="default text">{{.i18n.Tr "Not Attached at All"}}</div>
+									  <div class="menu" id="instanceMenu">
+										<div class="item" data-value=0 data-text="Not Attached at All">{{.i18n.Tr "Not Attached at All"}}</div>
+									  </div>
+									</div>
+								</div>
+								<div class="inline field">
 									<label></label>
 									<button class="ui green button">{{.i18n.Tr "Create New Volume"}}</button>
 								</div>
@@ -49,5 +64,30 @@
 		</div>
 	</div>
 </div>
+<script>
+(function(){
+    var timer;
+    $('#instanceSearch').on('input', function(){
+        var q = $(this).val();
+        clearTimeout(timer);
+        timer = setTimeout(function(){
+            $.getJSON('/instances/search.json', {q: q}, function(data){
+                var menu = document.getElementById('instanceMenu');
+                var currentVal = $('#instanceDropdown').dropdown('get value');
+                var html = '<div class="item" data-value="0">Not Attached at All</div>';
+                if (data.results) {
+                    for (var i = 0; i < data.results.length; i++) {
+                        var r = data.results[i];
+                        html += '<div class="item" data-value="' + r.value + '">' + r.name + '</div>';
+                    }
+                }
+                menu.innerHTML = html;
+                $('#instanceDropdown').dropdown('refresh');
+                if (currentVal) $('#instanceDropdown').dropdown('set selected', currentVal);
+            });
+        }, 300);
+    });
+})();
+</script>
 {{template "_footer" .}}
 

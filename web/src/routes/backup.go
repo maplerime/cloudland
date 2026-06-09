@@ -98,7 +98,11 @@ func (a *BackupAdmin) createBackup(ctx context.Context, volume *model.Volume, po
 		err = NewCLError(ErrDatabaseError, "Failed to update volume status", err)
 		return
 	}
-	control := fmt.Sprintf("inter=")
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	if volume.InstanceID > 0 {
 		instance := volume.Instance
 		if instance == nil {
@@ -187,7 +191,11 @@ func (a *BackupAdmin) createSnapshot(ctx context.Context, name string, volume *m
 		err = NewCLError(ErrDatabaseError, "Failed to create snapshot record", err)
 		return
 	}
-	control := fmt.Sprintf("inter=")
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	vol_driver := GetVolumeDriver()
 	uuid := volume.UUID
 	logger.Debugf("creating snapshot (%s) for volume %s", snapshot.UUID, uuid)
@@ -330,7 +338,11 @@ func (a *BackupAdmin) Delete(ctx context.Context, backup *model.VolumeBackup) (e
 		return
 	}
 	vol_driver := GetVolumeDriver()
-	control := fmt.Sprintf("inter=")
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	wdsUUID := backup.GetOriginBackupID()
 	if wdsUUID != "" {
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/delete_snapshot_%s.sh '%s'", vol_driver, wdsUUID)
@@ -431,7 +443,11 @@ func (a *BackupAdmin) Restore(ctx context.Context, backupID int64) (backup *mode
 		logger.Error("DB failed to update backup task", err)
 		return
 	}
-	control := "inter="
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone control", err)
+		return
+	}
 	if volume.InstanceID > 0 {
 		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
 	}

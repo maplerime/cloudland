@@ -257,6 +257,12 @@ func New() (m *macaron.Macaron) {
 	m.Get("/alarms/node/new", alarmView.NewNodeAlarmRule)
 	m.Post("/alarms/node/:uuid/delete", alarmView.DeleteNodeAlarmRule)
 	m.Delete("/alarms/node/:uuid", alarmView.DeleteNodeAlarmRule)
+	m.Get("/ip-whitelists", ipWhitelistView.List)
+	m.Get("/ip-whitelists/new", ipWhitelistView.New)
+	m.Post("/ip-whitelists/new", ipWhitelistView.Create)
+	m.Delete("/ip-whitelists/:uuid", ipWhitelistView.Delete)
+	m.Post("/ip-whitelists/:uuid/delete", ipWhitelistView.Delete)
+	m.Post("/ip-whitelists/refresh", ipWhitelistView.Refresh)
 	m.Get("/backups", backupView.List)
 	m.Get("/backups/new", backupView.New)
 	m.Post("/backups/new", backupView.Create)
@@ -282,6 +288,12 @@ func New() (m *macaron.Macaron) {
 	m.Post("/cgroups/:id/snapshots/:snapid/restore", consistencyGroupView.Restore)
 	m.Get("/tasks", taskView.List)
 	m.Get("/tasks/:id", taskView.Get)
+
+	// Placement scheduler configuration (Admin only)
+	m.Get("/placement", placementView.Show)
+	m.Post("/placement/reload", placementView.Reload)
+	m.Get("/placement/config", placementView.GetConfig)
+	m.Get("/placement/decisions", placementView.GetDecisions)
 
 	m.Get("/error", func(c *macaron.Context) {
 		c.Data["ErrorMsg"] = c.QueryTrim("ErrorMsg")

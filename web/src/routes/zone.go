@@ -12,12 +12,14 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
 
 	"github.com/go-macaron/session"
+	"github.com/spf13/viper"
 	macaron "gopkg.in/macaron.v1"
 )
 
@@ -28,6 +30,36 @@ var (
 
 type ZoneAdmin struct{}
 type ZoneView struct{}
+
+func GetWDSControl(ctx context.Context) (control string, err error) {
+	control = "inter="
+	if !viper.IsSet("WDS.default_zone") {
+		logger.Debug("WDS default zone is not set, fallback to all hypervisors")
+		return
+	}
+
+	zoneName := strings.TrimSpace(viper.GetString("WDS.default_zone"))
+	if zoneName == "" {
+		logger.Debug("WDS default zone is not set, fallback to all hypervisors")
+		return
+	}
+
+	zone, err := zoneAdmin.GetZoneByName(ctx, zoneName)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone", err)
+		err = NewCLError(ErrZoneNotFound, fmt.Sprintf("WDS default zone %s not found", zoneName), err)
+		return
+	}
+
+	hyperGroup, err := GetHyperGroup(ctx, zone.ID, -1)
+	if err != nil {
+		logger.Error("Failed to get WDS default zone hyper group", err)
+		err = NewCLError(ErrNoQualifiedHypervisor, fmt.Sprintf("WDS default zone hyper group %s not found", zoneName), err)
+		return
+	}
+	control = fmt.Sprintf("select=%s", hyperGroup)
+	return
+}
 
 func (a *ZoneAdmin) List(ctx context.Context, offset, limit int64, order, query string) (total int64, zones []*model.Zone, err error) {
 	ctx, db := GetContextDB(ctx)

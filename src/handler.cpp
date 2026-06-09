@@ -24,9 +24,7 @@ int exec_cmd(int id, char *cmd)
     int bytes = 0;
     FILE *fp = NULL;
     char result[1024] = {0};
-    char command[1024] = {0};
 
-    snprintf(command, sizeof(command), "%s %s", cmd, "2>&1");
     fp = popen(cmd, "r");
     bytes = fread(result, sizeof(char), sizeof(result) - 1, fp);
     pclose(fp);

@@ -77,6 +77,7 @@ type Volume struct {
 	BpsLimit   int32
 	BpsBurst   int32
 	PoolID     string `gorm:"type:varchar(128)"`
+	Hyper      int32  `gorm:"default:-1"`
 }
 
 func (v *Volume) IsBusy() bool {

@@ -5,7 +5,8 @@ source ../cloudrc
 
 [ $# -lt 2 ] && die "$0 <vm_ID> <action>"
 
-vm_ID=inst-$1
+ID=$1
+vm_ID=inst-$ID
 action=$2
 if [ "$action" = "restart" ]; then
     virsh reboot $vm_ID
@@ -28,4 +29,4 @@ fi
 
 sleep 0.5
 state=$(virsh domstate $vm_ID | sed 's/shut off/shut_off/g')
-echo "|:-COMMAND-:| $(basename $0) '$1' '$state'"
+echo "|:-COMMAND-:| $(basename $0) '$ID' '$state'"

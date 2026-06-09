@@ -2110,6 +2110,8 @@ definitions:
         maximum: 16
         minimum: 1
         type: integer
+      instance:
+        $ref: '#/definitions/common.BaseID'
       iops_burst:
         minimum: 0
         type: integer

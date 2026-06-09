@@ -201,6 +201,9 @@ func Register() (r *gin.Engine) {
 		authGroup.PATCH("/api/v1/instances/:id", instanceAPI.Patch)
 		authGroup.GET("/api/v1/instances/rules", instanceAPI.GetInstanceRuleLinks)
 
+		authGroup.GET("/api/v1/placement/available", placementAPI.Available)
+		authGroup.POST("/api/v1/placement/validate", placementAPI.Validate)
+
 		authGroup.POST("/api/v1/instances/:id/set_user_password", instanceAPI.SetUserPassword)
 		authGroup.POST("/api/v1/instances/:id/console", consoleAPI.Create)
 		authGroup.POST("/api/v1/instances/:id/reinstall", instanceAPI.Reinstall)
@@ -216,6 +219,11 @@ func Register() (r *gin.Engine) {
 
 		authGroup.GET("/api/v1/tasks", taskAPI.List)
 		authGroup.GET("/api/v1/tasks/:id", taskAPI.Get)
+
+		authGroup.GET("/api/v1/ip-whitelist", ipWhitelistAPI.List)
+		authGroup.POST("/api/v1/ip-whitelist", ipWhitelistAPI.Create)
+		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
+		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
 
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{
@@ -242,6 +250,11 @@ func Register() (r *gin.Engine) {
 			metricsGroup.GET("/alarm/bw/rules", alarmAPI.GetBWRules)
 			metricsGroup.GET("/alarm/bw/rule/:uuid", alarmAPI.GetBWRules)
 			metricsGroup.DELETE("/alarm/bw/rule/:uuid", alarmAPI.DeleteBWRules)
+
+			metricsGroup.POST("/alarm/disk/rules", alarmAPI.CreateDiskRule)
+			metricsGroup.GET("/alarm/disk/rules", alarmAPI.GetDiskRules)
+			metricsGroup.GET("/alarm/disk/rule/:uuid", alarmAPI.GetDiskRules)
+			metricsGroup.DELETE("/alarm/disk/rule/:uuid", alarmAPI.DeleteDiskRule)
 
 			// N9E Anchor Management APIs
 			metricsGroup.POST("/alarm/anchor/link", alarmAPI.LinkVMsToRule)

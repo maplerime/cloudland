@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	. "web/src/common"
 	"web/src/dbs"
@@ -145,7 +146,7 @@ func (a *VolumeAdmin) CreateVolume(ctx context.Context, name string, size int32,
 }
 
 func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
-	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string) (volume *model.Volume, err error) {
+	iopsLimit int32, iopsBurst int32, bpsLimit int32, bpsBurst int32, poolID string, instance *model.Instance) (volume *model.Volume, err error) {
 	memberShip := GetMemberShip(ctx)
 	// check the permission
 	permit := memberShip.CheckPermission(model.Writer)
@@ -158,10 +159,63 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 	newPoolID := poolID
 	if poolID != "" {
 		dictionary, dictErr := dictionaryAdmin.GetDictionaryByUUID(ctx, poolID)
-		if dictErr == nil && dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP {
+		if dictErr == nil && (dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL || dictionary.Category == model.DICT_CATEGORY_STORAGE_POOL_GROUP) {
 			if dictionary.Value != "" {
 				newPoolID = dictionary.Value
 			}
+		}
+	}
+	newPoolID = strings.TrimSpace(newPoolID)
+
+	driver := GetVolumeDriver()
+	if newPoolID == "local" {
+		driver = "local"
+	}
+	control := ""
+
+	// if instance is provided, we will use the instance's hypervisor and driver by default
+	if instance != nil {
+		var bootVolume *model.Volume
+		for _, v := range instance.Volumes {
+			if v.Booting {
+				bootVolume = v
+				break
+			}
+		}
+		if bootVolume == nil {
+			logger.Error("Instance has no boot volume")
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			return
+		}
+		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
+			logger.Error("Cannot attach volume to a paused/rescuing instance", instance.ID)
+			err = NewCLError(ErrInstanceInvalidState, "Cannot attach volume to a paused/rescuing instance", nil)
+			return
+		}
+		bootVolumeDriver := bootVolume.GetVolumeDriver()
+		if bootVolumeDriver == "" {
+			logger.Error("Instance boot volume driver is not ready")
+			err = NewCLError(ErrVolumeInvalidState, "Instance boot volume driver is not ready", nil)
+			return
+		}
+		if bootVolumeDriver != driver {
+			logger.Errorf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver)
+			err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", driver, bootVolumeDriver), nil)
+			return
+		}
+		control = fmt.Sprintf("inter=%d", instance.Hyper)
+
+	} else {
+		if driver == "local" {
+			logger.Error("Local volume must be created with an instance")
+			err = NewCLError(ErrInvalidParameter, "Local volume must be created with an instance", nil)
+			return
+		}
+
+		control, err = GetWDSControl(ctx)
+		if err != nil {
+			logger.Error("Failed to get WDS default zone control", err)
+			return
 		}
 	}
 
@@ -171,10 +225,13 @@ func (a *VolumeAdmin) Create(ctx context.Context, name string, size int32,
 		return
 	}
 
-	control := fmt.Sprintf("inter=")
 	// RN-156: append the volume UUID to the command
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
-		GetVolumeDriver(), volume.ID, volume.Size, volume.UUID, iopsLimit, iopsBurst, bpsLimit, bpsBurst, newPoolID)
+	attachInstanceID := int64(0)
+	if instance != nil {
+		attachInstanceID = instance.ID
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_volume_%s.sh '%d' '%d' '%d' '%s' '%d' '%d' '%d' '%d' '%s'",
+		driver, volume.ID, volume.Size, attachInstanceID, volume.UUID, volume.IopsLimit, volume.IopsBurst, volume.BpsLimit, volume.BpsBurst, newPoolID)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Create volume execution failed", err)
@@ -257,7 +314,12 @@ func (a *VolumeAdmin) UpdateQos(ctx context.Context, id int64, iopsLimit int32, 
 		logger.Debugf("Update volume %d, iopsLimit: %d, bpsLimit: %d", volume.ID, iopsLimit, bpsLimit)
 		volume.IopsLimit = iopsLimit
 		volume.BpsLimit = bpsLimit
-		control := fmt.Sprintf("inter=")
+		control := ""
+		control, err = GetWDSControl(ctx)
+		if err != nil {
+			logger.Error("Failed to get WDS default zone control", err)
+			return
+		}
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_volume_%s.sh '%d' '%s' '%d' '%d'", vol_driver, volume.ID, volume.GetOriginVolumeID(), iopsLimit, bpsLimit)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
@@ -308,9 +370,9 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 	if name != "" {
 		volume.Name = name
 	}
-	vol_driver := GetVolumeDriver()
+	volDriver := volume.GetVolumeDriver()
 	uuid := volume.UUID
-	if vol_driver != "local" {
+	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
 	}
 	if volume.InstanceID != instID && volume.IsBusy() {
@@ -338,7 +400,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 			return
 		}
 		control := fmt.Sprintf("inter=%d", volume.Instance.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", vol_driver, volume.Instance.ID, volume.ID, uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/detach_volume_%s.sh '%d' '%d' '%s'", volDriver, volume.Instance.ID, volume.ID, uuid)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Detach volume execution failed", err)
@@ -351,9 +413,26 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		//volume.InstanceID = 0
 	} else if instID > 0 && volume.InstanceID == 0 && volume.Status == model.VolumeStatusAvailable {
 		instance := &model.Instance{Model: model.Model{ID: instID}}
-		if err = db.Model(instance).Take(instance).Error; err != nil {
+		if err = db.Preload("Volumes").Take(instance).Error; err != nil {
 			logger.Error("DB: query instance failed", err)
 			err = NewCLError(ErrInstanceNotFound, "Instance not found", err)
+			return
+		}
+		var bootVolume *model.Volume
+		for _, v := range instance.Volumes {
+			if v.Booting {
+				bootVolume = v
+				break
+			}
+		}
+		if bootVolume.GetVolumeDriver() != volDriver {
+			logger.Errorf("Volume storage driver %s does not match instance boot volume driver %s", volDriver, bootVolume.GetVolumeDriver())
+			err = NewCLError(ErrVolumeHyperMismatch, fmt.Sprintf("Volume storage driver %s does not match instance boot volume driver %s", volDriver, bootVolume.GetVolumeDriver()), nil)
+			return
+		}
+		if volDriver == "local" && volume.Hyper != instance.Hyper {
+			logger.Errorf("Local volume hyper(%d) does not match instance hyper(%d)", volume.Hyper, instance.Hyper)
+			err = NewCLError(ErrVolumeHyperMismatch, "Local volume and instance are not on the same hypervisor", nil)
 			return
 		}
 		if instance.Status == model.InstanceStatusPaused || instance.Status == model.InstanceStatusRescuing {
@@ -363,7 +442,7 @@ func (a *VolumeAdmin) Update(ctx context.Context, id int64, name string, instID 
 		}
 		control := fmt.Sprintf("inter=%d", instance.Hyper)
 		// RN-156: append the volume UUID to the command
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", vol_driver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/attach_volume_%s.sh '%d' '%d' '%s' '%s'", volDriver, instance.ID, volume.ID, volume.GetVolumePath(), uuid)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Create volume execution failed", err)
@@ -428,13 +507,20 @@ func (a *VolumeAdmin) Delete(ctx context.Context, volume *model.Volume) (err err
 		return
 	}
 	control := fmt.Sprintf("inter=")
-	vol_driver := GetVolumeDriver()
+	volDriver := volume.GetVolumeDriver()
 	uuid := volume.UUID
-	if vol_driver != "local" {
+	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
+		control, err = GetWDSControl(ctx)
+		if err != nil {
+			logger.Error("Failed to get WDS default zone control", err)
+			return
+		}
+	} else {
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
-	logger.Debug("Delete volume", vol_driver, volume.ID, uuid, volume.GetVolumePath())
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, uuid, volume.GetVolumePath())
+	logger.Debug("Delete volume", volDriver, volume.ID, uuid, volume.GetVolumePath())
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_volume_%s.sh '%d' '%s' '%s'", volDriver, volume.ID, uuid, volume.GetVolumePath())
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete volume execution failed", err)
@@ -533,13 +619,17 @@ func (a *VolumeAdmin) Resize(ctx context.Context, volume *model.Volume, size int
 		}
 	}
 	control := fmt.Sprintf("inter=")
-	volDriver := GetVolumeDriver()
+	volDriver := volume.GetVolumeDriver()
 	uuid := volume.UUID
 	if volDriver != "local" {
 		uuid = volume.GetOriginVolumeID()
-	}
-	if volume.InstanceID != 0 {
-		control = fmt.Sprintf("inter=%d", volume.Instance.Hyper)
+		control, err = GetWDSControl(ctx)
+		if err != nil {
+			logger.Error("Failed to get WDS default zone control", err)
+			return
+		}
+	} else {
+		control = fmt.Sprintf("inter=%d", volume.Hyper)
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/resize_volume_%s.sh '%d' '%s' '%d' '%t' '%d'", volDriver, volume.ID, uuid, size, volume.Booting, volume.InstanceID)
 	err = HyperExecute(ctx, control, command)
@@ -745,7 +835,7 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	c.Data["Query"] = queryStr
 	SetPaginationData(c, "volumes", total, limit, offset, listConfig,
 		`["ID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"]`,
-		[]string{"ID", "UUID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Owner", "Action"})
+		[]string{"ID", "UUID", "Path", "Name", "Size", "IopsLimit", "BpsLimit", "Status", "Bootable", "AttachedAs", "Hyper", "Owner", "Action"})
 
 	c.HTML(200, "volumes")
 }
@@ -992,14 +1082,25 @@ func (v *VolumeView) Create(c *macaron.Context, store session.Store) {
 	redirectTo := "../volumes"
 	name := c.QueryTrim("name")
 	size := c.QueryTrim("size")
-	vsize, err := strconv.Atoi(size)
+	vsize, err := strconv.ParseInt(size, 10, 32)
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
 	poolID := c.QueryTrim("pool")
-	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, poolID)
+	instanceID := c.QueryInt64("instance_id")
+	var instance *model.Instance
+	if instanceID > 0 {
+		instance, err = instanceAdmin.Get(c.Req.Context(), instanceID)
+		if err != nil {
+			logger.Error("Failed to get instance", err)
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+	}
+	_, err = volumeAdmin.Create(c.Req.Context(), name, int32(vsize), 0, 0, 0, 0, poolID, instance)
 	if err != nil {
 		logger.Error("Create volume failed", err)
 		c.Data["ErrorMsg"] = err.Error()

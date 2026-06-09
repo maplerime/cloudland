@@ -1,8 +1,21 @@
+- name: Install Docker SDK for Python on Ubuntu 26+
+  become: true
+  apt:
+    name: python3-docker
+    state: present
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '>=')
+  tags: [monitor]
+
 - name: Install Docker SDK for Python
   become: true
   pip:
     name: docker
     executable: pip3
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '<')
   tags: [monitor]
 
 - name: Check if Docker is running
