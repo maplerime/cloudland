@@ -304,12 +304,16 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 						mr.TargetHyper = int32(fallbackHyperID)
 					}
 				}
+				// Fall back to the instance's current hyper — after migration this is the target.
+				if mr.TargetHyper <= 0 {
+					mr.TargetHyper = row.Hyper
+				}
 
 				type hyperName struct {
 					Hostname string
 				}
 				// source hyper hostname
-				if mr.SourceHyper > 0 {
+				if mr.SourceHyper >= 0 {
 					sn := &hyperName{}
 					if err := db.Raw(`SELECT hostname FROM hypers WHERE hostid = ? LIMIT 1`, mr.SourceHyper).Scan(sn).Error; err != nil {
 						logger.Warningf("[%s] extractInstanceInfo: source hyper query failed hostid=%d: %v", traceID, mr.SourceHyper, err)
@@ -318,7 +322,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 					}
 				}
 				// target hyper hostname
-				if mr.TargetHyper > 0 {
+				if mr.TargetHyper >= 0 {
 					tn := &hyperName{}
 					if err := db.Raw(`SELECT hostname FROM hypers WHERE hostid = ? LIMIT 1`, mr.TargetHyper).Scan(tn).Error; err != nil {
 						logger.Warningf("[%s] extractInstanceInfo: target hyper query failed hostid=%d: %v", traceID, mr.TargetHyper, err)
