@@ -47,14 +47,15 @@ if [ "$allow_spoofing" != true ]; then
     }
     nft add chain bridge cloudland arp-$vnic
     nft flush chain bridge cloudland arp-$vnic
-    nft add set bridge cloudland set-$vnic '{ type ether_addr . ipv4_addr ; }'
+    nft add set bridge cloudland set-$vnic '{ type ether_addr . ipv4_addr ; }' 2>/dev/null
+    nft flush set bridge cloudland set-$vnic 2>/dev/null
     nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
     ip_count=$((1 + naddrs))
     rate_pps=$((${ip_count} * 5))
     burst_pkts=$((${ip_count} * 5 + 20))
     nft add rule bridge cloudland arp-$vnic ether type 0x0806 limit rate $rate_pps/second burst $burst_pkts packets arp saddr ether . arp saddr ip @set-$vnic accept
     nft add rule bridge cloudland arp-$vnic ether type 0x0806 drop
-    nft add rule bridge cloudland arp-$vnic limit rate 20/second burst 40 packets accept
+    nft add rule bridge cloudland arp-$vnic limit rate $rate_pps/second burst $burst_pkts packets accept
     nft add rule bridge cloudland arp-$vnic drop
     nft add element bridge cloudland set-$vnic { $mac . $ip }
 
