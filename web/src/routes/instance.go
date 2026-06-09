@@ -293,7 +293,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 					logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)
 				}
 				selectedHyperID = -1
-				// Fall through to hyperGroup fallback below
+				err = nil // clear named return: falling through to hyperGroup fallback
 			}
 		}
 		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
