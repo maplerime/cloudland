@@ -8,6 +8,7 @@ package callback
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -298,7 +299,8 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 				logger.Warningf("[%s] extractInstanceInfo: migration query failed id=%d: %v", traceID, migrationID, err)
 			} else {
 				if mr.TargetHyper <= 0 && len(args) > 4 {
-					if fallbackHyperID, parseErr := strconv.ParseInt(args[4], 10, 64); parseErr == nil {
+					if fallbackHyperID, parseErr := strconv.ParseInt(args[4], 10, 64); parseErr == nil &&
+						fallbackHyperID >= math.MinInt32 && fallbackHyperID <= math.MaxInt32 {
 						mr.TargetHyper = int32(fallbackHyperID)
 					}
 				}
