@@ -305,7 +305,7 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 					}
 				}
 				// Fall back to the instance's current hyper — after migration this is the target.
-				if mr.TargetHyper < 0 {
+				if mr.TargetHyper <= 0 {
 					mr.TargetHyper = row.Hyper
 				}
 
