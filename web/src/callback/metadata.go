@@ -304,6 +304,10 @@ func extractInstanceInfo(db *gorm.DB, resourceID int64, unscoped bool, args []st
 						mr.TargetHyper = int32(fallbackHyperID)
 					}
 				}
+				// Fall back to the instance's current hyper — after migration this is the target.
+				if mr.TargetHyper < 0 {
+					mr.TargetHyper = row.Hyper
+				}
 
 				type hyperName struct {
 					Hostname string
