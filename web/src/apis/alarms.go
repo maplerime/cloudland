@@ -1350,6 +1350,17 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	}
 	logger.Debugf("Found CPU rule: name=%s, n9e_alert_rule_id=%d, bg_uuid=%s", cpuRule.Name, cpuRule.N9EAlertRuleID, cpuRule.BusinessGroupUUID)
 
+	// Pre-check: reject deletion if VMs are still linked
+	if existingLinks, linkErr := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid); linkErr == nil && len(existingLinks) > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"status": "error",
+			"error":  "rule has linked VMs, please unlink all VMs before deleting",
+			"code":   "RULE_HAS_LINKED_VMS",
+			"linked_vm_count": len(existingLinks),
+		})
+		return
+	}
+
 	// Step 2: Get business group
 	logger.Debugf("Step 2: Getting business group %s", cpuRule.BusinessGroupUUID)
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), cpuRule.BusinessGroupUUID)
@@ -1363,46 +1374,7 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 	// Step 3: Initialize components
 	a.InitN9EComponents()
 
-	// Step 4: Get linked VMs and clear anchor thresholds
-	vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid)
-	linkedVMs := []string{}
-	instanceUUIDs := []string{}
-
-	if err == nil && len(vmLinks) > 0 {
-		for _, link := range vmLinks {
-			if link.RuleType != "cpu" {
-				continue
-			}
-			linkedVMs = append(linkedVMs, link.VMUUID)
-			instanceUUIDs = append(instanceUUIDs, link.VMUUID)
-		}
-	}
-
-	// Step 5: Clear anchor thresholds in VictoriaMetrics
-	// Note: Region/Domain not stored in DB link; partial clear uses just ruleUUID+instanceID.
-	// Remaining anchor data expires via last_over_time retention.
-	if len(instanceUUIDs) > 0 && a.anchorManager != nil {
-		anchorInstances := make([]routes.AnchorInstance, len(instanceUUIDs))
-		for i, vmUUID := range instanceUUIDs {
-			anchorInstances[i] = routes.AnchorInstance{
-				RuleUUID:   uuid,
-				InstanceID: vmUUID,
-				Owner:      cpuRule.Owner,
-			}
-		}
-		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), "cpu", anchorInstances); err != nil {
-			logger.Warningf("Failed to clear CPU anchor thresholds: %v", err)
-		}
-	}
-
-	// Step 6: Delete VM links from database
-	for _, link := range vmLinks {
-		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), uuid, link.VMUUID, link.Interface); err != nil {
-			logger.Warningf("Failed to delete VM rule link: %v", err)
-		}
-	}
-
-	// Step 6.5: Delete N9E alert rule if exists
+	// Step 5: Delete N9E alert rule if exists
 	logger.Debugf("Step 6.5: Checking N9E alert rule deletion for rule %s", uuid)
 	logger.Debugf("cpuRule.N9EAlertRuleID=%d, n9eClient=%v, businessGroup=%v", cpuRule.N9EAlertRuleID, a.n9eClient != nil, businessGroup != nil)
 	if cpuRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
@@ -1479,8 +1451,8 @@ func (a *AlarmAPI) DeleteCPURule(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"rule_id":     uuid,
-			"linked_vms":  linkedVMs,
-			"unbound_vms": len(instanceUUIDs),
+			"linked_vms":  []string{},
+			"unbound_vms": 0,
 		},
 	})
 }
@@ -1513,6 +1485,17 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 		return
 	}
 
+	// Pre-check: reject deletion if VMs are still linked
+	if existingLinks, linkErr := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid); linkErr == nil && len(existingLinks) > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"status": "error",
+			"error":  "rule has linked VMs, please unlink all VMs before deleting",
+			"code":   "RULE_HAS_LINKED_VMS",
+			"linked_vm_count": len(existingLinks),
+		})
+		return
+	}
+
 	// Step 2: Get business group
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), memoryRule.BusinessGroupUUID)
 	if err != nil {
@@ -1522,46 +1505,7 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 	// Step 3: Initialize components
 	a.InitN9EComponents()
 
-	// Step 4: Get linked VMs and clear anchor thresholds
-	vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid)
-	linkedVMs := []string{}
-	instanceUUIDs := []string{}
-
-	if err == nil && len(vmLinks) > 0 {
-		for _, link := range vmLinks {
-			if link.RuleType != "memory" {
-				continue
-			}
-			linkedVMs = append(linkedVMs, link.VMUUID)
-			instanceUUIDs = append(instanceUUIDs, link.VMUUID)
-		}
-	}
-
-	// Step 5: Clear anchor thresholds in VictoriaMetrics
-	// Note: Region/Domain not stored in DB link; partial clear uses just ruleUUID+instanceID.
-	// Remaining anchor data expires via last_over_time retention.
-	if len(instanceUUIDs) > 0 && a.anchorManager != nil {
-		anchorInstances := make([]routes.AnchorInstance, len(instanceUUIDs))
-		for i, vmUUID := range instanceUUIDs {
-			anchorInstances[i] = routes.AnchorInstance{
-				RuleUUID:   uuid,
-				InstanceID: vmUUID,
-				Owner:      memoryRule.Owner,
-			}
-		}
-		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), "mem", anchorInstances); err != nil {
-			logger.Warningf("Failed to clear memory anchor thresholds: %v", err)
-		}
-	}
-
-	// Step 6: Delete VM links from database
-	for _, link := range vmLinks {
-		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), uuid, link.VMUUID, link.Interface); err != nil {
-			logger.Warningf("Failed to delete VM rule link: %v", err)
-		}
-	}
-
-	// Step 6.5: Delete N9E alert rule if exists
+	// Step 5: Delete N9E alert rule if exists
 	if memoryRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
 		n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
 		if bgErr != nil {
@@ -1613,8 +1557,8 @@ func (a *AlarmAPI) DeleteMemoryRule(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"rule_id":     uuid,
-			"linked_vms":  linkedVMs,
-			"unbound_vms": len(instanceUUIDs),
+			"linked_vms":  []string{},
+			"unbound_vms": 0,
 		},
 	})
 }
@@ -1853,6 +1797,17 @@ func (a *AlarmAPI) DeleteDiskRule(c *gin.Context) {
 		return
 	}
 
+	// Pre-check: reject deletion if VMs are still linked
+	if existingLinks, linkErr := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), ruleID); linkErr == nil && len(existingLinks) > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"status": "error",
+			"error":  "rule has linked VMs, please unlink all VMs before deleting",
+			"code":   "RULE_HAS_LINKED_VMS",
+			"linked_vm_count": len(existingLinks),
+		})
+		return
+	}
+
 	// Step 2: Get business group
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), diskRule.BusinessGroupUUID)
 	if err != nil {
@@ -1862,34 +1817,7 @@ func (a *AlarmAPI) DeleteDiskRule(c *gin.Context) {
 	// Step 3: Initialize N9E components
 	a.InitN9EComponents()
 
-	// Step 4: Get linked VMs and clear anchor thresholds
-	vmLinks, _ := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), ruleID)
-	linkedVMs := make([]string, 0, len(vmLinks))
-	for _, lk := range vmLinks {
-		linkedVMs = append(linkedVMs, lk.VMUUID)
-	}
-	if len(linkedVMs) > 0 && a.anchorManager != nil {
-		anchorInstances := make([]routes.AnchorInstance, len(linkedVMs))
-		for i, vmUUID := range linkedVMs {
-			anchorInstances[i] = routes.AnchorInstance{
-				RuleUUID:   ruleID,
-				InstanceID: vmUUID,
-				Owner:      diskRule.Owner,
-			}
-		}
-		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), "disk", anchorInstances); err != nil {
-			logger.Warningf("Failed to clear disk anchor thresholds: %v", err)
-		}
-	}
-
-	// Step 5: Delete VM links from database
-	for _, lk := range vmLinks {
-		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), ruleID, lk.VMUUID, lk.Interface); err != nil {
-			logger.Warningf("Failed to delete VM rule link: %v", err)
-		}
-	}
-
-	// Step 6: Delete N9E alert rule if exists
+	// Step 4: Delete N9E alert rule if exists
 	if diskRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
 		n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
 		if bgErr != nil {
@@ -1940,8 +1868,8 @@ func (a *AlarmAPI) DeleteDiskRule(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"rule_id":     ruleID,
-			"linked_vms":  linkedVMs,
-			"unbound_vms": len(linkedVMs),
+			"linked_vms":  []string{},
+			"unbound_vms": 0,
 		},
 	})
 }
@@ -2545,6 +2473,17 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		return
 	}
 
+	// Pre-check: reject deletion if VMs are still linked
+	if existingLinks, linkErr := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid); linkErr == nil && len(existingLinks) > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"status": "error",
+			"error":  "rule has linked VMs, please unlink all VMs before deleting",
+			"code":   "RULE_HAS_LINKED_VMS",
+			"linked_vm_count": len(existingLinks),
+		})
+		return
+	}
+
 	// Step 2: Get business group
 	businessGroup, err := a.n9eOperator.GetBusinessGroupByUUID(c.Request.Context(), bwRule.BusinessGroupUUID)
 	if err != nil {
@@ -2554,52 +2493,7 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 	// Step 3: Initialize components
 	a.InitN9EComponents()
 
-	// Determine anchor type based on bandwidth direction
-	bwAnchorType := "bw_in"
-	if bwRule.Direction == "out" {
-		bwAnchorType = "bw_out"
-	}
-
-	// Step 4: Get linked VMs and clear anchor thresholds
-	vmLinks, err := a.n9eOperator.GetVMRuleLinks(c.Request.Context(), uuid)
-	linkedVMs := []string{}
-	instanceUUIDs := []string{}
-
-	if err == nil && len(vmLinks) > 0 {
-		for _, link := range vmLinks {
-			if link.RuleType != "bandwidth" {
-				continue
-			}
-			linkedVMs = append(linkedVMs, link.VMUUID)
-			instanceUUIDs = append(instanceUUIDs, link.VMUUID)
-		}
-	}
-
-	// Step 5: Clear anchor thresholds in VictoriaMetrics
-	// Note: Region/Domain not stored in DB link; partial clear uses just ruleUUID+instanceID.
-	// Remaining anchor data expires via last_over_time retention.
-	if len(instanceUUIDs) > 0 && a.anchorManager != nil {
-		anchorInstances := make([]routes.AnchorInstance, len(instanceUUIDs))
-		for i, vmUUID := range instanceUUIDs {
-			anchorInstances[i] = routes.AnchorInstance{
-				RuleUUID:   uuid,
-				InstanceID: vmUUID,
-				Owner:      bwRule.Owner,
-			}
-		}
-		if err := a.anchorManager.ClearAnchorThresholds(c.Request.Context(), bwAnchorType, anchorInstances); err != nil {
-			logger.Warningf("Failed to clear bandwidth anchor thresholds: %v", err)
-		}
-	}
-
-	// Step 6: Delete VM links from database
-	for _, link := range vmLinks {
-		if _, err := a.n9eOperator.DeleteVMRuleLink(c.Request.Context(), uuid, link.VMUUID, link.Interface); err != nil {
-			logger.Warningf("Failed to delete VM rule link: %v", err)
-		}
-	}
-
-	// Step 6.5: Delete N9E alert rule if exists
+	// Step 4: Delete N9E alert rule if exists
 	if bwRule.N9EAlertRuleID > 0 && a.n9eClient != nil && businessGroup != nil {
 		n9eBGID, bgErr := a.n9eClient.GetBusinessGroupByName(c.Request.Context(), businessGroup.Name)
 		if bgErr != nil {
@@ -2651,8 +2545,8 @@ func (a *AlarmAPI) DeleteBWRules(c *gin.Context) {
 		"status": "success",
 		"data": gin.H{
 			"rule_id":     uuid,
-			"linked_vms":  linkedVMs,
-			"unbound_vms": len(instanceUUIDs),
+			"linked_vms":  []string{},
+			"unbound_vms": 0,
 		},
 	})
 }
