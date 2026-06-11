@@ -189,11 +189,12 @@ func (v *APIKeyAPI) Delete(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
-func (v *APIKeyAPI) toResponse(_ context.Context, k *model.APIKey, plainKey string) *APIKeyResponse {
+func (v *APIKeyAPI) toResponse(ctx context.Context, k *model.APIKey, plainKey string) *APIKeyResponse {
 	return &APIKeyResponse{
 		ResourceReference: &ResourceReference{
 			ID:        k.UUID,
 			Name:      k.Name,
+			Owner:     orgAdmin.GetOrgName(ctx, k.Owner),
 			CreatedAt: k.CreatedAt.Format(TimeStringForMat),
 			UpdatedAt: k.UpdatedAt.Format(TimeStringForMat),
 		},

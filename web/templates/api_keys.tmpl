@@ -28,6 +28,9 @@
                                     <th data-column="ExpiresAt">{{.i18n.Tr "Expires_At"}}</th>
                                     <th data-column="Disabled">{{.i18n.Tr "Disabled"}}</th>
                                     <th data-column="CreatedAt">{{.i18n.Tr "Created_At"}}</th>
+                                    {{ if .IsAdmin }}
+                                    <th data-column="Owner">{{.i18n.Tr "Owner"}}</th>
+                                    {{ end }}
                                     <th data-column="Action">{{.i18n.Tr "Action"}}</th>
                                 </tr>
                             </thead>
@@ -40,6 +43,9 @@
                                     <td data-column="ExpiresAt">{{ if .ExpiresAt }}<span title="{{.ExpiresAt}}">{{.ExpiresAt}}</span>{{ end }}</td>
                                     <td data-column="Disabled">{{ if .Disabled }}<span class="ui red tiny label">{{$.i18n.Tr "Disabled"}}</span>{{ else }}<span class="ui green tiny label">{{$.i18n.Tr "Enabled"}}</span>{{ end }}</td>
                                     <td data-column="CreatedAt"><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
+                                    {{ if $.IsAdmin }}
+                                    <td data-column="Owner">{{ if .OwnerInfo }}{{.OwnerInfo.Name}}{{ end }}</td>
+                                    {{ end }}
                                     <td data-column="Action">
                                         <div class="ui selection dropdown">
                                             <input name="action" type="hidden">

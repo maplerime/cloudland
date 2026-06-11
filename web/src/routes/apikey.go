@@ -124,6 +124,11 @@ func (a *APIKeyAdmin) Create(ctx context.Context, name, description string, expi
 func (a *APIKeyAdmin) List(ctx context.Context, offset, limit int64, order, query string) (
 	total int64, keys []*model.APIKey, err error) {
 	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Reader)
+	if !permit {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to list API keys", nil)
+		return
+	}
 	ctx, db := GetContextDB(ctx)
 	if limit == 0 {
 		limit = 16
@@ -131,7 +136,8 @@ func (a *APIKeyAdmin) List(ctx context.Context, offset, limit int64, order, quer
 	if order == "" {
 		order = "-created_at"
 	}
-	q := db.Model(&model.APIKey{}).Where("user_id = ?", memberShip.UserID)
+	where := memberShip.GetWhere()
+	q := db.Model(&model.APIKey{}).Where(where)
 	if query != "" {
 		q = q.Where("name LIKE ?", "%"+query+"%")
 	}
@@ -139,13 +145,25 @@ func (a *APIKeyAdmin) List(ctx context.Context, offset, limit int64, order, quer
 		err = NewCLError(ErrDatabaseError, "Failed to count API keys", err)
 		return
 	}
-	q2 := db.Where("user_id = ?", memberShip.UserID)
+	q2 := db.Where(where)
 	if query != "" {
 		q2 = q2.Where("name LIKE ?", "%"+query+"%")
 	}
 	q2 = dbs.Sortby(q2.Offset(offset).Limit(limit), order)
 	if err = q2.Find(&keys).Error; err != nil {
 		err = NewCLError(ErrDatabaseError, "Failed to list API keys", err)
+		return
+	}
+	if memberShip.CheckPermission(model.Admin) {
+		db = db.Offset(0).Limit(-1)
+		for _, key := range keys {
+			key.OwnerInfo = &model.Organization{Model: model.Model{ID: key.Owner}}
+			if err = db.Take(key.OwnerInfo).Error; err != nil {
+				logger.Error("Failed to query owner info", err)
+				err = NewCLError(ErrOwnerNotFound, "Owner organization not found", err)
+				return
+			}
+		}
 	}
 	return
 }
@@ -154,7 +172,7 @@ func (a *APIKeyAdmin) GetByUUID(ctx context.Context, uuID string) (apiKey *model
 	memberShip := GetMemberShip(ctx)
 	ctx, db := GetContextDB(ctx)
 	apiKey = &model.APIKey{}
-	err = db.Where("uuid = ? AND user_id = ?", uuID, memberShip.UserID).Take(apiKey).Error
+	err = db.Where(memberShip.GetWhere()).Where("uuid = ?", uuID).Take(apiKey).Error
 	if err != nil {
 		err = NewCLError(ErrAPIKeyNotFound, "API key not found", err)
 	}
@@ -162,6 +180,11 @@ func (a *APIKeyAdmin) GetByUUID(ctx context.Context, uuID string) (apiKey *model
 }
 
 func (a *APIKeyAdmin) Update(ctx context.Context, uuID string, disabled bool) (apiKey *model.APIKey, err error) {
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Writer) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update API keys", nil)
+		return
+	}
 	apiKey, err = a.GetByUUID(ctx, uuID)
 	if err != nil {
 		return
@@ -182,6 +205,11 @@ func (a *APIKeyAdmin) Update(ctx context.Context, uuID string, disabled bool) (a
 }
 
 func (a *APIKeyAdmin) Delete(ctx context.Context, uuID string) (err error) {
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Writer) {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to delete API keys", nil)
+		return
+	}
 	apiKey, err := a.GetByUUID(ctx, uuID)
 	if err != nil {
 		return
@@ -247,8 +275,8 @@ func (v *APIKeyView) List(c *macaron.Context, store session.Store) {
 	c.Data["APIKeys"] = keys
 	c.Data["Query"] = query
 	SetPaginationData(c, "api_keys", total, limit, offset, listConfig,
-		`["Name", "ExpiresAt", "Disabled", "CreatedAt", "Action"]`,
-		[]string{"UUID", "Name", "ExpiresAt", "Disabled", "CreatedAt", "Action"})
+		`["Name", "ExpiresAt", "Disabled", "CreatedAt", "Owner", "Action"]`,
+		[]string{"UUID", "Name", "ExpiresAt", "Disabled", "CreatedAt", "Owner", "Action"})
 	c.HTML(200, "api_keys")
 }
 
