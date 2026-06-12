@@ -31,22 +31,40 @@ func Authorize() gin.HandlerFunc {
 	}
 }
 
+// authorizeWithAPIKey authenticates a request using the X-API-Key header value.
+// It validates the key, resolves the caller's membership from the key's owning
+// user and org, injects it into the request context, and continues the chain.
+// On any failure it writes an error response and aborts the request.
 func authorizeWithAPIKey(c *gin.Context, fullKey string) {
 	apiKey, err := apiKeyAdmin.ValidateAPIKey(fullKey)
 	if err != nil {
+		// Error handling: key invalid / not found / disabled / expired.
+		logger.Errorf("API key validation failed: %v", err)
 		ErrorResponse(c, http.StatusUnauthorized, "Invalid API Key", err)
 		c.Abort()
 		return
 	}
+	// Resolve membership directly from the key's creater (user ID) and owner (org ID).
+	// GetDBMemberShip uses a raw DB query, so it does not depend on the membership
+	// being present in the context yet (avoids the GetWhere() owner=0 lookup bug).
 	memberShip, err := GetDBMemberShip(apiKey.Creater, apiKey.Owner)
 	if err != nil {
+		// Error handling: the key's user/org membership no longer exists.
+		logger.Errorf("Failed to resolve membership for API key %s (user: %d, org: %d): %v",
+			apiKey.UUID, apiKey.Creater, apiKey.Owner, err)
 		ErrorResponse(c, http.StatusBadRequest, "Invalid membership", err)
 		c.Abort()
 		return
 	}
+	// Branch: same as the JWT / Web path — elevate the built-in admin user to the
+	// Admin role. Its member record is Role=Owner, and GetWhere() only returns the
+	// unscoped (all-rows) clause when Role==Admin, so without this an admin's API
+	// key would be confined to the admin org.
 	if memberShip.UserName == "admin" {
 		memberShip.Role = model.Admin
 	}
+	logger.Debugf("Authorized via API key %s, user: %s, org: %s, role: %d",
+		apiKey.UUID, memberShip.UserName, memberShip.OrgName, memberShip.Role)
 	ctx := memberShip.SetContext(c.Request.Context())
 	c.Request = c.Request.WithContext(ctx)
 	c.Next()
