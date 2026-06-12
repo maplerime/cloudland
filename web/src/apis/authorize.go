@@ -38,24 +38,14 @@ func authorizeWithAPIKey(c *gin.Context, fullKey string) {
 		c.Abort()
 		return
 	}
-	user, err := userAdmin.Get(c.Request.Context(), apiKey.Creater)
-	if err != nil {
-		ErrorResponse(c, http.StatusUnauthorized, "API Key user not found", err)
-		c.Abort()
-		return
-	}
-	realOrg := user.Username
-	org, err := orgAdmin.GetOrgByName(c.Request.Context(), realOrg)
-	if err != nil {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid resource org", err)
-		c.Abort()
-		return
-	}
-	memberShip, err := GetDBMemberShip(user.ID, org.ID)
+	memberShip, err := GetDBMemberShip(apiKey.Creater, apiKey.Owner)
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid membership", err)
 		c.Abort()
 		return
+	}
+	if memberShip.UserName == "admin" {
+		memberShip.Role = model.Admin
 	}
 	ctx := memberShip.SetContext(c.Request.Context())
 	c.Request = c.Request.WithContext(ctx)
