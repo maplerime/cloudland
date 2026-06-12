@@ -20,7 +20,7 @@
                                     <input type="text" readonly value="{{.APIKey.UUID}}">
                                 </div>
                                 <div class="inline field">
-                                    <label for="disabled">{{.i18n.Tr "Disabled"}}</label>
+                                    <label for="disabled">{{.i18n.Tr "Status"}}</label>
                                     <div class="ui selection dropdown">
                                         <input id="disabled" name="disabled" type="hidden" value="{{ if .APIKey.Disabled }}true{{ else }}false{{ end }}">
                                         <i class="dropdown icon"></i>
