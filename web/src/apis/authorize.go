@@ -38,7 +38,7 @@ func authorizeWithAPIKey(c *gin.Context, fullKey string) {
 		c.Abort()
 		return
 	}
-	user, err := userAdmin.Get(c.Request.Context(), apiKey.UserID)
+	user, err := userAdmin.Get(c.Request.Context(), apiKey.Creater)
 	if err != nil {
 		ErrorResponse(c, http.StatusUnauthorized, "API Key user not found", err)
 		c.Abort()

@@ -105,7 +105,6 @@ func (a *APIKeyAdmin) Create(ctx context.Context, name, description string, expi
 	apiKey = &model.APIKey{
 		Model:       model.Model{Creater: memberShip.UserID, UUID: uuidKey},
 		Owner:       memberShip.OrgID,
-		UserID:      memberShip.UserID,
 		Name:        name,
 		Description: description,
 		APIKey:      uuidKey,
