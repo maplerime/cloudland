@@ -30,7 +30,7 @@ type APIKeyPayload struct {
 }
 
 type APIKeyPatchPayload struct {
-	Disabled bool `json:"disabled"`
+	Disabled *bool `json:"disabled"`
 }
 
 type APIKeyResponse struct {
@@ -161,7 +161,13 @@ func (v *APIKeyAPI) Patch(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	apiKey, err := apiKeyAdmin.Update(ctx, uuID, payload.Disabled)
+	var apiKey *model.APIKey
+	var err error
+	if payload.Disabled != nil {
+		apiKey, err = apiKeyAdmin.Update(ctx, uuID, *payload.Disabled)
+	} else {
+		apiKey, err = apiKeyAdmin.GetByUUID(ctx, uuID)
+	}
 	if err != nil {
 		ErrorResponse(c, http.StatusBadRequest, "Failed to update API key", err)
 		return
