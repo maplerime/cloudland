@@ -22,6 +22,8 @@ ip netns list | grep -q $router
 rtID=$(( $ext_vlan % 250 + 2 ))
 table=fip-$ext_vlan
 rt_file=/etc/iproute2/rt_tables
+mkdir -p /etc/iproute2
+touch $rt_file
 grep "^$rtID $table" $rt_file
 if [ $? -ne 0 ]; then
     for i in {1..250}; do

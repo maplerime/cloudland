@@ -1,0 +1,17 @@
+[Unit]
+Description=Cloudland ARP hole — replies to broadcast ARP with random MACs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=ARPHOLE_IFACE=eth0
+Environment=ARPHOLE_LOG=INFO
+Environment=ARPHOLE_THRESHOLD=9
+Environment=ARPHOLE_WINDOW=15
+ExecStart=/usr/bin/python3 /opt/cloudland/utils/arphole/arphole.py
+Restart=on-failure
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target

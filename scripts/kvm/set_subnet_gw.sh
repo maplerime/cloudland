@@ -30,6 +30,8 @@ read -r network bcast hostmin hostmax < <(ipcalc $gateway | awk '/^Network:/ {n=
 ip netns exec $router ipset add nonat $network
 ip netns exec $router ip addr add $gateway brd $bcast dev ns-$vlan
 rt_file=/etc/iproute2/rt_tables
+mkdir -p /etc/iproute2
+touch $rt_file
 tables=$(cat $rt_file | grep fip- | awk '{print $2}')
 for table in $tables; do
     ip netns exec $router ip route list table $table

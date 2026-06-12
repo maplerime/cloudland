@@ -54,6 +54,9 @@
         <a {{ if eq .Link "/secgroups" }} class="active item" {{ else }} class="item" {{ end }} href="/secgroups">
             {{.i18n.Tr "SecurityGroups"}}
         </a>
+        <a {{ if eq .Link "/ip-whitelists" }} class="active item" {{ else }} class="item" {{ end }} href="/ip-whitelists">
+            {{.i18n.Tr "IP_Whitelists"}}
+        </a>
         <a {{ if eq .Link "/loadbalancers" }} class="active item" {{ else }} class="item" {{ end }} href="/loadbalancers">
             {{.i18n.Tr "LoadBalancers"}}
         </a>
@@ -72,6 +75,9 @@
 		{{/* Add new link for Node Alarm Rules */}}
 		<a {{ if eq .Link "/alarms/node" }} class="active item" {{ else }} class="item" {{ end }} href="/alarms/node">
             {{.i18n.Tr "NodeAlarmRules"}}
+        </a>
+		<a {{ if eq .Link "/placement" }} class="active item" {{ else }} class="item" {{ end }} href="/placement">
+            {{.i18n.Tr "Placement"}}
         </a>
 
 		{{ end }}

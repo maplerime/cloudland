@@ -376,20 +376,24 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 		}
 	}
 	var siteSubnets []*model.Subnet
-	if !iface.PrimaryIf && len(payload.SiteSubnets) > 0 {
+	if !iface.PrimaryIf && payload.SiteSubnets != nil {
 		logger.Errorf("Only primary interface can have site subnets")
 		ErrorResponse(c, http.StatusBadRequest, "Only primary interface can have site subnets", err)
 		return
 	}
-	for _, site := range payload.SiteSubnets {
-		var siteSubnet *model.Subnet
-		siteSubnet, err = subnetAdmin.GetSubnet(ctx, site)
-		if err != nil {
-			logger.Errorf("Failed to get site subnet")
-			ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
-			return
+	if payload.SiteSubnets != nil {
+		for _, site := range payload.SiteSubnets {
+			var siteSubnet *model.Subnet
+			siteSubnet, err = subnetAdmin.GetSubnet(ctx, site)
+			if err != nil {
+				logger.Errorf("Failed to get site subnet")
+				ErrorResponse(c, http.StatusBadRequest, "Failed to get site subnet", err)
+				return
+			}
+			siteSubnets = append(siteSubnets, siteSubnet)
 		}
-		siteSubnets = append(siteSubnets, siteSubnet)
+	} else if iface.PrimaryIf {
+		siteSubnets = iface.SiteSubnets
 	}
 	iface2, err := interfaceAdmin.Update(ctx, instance, iface, ifaceName, inbound, outbound, allowSpoofing, secgroups, ifaceSubnets, siteSubnets, count, publicIps)
 	if err != nil {
