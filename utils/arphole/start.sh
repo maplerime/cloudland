@@ -9,9 +9,16 @@ cd "$(dirname "$0")"
 : "${ARPHOLE_LOG:=INFO}"
 : "${ARPHOLE_THRESHOLD:=6}"
 : "${ARPHOLE_WINDOW:=15}"
+: "${ARPHOLE_CLAIM_COOLDOWN:=900}"
+: "${ARPHOLE_PROBE_COUNT:=3}"
+: "${ARPHOLE_PROBE_TIMEOUT:=2}"
+: "${ARPHOLE_WORKERS:=4}"
+: "${ARPHOLE_VLANS:=25-30}"   # e.g. "0,25-100" or empty for all
 
 export ARPHOLE_IFACE ARPHOLE_LOG
 export ARPHOLE_THRESHOLD ARPHOLE_WINDOW
+export ARPHOLE_CLAIM_COOLDOWN ARPHOLE_PROBE_COUNT ARPHOLE_PROBE_TIMEOUT
+export ARPHOLE_WORKERS ARPHOLE_VLANS
 
 # --- python interpreter ------------------------------------------------------
 if [[ -x "./.venv/bin/python" ]]; then
@@ -28,5 +35,5 @@ if [[ $EUID -ne 0 ]] && ! capsh --print 2>/dev/null | grep -q cap_net_raw; then
     echo "         scapy needs raw socket access to sniff/send ARP." >&2
 fi
 
-echo "arphole: iface=$ARPHOLE_IFACE threshold=$ARPHOLE_THRESHOLD window=${ARPHOLE_WINDOW}s"
+echo "arphole: iface=$ARPHOLE_IFACE threshold=$ARPHOLE_THRESHOLD window=${ARPHOLE_WINDOW}s cooldown=${ARPHOLE_CLAIM_COOLDOWN}s probe=${ARPHOLE_PROBE_COUNT}x${ARPHOLE_PROBE_TIMEOUT}s workers=$ARPHOLE_WORKERS vlans=${ARPHOLE_VLANS:-all}"
 exec "$PY" ./arphole.py "$@"

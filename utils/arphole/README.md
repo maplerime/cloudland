@@ -10,7 +10,7 @@ WINDOW.
 Pure rate-gated claiming — no database lookup. For each ARP request the
 target IP counter is incremented within a rolling window (default
 15 s). When the counter reaches the threshold (default 9) the program
-emits an `is-at` reply with a random `02:xx:xx:xx:xx:xx` MAC, then
+emits an `is-at` reply with a random `fe:55:xx:xx:xx:xx` MAC, then
 resets the counter for that IP; the next batch of THRESHOLD requests
 triggers another reply.
 
@@ -32,5 +32,5 @@ For production use, install `arphole.service` and edit the
 
 ## Random MAC policy
 
-`rand_unicast_mac()` always emits `02:xx:xx:xx:xx:xx` — first-octet
-0x02 means unicast (LSB=0) + locally administered (bit 1=1).
+`rand_unicast_mac()` always emits `fe:55:xx:xx:xx:xx` — first-octet
+0xfe = 11111110: unicast (LSB=0) + locally administered (bit 1=1).
