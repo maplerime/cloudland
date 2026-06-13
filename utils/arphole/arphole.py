@@ -21,6 +21,7 @@ import signal
 import sys
 import threading
 import time
+from typing import NamedTuple
 
 from scapy.all import (
     ARP,
@@ -34,6 +35,28 @@ from scapy.all import (
 )
 
 logger = logging.getLogger("arphole")
+
+DESCRIPTION = (
+    "Listen for broadcast ARP requests on one or more interfaces; "
+    "after THRESHOLD hits within WINDOW send PROBE_COUNT who-has, "
+    "and reclaim the IP with a random MAC if no reply is received."
+)
+
+# GC interval for _silent_until / _pending dicts.
+_GC_INTERVAL = 60.0
+
+
+class ProbeTask(NamedTuple):
+    """Pure-field task payload handed from producer to consumer.
+
+    Extracting fields at enqueue time avoids touching scapy Packet
+    objects across threads.
+    """
+
+    target_ip: str
+    sender_mac: str  # ARP hwsrc of the original request
+    sender_ip: str   # ARP psrc of the original request
+    vlan_id: int     # 0 = untagged, else 802.1Q VLAN ID
 
 
 def rand_unicast_mac() -> str:
@@ -77,7 +100,7 @@ class ArpHole:
     def __init__(
         self,
         ifaces: list[str],
-        threshold: int = 9,
+        threshold: int = 6,
         window: float = 15.0,
         claim_cooldown: float = 900.0,
         probe_count: int = 3,
@@ -102,8 +125,8 @@ class ArpHole:
         self._silent_until: dict[tuple[str, str], float] = {}
         # (iface, ip) currently queued or being processed by the consumer.
         self._inflight: set[tuple[str, str]] = set()
-        # Producer -> consumer queue. Each item is (iface, ip, req).
-        self._work_q: "queue.Queue[tuple[str, str, object] | None]" = queue.Queue()
+        # Producer -> consumer queue. Each item is (iface, ip, ProbeTask).
+        self._work_q: "queue.Queue[tuple[str, str, ProbeTask] | None]" = queue.Queue()
         # iface -> hardware address (used to filter out our own probes).
         self._iface_macs: dict[str, str] = {
             iface: (get_if_hwaddr(iface) or "").lower() for iface in ifaces
@@ -137,14 +160,54 @@ class ArpHole:
             del timestamps[:i]
         return len(timestamps)
 
+    def _gc(self) -> None:
+        """Drop expired silence entries and stale pending counters."""
+        now = time.monotonic()
+        cutoff = now - self.window
+        with self._lock:
+            expired_silence = [
+                k for k, until in self._silent_until.items() if until <= now
+            ]
+            for k in expired_silence:
+                del self._silent_until[k]
+            stale_pending = []
+            for k, ts in self._pending.items():
+                if not ts or ts[-1] < cutoff:
+                    stale_pending.append(k)
+                    continue
+                i = 0
+                while i < len(ts) and ts[i] < cutoff:
+                    i += 1
+                if i:
+                    del ts[:i]
+                if not ts:
+                    stale_pending.append(k)
+            for k in stale_pending:
+                del self._pending[k]
+        if expired_silence or stale_pending:
+            logger.debug(
+                "GC: removed %d silence, %d pending entries",
+                len(expired_silence),
+                len(stale_pending),
+            )
+
+    def _gc_loop(self) -> None:
+        while True:
+            time.sleep(_GC_INTERVAL)
+            try:
+                self._gc()
+            except Exception:
+                logger.exception("GC failed")
+
     # --------------------------------------------------------------- producer
 
-    def enqueue_if_needed(self, iface: str, ip: str, req) -> bool:
+    def enqueue_if_needed(self, iface: str, task: ProbeTask) -> bool:
         """Producer side: increment counter, enqueue reclaim task if threshold hit.
 
         Returns True if a task was enqueued, False otherwise. The actual
         probe + reply happens in the consumer thread.
         """
+        ip = task.target_ip
         now = time.monotonic()
         with self._lock:
             if self._in_silence(iface, ip, now):
@@ -176,29 +239,27 @@ class ArpHole:
             # Threshold reached: hand off to consumer.
             self._pending.pop((iface, ip), None)
             self._inflight.add((iface, ip))
-        self._work_q.put((iface, ip, req))
+        self._work_q.put((iface, ip, task))
         return True
 
     # --------------------------------------------------------------- consumer
 
-    def _build_probe(self, iface: str, req):
+    def _build_probe(self, iface: str, task: ProbeTask):
         src_mac = self._iface_macs.get(iface, "")
-        arp = ARP(op=1, hwsrc=src_mac, psrc="0.0.0.0", pdst=req[ARP].pdst)
-        if Dot1Q in req:
-            return (
-                Ether(src=src_mac, dst="ff:ff:ff:ff:ff:ff")
-                / Dot1Q(vlan=req[Dot1Q].vlan)
-                / arp
-            )
-        return Ether(src=src_mac, dst="ff:ff:ff:ff:ff:ff") / arp
+        arp = ARP(op=1, hwsrc=src_mac, psrc="0.0.0.0", pdst=task.target_ip)
+        ether = Ether(src=src_mac, dst="ff:ff:ff:ff:ff:ff")
+        if task.vlan_id:
+            return ether / Dot1Q(vlan=task.vlan_id) / arp
+        return ether / arp
 
-    def _probe_occupied(self, iface: str, req) -> bool:
-        """Send probe_count who-has; return True if any ARP reply received.
+    def _probe_occupied(self, iface: str, task: ProbeTask) -> bool:
+        """Send probe_count who-has; return True only if a reply from someone
+        claiming to own target_ip is received.
 
         On error: treat as occupied (don't reclaim).
         """
-        target_ip = req[ARP].pdst
-        probe = self._build_probe(iface, req)
+        target_ip = task.target_ip
+        probe = self._build_probe(iface, task)
         try:
             ans, _ = srp(
                 [probe] * self.probe_count,
@@ -217,7 +278,11 @@ class ArpHole:
             )
             return True
         for _, reply in ans:
-            if ARP in reply and reply[ARP].op == 2:
+            if (
+                ARP in reply
+                and reply[ARP].op == 2
+                and reply[ARP].psrc == target_ip
+            ):
                 logger.info(
                     "[%s] probe answered by %s for %s",
                     iface,
@@ -227,31 +292,32 @@ class ArpHole:
                 return True
         return False
 
-    def _build_reply(self, iface: str, req):
+    def _build_reply(self, iface: str, task: ProbeTask):
         rand_mac = rand_unicast_mac()
-        ether = Ether(src=rand_mac, dst=req[Ether].src)
+        ether = Ether(src=rand_mac, dst=task.sender_mac)
         arp = ARP(
             op=2,
             hwsrc=rand_mac,
-            psrc=req[ARP].pdst,
-            hwdst=req[ARP].hwsrc,
-            pdst=req[ARP].psrc,
+            psrc=task.target_ip,
+            hwdst=task.sender_mac,
+            pdst=task.sender_ip,
         )
-        if Dot1Q in req:
-            frame = ether / Dot1Q(vlan=req[Dot1Q].vlan) / arp
+        if task.vlan_id:
+            frame = ether / Dot1Q(vlan=task.vlan_id) / arp
         else:
             frame = ether / arp
         return rand_mac, frame
 
-    def _handle_claim(self, iface: str, ip: str, req) -> None:
+    def _handle_claim(self, iface: str, task: ProbeTask) -> None:
         """Consumer side: probe then reclaim (or just silence if occupied)."""
+        ip = task.target_ip
         now = time.monotonic()
         # Silence may have been set by a previous task while we queued.
         with self._lock:
             if self._in_silence(iface, ip, now):
                 logger.info("[%s] %s already silent; skipping", iface, ip)
                 return
-        occupied = self._probe_occupied(iface, req)
+        occupied = self._probe_occupied(iface, task)
         now_after = time.monotonic()
         with self._lock:
             self._silent_until[(iface, ip)] = now_after + self.claim_cooldown
@@ -263,20 +329,20 @@ class ArpHole:
                 self.claim_cooldown,
             )
             return
-        rand_mac, frame = self._build_reply(iface, req)
+        rand_mac, frame = self._build_reply(iface, task)
         try:
             sendp(frame, iface=iface, verbose=False)
         except Exception:
             logger.exception("[%s] failed to send reply for %s", iface, ip)
             return
-        vlan_info = " vlan=%d" % req[Dot1Q].vlan if Dot1Q in req else ""
+        vlan_info = " vlan=%d" % task.vlan_id if task.vlan_id else ""
         logger.info(
             "[%s] claimed %s for %s (asked by %s/%s%s)",
             iface,
             ip,
             rand_mac,
-            req[ARP].hwsrc,
-            req[ARP].psrc,
+            task.sender_mac,
+            task.sender_ip,
             vlan_info,
         )
 
@@ -289,9 +355,9 @@ class ArpHole:
                 if task is None:
                     logger.info("consumer[%d] got sentinel, exiting", worker_id)
                     return
-                iface, ip, req = task
+                iface, ip, probe_task = task
                 try:
-                    self._handle_claim(iface, ip, req)
+                    self._handle_claim(iface, probe_task)
                 except Exception:
                     logger.exception(
                         "[%s] claim handler crashed for %s", iface, ip
@@ -317,14 +383,20 @@ class ArpHole:
         if dst and dst.lower() != "ff:ff:ff:ff:ff:ff":
             return
         # Optional VLAN allow-list. 0 in the set = untagged (no Dot1Q).
-        if self.allowed_vlans is not None:
-            vlan_id = pkt[Dot1Q].vlan if Dot1Q in pkt else 0
-            if vlan_id not in self.allowed_vlans:
-                return
+        vlan_id = pkt[Dot1Q].vlan if Dot1Q in pkt else 0
+        if self.allowed_vlans is not None and vlan_id not in self.allowed_vlans:
+            return
         target_ip = pkt[ARP].pdst
         if not target_ip:
             return
-        self.enqueue_if_needed(iface, target_ip, pkt)
+        # Extract pure fields; never touch pkt again after this point.
+        task = ProbeTask(
+            target_ip=target_ip,
+            sender_mac=pkt[ARP].hwsrc,
+            sender_ip=pkt[ARP].psrc,
+            vlan_id=vlan_id,
+        )
+        self.enqueue_if_needed(iface, task)
 
     def _sniff_iface(self, iface: str) -> None:
         logger.info("sniffing on %s (mac=%s)", iface, self._iface_macs.get(iface))
@@ -355,6 +427,9 @@ class ArpHole:
         )
         conf.verb = 0
         threads = []
+        gc = threading.Thread(target=self._gc_loop, name="gc", daemon=True)
+        gc.start()
+        threads.append(gc)
         for i in range(self.workers):
             t = threading.Thread(
                 target=self.consumer_loop,
@@ -378,7 +453,7 @@ class ArpHole:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[1].strip())
+    p = argparse.ArgumentParser(description=DESCRIPTION)
     p.add_argument(
         "--iface",
         nargs="+",
@@ -391,9 +466,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--threshold",
         type=int,
-        default=int(os.environ.get("ARPHOLE_THRESHOLD", "9")),
+        default=int(os.environ.get("ARPHOLE_THRESHOLD", "6")),
         help="number of same-target ARP requests before probing/reclaiming "
-        "(env: ARPHOLE_THRESHOLD, default: 9)",
+        "(env: ARPHOLE_THRESHOLD, default: 6)",
     )
     p.add_argument(
         "--window",
