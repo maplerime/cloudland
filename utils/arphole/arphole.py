@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
-arphole — producer/consumer ARP hole.
+arphole — async ARP hole with decoupled send / sniff-reply / sweep-reclaim.
 
-Sniff threads (one per interface) act as producers: they count
-per-(iface, IP) ARP requests within a rolling window and, when the
-threshold is hit, enqueue a reclaim task. Consumer threads drain the
-queue, run the probe (PROBE_COUNT ARP who-has), and only if no reply
-is received reclaim the IP with a locally-administered unicast MAC
-(fe:55:xx:xx:xx:xx) preserving the original VLAN tag. After a probe or
-reclaim the (iface, IP) is silenced for CLAIM_COOLDOWN seconds; the
-chosen MAC is cached per (iface, IP) so subsequent reclaims of the same
-IP reuse it (no MAC flapping for the requester).
+Five thread roles:
+
+  * Request sniff (per iface): watches broadcast ARP who-has. A per-(iface, IP)
+    counter over a rolling WINDOW triggers an enqueue when THRESHOLD is hit.
+  * Reply sniff (per iface): watches ARP is-at replies addressed to our iface
+    MAC. If the reply's psrc matches an in-flight probe, the IP is marked
+    occupied and silenced.
+  * Sender (single): drains the queue, registers the (iface, IP) in _probing
+    with a send timestamp, and fires PROBE_COUNT who-has via sendp() — no
+    waiting.
+  * Sweeper (single): every _SWEEP_INTERVAL, reclaims any (iface, IP) still in
+    _probing past PROBE_TIMEOUT — emitting an is-at with a cached locally-
+    administered unicast MAC (fe:55:xx:xx:xx:xx) preserving the VLAN tag.
+  * GC (single): periodic cleanup of stale dicts.
+
+Decoupling send from wait means throughput is bounded by sendp() rate (~us
+per packet), not by probe_timeout. After a probe-answered or reclaim, the
+(iface, IP) is silenced for CLAIM_COOLDOWN seconds; the reclaim MAC is cached
+per (iface, IP) so subsequent reclaims reuse it (no flapping for requesters).
 """
 
 import argparse
@@ -32,21 +42,24 @@ from scapy.all import (
     get_if_hwaddr,
     sendp,
     sniff,
-    srp,
 )
 
 logger = logging.getLogger("arphole")
 
 DESCRIPTION = (
     "Listen for broadcast ARP requests on one or more interfaces; "
-    "after THRESHOLD hits within WINDOW send PROBE_COUNT who-has, "
-    "and reclaim the IP with a random MAC if no reply is received."
+    "after THRESHOLD hits within WINDOW enqueue a probe task. A single "
+    "sender fires PROBE_COUNT who-has; a reply sniffer cancels reclaim on "
+    "occupied IPs; a sweeper reclaims IPs still unanswered after "
+    "PROBE_TIMEOUT."
 )
 
 # GC interval for _silent_until / _pending / _claimed_macs dicts.
 _GC_INTERVAL = 60.0
 # Drop cached reclaim MACs that haven't been reused in this many seconds.
 _MAC_RETENTION = 3600.0
+# How often the reclaim sweeper wakes.
+_SWEEP_INTERVAL = 0.1
 
 
 class ProbeTask(NamedTuple):
@@ -107,8 +120,7 @@ class ArpHole:
         window: float = 15.0,
         claim_cooldown: float = 300.0,
         probe_count: int = 2,
-        probe_timeout: float = 1.0,
-        workers: int = 4,
+        probe_timeout: float = 2.0,
         allowed_vlans: set[int] | None = None,
     ):
         self.ifaces = ifaces
@@ -117,23 +129,26 @@ class ArpHole:
         self.claim_cooldown = claim_cooldown
         self.probe_count = probe_count
         self.probe_timeout = probe_timeout
-        self.workers = max(1, workers)
         # None = allow all VLANs (and untagged). 0 in set = allow untagged.
         self.allowed_vlans = allowed_vlans
-        # Guards _pending, _silent_until, _inflight, _claimed_macs.
+        # Guards _pending, _silent_until, _inflight, _claimed_macs, _probing.
         self._lock = threading.Lock()
         # (iface, ip) -> list of monotonic timestamps of recent ARP requests.
         self._pending: dict[tuple[str, str], list[float]] = {}
         # (iface, ip) -> monotonic timestamp until which we stay silent.
         self._silent_until: dict[tuple[str, str], float] = {}
-        # (iface, ip) currently queued or being processed by the consumer.
+        # (iface, ip) currently queued, probing, or pending reclaim.
         self._inflight: set[tuple[str, str]] = set()
         # (iface, ip) -> (mac, last_used_monotonic). Reused on subsequent
         # reclaims so requesters don't see MAC flapping.
         self._claimed_macs: dict[tuple[str, str], tuple[str, float]] = {}
-        # Producer -> consumer queue. Each item is (iface, ip, ProbeTask).
+        # (iface, ip) -> (send_ts, ProbeTask). Set by sender BEFORE sendp,
+        # cleared by reply sniffer (occupied) or sweeper (reclaim).
+        self._probing: dict[tuple[str, str], tuple[float, ProbeTask]] = {}
+        # Producer -> sender queue. Each item is (iface, ip, ProbeTask).
         self._work_q: "queue.Queue[tuple[str, str, ProbeTask] | None]" = queue.Queue()
-        # iface -> hardware address (used to filter out our own probes).
+        # iface -> hardware address (used to filter out our own probes
+        # and to match replies addressed to us).
         self._iface_macs: dict[str, str] = {
             iface: (get_if_hwaddr(iface) or "").lower() for iface in ifaces
         }
@@ -274,7 +289,7 @@ class ArpHole:
         self._work_q.put((iface, ip, task))
         return True
 
-    # --------------------------------------------------------------- consumer
+    # ---------------------------------------------------------------- sender
 
     def _build_probe(self, iface: str, task: ProbeTask):
         src_mac = self._iface_macs.get(iface, "")
@@ -284,45 +299,43 @@ class ArpHole:
             return ether / Dot1Q(vlan=task.vlan_id) / arp
         return ether / arp
 
-    def _probe_occupied(self, iface: str, task: ProbeTask) -> bool:
-        """Send probe_count who-has; return True only if a reply from someone
-        claiming to own target_ip is received.
-
-        On error: treat as occupied (don't reclaim).
+    def _send_probes(self, iface: str, task: ProbeTask) -> None:
+        """Fire probe_count who-has probes. No waiting — replies arrive via
+        the reply sniff thread; if none arrive within probe_timeout, the
+        sweeper reclaims.
         """
-        target_ip = task.target_ip
         probe = self._build_probe(iface, task)
-        try:
-            ans, _ = srp(
-                [probe] * self.probe_count,
-                iface=iface,
-                filter="arp or (vlan and arp)",
-                timeout=self.probe_timeout,
-                inter=0.3,
-                verbose=False,
-                retry=0,
-            )
-        except Exception:
-            logger.exception(
-                "[%s] probe failed for %s; assuming occupied",
-                iface,
-                target_ip,
-            )
-            return True
-        for _, reply in ans:
-            if (
-                ARP in reply
-                and reply[ARP].op == 2
-                and reply[ARP].psrc == target_ip
-            ):
-                logger.info(
-                    "[%s] probe answered by %s for %s",
-                    iface,
-                    reply[Ether].src if Ether in reply else "?",
-                    target_ip,
-                )
-                return True
-        return False
+        sendp(
+            [probe] * self.probe_count,
+            iface=iface,
+            inter=0.1,
+            verbose=False,
+        )
+
+    def _sender_loop(self) -> None:
+        logger.info("sender started")
+        while True:
+            item = self._work_q.get()
+            try:
+                if item is None:
+                    logger.info("sender got sentinel, exiting")
+                    return
+                iface, ip, task = item
+                # Register in _probing BEFORE sendp so a reply that lands
+                # mid-send can still match.
+                with self._lock:
+                    self._probing[(iface, ip)] = (time.monotonic(), task)
+                try:
+                    self._send_probes(iface, task)
+                except Exception:
+                    logger.exception("[%s] probe send failed for %s", iface, ip)
+                    with self._lock:
+                        self._probing.pop((iface, ip), None)
+                        self._inflight.discard((iface, ip))
+            finally:
+                self._work_q.task_done()
+
+    # --------------------------------------------------------------- reclaim
 
     def _build_reply(self, iface: str, task: ProbeTask, mac: str):
         ether = Ether(src=mac, dst=task.sender_mac)
@@ -339,27 +352,9 @@ class ArpHole:
             frame = ether / arp
         return frame
 
-    def _handle_claim(self, iface: str, task: ProbeTask) -> None:
-        """Consumer side: probe then reclaim (or just silence if occupied)."""
+    def _do_reclaim(self, iface: str, task: ProbeTask) -> None:
+        """Send reclaim is-at, cache MAC, silence. Called by sweeper."""
         ip = task.target_ip
-        now = time.monotonic()
-        # Silence may have been set by a previous task while we queued.
-        with self._lock:
-            if self._in_silence(iface, ip, now):
-                logger.info("[%s] %s already silent; skipping", iface, ip)
-                return
-        occupied = self._probe_occupied(iface, task)
-        now_after = time.monotonic()
-        with self._lock:
-            self._silent_until[(iface, ip)] = now_after + self.claim_cooldown
-        if occupied:
-            logger.info(
-                "[%s] %s occupied; silent for %.0fs",
-                iface,
-                ip,
-                self.claim_cooldown,
-            )
-            return
         mac = self._get_or_create_mac(iface, ip)
         frame = self._build_reply(iface, task, mac)
         try:
@@ -367,6 +362,9 @@ class ArpHole:
         except Exception:
             logger.exception("[%s] failed to send reply for %s", iface, ip)
             return
+        now = time.monotonic()
+        with self._lock:
+            self._silent_until[(iface, ip)] = now + self.claim_cooldown
         vlan_info = " vlan=%d" % task.vlan_id if task.vlan_id else ""
         logger.info(
             "[%s] claimed %s for %s (asked by %s/%s%s)",
@@ -378,36 +376,72 @@ class ArpHole:
             vlan_info,
         )
 
-    def consumer_loop(self, worker_id: int = 0) -> None:
-        logger.info("consumer[%d] started", worker_id)
-        while True:
-            task = self._work_q.get()
-            iface = ip = None
+    def _sweep(self) -> None:
+        """Reclaim probing entries older than probe_timeout."""
+        now = time.monotonic()
+        cutoff = now - self.probe_timeout
+        expired: list[tuple[str, ProbeTask]] = []
+        with self._lock:
+            for key, (send_ts, task) in list(self._probing.items()):
+                if send_ts <= cutoff:
+                    del self._probing[key]
+                    expired.append((key[0], task))
+        for iface, task in expired:
+            ip = task.target_ip
             try:
-                if task is None:
-                    logger.info("consumer[%d] got sentinel, exiting", worker_id)
-                    return
-                iface, ip, probe_task = task
-                try:
-                    self._handle_claim(iface, probe_task)
-                except Exception:
-                    logger.exception(
-                        "[%s] claim handler crashed for %s", iface, ip
-                    )
+                self._do_reclaim(iface, task)
+            except Exception:
+                logger.exception("[%s] reclaim failed for %s", iface, ip)
             finally:
-                if task is not None and iface is not None and ip is not None:
-                    with self._lock:
-                        self._inflight.discard((iface, ip))
-                self._work_q.task_done()
+                with self._lock:
+                    self._inflight.discard((iface, ip))
+
+    def _sweep_loop(self) -> None:
+        logger.info(
+            "sweeper started (interval=%.2fs timeout=%.1fs)",
+            _SWEEP_INTERVAL,
+            self.probe_timeout,
+        )
+        while True:
+            time.sleep(_SWEEP_INTERVAL)
+            try:
+                self._sweep()
+            except Exception:
+                logger.exception("sweep failed")
+
+    # ------------------------------------------------------ reply matching
+
+    def _handle_probe_reply(self, iface: str, ip: str, reply_mac: str) -> None:
+        """Mark (iface, ip) occupied: drop from _probing, silence, clear inflight.
+
+        Called by the reply sniff thread when an is-at for one of our probing
+        IPs arrives. No-op if the entry was already claimed by the sweeper
+        (race resolved under _lock by key-then-delete).
+        """
+        now = time.monotonic()
+        with self._lock:
+            if (iface, ip) not in self._probing:
+                return
+            del self._probing[(iface, ip)]
+            self._silent_until[(iface, ip)] = now + self.claim_cooldown
+            self._inflight.discard((iface, ip))
+        logger.info(
+            "[%s] probe answered by %s for %s; silent for %.0fs",
+            iface,
+            reply_mac,
+            ip,
+            self.claim_cooldown,
+        )
 
     # ----------------------------------------------------------------- sniff
 
-    def on_packet(self, iface: str, pkt) -> None:
+    def _on_request(self, iface: str, pkt) -> None:
+        """Request sniff handler: count, enqueue if threshold hit."""
         if ARP not in pkt or Ether not in pkt:
             return
         if pkt[ARP].op != 1:
             return
-        # Skip our own probes (srp uses the iface MAC as source).
+        # Skip our own probes (sendp uses the iface MAC as source).
         src_mac = self._iface_macs.get(iface, "")
         if src_mac and pkt[Ether].src.lower() == src_mac:
             return
@@ -435,36 +469,62 @@ class ArpHole:
         task = ProbeTask(
             target_ip=target_ip,
             sender_mac=pkt[ARP].hwsrc,
-            sender_ip=pkt[ARP].psrc,
+            sender_ip=sender_ip,
             vlan_id=vlan_id,
         )
         self.enqueue_if_needed(iface, task)
 
-    def _sniff_iface(self, iface: str) -> None:
-        logger.info("sniffing on %s (mac=%s)", iface, self._iface_macs.get(iface))
+    def _on_reply(self, iface: str, pkt) -> None:
+        """Reply sniff handler: if it answers one of our probes, mark occupied."""
+        if ARP not in pkt or Ether not in pkt:
+            return
+        if pkt[ARP].op != 2:
+            return
+        # Only consider replies addressed to our iface MAC.
+        our_mac = self._iface_macs.get(iface, "")
+        if not our_mac:
+            return
+        if pkt[Ether].dst.lower() != our_mac:
+            return
+        src_ip = pkt[ARP].psrc
+        if not src_ip:
+            return
+        # Cheap lock-free pre-check; the handler re-checks under the lock.
+        if (iface, src_ip) not in self._probing:
+            return
+        self._handle_probe_reply(iface, src_ip, pkt[Ether].src)
+
+    def _sniff_iface(self, iface: str, role: str) -> None:
+        """role: 'request' (op=1 producer) or 'reply' (op=2 response matcher)."""
+        handler = self._on_request if role == "request" else self._on_reply
+        logger.info(
+            "sniffing %s on %s (mac=%s)",
+            role,
+            iface,
+            self._iface_macs.get(iface),
+        )
         try:
             sniff(
                 iface=iface,
                 filter="arp or (vlan and arp)",
-                prn=lambda pkt: self.on_packet(iface, pkt),
+                prn=lambda pkt: handler(iface, pkt),
                 store=False,
             )
         except Exception:
-            logger.exception("[%s] sniff loop crashed", iface)
+            logger.exception("[%s] %s sniff loop crashed", iface, role)
 
     def run(self) -> None:
         vlans_desc = "all" if self.allowed_vlans is None else (
             ",".join(str(v) for v in sorted(self.allowed_vlans))
         )
         logger.info(
-            "arphole starting on %s (threshold=%d window=%.1fs probe=%dx%.1fs cooldown=%.0fs workers=%d vlans=%s)",
+            "arphole starting on %s (threshold=%d window=%.1fs probe=%dx inter=0.1s sweep=%.1fs cooldown=%.0fs vlans=%s)",
             ", ".join(self.ifaces),
             self.threshold,
             self.window,
             self.probe_count,
             self.probe_timeout,
             self.claim_cooldown,
-            self.workers,
             vlans_desc,
         )
         conf.verb = 0
@@ -472,24 +532,22 @@ class ArpHole:
         gc = threading.Thread(target=self._gc_loop, name="gc", daemon=True)
         gc.start()
         threads.append(gc)
-        for i in range(self.workers):
-            t = threading.Thread(
-                target=self.consumer_loop,
-                args=(i,),
-                daemon=True,
-                name=f"consumer-{i}",
-            )
-            t.start()
-            threads.append(t)
+        sender = threading.Thread(target=self._sender_loop, name="sender", daemon=True)
+        sender.start()
+        threads.append(sender)
+        sweeper = threading.Thread(target=self._sweep_loop, name="sweeper", daemon=True)
+        sweeper.start()
+        threads.append(sweeper)
         for iface in self.ifaces:
-            t = threading.Thread(
-                target=self._sniff_iface,
-                args=(iface,),
-                daemon=True,
-                name=f"sniff-{iface}",
-            )
-            t.start()
-            threads.append(t)
+            for role in ("request", "reply"):
+                t = threading.Thread(
+                    target=self._sniff_iface,
+                    args=(iface, role),
+                    daemon=True,
+                    name=f"sniff-{iface}-{role}",
+                )
+                t.start()
+                threads.append(t)
         for t in threads:
             t.join()
 
@@ -536,16 +594,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--probe-timeout",
         type=float,
-        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "1")),
-        help="seconds to wait for an answer to each probe "
-        "(env: ARPHOLE_PROBE_TIMEOUT, default: 1)",
-    )
-    p.add_argument(
-        "--workers",
-        type=int,
-        default=int(os.environ.get("ARPHOLE_WORKERS", "4")),
-        help="number of consumer threads for probe+reclaim "
-        "(env: ARPHOLE_WORKERS, default: 4)",
+        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "2")),
+        help="seconds after probe send with no reply before sweeper reclaims "
+        "(env: ARPHOLE_PROBE_TIMEOUT, default: 2)",
     )
     p.add_argument(
         "--vlans",
@@ -575,7 +626,6 @@ def main() -> int:
         claim_cooldown=args.claim_cooldown,
         probe_count=args.probe_count,
         probe_timeout=args.probe_timeout,
-        workers=args.workers,
         allowed_vlans=parse_vlans(args.vlans),
     )
 

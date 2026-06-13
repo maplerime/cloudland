@@ -2,38 +2,40 @@
 
 Sniffs broadcast ARP "who-has" requests on one or more interfaces and,
 after the same (iface, target IP) is requested THRESHOLD times within a
-rolling WINDOW, probes the IP and reclaims it with a freshly generated
-locally-administered unicast MAC if no owner replies. Replies preserve
-the original 802.1Q VLAN tag.
+rolling WINDOW, fires probes and reclaims the IP with a locally-
+administered unicast MAC if no owner replies within PROBE_TIMEOUT.
+Replies preserve the original 802.1Q VLAN tag.
 
 ## How it works
 
-Producer/consumer design so sniffing is never blocked by probe I/O.
+Five thread roles — probe send and reply wait are decoupled so throughput
+is bounded by `sendp()` rate, not by `PROBE_TIMEOUT`.
 
-- **Sniff threads** (one per interface): for every broadcast ARP
-  `who-has`, increment a per-(iface, IP) counter over a rolling window.
-  When the counter reaches THRESHOLD, enqueue a reclaim task and mark
-  the (iface, IP) as inflight (so duplicate requests are coalesced
-  while the task is pending).
-- **Consumer threads** (`--workers`): drain the queue, then:
-  1. **Probe** — send PROBE_COUNT ARP `who-has` packets (ARP `op=1`,
-     `hwsrc` = iface MAC, `psrc=0.0.0.0`) and wait PROBE_TIMEOUT for
-     a reply. A reply counts as "occupied" only if `ARP.op == 2` and
-     `ARP.psrc == target_ip` (avoids false positives from unrelated
-     ARP replies).
-  2. **Reclaim** — if no reply, emit an `is-at` (`op=2`) with a
-     `fe:55:xx:xx:xx:xx` MAC, addressed to the original requester's
-     MAC, preserving the VLAN tag. The MAC is cached per (iface, IP)
-     so subsequent reclaims of the same IP reuse it (no flapping).
-  3. **Silence** — either way, the (iface, IP) is silenced for
-     `CLAIM_COOLDOWN` seconds after a probe (occupied) or a reclaim.
-- **GC thread**: every 60 s drops expired silence entries and stale
-  pending counters so the dicts stay bounded over long runs.
+- **Request sniff** (one per iface): counts broadcast ARP `who-has` per
+  (iface, IP) over a rolling WINDOW; at THRESHOLD enqueues a probe task
+  and marks the (iface, IP) inflight so duplicates coalesce while the
+  task is pending.
+- **Reply sniff** (one per iface): watches ARP `is-at` replies addressed
+  to our iface MAC. If `ARP.psrc` matches an in-flight probe, that IP is
+  marked occupied and silenced — never reclaimed.
+- **Sender** (single): drains the queue, registers `(iface, IP)` in
+  `_probing` with a send timestamp, then fires PROBE_COUNT `who-has`
+  (`ARP op=1`, `hwsrc` = iface MAC, `psrc=0.0.0.0`) via `sendp()`. No
+  waiting — replies are matched by the reply sniff thread.
+- **Sweeper** (single): every 100 ms reclaims any `(iface, IP)` still in
+  `_probing` past PROBE_TIMEOUT — emitting an `is-at` (`op=2`) with a
+  cached `fe:55:xx:xx:xx:xx` MAC addressed to the original requester's
+  MAC, preserving the VLAN tag. The MAC is cached per (iface, IP) so
+  subsequent reclaims reuse it (no flapping).
+- **Silence**: after either path (probe answered or reclaim), the
+  (iface, IP) is silenced for `CLAIM_COOLDOWN` seconds.
+- **GC** (single): every 60 s drops expired silence entries, stale
+  pending counters, and MAC cache entries not reused in 1 h.
 
 ## Configuration
 
-All knobs are available as CLI flags (`--threshold`, `--workers`, …) or
-matching env vars. Defaults:
+All knobs are available as CLI flags (`--threshold`, `--probe-timeout`,
+…) or matching env vars. Defaults:
 
 | Env var                  | Default | Meaning                                              |
 | ------------------------ | ------- | ---------------------------------------------------- |
@@ -42,9 +44,8 @@ matching env vars. Defaults:
 | `ARPHOLE_THRESHOLD`      | 6       | Same-target ARP requests before probing/reclaiming.  |
 | `ARPHOLE_WINDOW`         | 15      | Rolling window in seconds.                           |
 | `ARPHOLE_CLAIM_COOLDOWN` | 300     | Seconds to silence (iface, IP) after probe/reclaim.  |
-| `ARPHOLE_PROBE_COUNT`    | 2       | Number of who-has probes before reclaiming.          |
-| `ARPHOLE_PROBE_TIMEOUT`  | 1       | Seconds to wait for an answer to each probe batch.   |
-| `ARPHOLE_WORKERS`        | 4       | Consumer threads doing probe + reclaim.              |
+| `ARPHOLE_PROBE_COUNT`    | 2       | Number of who-has probes fired per task.             |
+| `ARPHOLE_PROBE_TIMEOUT`  | 2       | Seconds after probe send with no reply before sweep-reclaim. |
 | `ARPHOLE_VLANS`          | (all)   | VLAN allow-list, see below.                          |
 
 ## Run
@@ -77,9 +78,9 @@ sudo systemctl enable --now arphole
 
 ## VLAN handling
 
-Both sniff (`sniff`) and probe (`srp`) use the BPF filter
-`arp or (vlan and arp)` to capture tagged and untagged frames. Reply
-frames re-tag with the same VLAN ID as the request.
+All sniff threads use the BPF filter `arp or (vlan and arp)` to capture
+tagged and untagged frames. Reply frames re-tag with the same VLAN ID
+as the request.
 
 `ARPHOLE_VLANS` is an optional allow-list; IPs outside the listed VLANs
 are ignored. Empty value = all VLANs (and untagged). Examples:
