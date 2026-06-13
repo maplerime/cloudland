@@ -21,11 +21,14 @@ Producer/consumer design so sniffing is never blocked by probe I/O.
      a reply. A reply counts as "occupied" only if `ARP.op == 2` and
      `ARP.psrc == target_ip` (avoids false positives from unrelated
      ARP replies).
-  2. **Reclaim** — if no reply, emit an `is-at` (`op=2`) with a random
+  2. **Reclaim** — if no reply, emit an `is-at` (`op=2`) with a
      `fe:55:xx:xx:xx:xx` MAC, addressed to the original requester's
-     MAC, preserving the VLAN tag.
-- **GC thread**: every 60 s drops stale pending counters so the dict
-  stays bounded over long runs.
+     MAC, preserving the VLAN tag. The MAC is cached per (iface, IP)
+     so subsequent reclaims of the same IP reuse it (no flapping).
+  3. **Silence** — either way, the (iface, IP) is silenced for
+     `CLAIM_COOLDOWN` seconds after a probe (occupied) or a reclaim.
+- **GC thread**: every 60 s drops expired silence entries and stale
+  pending counters so the dicts stay bounded over long runs.
 
 ## Configuration
 
@@ -38,8 +41,9 @@ matching env vars. Defaults:
 | `ARPHOLE_LOG`            | INFO    | Log level.                                           |
 | `ARPHOLE_THRESHOLD`      | 6       | Same-target ARP requests before probing/reclaiming.  |
 | `ARPHOLE_WINDOW`         | 15      | Rolling window in seconds.                           |
+| `ARPHOLE_CLAIM_COOLDOWN` | 300     | Seconds to silence (iface, IP) after probe/reclaim.  |
 | `ARPHOLE_PROBE_COUNT`    | 3       | Number of who-has probes before reclaiming.          |
-| `ARPHOLE_PROBE_TIMEOUT`  | 1       | Seconds to wait for an answer to each probe batch.   |
+| `ARPHOLE_PROBE_TIMEOUT`  | 2       | Seconds to wait for an answer to each probe batch.   |
 | `ARPHOLE_WORKERS`        | 4       | Consumer threads doing probe + reclaim.              |
 | `ARPHOLE_VLANS`          | (all)   | VLAN allow-list, see below.                          |
 
