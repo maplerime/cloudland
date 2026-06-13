@@ -534,17 +534,27 @@ class ArpHole:
     def _on_reply(self, iface: str, pkt) -> None:
         """Reply sniff handler: if it answers one of our probes, mark occupied.
 
-        Match is purely on (iface, psrc, vlan_id) — no MAC check. Any ARP
-        is-at for an IP we're currently probing is treated as evidence the
-        IP is occupied, regardless of whom the reply was addressed to.
-        Safer failure mode: false-positive "occupied" (we skip a reclaim)
-        is much less harmful than false-negative (we reclaim a live host's IP).
-        Also sidesteps bridge / bond / VLAN sub-interface MAC mismatch where
-        Ether.dst wouldn't equal get_if_hwaddr(iface).
+        Match is purely on (iface, psrc, vlan_id) — no MAC check against the
+        iface. Any ARP is-at for an IP we're currently probing is treated as
+        evidence the IP is occupied, regardless of whom the reply was
+        addressed to. Safer failure mode: false-positive "occupied" (we skip
+        a reclaim) is much less harmful than false-negative (we reclaim a
+        live host's IP). Also sidesteps bridge / bond / VLAN sub-interface
+        MAC mismatch where Ether.dst wouldn't equal get_if_hwaddr(iface).
+
+        AF_PACKET on Linux captures our own outgoing frames (PACKET_OUTGOING)
+        on the sniff socket, so without an explicit filter the reply sniff
+        would catch our own reclaim is-at (src=fe:55:*) and falsely mark
+        any in-flight probe for the same (iface, psrc, vlan) as 'answered'.
+        Skip frames whose source MAC is in our locally-administered block.
         """
         if ARP not in pkt or Ether not in pkt:
             return
         if pkt[ARP].op != 2:
+            return
+        # Skip our own reclaim is-at (AF_PACKET loops outgoing frames back).
+        src_mac = pkt[Ether].src.lower()
+        if src_mac.startswith("fe:55:"):
             return
         src_ip = pkt[ARP].psrc
         if not src_ip:
