@@ -389,6 +389,16 @@ class ArpHole:
         target_ip = pkt[ARP].pdst
         if not target_ip:
             return
+        # Skip ARP probes used during Duplicate Address Detection (RFC 5227):
+        # psrc=0.0.0.0 means the sender hasn't bound the IP yet — claiming
+        # here would make the host's DAD report a conflict and abandon it.
+        sender_ip = pkt[ARP].psrc
+        if sender_ip in ("0.0.0.0", ""):
+            return
+        # Skip gratuitous ARP (psrc == pdst): host announcing its own
+        # address, e.g. on failover. Not a request to claim.
+        if sender_ip == target_ip:
+            return
         # Extract pure fields; never touch pkt again after this point.
         task = ProbeTask(
             target_ip=target_ip,
