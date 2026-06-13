@@ -42,8 +42,8 @@ matching env vars. Defaults:
 | `ARPHOLE_THRESHOLD`      | 6       | Same-target ARP requests before probing/reclaiming.  |
 | `ARPHOLE_WINDOW`         | 15      | Rolling window in seconds.                           |
 | `ARPHOLE_CLAIM_COOLDOWN` | 300     | Seconds to silence (iface, IP) after probe/reclaim.  |
-| `ARPHOLE_PROBE_COUNT`    | 3       | Number of who-has probes before reclaiming.          |
-| `ARPHOLE_PROBE_TIMEOUT`  | 2       | Seconds to wait for an answer to each probe batch.   |
+| `ARPHOLE_PROBE_COUNT`    | 2       | Number of who-has probes before reclaiming.          |
+| `ARPHOLE_PROBE_TIMEOUT`  | 1       | Seconds to wait for an answer to each probe batch.   |
 | `ARPHOLE_WORKERS`        | 4       | Consumer threads doing probe + reclaim.              |
 | `ARPHOLE_VLANS`          | (all)   | VLAN allow-list, see below.                          |
 

@@ -10,8 +10,8 @@ cd "$(dirname "$0")"
 : "${ARPHOLE_THRESHOLD:=6}"
 : "${ARPHOLE_WINDOW:=15}"
 : "${ARPHOLE_CLAIM_COOLDOWN:=300}"
-: "${ARPHOLE_PROBE_COUNT:=3}"
-: "${ARPHOLE_PROBE_TIMEOUT:=2}"
+: "${ARPHOLE_PROBE_COUNT:=2}"
+: "${ARPHOLE_PROBE_TIMEOUT:=1}"
 : "${ARPHOLE_WORKERS:=4}"
 : "${ARPHOLE_VLANS:=25-30}"   # e.g. "0,25-100" or empty for all
 

@@ -106,8 +106,8 @@ class ArpHole:
         threshold: int = 6,
         window: float = 15.0,
         claim_cooldown: float = 300.0,
-        probe_count: int = 3,
-        probe_timeout: float = 2.0,
+        probe_count: int = 2,
+        probe_timeout: float = 1.0,
         workers: int = 4,
         allowed_vlans: set[int] | None = None,
     ):
@@ -529,16 +529,16 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--probe-count",
         type=int,
-        default=int(os.environ.get("ARPHOLE_PROBE_COUNT", "3")),
+        default=int(os.environ.get("ARPHOLE_PROBE_COUNT", "2")),
         help="number of who-has probes to send before reclaiming "
-        "(env: ARPHOLE_PROBE_COUNT, default: 3)",
+        "(env: ARPHOLE_PROBE_COUNT, default: 2)",
     )
     p.add_argument(
         "--probe-timeout",
         type=float,
-        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "2")),
+        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "1")),
         help="seconds to wait for an answer to each probe "
-        "(env: ARPHOLE_PROBE_TIMEOUT, default: 2)",
+        "(env: ARPHOLE_PROBE_TIMEOUT, default: 1)",
     )
     p.add_argument(
         "--workers",
