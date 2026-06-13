@@ -4,12 +4,10 @@ arphole — producer/consumer ARP hole.
 
 Sniff threads (one per interface) act as producers: they count
 per-(iface, IP) ARP requests within a rolling window and, when the
-threshold is hit, enqueue a reclaim task. A single consumer thread
-drains the queue, runs the probe (PROBE_COUNT ARP who-has), and only
-if no reply is received reclaims the IP with a freshly generated
-locally-administered unicast MAC (fe:55:xx:xx:xx:xx) preserving the
-original VLAN tag. After a probe or reclaim the (iface, IP) is silenced
-for CLAIM_COOLDOWN seconds.
+threshold is hit, enqueue a reclaim task. Consumer threads drain the
+queue, run the probe (PROBE_COUNT ARP who-has), and only if no reply
+is received reclaim the IP with a freshly generated locally-administered
+unicast MAC (fe:55:xx:xx:xx:xx) preserving the original VLAN tag.
 """
 
 import argparse
@@ -102,27 +100,23 @@ class ArpHole:
         ifaces: list[str],
         threshold: int = 6,
         window: float = 15.0,
-        claim_cooldown: float = 900.0,
         probe_count: int = 3,
-        probe_timeout: float = 2.0,
+        probe_timeout: float = 1.0,
         workers: int = 4,
         allowed_vlans: set[int] | None = None,
     ):
         self.ifaces = ifaces
         self.threshold = threshold
         self.window = window
-        self.claim_cooldown = claim_cooldown
         self.probe_count = probe_count
         self.probe_timeout = probe_timeout
         self.workers = max(1, workers)
         # None = allow all VLANs (and untagged). 0 in set = allow untagged.
         self.allowed_vlans = allowed_vlans
-        # Guards _pending, _silent_until, _inflight.
+        # Guards _pending, _inflight.
         self._lock = threading.Lock()
         # (iface, ip) -> list of monotonic timestamps of recent ARP requests.
         self._pending: dict[tuple[str, str], list[float]] = {}
-        # (iface, ip) -> monotonic timestamp until which we stay silent.
-        self._silent_until: dict[tuple[str, str], float] = {}
         # (iface, ip) currently queued or being processed by the consumer.
         self._inflight: set[tuple[str, str]] = set()
         # Producer -> consumer queue. Each item is (iface, ip, ProbeTask).
@@ -133,16 +127,6 @@ class ArpHole:
         }
 
     # ------------------------------------------------------------------ state
-
-    def _in_silence(self, iface: str, ip: str, now: float) -> bool:
-        key = (iface, ip)
-        until = self._silent_until.get(key)
-        if until is None:
-            return False
-        if now >= until:
-            self._silent_until.pop(key, None)
-            return False
-        return True
 
     def _record_request(self, iface: str, ip: str, now: float) -> int:
         """Return count of requests for (iface, ip) within the rolling window."""
@@ -161,15 +145,10 @@ class ArpHole:
         return len(timestamps)
 
     def _gc(self) -> None:
-        """Drop expired silence entries and stale pending counters."""
+        """Drop stale pending counters."""
         now = time.monotonic()
         cutoff = now - self.window
         with self._lock:
-            expired_silence = [
-                k for k, until in self._silent_until.items() if until <= now
-            ]
-            for k in expired_silence:
-                del self._silent_until[k]
             stale_pending = []
             for k, ts in self._pending.items():
                 if not ts or ts[-1] < cutoff:
@@ -184,12 +163,8 @@ class ArpHole:
                     stale_pending.append(k)
             for k in stale_pending:
                 del self._pending[k]
-        if expired_silence or stale_pending:
-            logger.debug(
-                "GC: removed %d silence, %d pending entries",
-                len(expired_silence),
-                len(stale_pending),
-            )
+        if stale_pending:
+            logger.debug("GC: removed %d pending entries", len(stale_pending))
 
     def _gc_loop(self) -> None:
         while True:
@@ -210,14 +185,6 @@ class ArpHole:
         ip = task.target_ip
         now = time.monotonic()
         with self._lock:
-            if self._in_silence(iface, ip, now):
-                logger.debug(
-                    "[%s] arp request for %s — silent for %.0fs more",
-                    iface,
-                    ip,
-                    self._silent_until.get((iface, ip), now) - now,
-                )
-                return False
             if (iface, ip) in self._inflight:
                 logger.debug(
                     "[%s] arp request for %s — already queued for probe",
@@ -309,25 +276,10 @@ class ArpHole:
         return rand_mac, frame
 
     def _handle_claim(self, iface: str, task: ProbeTask) -> None:
-        """Consumer side: probe then reclaim (or just silence if occupied)."""
+        """Consumer side: probe then reclaim if unoccupied."""
         ip = task.target_ip
-        now = time.monotonic()
-        # Silence may have been set by a previous task while we queued.
-        with self._lock:
-            if self._in_silence(iface, ip, now):
-                logger.info("[%s] %s already silent; skipping", iface, ip)
-                return
-        occupied = self._probe_occupied(iface, task)
-        now_after = time.monotonic()
-        with self._lock:
-            self._silent_until[(iface, ip)] = now_after + self.claim_cooldown
-        if occupied:
-            logger.info(
-                "[%s] %s occupied; silent for %.0fs",
-                iface,
-                ip,
-                self.claim_cooldown,
-            )
+        if self._probe_occupied(iface, task):
+            logger.info("[%s] %s occupied; skipping", iface, ip)
             return
         rand_mac, frame = self._build_reply(iface, task)
         try:
@@ -425,13 +377,12 @@ class ArpHole:
             ",".join(str(v) for v in sorted(self.allowed_vlans))
         )
         logger.info(
-            "arphole starting on %s (threshold=%d window=%.1fs probe=%dx%.1fs cooldown=%.0fs workers=%d vlans=%s)",
+            "arphole starting on %s (threshold=%d window=%.1fs probe=%dx%.1fs workers=%d vlans=%s)",
             ", ".join(self.ifaces),
             self.threshold,
             self.window,
             self.probe_count,
             self.probe_timeout,
-            self.claim_cooldown,
             self.workers,
             vlans_desc,
         )
@@ -488,13 +439,6 @@ def parse_args() -> argparse.Namespace:
         "(env: ARPHOLE_WINDOW, default: 15)",
     )
     p.add_argument(
-        "--claim-cooldown",
-        type=float,
-        default=float(os.environ.get("ARPHOLE_CLAIM_COOLDOWN", "900")),
-        help="seconds to silence (iface, IP) after a probe or reclaim "
-        "(env: ARPHOLE_CLAIM_COOLDOWN, default: 900 = 15 min)",
-    )
-    p.add_argument(
         "--probe-count",
         type=int,
         default=int(os.environ.get("ARPHOLE_PROBE_COUNT", "3")),
@@ -504,9 +448,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--probe-timeout",
         type=float,
-        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "2")),
+        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "1")),
         help="seconds to wait for an answer to each probe "
-        "(env: ARPHOLE_PROBE_TIMEOUT, default: 2)",
+        "(env: ARPHOLE_PROBE_TIMEOUT, default: 1)",
     )
     p.add_argument(
         "--workers",
@@ -540,7 +484,6 @@ def main() -> int:
         ifaces=ifaces,
         threshold=args.threshold,
         window=args.window,
-        claim_cooldown=args.claim_cooldown,
         probe_count=args.probe_count,
         probe_timeout=args.probe_timeout,
         workers=args.workers,

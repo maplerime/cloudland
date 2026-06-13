@@ -211,8 +211,15 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 		if !updatePrimary && fip.InstanceID > 0 {
 			continue
 		}
-		if fip.InstanceID > 0 && fip.InstanceID != instance.ID {
-			err = fmt.Errorf("Public IP is already in use")
+		// Lock the floating IP row to prevent concurrent allocation
+		lockedFip := &model.FloatingIp{}
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", fip.ID).Take(lockedFip).Error
+		if err != nil {
+			logger.Errorf("Failed to lock floating ip %d, %v", fip.ID, err)
+			return
+		}
+		if lockedFip.InstanceID > 0 && lockedFip.InstanceID != instance.ID {
+			err = fmt.Errorf("Public IP %s is already in use", fip.FipAddress)
 			return
 		}
 		fip.Instance = instance
