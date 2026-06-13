@@ -43,8 +43,10 @@ DESCRIPTION = (
     "and reclaim the IP with a random MAC if no reply is received."
 )
 
-# GC interval for _silent_until / _pending dicts.
+# GC interval for _silent_until / _pending / _claimed_macs dicts.
 _GC_INTERVAL = 60.0
+# Drop cached reclaim MACs that haven't been reused in this many seconds.
+_MAC_RETENTION = 3600.0
 
 
 class ProbeTask(NamedTuple):
@@ -126,8 +128,9 @@ class ArpHole:
         self._silent_until: dict[tuple[str, str], float] = {}
         # (iface, ip) currently queued or being processed by the consumer.
         self._inflight: set[tuple[str, str]] = set()
-        # (iface, ip) -> cached MAC reused on subsequent reclaims.
-        self._claimed_macs: dict[tuple[str, str], str] = {}
+        # (iface, ip) -> (mac, last_used_monotonic). Reused on subsequent
+        # reclaims so requesters don't see MAC flapping.
+        self._claimed_macs: dict[tuple[str, str], tuple[str, float]] = {}
         # Producer -> consumer queue. Each item is (iface, ip, ProbeTask).
         self._work_q: "queue.Queue[tuple[str, str, ProbeTask] | None]" = queue.Queue()
         # iface -> hardware address (used to filter out our own probes).
@@ -148,13 +151,21 @@ class ArpHole:
         return True
 
     def _get_or_create_mac(self, iface: str, ip: str) -> str:
-        """Return cached reclaim MAC for (iface, ip), creating one on first use."""
+        """Return cached reclaim MAC for (iface, ip), creating one on first use.
+
+        Refreshes last_used on hit so the GC retention window is measured
+        from the most recent reclaim, not the first.
+        """
         key = (iface, ip)
+        now = time.monotonic()
         with self._lock:
-            mac = self._claimed_macs.get(key)
-            if mac is None:
+            entry = self._claimed_macs.get(key)
+            if entry is None:
                 mac = rand_unicast_mac()
-                self._claimed_macs[key] = mac
+                self._claimed_macs[key] = (mac, now)
+                return mac
+            mac, _ = entry
+            self._claimed_macs[key] = (mac, now)
             return mac
 
     def _record_request(self, iface: str, ip: str, now: float) -> int:
@@ -174,9 +185,10 @@ class ArpHole:
         return len(timestamps)
 
     def _gc(self) -> None:
-        """Drop expired silence entries and stale pending counters."""
+        """Drop expired silence entries, stale pending counters, and stale MAC cache."""
         now = time.monotonic()
         cutoff = now - self.window
+        mac_cutoff = now - _MAC_RETENTION
         with self._lock:
             expired_silence = [
                 k for k, until in self._silent_until.items() if until <= now
@@ -197,11 +209,18 @@ class ArpHole:
                     stale_pending.append(k)
             for k in stale_pending:
                 del self._pending[k]
-        if expired_silence or stale_pending:
+            stale_macs = [
+                k for k, (_, last_used) in self._claimed_macs.items()
+                if last_used < mac_cutoff
+            ]
+            for k in stale_macs:
+                del self._claimed_macs[k]
+        if expired_silence or stale_pending or stale_macs:
             logger.debug(
-                "GC: removed %d silence, %d pending entries",
+                "GC: removed %d silence, %d pending, %d mac entries",
                 len(expired_silence),
                 len(stale_pending),
+                len(stale_macs),
             )
 
     def _gc_loop(self) -> None:
