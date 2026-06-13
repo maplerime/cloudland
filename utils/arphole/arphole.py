@@ -492,16 +492,19 @@ class ArpHole:
         self.enqueue_if_needed(iface, task)
 
     def _on_reply(self, iface: str, pkt) -> None:
-        """Reply sniff handler: if it answers one of our probes, mark occupied."""
+        """Reply sniff handler: if it answers one of our probes, mark occupied.
+
+        Match is purely on (iface, psrc, vlan_id) — no MAC check. Any ARP
+        is-at for an IP we're currently probing is treated as evidence the
+        IP is occupied, regardless of whom the reply was addressed to.
+        Safer failure mode: false-positive "occupied" (we skip a reclaim)
+        is much less harmful than false-negative (we reclaim a live host's IP).
+        Also sidesteps bridge / bond / VLAN sub-interface MAC mismatch where
+        Ether.dst wouldn't equal get_if_hwaddr(iface).
+        """
         if ARP not in pkt or Ether not in pkt:
             return
         if pkt[ARP].op != 2:
-            return
-        # Only consider replies addressed to our iface MAC.
-        our_mac = self._iface_macs.get(iface, "")
-        if not our_mac:
-            return
-        if pkt[Ether].dst.lower() != our_mac:
             return
         src_ip = pkt[ARP].psrc
         if not src_ip:
