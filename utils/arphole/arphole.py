@@ -60,6 +60,13 @@ _GC_INTERVAL = 60.0
 _MAC_RETENTION = 3600.0
 # How often the reclaim sweeper wakes.
 _SWEEP_INTERVAL = 0.1
+# Source IP used in outgoing who-has probes. RFC 5737 TEST-NET-1 (192.0.2.0/24)
+# is reserved for documentation, so this address cannot collide with a real
+# host. Using a non-zero psrc avoids being mistaken for an RFC 5227 DAD probe
+# (which would make Windows abandon the address it is probing). _on_request
+# also filters incoming requests carrying this psrc so multiple arphole
+# instances do not amplify each other's probes.
+_PROBE_SRC_IP = "192.0.2.100"
 
 
 class ProbeTask(NamedTuple):
@@ -325,7 +332,7 @@ class ArpHole:
 
     def _build_probe(self, iface: str, task: ProbeTask):
         src_mac = self._iface_macs.get(iface, "")
-        arp = ARP(op=1, hwsrc=src_mac, psrc="0.0.0.0", pdst=task.target_ip)
+        arp = ARP(op=1, hwsrc=src_mac, psrc=_PROBE_SRC_IP, pdst=task.target_ip)
         ether = Ether(src=src_mac, dst="ff:ff:ff:ff:ff:ff")
         if task.vlan_id:
             return ether / Dot1Q(vlan=task.vlan_id) / arp
@@ -342,11 +349,12 @@ class ArpHole:
         """
         probe = self._build_probe(iface, task)
         logger.info(
-            "[%s] sending %d probe(s) for %s vlan=%d (psrc=0.0.0.0 pdst=%s)",
+            "[%s] sending %d probe(s) for %s vlan=%d (psrc=%s pdst=%s)",
             iface,
             self.probe_count,
             task.target_ip,
             task.vlan_id,
+            _PROBE_SRC_IP,
             task.target_ip,
         )
         sock = self._get_send_socket(iface)
@@ -517,6 +525,10 @@ class ArpHole:
         # here would make the host's DAD report a conflict and abandon it.
         sender_ip = pkt[ARP].psrc
         if sender_ip in ("0.0.0.0", ""):
+            return
+        # Skip probes from other arphole instances so they do not amplify
+        # each other into a feedback loop.
+        if sender_ip == _PROBE_SRC_IP:
             return
         # Skip gratuitous ARP (psrc == pdst): host announcing its own
         # address, e.g. on failover. Not a request to claim.

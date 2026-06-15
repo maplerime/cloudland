@@ -20,7 +20,7 @@ is bounded by `sendp()` rate, not by `PROBE_TIMEOUT`.
   marked occupied and silenced — never reclaimed.
 - **Sender** (single): drains the queue, registers `(iface, IP)` in
   `_probing` with a send timestamp, then fires PROBE_COUNT `who-has`
-  (`ARP op=1`, `hwsrc` = iface MAC, `psrc=0.0.0.0`) via `sendp()`. No
+  (`ARP op=1`, `hwsrc` = iface MAC, `psrc=192.0.2.100`) via `sendp()`. No
   waiting — replies are matched by the reply sniff thread.
 - **Sweeper** (single): every 100 ms reclaims any `(iface, IP)` still in
   `_probing` past PROBE_TIMEOUT — emitting an `is-at` (`op=2`) with a
