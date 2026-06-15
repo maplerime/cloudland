@@ -605,8 +605,17 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 			logger.Error("Failed to save instance for migrate+resize", err)
 			return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 		}
-		// Create migration with pending resize
-		_, err = migrationAdmin.Create(ctx, fmt.Sprintf("resize-migrate-%d", instance.ID),
+		// Create migration with pending resize.
+		// migration.Create requires Admin permission, but resize-triggered migration
+		// is an internal system operation — user ownership is already verified above.
+		// Elevate to admin only when the caller is not already admin.
+		resizeMigrationCtx := ctx
+		if !memberShip.CheckPermission(model.Admin) {
+			elevatedMembership := *memberShip
+			elevatedMembership.Role = model.Admin
+			resizeMigrationCtx = elevatedMembership.SetContext(ctx)
+		}
+		_, err = migrationAdmin.Create(resizeMigrationCtx, fmt.Sprintf("resize-migrate-%d", instance.ID),
 			[]*model.Instance{instance}, false, selectedHyperID)
 		if err != nil {
 			logger.Errorf("Failed to create migration for resize: %v", err)
