@@ -35,10 +35,10 @@ type ValidatePayload struct {
 // @Tags         Placement
 // @Accept       json
 // @Produce      json
-// @Param        zone_id   query int true  "Zone ID"
-// @Param        vcpus     query int true  "Number of vCPUs"
-// @Param        memory_mb query int true  "Memory in MB"
-// @Param        disk_gb   query int true  "Disk in GB"
+// @Param        zone_name  query string true  "Zone name"
+// @Param        vcpus      query int    true  "Number of vCPUs"
+// @Param        memory_mb  query int    true  "Memory in MB"
+// @Param        disk_gb    query int    false "Disk in GB (default 1)"
 // @Success      200 {object} map[string]interface{}
 // @Failure      400 {object} common.APIError
 // @Failure      403 {object} common.APIError
@@ -51,11 +51,17 @@ func (v *PlacementAPI) Available(c *gin.Context) {
 		return
 	}
 
-	zoneID, err := strconv.ParseInt(c.Query("zone_id"), 10, 64)
-	if err != nil || zoneID <= 0 {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid or missing zone_id parameter", err)
+	zoneName := c.Query("zone_name")
+	if zoneName == "" {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid or missing zone_name parameter", nil)
 		return
 	}
+	zone, err := zoneAdmin.GetZoneByName(ctx, zoneName)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Zone not found", err)
+		return
+	}
+
 	vcpus, err := strconv.ParseInt(c.Query("vcpus"), 10, 32)
 	if err != nil || vcpus < 1 {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid or missing vcpus parameter", err)
@@ -66,17 +72,20 @@ func (v *PlacementAPI) Available(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid or missing memory_mb parameter", err)
 		return
 	}
-	diskGB, err := strconv.ParseInt(c.Query("disk_gb"), 10, 64)
-	if err != nil || diskGB < 0 {
-		ErrorResponse(c, http.StatusBadRequest, "Invalid or missing disk_gb parameter", err)
-		return
+	diskGB := int64(1)
+	if diskStr := c.Query("disk_gb"); diskStr != "" {
+		diskGB, err = strconv.ParseInt(diskStr, 10, 64)
+		if err != nil || diskGB < 0 {
+			ErrorResponse(c, http.StatusBadRequest, "Invalid disk_gb parameter", err)
+			return
+		}
 	}
 
 	req := &scheduler.PlacementRequest{
 		VCPUs:  int32(vcpus),
 		MemMB:  memoryMB,
 		DiskGB: diskGB,
-		ZoneID: zoneID,
+		ZoneID: zone.ID,
 	}
 
 	candidates, err := scheduler.QueryAvailableHosts(ctx, req)
@@ -92,6 +101,7 @@ func (v *PlacementAPI) Available(c *gin.Context) {
 			"vcpus":     req.VCPUs,
 			"memory_mb": req.MemMB,
 			"disk_gb":   req.DiskGB,
+			"zone_name": zone.Name,
 			"zone_id":   req.ZoneID,
 		},
 	})

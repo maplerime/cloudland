@@ -5044,11 +5044,11 @@ paths:
       description: Runs the full filter+weigher chain and returns all passing hypers
         sorted by score
       parameters:
-      - description: Zone ID
+      - description: Zone name
         in: query
-        name: zone_id
+        name: zone_name
         required: true
-        type: integer
+        type: string
       - description: Number of vCPUs
         in: query
         name: vcpus
@@ -5059,10 +5059,9 @@ paths:
         name: memory_mb
         required: true
         type: integer
-      - description: Disk in GB
+      - description: Disk in GB (default 1)
         in: query
         name: disk_gb
-        required: true
         type: integer
       produces:
       - application/json
