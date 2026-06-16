@@ -124,7 +124,7 @@ type PlacementRequest struct {
 
 func defaultConfig() *PlacementConfig {
 	cfg := &PlacementConfig{
-		Enabled: true,
+		Enabled: false,
 		Log2DB:  true,
 		// "zone" filter removed: DB query already scopes hosts to the requested zone.
 		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity"},
