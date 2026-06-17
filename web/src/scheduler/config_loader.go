@@ -279,9 +279,10 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 	// Merged config does not carry the zones table (prevents recursive resolution)
 	merged.Zones = nil
 
-	if zone.Enabled != nil {
+	// Global enabled=false is a hard kill-switch; zone can only override when global is on.
+	if zone.Enabled != nil && global.Enabled {
 		merged.Enabled = *zone.Enabled
-		logger.Debugf("mergeZoneConfig: override enabled=%v", merged.Enabled)
+		logger.Debugf("mergeZoneConfig: zone override enabled=%v", merged.Enabled)
 	}
 	if zone.FilterChain != nil {
 		merged.FilterChain = *zone.FilterChain

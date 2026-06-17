@@ -11,12 +11,57 @@
                         <div class="ui info message">
                             <p><strong>Config File:</strong> conf/placement.toml</p>
                             <p><strong>Last Loaded:</strong> {{.LoadedAt}}</p>
+                            <p><strong>Global Placement:</strong>
+                                {{if .GlobalEnabled}}
+                                    <span class="ui green label">Enabled</span>
+                                {{else}}
+                                    <span class="ui red label">Disabled (all zones forced off)</span>
+                                {{end}}
+                            </p>
                         </div>
                         <form action="/placement/reload" method="POST" style="margin-bottom: 20px;">
                             <button type="submit" class="ui blue button" onclick="return confirm('Reload placement configuration from file?')">
                                 Reload Configuration
                             </button>
                         </form>
+                    </div>
+
+                    <h4 class="ui attached header">Zone Enabled Overrides</h4>
+                    <div class="ui attached table segment">
+                        {{if .ZoneEnabledOverrides}}
+                        <table class="ui very basic definition table">
+                            <thead>
+                                <tr><th>Zone ID</th><th>Enabled</th><th>Note</th></tr>
+                            </thead>
+                            <tbody>
+                                {{range .ZoneEnabledOverrides}}
+                                <tr>
+                                    <td>{{.ZoneID}}</td>
+                                    <td>
+                                        {{if .Enabled}}
+                                            <span class="ui green label">Enabled</span>
+                                        {{else}}
+                                            <span class="ui red label">Disabled</span>
+                                        {{end}}
+                                    </td>
+                                    <td>
+                                        {{if not $.GlobalEnabled}}
+                                            {{if .Enabled}}
+                                                <span class="ui orange text">⚠ Overridden by global disabled</span>
+                                            {{else}}
+                                                explicitly disabled
+                                            {{end}}
+                                        {{else}}
+                                            zone override
+                                        {{end}}
+                                    </td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                        {{else}}
+                        <p style="padding: 10px; color: #888;">No per-zone enabled overrides configured. All zones inherit the global setting.</p>
+                        {{end}}
                     </div>
 
                     <h4 class="ui attached header">Active Filter Chain</h4>

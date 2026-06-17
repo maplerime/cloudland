@@ -9,6 +9,8 @@ package routes
 import (
 	"fmt"
 	"net/http"
+	"sort"
+	"strconv"
 
 	. "web/src/common"
 	"web/src/model"
@@ -17,6 +19,13 @@ import (
 	"github.com/go-macaron/session"
 	macaron "gopkg.in/macaron.v1"
 )
+
+// ZoneEnabledOverride carries the explicit enabled setting for one zone.
+// Zones not present in this list inherit the global enabled value.
+type ZoneEnabledOverride struct {
+	ZoneID  string
+	Enabled bool
+}
 
 var placementView = &PlacementView{}
 
@@ -37,6 +46,29 @@ func (v *PlacementView) Show(c *macaron.Context, store session.Store) {
 	cfg, loadedAt := scheduler.GetCurrentConfig()
 	c.Data["PlacementConfig"] = cfg
 	c.Data["LoadedAt"] = loadedAt.Format("2006-01-02 15:04:05")
+	c.Data["GlobalEnabled"] = cfg.Enabled
+
+	// Flatten per-zone enabled overrides (only zones with an explicit Enabled setting).
+	// *bool pointer cannot be nil-checked in templates, so we expand here.
+	var zoneOverrides []ZoneEnabledOverride
+	for zoneID, zoneCfg := range cfg.Zones {
+		if zoneCfg != nil && zoneCfg.Enabled != nil {
+			zoneOverrides = append(zoneOverrides, ZoneEnabledOverride{
+				ZoneID:  zoneID,
+				Enabled: *zoneCfg.Enabled,
+			})
+		}
+	}
+	sort.Slice(zoneOverrides, func(i, j int) bool {
+		ni, ei := strconv.Atoi(zoneOverrides[i].ZoneID)
+		nj, ej := strconv.Atoi(zoneOverrides[j].ZoneID)
+		if ei == nil && ej == nil {
+			return ni < nj
+		}
+		return zoneOverrides[i].ZoneID < zoneOverrides[j].ZoneID
+	})
+	c.Data["ZoneEnabledOverrides"] = zoneOverrides
+
 	c.Data["AvailableFilters"] = scheduler.GetRegisteredFilters()
 	c.Data["AvailableWeighers"] = scheduler.GetRegisteredWeighers()
 	// Load recent placement decisions for display
