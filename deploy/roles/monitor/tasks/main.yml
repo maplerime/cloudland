@@ -81,6 +81,9 @@
     - receiver_name
     - alert_recipient
     - slack_webhook_url
+    - slack_node_status_webhook_url
+    - slack_resource_webhook_url
+    - slack_security_webhook_url
   tags: [monitor]
 
 - name: Install packages for monitor server
@@ -440,20 +443,20 @@
                 receiver: 'node-webhook'
                 continue: true
 
-              # Also send node alarms to slack with fine-grained grouping
-              # Node status alerts (unavailable, cpu, disk, network) → slack-node-status
+              # Also send node alarms to teams with fine-grained grouping
+              # Node status alerts (unavailable, cpu, disk, network) → teams-node-status
               - match_re:
                   alert_type: node-(unavailable|cpu|memory|disk|network)
                   severity: critical|warning|info|error
                 group_by: ['alertname', 'instance', 'hostname', 'source_ip', 'target_ip', 'alert_type', 'severity', 'node_type']
-                receiver: 'slack-node-status'
+                receiver: 'teams-node-status'
                 continue: true
 
-              # Node hypervisor resource available alerts → slack-resource-alerts
+              # Node hypervisor resource available alerts → teams-resource-alerts
               - match:
                   alert_type: node-hypervisor-resource
                 group_by: ['alertname', 'zone', 'region', 'alert_type', 'severity', 'node_type']
-                receiver: 'slack-resource-alerts'
+                receiver: 'teams-resource-alerts'
                 continue: true
 
               # Route IP blocking alerts to slack-ip-block with alertname grouping (merge multiple IPs)
@@ -477,7 +480,7 @@
                 receiver: 'ip-block-webhook'
                 continue: true
 
-              # Route packet drop alerts to slack-drop-package with fine-grained grouping
+              # Route packet drop alerts to teams-drop-package with fine-grained grouping
               - match:
                   alert_type: packet_drop
                 # Group by description so we can show the specific kernel symbol in the title/text
@@ -485,17 +488,17 @@
                 group_wait: 10s
                 group_interval: 1m
                 repeat_interval: 2h
-                receiver: 'slack-drop-package'
+                receiver: 'teams-drop-package'
                 continue: true
 
-              # Route IP Group low available IPs alerts to dedicated Slack receiver
+              # Route IP Group low available IPs alerts to dedicated Teams receiver
               - match:
                   alert_type: ipgroup_low_ips
                 group_by: ['alertname', 'ipgroup_id', 'ipgroup_name', 'subnet_id', 'region']
                 group_wait: 10s
                 group_interval: 5m
                 repeat_interval: 3h
-                receiver: 'slack-ipgroup-alerts'
+                receiver: 'teams-ipgroup-alerts'
                 continue: true
 
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
@@ -504,10 +507,10 @@
                 receiver: 'vm-alerts-webhook'
                 continue: true
 
-              # Also send VM alerts to slack for monitoring
+              # Also send VM alerts to teams for monitoring
               - match_re:
                   alert_type: (cpu|memory|bw)
-                receiver: 'slack-notifications'
+                receiver: 'teams-notifications'
                 continue: true
 
           receivers:
@@ -516,17 +519,17 @@
             - to: '{{ alert_recipient }}'
               send_resolved: true
               headers:
-                Subject: '{% raw %}[Cloudland Alert] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
+                Subject: '{% raw %}[Cloudland 告警] {{ .CommonLabels.alertname }} {{ .CommonLabels.node_type }}{% endraw %}'
               html: |-
                 {% raw %}
-                <b>[Alert Type]</b> {{ .CommonLabels.alert_type }}<br>
-                <b>[Alert Name]</b> {{ .CommonLabels.alertname }}<br>
-                <b>[Severity]</b> {{ .CommonLabels.severity }}<br>
-                <b>[Instance/Domain]</b> {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}<br>
-                <b>[Summary]</b> {{ .CommonAnnotations.summary }}<br>
-                <b>[Description]</b> {{ .CommonAnnotations.description }}<br>
-                <b>[All Labels]</b> <pre>{{ .CommonLabels }}</pre><br>
-                <b>[All Annotations]</b> <pre>{{ .CommonAnnotations }}</pre><br>
+                <b>[告警类型]</b> {{ .CommonLabels.alert_type }}<br>
+                <b>[告警名称]</b> {{ .CommonLabels.alertname }}<br>
+                <b>[级别]</b> {{ .CommonLabels.severity }}<br>
+                <b>[实例/域名]</b> {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}<br>
+                <b>[摘要]</b> {{ .CommonAnnotations.summary }}<br>
+                <b>[详情]</b> {{ .CommonAnnotations.description }}<br>
+                <b>[所有标签]</b> <pre>{{ .CommonLabels }}</pre><br>
+                <b>[所有注释]</b> <pre>{{ .CommonAnnotations }}</pre><br>
                 {% endraw %}
 
 
@@ -556,120 +559,35 @@
                 tls_config:
                   insecure_skip_verify: true
 
-          - name: 'slack-notifications'
-            slack_configs:
-            - channel: '{{ slack_channel }}'
+          - name: 'teams-notifications'
+            webhook_configs:
+            - url: 'http://localhost:2000/vm_alerts'
               send_resolved: true
-              username: 'alertmanager'
-              icon_emoji: ':satellite:'
-              api_url: '{{ slack_webhook_url }}'
-              title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}{% endraw %}'
-              text: |-
-                {% raw %}
-                *[Summary]*: {{ .CommonAnnotations.summary }}
-                *[Description]*: {{ .CommonAnnotations.description }}
-                *[Alert Type]*: {{ .CommonLabels.alert_type }}
-                *[Alert Name]*: {{ .CommonLabels.alertname }}
-                *[Severity]*: {{ .CommonLabels.severity }}
-                *[Instance/Domain]*: {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.domain }}{{ .CommonLabels.domain }}{{ else }}N/A{{ end }}
-                *[Labels]*: `{{ .CommonLabels }}`
-                *[Annotations]*: `{{ .CommonAnnotations }}`
-                {% endraw %}
 
-          - name: 'slack-node-status'
-            slack_configs:
-            - channel: '{{ slack_node_status_channel }}'
+          - name: 'teams-node-status'
+            webhook_configs:
+            - url: 'http://localhost:2000/node_status'
               send_resolved: true
-              username: 'alertmanager'
-              icon_emoji: ':satellite:'
-              api_url: '{{ slack_node_status_webhook_url }}'
-              title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.hostname }}{{ .CommonLabels.hostname }}{{ else }}N/A{{ end }}{% endraw %}'
-              text: |-
-                {% raw %}
-                *[Summary]*: {{ .CommonAnnotations.summary }}
-                *[Description]*: {{ .CommonAnnotations.description }}
-                *[Alert Type]*: {{ .CommonLabels.alert_type }}
-                *[Alert Name]*: {{ .CommonLabels.alertname }}
-                *[Severity]*: {{ .CommonLabels.severity }}
-                *[Instance/Hostname]*: {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.hostname }}{{ .CommonLabels.hostname }}{{ else }}N/A{{ end }}
-                *[Labels]*: `{{ .CommonLabels }}`
-                {% endraw %}
 
-          - name: 'slack-resource-alerts'
-            slack_configs:
-            - channel: '{{ slack_resource_channel }}'
+          - name: 'teams-resource-alerts'
+            webhook_configs:
+            - url: 'http://localhost:2000/resource_alerts'
               send_resolved: true
-              username: 'alertmanager'
-              icon_emoji: ':chart_with_upwards_trend:'
-              api_url: '{{ slack_resource_webhook_url }}'
-              title: '{% raw %}{{ .CommonLabels.alert_type }} | {{ .CommonLabels.alertname }} | {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.hostname }}{{ .CommonLabels.hostname }}{{ else }}N/A{{ end }}{% endraw %}'
-              text: |-
-                {% raw %}
-                *[Summary]*: {{ .CommonAnnotations.summary }}
-                *[Description]*: {{ .CommonAnnotations.description }}
-                *[Alert Type]*: {{ .CommonLabels.alert_type }}
-                *[Alert Name]*: {{ .CommonLabels.alertname }}
-                *[Severity]*: {{ .CommonLabels.severity }}
-                *[Instance/Hostname]*: {{ if .CommonLabels.instance }}{{ .CommonLabels.instance }}{{ else if .CommonLabels.hostname }}{{ .CommonLabels.hostname }}{{ else }}N/A{{ end }}
-                *[Labels]*: `{{ .CommonLabels }}`
-                {% endraw %}
 
-          - name: 'slack-ip-block'
-            slack_configs:
-            - channel: '{{ slack_security_channel }}'
+          - name: 'teams-ip-block'
+            webhook_configs:
+            - url: 'http://localhost:2000/drop_package'
               send_resolved: false
-              username: 'alertmanager'
-              icon_emoji: ':shield:'
-              api_url: '{{ slack_security_webhook_url }}'
-              title: '{% raw %}IP {{ .CommonLabels.ip }} blocked on {{ .CommonLabels.hostname }}{% endraw %}'
-              text: |-
-                {% raw %}
-                *[Summary]*: {{ .CommonAnnotations.summary }}
-                *[Description]*: {{ .CommonAnnotations.description }}
-                *[Alert Type]*: {{ .CommonLabels.alert_type }}
-                *[Alert Name]*: {{ .CommonLabels.alertname }}
-                *[Severity]*: {{ .CommonLabels.severity }}
-                *[Block Type]*: {{ .CommonLabels.block_type }}
-                *[IP]*: {{ .CommonLabels.ip }}
-                *[Host]*: {{ .CommonLabels.hostname }}
-                {% endraw %}
 
-          - name: 'slack-drop-package'
-            slack_configs:
-            - channel: '{{ slack_security_channel }}'
+          - name: 'teams-drop-package'
+            webhook_configs:
+            - url: 'http://localhost:2000/drop_package'
               send_resolved: false
-              username: 'alertmanager'
-              icon_emoji: ':shield:'
-              api_url: '{{ slack_security_webhook_url }}'
-              # Title: Use CommonLabels since we group by description and hostname
-              title: '{% raw %}PacketDropDetected on {{ .CommonLabels.hostname }} by: {{ .CommonLabels.description }}{% endraw %}'
-              text: |-
-                {% raw %}
-                *[Summary]*: {{ .CommonAnnotations.summary }}
-                *[Detailed Description]*: {{ .CommonLabels.description }}
-                *[Alert Details]*: {{ .CommonAnnotations.description }}
-                *[Alert Type]*: {{ .CommonLabels.alert_type }}
-                *[Severity]*: {{ .CommonLabels.severity }}
-                *[Host]*: {{ .CommonLabels.hostname }}
-                {% endraw %}
 
-          - name: 'slack-ipgroup-alerts'
-            slack_configs:
-            - channel: '{{ slack_resource_channel }}'
+          - name: 'teams-ipgroup-alerts'
+            webhook_configs:
+            - url: 'http://localhost:2000/ipgroup'
               send_resolved: true
-              username: 'alertmanager'
-              icon_emoji: ':warning:'
-              api_url: '{{ slack_resource_webhook_url }}'
-              title: '{% raw %}IP Group {{ .CommonLabels.ipgroup_name }} - Low Available IPs{% endraw %}'
-              text: |-
-                {% raw %}
-                *[IP Group]*: {{ .CommonLabels.ipgroup_name }} ({{ .CommonLabels.ipgroup_id }})
-                *[Region]*: {{ .CommonLabels.region }}
-                *[Summary]*: {{ .CommonAnnotations.summary }}
-                *[Description]*: {{ .CommonAnnotations.description }}
-                *[Severity]*: {{ .CommonLabels.severity }}
-                *[Alert Type]*: {{ .CommonLabels.alert_type }}
-                {% endraw %}
 
         owner: prometheus
         group: prometheus
@@ -1325,3 +1243,7 @@
 - name: Import resource adjustment tasks
   import_tasks: resource-adjustment.yml
   tags: [monitor, resource_adjustment]
+
+- name: Import msteams relay tasks
+  import_tasks: msteams_relay.yml
+  tags: [monitor]
