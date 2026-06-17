@@ -555,35 +555,42 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		}
 		validateErr := scheduler.ValidateHostForVM(ctx, instance.Hyper, deltaReq)
 		if validateErr != nil {
-			logger.Infof("Resize: current hyper %d insufficient for instance %d, finding new hyper: %v",
-				instance.Hyper, instance.ID, validateErr)
-			// Find a new hyper via placement (full new spec, exclude current hyper)
-			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
-			selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
-				VCPUs:          cpu,
-				MemMB:          int64(memory),
-				DiskGB:         int64(instance.Disk),
-				ZoneID:         instance.ZoneID,
-				ExcludeHypers:  []int32{instance.Hyper},
-				HugepageSizeKB: reqHugepageSizeKB,
-			})
-			if err != nil {
-				if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
-					// Placement disabled — pass tgtHyper=-1 to migrationAdmin, which will use GetHyperGroup
-					logger.Infof("Resize: placement disabled for zone %d, using GetHyperGroup for migration of instance %d",
-						instance.ZoneID, instance.ID)
-					selectedHyperID = -1
-					err = nil
-				} else {
-					// Placement enabled but no suitable host found — fail immediately, no fallback
-					logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
-					err = NewCLError(ErrInsufficientResource,
-						fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)
-					return
+			if clErr, ok := validateErr.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+				// Placement disabled globally or for this zone — skip host validation,
+				// proceed with normal in-place resize on the current hyper.
+				logger.Infof("Resize: placement disabled for zone %d, skipping host validation for instance %d",
+					instance.ZoneID, instance.ID)
+			} else {
+				logger.Infof("Resize: current hyper %d insufficient for instance %d, finding new hyper: %v",
+					instance.Hyper, instance.ID, validateErr)
+				// Find a new hyper via placement (full new spec, exclude current hyper)
+				reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
+				selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+					VCPUs:          cpu,
+					MemMB:          int64(memory),
+					DiskGB:         int64(instance.Disk),
+					ZoneID:         instance.ZoneID,
+					ExcludeHypers:  []int32{instance.Hyper},
+					HugepageSizeKB: reqHugepageSizeKB,
+				})
+				if err != nil {
+					if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+						// Placement became disabled between validate and select — treat as no migration
+						logger.Infof("Resize: placement disabled for zone %d, skipping migration for instance %d",
+							instance.ZoneID, instance.ID)
+						selectedHyperID = -1
+						err = nil
+					} else {
+						// Placement enabled but no suitable host found — fail immediately, no fallback
+						logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
+						err = NewCLError(ErrInsufficientResource,
+							fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)
+						return
+					}
 				}
+				needMigrate = true
+				logger.Infof("Resize: will migrate instance %d to hyper %d before resize", instance.ID, selectedHyperID)
 			}
-			needMigrate = true
-			logger.Infof("Resize: will migrate instance %d to hyper %d before resize", instance.ID, selectedHyperID)
 		}
 	}
 
