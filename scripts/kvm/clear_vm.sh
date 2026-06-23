@@ -35,8 +35,16 @@ fi
 echo "=== Rule_id metrics cleanup completed ==="
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
+vnics=""
 for (( i=1; i <= $count; i++ )); do
     vif_dev=$(echo $vm_xml | xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" -)
+    vnics="$vnics $vif_dev"
+done
+
+# Flush conntrack and broadcast useless MAC ARP before clearing rules
+./flush_sg_arp.sh $vnics
+
+for vif_dev in $vnics; do
     ./clear_sg_chain.sh $vif_dev
     meta_file="$async_job_dir/$vif_dev"
     [ -f "$meta_file" ] && rm -f "$meta_file"

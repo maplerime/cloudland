@@ -12,15 +12,17 @@ import (
 
 type Migration struct {
 	Model
-	Name        string `gorm:"type:varchar(64)"`
-	InstanceID  int64
-	Instance    *Instance `gorm:"foreignkey:InstanceID"`
-	Force       bool      `gorm:"default:false"`
-	Type        string    `gorm:"type:varchar(32)"`
-	SourceHyper int32
-	TargetHyper int32
-	Phases      []*Task `gorm:"foreignkey:Mission"`
-	Status      string  `gorm:"type:varchar(32)"`
+	Name                string `gorm:"type:varchar(64)"`
+	InstanceID          int64
+	Instance            *Instance `gorm:"foreignkey:InstanceID"`
+	Force               bool      `gorm:"default:false"`
+	Type                string    `gorm:"type:varchar(32)"`
+	SourceHyper         int32
+	TargetHyper         int32
+	Phases              []*Task `gorm:"foreignkey:Mission"`
+	Status              string  `gorm:"type:varchar(32)"`
+	PendingResizeCpu    int32   `gorm:"default:0"` // non-zero = trigger resize after migration completes
+	PendingResizeMemory int32   `gorm:"default:0"`
 }
 
 func init() {

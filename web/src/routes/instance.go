@@ -20,6 +20,7 @@ import (
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
+	"web/src/scheduler"
 	"web/src/utils/encrpt"
 
 	"github.com/spf13/viper"
@@ -136,10 +137,11 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			loginPort = 3389
 		}
 	}
+	// Use placement scheduler to select the best hyper node (per-VM in loop for spread)
+	selectedHyperID := int32(-1)
 	hyperGroup, err := GetHyperGroup(ctx, zoneID, -1)
 	if err != nil {
-		logger.Error("No valid hypervisor", err)
-		return
+		logger.Warning("GetHyperGroup fallback failed", err)
 	}
 	passwdLogin := false
 	if rootPasswd != "" {
@@ -272,10 +274,41 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			return nil, NewCLError(ErrInvalidMetadata, "Failed to build instance metadata", err)
 		}
 		instance.Interfaces = ifaces
+		// Per-VM scheduler call (enables spread across hosts for batch creation)
+		if hyperID < 0 {
+			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(zoneID)
+			selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+				VCPUs:          cpu,
+				MemMB:          int64(memory),
+				DiskGB:         int64(disk),
+				ZoneID:         zoneID,
+				OwnerID:        memberShip.OrgID,
+				HugepageSizeKB: reqHugepageSizeKB,
+			})
+			if err != nil {
+				if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+					// Placement disabled for this zone — fall through to GetHyperGroup
+					logger.Infof("Placement disabled for zone %d, using GetHyperGroup for instance %d", zoneID, instance.ID)
+					selectedHyperID = -1
+					err = nil
+				} else {
+					// Placement enabled but no suitable host found — fail immediately, no fallback
+					logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)
+					return nil, err
+				}
+			}
+		}
 		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-		control := "select=" + hyperGroup + " " + rcNeeded
+		var control string
 		if i == 0 && hyperID >= 0 {
+			// Admin-specified hyper takes precedence
 			control = fmt.Sprintf("inter=%d %s", hyperID, rcNeeded)
+		} else if selectedHyperID >= 0 {
+			// Scheduler-selected hyper
+			control = fmt.Sprintf("inter=%d %s", selectedHyperID, rcNeeded)
+		} else {
+			// Fallback to hyper group selection
+			control = "select=" + hyperGroup + " " + rcNeeded
 		}
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
@@ -498,6 +531,120 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		logger.Error("Instance has volume restoring", err)
 		return
 	}
+
+	// Check if scaling up and current hyper needs resource validation
+	scalingUp := cpu > instance.Cpu || memory > instance.Memory
+	needMigrate := false
+	var selectedHyperID int32 = -1
+
+	if scalingUp && instance.Hyper >= 0 {
+		// Validate current hyper with the resource delta
+		deltaCPU := cpu - instance.Cpu
+		if deltaCPU < 0 {
+			deltaCPU = 0
+		}
+		deltaMem := int64(memory - instance.Memory)
+		if deltaMem < 0 {
+			deltaMem = 0
+		}
+		deltaReq := &scheduler.PlacementRequest{
+			VCPUs:  deltaCPU,
+			MemMB:  deltaMem,
+			DiskGB: 0,
+			ZoneID: instance.ZoneID,
+		}
+		validateErr := scheduler.ValidateHostForVM(ctx, instance.Hyper, deltaReq)
+		if validateErr != nil {
+			if clErr, ok := validateErr.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+				// Placement disabled globally or for this zone — skip host validation,
+				// proceed with normal in-place resize on the current hyper.
+				logger.Infof("Resize: placement disabled for zone %d, skipping host validation for instance %d",
+					instance.ZoneID, instance.ID)
+			} else {
+				logger.Infof("Resize: current hyper %d insufficient for instance %d, finding new hyper: %v",
+					instance.Hyper, instance.ID, validateErr)
+				// Find a new hyper via placement (full new spec, exclude current hyper)
+				reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
+				selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+					VCPUs:          cpu,
+					MemMB:          int64(memory),
+					DiskGB:         int64(instance.Disk),
+					ZoneID:         instance.ZoneID,
+					ExcludeHypers:  []int32{instance.Hyper},
+					HugepageSizeKB: reqHugepageSizeKB,
+				})
+				if err != nil {
+					if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+						// Placement became disabled between validate and select — treat as no migration
+						logger.Infof("Resize: placement disabled for zone %d, skipping migration for instance %d",
+							instance.ZoneID, instance.ID)
+						selectedHyperID = -1
+						err = nil
+					} else {
+						// Placement enabled but no suitable host found — fail immediately, no fallback
+						logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
+						err = NewCLError(ErrInsufficientResource,
+							fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)
+						return
+					}
+				}
+				needMigrate = true
+				logger.Infof("Resize: will migrate instance %d to hyper %d before resize", instance.ID, selectedHyperID)
+			}
+		}
+	}
+
+	if needMigrate {
+		// Auto-migrate then resize: update instance with new spec, create migration with pending resize
+		instance.Cpu = cpu
+		instance.Memory = memory
+		if instance.Disk == 0 {
+			instance.Disk = bootVolume.Size
+		}
+		err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+			"flavor_id": 0,
+			"status":    model.InstanceStatusMigrating,
+			"memory":    memory,
+			"cpu":       cpu,
+			"disk":      instance.Disk,
+		}).Error
+		if err != nil {
+			logger.Error("Failed to save instance for migrate+resize", err)
+			return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
+		}
+		// Create migration with pending resize.
+		// migration.Create requires Admin permission, but resize-triggered migration
+		// is an internal system operation — user ownership is already verified above.
+		// Elevate to admin only when the caller is not already admin.
+		resizeMigrationCtx := ctx
+		if !memberShip.CheckPermission(model.Admin) {
+			elevatedMembership := *memberShip
+			elevatedMembership.Role = model.Admin
+			resizeMigrationCtx = elevatedMembership.SetContext(ctx)
+		}
+		_, err = migrationAdmin.Create(resizeMigrationCtx, fmt.Sprintf("resize-migrate-%d", instance.ID),
+			[]*model.Instance{instance}, false, selectedHyperID)
+		if err != nil {
+			logger.Errorf("Failed to create migration for resize: %v", err)
+			// Revert instance status
+			db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
+				"status": model.InstanceStatusRunning,
+			})
+			return
+		}
+		// Set pending resize on the migration record
+		err = db.Model(&model.Migration{}).Where("instance_id = ? AND status = 'in_progress'", instance.ID).
+			Updates(map[string]interface{}{
+				"pending_resize_cpu":    cpu,
+				"pending_resize_memory": memory,
+			}).Error
+		if err != nil {
+			logger.Errorf("Failed to set pending resize on migration: %v", err)
+		}
+		return nil
+	}
+
+	// Normal resize path: in-place on current hyper
 	instance.Status = status
 	instance.Cpu = cpu
 	instance.Memory = memory

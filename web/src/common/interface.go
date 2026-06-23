@@ -478,6 +478,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 			gateway := strings.Split(subnet.Gateway, "/")[0]
 			instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
 			instNetwork.Routes = append(instNetwork.Routes, instRoute)
+			instNetworks = append(instNetworks, instNetwork)
 			moreAddresses = []string{}
 			for _, addr := range iface.SecondAddresses {
 				if osCode == "linux" {
@@ -516,8 +517,9 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 					}
 				}
 			}
+		} else {
+			instNetworks = append(instNetworks, instNetwork)
 		}
-		instNetworks = append(instNetworks, instNetwork)
 	}
 	return
 }

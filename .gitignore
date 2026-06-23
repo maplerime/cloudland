@@ -85,3 +85,4 @@ features
 **/__pycache__
 **/*.egg-info/
 **/*.pyc
+**/*.log
