@@ -20,7 +20,6 @@ type DictionaryResponse struct {
 	*ResourceReference
 	Category  string `json:"category"`
 	Value     string `json:"value"`
-	Name      string `json:"name"`
 	ShortName string `json:"shortname"`
 	SubType1  string `json:"subtype1"`
 	SubType2  string `json:"subtype2"`
