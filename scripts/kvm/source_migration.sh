@@ -72,6 +72,31 @@ else
     log_debug $ID "source_migration.sh: VM shutdown/destroy completed"
 fi
 
+# Local-disk cold: copy the domain XML + all disk files to the target's
+# identical paths (target dir created by target_migration.sh; meta ISO is
+# regenerated there). Disk paths come from libvirt (real paths, excludes cdrom).
+# On any copy failure, request rollback.
+if [ -z "$wds_address" ] && [ "$migration_type" = "cold" ]; then
+    log_debug $ID "source_migration.sh: local-disk cold, copying disks+XML to $target_hyper"
+    virsh dumpxml $vm_ID > $xml_dir/$vm_ID/${vm_ID}.xml
+    copy_ok=1
+    # Copy every file-backed disk (boot + data); cdrom/meta iso is excluded.
+    for src in $(virsh domblklist --details $vm_ID | awk '$2=="disk"{print $4}'); do
+        scp -o StrictHostKeyChecking=no "$src" "$target_hyper:$src" || copy_ok=0
+    done
+    # UEFI nvram is not a block device, so copy it explicitly when present.
+    [ -f $image_dir/${vm_ID}_VARS.fd ] && { scp -o StrictHostKeyChecking=no $image_dir/${vm_ID}_VARS.fd $target_hyper:$image_dir/${vm_ID}_VARS.fd || copy_ok=0; }
+    # Domain definition for the target to virsh-define.
+    scp -o StrictHostKeyChecking=no $xml_dir/$vm_ID/${vm_ID}.xml $target_hyper:$xml_dir/$vm_ID/${vm_ID}.xml || copy_ok=0
+    # Any failed copy -> request rollback (source VM is still defined/shut off).
+    if [ "$copy_ok" -ne 1 ]; then
+        log_debug $ID "source_migration.sh: failed to copy local disks to target, requesting rollback"
+        echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' 'source_rollback' 'failed to copy local disks to target'"
+        exit 0
+    fi
+    log_debug $ID "source_migration.sh: local-disk copy to target completed"
+fi
+
 state="source_prepared"
 log_debug $ID "source_migration.sh: Migration preparation completed, reporting state=$state"
 echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"

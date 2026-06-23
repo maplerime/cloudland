@@ -15,9 +15,14 @@ migration_type=$6
 state=failed
 
 vm_xml=$(cat $xml_dir/$vm_ID/$vm_ID.xml)
+# Capture the real disk paths before undefining; local-disk cleanup uses them.
+disk_paths=$(virsh domblklist --details $vm_ID | awk '$2=="disk"{print $4}')
 virsh destroy $vm_ID
 virsh undefine --nvram $vm_ID
-./clear_hyper_vhost.sh $ID
+# WDS vhost cleanup only applies to shared storage.
+if [ -n "$wds_address" ]; then
+    ./clear_hyper_vhost.sh $ID
+fi
 
 count=$(echo $vm_xml | xmllint --xpath 'count(/domain/devices/interface)' -)
 for (( i=1; i <= $count; i++ )); do
@@ -30,6 +35,13 @@ done
 echo "Updating vm_instance_map metrics: removing VM $vm_ID from source hypervisor"
 ./generate_vm_instance_map.sh remove $vm_ID
 
+# Local-disk: remove the disk files (boot + data) left on the source host.
+if [ -z "$wds_address" ]; then
+    for p in $disk_paths; do
+        rm -f "$p"
+    done
+    [ -f ${image_dir}/${vm_ID}_VARS.fd ] && rm -f ${image_dir}/${vm_ID}_VARS.fd
+fi
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 

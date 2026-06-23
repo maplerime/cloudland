@@ -8,13 +8,19 @@ package rpcs
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strconv"
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 )
+
+// instanceAdmin is used to rebuild instance metadata (vlans/os_code) for the
+// target-side scripts during migration, without persisting any temp files.
+var instanceAdmin = &routes.InstanceAdmin{}
 
 func init() {
 	Add("migrate_vm", MigrateVM)
@@ -170,6 +176,25 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to update instance status to unknown, %v", err)
 			return
 		}
+		// Local-disk volumes track the node holding the file; after a cold
+		// migration they now live on the target, so update their hyper. WDS
+		// volumes are shared (hyper irrelevant) and this handler is shared with
+		// WDS migration, so gate on the boot volume's driver.
+		var bootVol *model.Volume
+		for _, vol := range instance.Volumes {
+			if vol.Booting {
+				bootVol = vol
+				break
+			}
+		}
+		if bootVol != nil && bootVol.GetVolumeDriver() == "local" {
+			err = db.Model(&model.Volume{}).Where("instance_id = ?", instID).Update("hyper", migration.TargetHyper).Error
+			if err != nil {
+				logger.Errorf("Failed to update local volume hyper to %d for instance %d: %v", migration.TargetHyper, instID, err)
+				return
+			}
+			logger.Infof("Updated local volume hyper to %d for migrated instance %d", migration.TargetHyper, instID)
+		}
 		_, err = LaunchVM(ctx, []string{args[0], args[3], "migrated", args[4], "sync"})
 		if err != nil {
 			logger.Error("Failed to sync vm info", err)
@@ -223,8 +248,25 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			logger.Error("Failed to create task2", err)
 			return
 		}
+		// Pass the volume list so the target can remove the disks it received
+		// during the aborted migration. Reuses the VolumeInfo type (no metadata).
+		rbVolumes := []*VolumeInfo{}
+		for _, volume := range instance.Volumes {
+			rbVolumes = append(rbVolumes, &VolumeInfo{
+				ID:      volume.ID,
+				UUID:    volume.GetOriginVolumeID(),
+				Device:  volume.Target,
+				Booting: volume.Booting,
+			})
+		}
+		var rbVolumesJson []byte
+		rbVolumesJson, err = json.Marshal(rbVolumes)
+		if err != nil {
+			logger.Error("Failed to marshal volumes for clear target", err)
+			return
+		}
 		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d'", migration.ID, task3.ID, instance.ID)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_target_migration.sh '%d' '%d' '%d'<<EOF\n%s\nEOF", migration.ID, task3.ID, instance.ID, rbVolumesJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute clear target failed", err)
@@ -325,11 +367,20 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				return
 			}
 		}
+		// Rebuild metadata so the target can reapply host-side networking after
+		// it defines+starts the VM (local-disk cold). Passed via heredoc; vm_name
+		// (hostname) is not in metadata so it goes as an argument.
+		var metadata string
+		metadata, err = instanceAdmin.GetMetadata(ctx, instance, "")
+		if err != nil {
+			logger.Error("Failed to get metadata for complete migration", err)
+			return
+		}
 		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s'", migration.ID, taskID, instance.ID, migration.Type)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", migration.ID, taskID, instance.ID, migration.Type, instance.Hostname, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
-			logger.Error("Execute clear target failed", err)
+			logger.Error("Execute complete migration failed", err)
 			return
 		}
 	}

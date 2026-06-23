@@ -3,15 +3,46 @@
 cd $(dirname $0)
 source ../../cloudrc
 
-[ $# -lt 4 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <migration_type>"
+[ $# -lt 4 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <migration_type> [vm_name]"
 
 migrate_ID=$1
 task_ID=$2
 ID=$3
 migration_type=$4
+vm_name=$5
 vm_ID=inst-$ID
 echo $$ >$run_dir/${vm_ID}-$migrate_ID
 state="failed"
+
+# ---- Local-disk cold: disks are now present (copied by source_migration.sh)
+#      and bridges were built in target_migration.sh. Define + start, then
+#      reapply host-side networking. The NIC is already in the copied XML, so
+#      sync_nic_info -> attach_vm_nic skips the attach and only reapplies the
+#      SG/router/host rules (idempotent). ----
+if [ -z "$wds_address" ] && [ "$migration_type" = "cold" ]; then
+    log_debug $ID "complete_migration.sh: local-disk cold, defining and starting VM on target"
+    # metadata (heredoc) carries vlans + os_code; vm_name comes from the args.
+    metadata=$(cat | base64 -d)
+    os_code=$(jq -r '.os_code' <<<$metadata)
+    virsh define $xml_dir/$vm_ID/${vm_ID}.xml
+    virsh autostart $vm_ID --disable
+    virsh start $vm_ID
+    # Start failure -> request rollback (source VM is still defined/shut off).
+    if [ $? -ne 0 ]; then
+        log_debug $ID "complete_migration.sh: failed to start VM on target, requesting rollback"
+        rm -f $run_dir/${vm_ID}-$migrate_ID
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' 'source_rollback' 'failed to start vm on target'"
+        exit 0
+    fi
+    # Reapply host-side networking (SG/router/host) for each vlan.
+    jq .vlans <<<$metadata | ../sync_nic_info.sh "$ID" "$vm_name" "$os_code"
+    ../generate_vm_instance_map.sh add $vm_ID
+    rm -f $run_dir/${vm_ID}-$migrate_ID
+    state="completed"
+    log_debug $ID "complete_migration.sh: local-disk cold completed on target"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
+    exit 0
+fi
 
 for i in {1..600}; do
     sleep 3

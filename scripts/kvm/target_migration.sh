@@ -20,9 +20,18 @@ pool_ID=${11}
 instance_uuid=${12:-$ID}
 state="failed"
 
-if [ -z "$wds_address" ]; then
+# Storage-type consistency: pool_ID empty => local-disk VM; wds_address empty => local-disk node.
+# Reject cross-storage migration (local<->WDS) early.
+if [ -z "$pool_ID" ] && [ -n "$wds_address" ]; then
+    log_debug $ID "target_migration.sh: local-disk VM targeted at a WDS node, not supported"
     state="not_supported"
-    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'migration is only supported with shared storage'"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'cannot migrate local-disk VM to a WDS node'"
+    exit 0
+fi
+if [ -n "$pool_ID" ] && [ -z "$wds_address" ]; then
+    log_debug $ID "target_migration.sh: WDS VM targeted at a local-disk node, not supported"
+    state="not_supported"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'cannot migrate WDS VM to a local-disk node'"
     exit 0
 fi
 
@@ -37,6 +46,24 @@ fi
 let fsize=$disk_size*1024*1024*1024
 ./build_meta.sh "$vm_ID" "$vm_name" <<< $md >/dev/null 2>&1
 vm_meta=$cache_dir/meta/$vm_ID.iso
+
+# ---- Local-disk VM on a local-disk node (cross-storage already rejected) ----
+# Disks + domain XML arrive via scp from the source (source_migration.sh); the
+# meta ISO was just regenerated above. Here we only build the L2 bridges the
+# VM's NICs attach to (must exist before the VM starts; create_link.sh is
+# idempotent). The VM is defined+started later in complete_migration.sh.
+if [ -z "$wds_address" ]; then
+    log_debug $ID "target_migration.sh: local-disk target prep, building bridges"
+    # Loop over each vlan to ensure its bridge + vxlan exist on this node.
+    for vlan in $(jq -r '.vlans[].vlan' <<<$metadata); do
+        ./create_link.sh $vlan
+    done
+    state="target_prepared"
+    log_debug $ID "target_migration.sh: local-disk target prepared, state=$state"
+    echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
+    exit 0
+fi
+
 get_wds_token
 volumes=$(jq -r .volumes <<< $metadata)
 if [ "$migration_type" = "cold" ]; then

@@ -81,6 +81,33 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Error("No need to migrate if source and target hypervisors are the same")
 			continue
 		}
+		// Find the boot volume up front: its driver decides local-disk vs WDS,
+		// and local-disk instances are gated below before any record is created.
+		var bootVolume *model.Volume
+		for _, volume := range instance.Volumes {
+			if volume.Booting {
+				bootVolume = volume
+				break
+			}
+		}
+		if bootVolume == nil {
+			logger.Error("Instance has no boot volume")
+			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
+			return
+		}
+		// Local-disk gating: only cold migration is exposed in this release, and
+		// a down source means the local data is unreachable. Skip both cases so
+		// no migration record is created for them.
+		if bootVolume.GetVolumeDriver() == "local" {
+			if sourceHyper.Status == 10 {
+				logger.Infof("Instance %d uses local disk and source hyper %d is down; local data unreachable, skip migration", instance.ID, instance.Hyper)
+				continue
+			}
+			if migrationType != "cold" {
+				logger.Infof("Instance %d uses local disk; only cold migration is exposed, skip %s migration", instance.ID, migrationType)
+				continue
+			}
+		}
 		task1 := &model.Task{
 			Name:    "Prepare_Target",
 			Summary: "Prepare resources on target hypervisor",
@@ -109,18 +136,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		metadata, err = instanceAdmin.GetMetadata(ctx, instance, "")
 		if err != nil {
 			logger.Error("Failed to get metadata")
-			return
-		}
-		var bootVolume *model.Volume
-		for _, volume := range instance.Volumes {
-			if volume.Booting {
-				bootVolume = volume
-				break
-			}
-		}
-		if bootVolume == nil {
-			logger.Error("Instance has no boot volume")
-			err = NewCLError(ErrBootVolumeNotFound, "Instance has no boot volume", nil)
 			return
 		}
 		poolID := bootVolume.GetVolumePoolID()
