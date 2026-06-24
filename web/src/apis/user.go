@@ -202,6 +202,15 @@ func (v *UserAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusInternalServerError, "Failed to create org", err)
 		return
 	}
+	if ms, msErr := GetDBMemberShip(user.ID, org.ID); msErr != nil {
+		logger.Errorf("Failed to get membership for default SG, user %s: %+v", username, msErr)
+	} else {
+		ms.Role = model.Owner
+		sgCtx := ms.SetContext(ctx)
+		if _, sgErr := secgroupAdmin.GetDefaultSecgroup(sgCtx); sgErr != nil {
+			logger.Errorf("Failed to create default SG for user %s: %+v", username, sgErr)
+		}
+	}
 	userResp := &UserResponse{
 		UserInfo: &ResourceReference{
 			ID:        user.UUID,
