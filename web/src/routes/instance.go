@@ -888,42 +888,6 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	return
 }
 
-func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
-	ctx, db := GetContextDB(ctx)
-	for _, iface := range instance.Interfaces {
-		err = a.deleteInterface(ctx, iface)
-		if err != nil {
-			logger.Error("Failed to delete interface", err)
-			err = nil
-			return
-		}
-		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
-			"interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to update subnet", err)
-			return NewCLError(ErrSubnetUpdateFailed, "Failed to update subnet", err)
-		}
-	}
-	return
-}
-
-func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interface) (err error) {
-	err = DeleteInterface(ctx, iface)
-	if err != nil {
-		logger.Error("Failed to create interface")
-		return
-	}
-	vlan := iface.Address.Subnet.Vlan
-	control := ""
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_host.sh '%d' '%s' '%s'", vlan, iface.MacAddr, iface.Address.Address)
-	err = HyperExecute(ctx, control, command)
-	if err != nil {
-		logger.Error("Delete interface failed")
-		return
-	}
-	return
-}
-
 func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *InterfaceInfo, instance *model.Instance, ifname string) (iface *model.Interface, ifaceSubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
