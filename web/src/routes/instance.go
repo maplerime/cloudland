@@ -1588,6 +1588,42 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	return
 }
 
+// ListByIDs batch-loads instances by their primary keys in a single query.
+func (a *InstanceAdmin) ListByIDs(ctx context.Context, ids []int64) (instanceMap map[int64]*model.Instance, err error) {
+	instanceMap = make(map[int64]*model.Instance)
+	// Deduplicate and drop invalid IDs to keep the IN clause minimal.
+	uniq := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{})
+	for _, id := range ids {
+		if id > 0 {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				uniq = append(uniq, id)
+			}
+		}
+	}
+	// Nothing valid to query: return the empty (non-nil) map so callers can range safely.
+	if len(uniq) == 0 {
+		return
+	}
+	ctx, db := GetContextDB(ctx)
+	where := GetMemberShip(ctx).GetWhere()
+	logger.Debugf("Batch loading %d instance(s) by id", len(uniq))
+	var instances []*model.Instance
+	// Single IN query, no Preload — base columns are all the callers of this method need.
+	if err = db.Where(where).Where("id in (?)", uniq).Find(&instances).Error; err != nil {
+		// Surface query failures instead of silently dropping instances.
+		logger.Errorf("Failed to batch query instances by ids, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query instances by ids", err)
+		return
+	}
+	for _, instance := range instances {
+		instanceMap[instance.ID] = instance
+	}
+	logger.Debugf("Batch loaded %d instance(s) by id", len(instanceMap))
+	return
+}
+
 // List4View lists instances with structured search params for Web Console.
 // It does not modify the original List method used by the API layer.
 func (a *InstanceAdmin) List4View(ctx context.Context, offset, limit int64, order string, params *InstanceSearchParams) (total int64, instances []*model.Instance, err error) {
