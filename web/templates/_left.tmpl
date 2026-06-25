@@ -23,6 +23,12 @@
         <a {{ if eq .Link "/backups" }} class="active item" {{ else }} class="item" {{ end }} href="/backups">
             {{.i18n.Tr "Backups"}}
         </a>
+        <a {{ if eq .Link "/scheduled_tasks" }} class="active item" {{ else }} class="item" {{ end }} href="/scheduled_tasks">
+            {{.i18n.Tr "Scheduled Tasks"}}
+        </a>
+        <a {{ if or (eq .Link "/scheduled_task_history") (HasPrefix .Link "/scheduled_task_history/") }} class="active item" {{ else }} class="item" {{ end }} href="/scheduled_task_history">
+            {{.i18n.Tr "Scheduled Task History"}}
+        </a>
         <a class="{{if eq .Link "/cgroups"}}active {{end}}item" href="/cgroups">
             {{.i18n.Tr "Consistency_Groups"}}
         </a>

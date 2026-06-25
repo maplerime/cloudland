@@ -1,0 +1,98 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<input type="hidden" id="timezone_offset_minutes" name="timezone_offset_minutes">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Edit Scheduled Task"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="required inline field">
+									<label for="name">{{.i18n.Tr "Name"}}</label>
+									<input id="name" name="name" value="{{.Task.Name}}" autofocus required>
+								</div>
+								<div class="required inline disabled field">
+									<label for="task_type">{{.i18n.Tr "Task Type"}}</label>
+									<input id="task_type" value="{{.Task.TaskType}}" readonly disabled>
+								</div>
+								<div class="required inline disabled field">
+									<label for="resource_type">{{.i18n.Tr "Resource Type"}}</label>
+									<input id="resource_type" value="{{.Task.ResourceType}}" readonly disabled>
+								</div>
+								<div class="required inline disabled field">
+									<label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
+									<input id="resource_id" value="{{.Task.ResourceID}}" readonly disabled>
+								</div>
+								<div class="required inline disabled field">
+									<label for="operation">{{.i18n.Tr "Operation"}}</label>
+									<input id="operation" value="{{.Task.Operation}}" readonly disabled>
+								</div>
+								<div class="required inline field">
+									<label for="schedule_type">{{.i18n.Tr "Schedule Type"}}</label>
+									<select name="schedule_type" id="schedule_type" class="ui selection dropdown">
+                                         <option value="one-time" {{if eq .Task.ScheduleType "one-time"}}selected{{end}}>One Time</option>
+                                         <option value="daily" {{if eq .Task.ScheduleType "daily"}}selected{{end}}>Daily</option>
+                                         <option value="weekly" {{if eq .Task.ScheduleType "weekly"}}selected{{end}}>Weekly</option>
+                                         <option value="monthly" {{if eq .Task.ScheduleType "monthly"}}selected{{end}}>Monthly</option>
+                                    </select>
+								</div>
+								<div class="inline field">
+									<label for="execution_time">{{.i18n.Tr "Execution Time"}}</label>
+									<input id="execution_time" name="execution_time" value="{{.Task.ExecutionTime.Format "2006-01-02T15:04"}}" data-utc-value="{{if not .Task.ExecutionTime.IsZero}}{{.Task.ExecutionTime.UTC.Format "2006-01-02T15:04:05Z07:00"}}{{end}}" type="datetime-local">
+								</div>
+								<div class="inline field">
+									<label for="cron_expression">{{.i18n.Tr "Cron Expression"}}</label>
+									<input id="cron_expression" name="cron_expression" value="{{.Task.CronExpression}}">
+								</div>
+								<div class="inline field">
+									<label for="retention_count">{{.i18n.Tr "Retention Count"}}</label>
+									<input id="retention_count" name="retention_count" value="{{.Task.RetentionCount}}">
+								</div>
+								<div class="required inline field">
+									<label for="status">{{.i18n.Tr "Status"}}</label>
+									<select name="status" id="status" class="ui selection dropdown">
+                                         <option value="enabled" {{if eq .Task.Status "enabled"}}selected{{end}}>Enabled</option>
+                                         <option value="disabled" {{if eq .Task.Status "disabled"}}selected{{end}}>Disabled</option>
+                                    </select>
+								</div>
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "Update"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+		</div>
+	</div>
+</div>
+{{template "_footer" .}}
+<script>
+$(document).ready(function() {
+    $('#timezone_offset_minutes').val(new Date().getTimezoneOffset());
+
+    var executionTimeInput = $('#execution_time');
+    var utcValue = executionTimeInput.data('utc-value');
+    if (utcValue) {
+        var dt = new Date(utcValue);
+        if (!isNaN(dt.getTime())) {
+            var pad = function(value) {
+                return String(value).padStart(2, '0');
+            };
+            var localValue = dt.getFullYear() + '-' +
+                pad(dt.getMonth() + 1) + '-' +
+                pad(dt.getDate()) + 'T' +
+                pad(dt.getHours()) + ':' +
+                pad(dt.getMinutes());
+            executionTimeInput.val(localValue);
+        }
+    }
+});
+</script>

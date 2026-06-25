@@ -201,6 +201,13 @@ func Register() (r *gin.Engine) {
 		authGroup.PATCH("/api/v1/instances/:id", instanceAPI.Patch)
 		authGroup.GET("/api/v1/instances/rules", instanceAPI.GetInstanceRuleLinks)
 
+		authGroup.GET("/api/v1/scheduled_tasks", scheduledTaskAPI.List)
+		authGroup.POST("/api/v1/scheduled_tasks", scheduledTaskAPI.Create)
+		authGroup.GET("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Get)
+		authGroup.DELETE("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Delete)
+		authGroup.PATCH("/api/v1/scheduled_tasks/:id", scheduledTaskAPI.Patch)
+		authGroup.GET("/api/v1/scheduled_tasks/:id/history", scheduledTaskAPI.ListHistory)
+
 		authGroup.GET("/api/v1/placement/available", placementAPI.Available)
 		authGroup.POST("/api/v1/placement/validate", placementAPI.Validate)
 
