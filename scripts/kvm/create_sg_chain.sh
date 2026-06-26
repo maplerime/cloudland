@@ -28,7 +28,11 @@ apply_fw -F $chain_as
 if [ "$allow_spoofing" = true ]; then
     apply_fw -I $chain_as -j RETURN
 else
-    apply_fw -A $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
+    # ipset: single hash:ip,mac set replaces per-IP RETURN rules
+    ipset create sgas-$vnic hash:ip,mac -exist
+    ipset flush sgas-$vnic
+    ipset add sgas-$vnic $ip,$mac -exist
+    apply_fw -A $chain_as -m set --match-set sgas-$vnic src,src -j RETURN
     apply_fw -A $chain_as -j DROP
 fi
 
@@ -65,15 +69,18 @@ if [ "$allow_spoofing" != true ]; then
             [ -n "$bridge" ] && break
             sleep 2
         done
-        i=0
-        while [ $i -lt $naddrs ]; do
-            read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
-            read -d'\n' -r extra_ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
-            apply_fw -I $chain_as -s $extra_ip/32 -m mac --mac-source $mac -j RETURN
-            nft add element bridge cloudland set-$vnic { $mac . $extra_ip }
-            ./send_spoof_arp.py $bridge $extra_ip $mac &
-            let i=$i+1
+        # Resolve all extra IPs once (strip /mask in a single jq call), then
+        # batch ipset (restore), nft elements, and a single ARP send
+        extra_ips=$(jq -r '.[] | split("/")[0]' <<<$more_addresses)
+        ipset_restore=""
+        nft_elements=""
+        for extra_ip in $extra_ips; do
+            ipset_restore="${ipset_restore}add sgas-$vnic $extra_ip,$mac -exist"$'\n'
+            nft_elements="$nft_elements $mac . $extra_ip,"
         done
+        [ -n "$ipset_restore" ] && printf '%s' "$ipset_restore" | ipset restore -exist
+        [ -n "$nft_elements" ] && nft add element bridge cloudland set-$vnic { ${nft_elements%,} }
+        ./send_spoof_arp.py $bridge $mac $extra_ips &
     fi
 fi
 

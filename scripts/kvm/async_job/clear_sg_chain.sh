@@ -39,4 +39,7 @@ apply_fw -F $chain_out
 apply_fw -X $chain_in
 apply_fw -X $chain_as
 apply_fw -X $chain_out
+
+# ipset: destroy anti-spoofing set after iptables rules referencing it are gone
+ipset destroy sgas-$vnic 2>/dev/null
 flock -u 200
