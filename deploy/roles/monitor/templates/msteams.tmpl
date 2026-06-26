@@ -1,0 +1,238 @@
+{{/* =========================================================
+  总入口：按 alert_type 分发到对应子模板
+  优先级：packet_drop → ipgroup_low_ips → node-hypervisor-resource
+          → node-(unavailable|cpu|memory|disk|network) → 默认(cpu|memory|bw)
+  注：match 若不可用，将 node-* 分支改为明确枚举（见注释）
+  ========================================================= */}}
+{{ define "teams.card" -}}
+{{ if eq .CommonLabels.alert_type "packet_drop" -}}
+{{ template "teams.packet_drop.card" . }}
+{{- else if eq .CommonLabels.alert_type "ipgroup_low_ips" -}}
+{{ template "teams.ipgroup.card" . }}
+{{- else if eq .CommonLabels.alert_type "node-hypervisor-resource" -}}
+{{ template "teams.resource.card" . }}
+{{- else if match "^node-(unavailable|cpu|memory|disk|network)$" .CommonLabels.alert_type -}}
+{{ template "teams.node_status.card" . }}
+{{- else -}}
+{{ template "teams.default.card" . }}
+{{- end -}}
+{{- end }}
+
+{{/* =========================================================
+  默认告警（VM：cpu|memory|bw）
+  原 Slack receiver：slack-notifications
+  原标题：alert_type | alertname | instance/domain/N/A
+  ========================================================= */}}
+{{ define "teams.default.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.2",
+      "msteams": {"width": "Full"},
+      "body": [
+        {
+          "type": "TextBlock",
+          "text": {{ printf "%s | %s | %s" .CommonLabels.alert_type .CommonLabels.alertname (or .CommonLabels.instance .CommonLabels.domain "N/A") | toJson }},
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
+          "wrap": true
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
+            {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
+            {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
+            {"title": "告警名称", "value": {{ .CommonLabels.alertname | toJson }}},
+            {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
+            {"title": "实例/域名", "value": {{ or .CommonLabels.instance .CommonLabels.domain "N/A" | toJson }}},
+            {"title": "标签", "value": {{ printf "%v" .CommonLabels | toJson }}},
+            {"title": "注释", "value": {{ printf "%v" .CommonAnnotations | toJson }}}
+          ]
+        }
+      ]
+    }
+  }]
+}
+{{- end }}
+
+{{/* =========================================================
+  节点状态告警（node-unavailable|cpu|memory|disk|network）
+  原 Slack receiver：slack-node-status
+  原标题：alert_type | alertname | instance/hostname/N/A
+  ========================================================= */}}
+{{ define "teams.node_status.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.2",
+      "msteams": {"width": "Full"},
+      "body": [
+        {
+          "type": "TextBlock",
+          "text": {{ printf "%s | %s | %s" .CommonLabels.alert_type .CommonLabels.alertname (or .CommonLabels.instance .CommonLabels.hostname "N/A") | toJson }},
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
+          "wrap": true
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
+            {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
+            {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
+            {"title": "告警名称", "value": {{ .CommonLabels.alertname | toJson }}},
+            {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
+            {"title": "实例/主机名", "value": {{ or .CommonLabels.instance .CommonLabels.hostname "N/A" | toJson }}},
+            {"title": "标签", "value": {{ printf "%v" .CommonLabels | toJson }}}
+          ]
+        }
+      ]
+    }
+  }]
+}
+{{- end }}
+
+{{/* =========================================================
+  节点资源告警（node-hypervisor-resource）
+  原 Slack receiver：slack-resource-alerts
+  原标题：alert_type | alertname | instance/hostname/N/A
+  ========================================================= */}}
+{{ define "teams.resource.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.2",
+      "msteams": {"width": "Full"},
+      "body": [
+        {
+          "type": "TextBlock",
+          "text": {{ printf "%s | %s | %s" .CommonLabels.alert_type .CommonLabels.alertname (or .CommonLabels.instance .CommonLabels.hostname "N/A") | toJson }},
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
+          "wrap": true
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
+            {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
+            {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
+            {"title": "告警名称", "value": {{ .CommonLabels.alertname | toJson }}},
+            {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
+            {"title": "实例/主机名", "value": {{ or .CommonLabels.instance .CommonLabels.hostname "N/A" | toJson }}},
+            {"title": "标签", "value": {{ printf "%v" .CommonLabels | toJson }}}
+          ]
+        }
+      ]
+    }
+  }]
+}
+{{- end }}
+
+{{/* =========================================================
+  丢包告警（packet_drop）
+  原 Slack receiver：slack-drop-package
+  原标题：PacketDropDetected on hostname by: description
+  ========================================================= */}}
+{{ define "teams.packet_drop.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.2",
+      "msteams": {"width": "Full"},
+      "body": [
+        {
+          "type": "TextBlock",
+          "text": {{ printf "检测到丢包 | %s | %s" .CommonLabels.hostname .CommonLabels.description | toJson }},
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
+          "wrap": true
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
+            {"title": "详细描述", "value": {{ .CommonLabels.description | toJson }}},
+            {"title": "告警详情", "value": {{ .CommonAnnotations.description | toJson }}},
+            {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
+            {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
+            {"title": "主机", "value": {{ .CommonLabels.hostname | toJson }}}
+          ]
+        }
+      ]
+    }
+  }]
+}
+{{- end }}
+
+{{/* =========================================================
+  IP 组告警（ipgroup_low_ips）
+  原 Slack receiver：slack-ipgroup-alerts
+  原标题：IP Group ipgroup_name - Low Available IPs
+  ========================================================= */}}
+{{ define "teams.ipgroup.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard",
+      "version": "1.2",
+      "msteams": {"width": "Full"},
+      "body": [
+        {
+          "type": "TextBlock",
+          "text": {{ printf "IP组 %s 可用IP不足" .CommonLabels.ipgroup_name | toJson }},
+          "weight": "Bolder",
+          "size": "Medium",
+          "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
+          "wrap": true
+        },
+        {
+          "type": "FactSet",
+          "facts": [
+            {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "IP组", "value": {{ printf "%s (%s)" .CommonLabels.ipgroup_name .CommonLabels.ipgroup_id | toJson }}},
+            {"title": "区域", "value": {{ .CommonLabels.region | toJson }}},
+            {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
+            {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
+            {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
+            {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}}
+          ]
+        }
+      ]
+    }
+  }]
+}
+{{- end }}

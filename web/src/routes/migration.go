@@ -137,17 +137,26 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				HugepageSizeKB: reqHugepageSizeKB,
 			})
 			if schedErr != nil {
+				markTaskFail := true
 				if clErr, ok := schedErr.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
 					// Placement intentionally disabled for this zone — expected, not an error
 					logger.Infof("Placement disabled for zone %d, using GetHyperGroup for migration of instance %d",
 						instance.ZoneID, instance.ID)
+					var hyperGroup string
+					hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
+					if err != nil {
+						logger.Errorf("GetHyperGroup failed for migration of instance %d, task %d will be marked not_doing: %v",
+							instance.ID, migration.ID, err)
+					} else {
+						rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
+						control = "select=" + hyperGroup + " " + rcNeeded
+						markTaskFail = false
+					}
 				} else {
-					logger.Warningf("Scheduler failed for migration of instance %d, falling back to GetHyperGroup: %v",
-						instance.ID, schedErr)
+					logger.Warningf("Scheduler failed for migration of instance %d, task %d will be marked not_doing: %v",
+						instance.ID, migration.ID, schedErr)
 				}
-				var hyperGroup string
-				hyperGroup, err = GetHyperGroup(ctx, instance.ZoneID, instance.Hyper)
-				if err != nil {
+				if markTaskFail {
 					task1.Summary = "No qualified target"
 					task1.Status = "not_doing"
 					migration.Status = "not_doing"
@@ -162,8 +171,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 					err = nil
 					continue
 				}
-				rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
-				control = "select=" + hyperGroup + " " + rcNeeded
 			} else {
 				migration.TargetHyper = selectedHyperID
 				control = fmt.Sprintf("inter=%d", selectedHyperID)

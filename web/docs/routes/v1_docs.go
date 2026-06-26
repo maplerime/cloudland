@@ -4108,9 +4108,9 @@ const docTemplatev1 = `{
                 "summary": "Query available placement candidates",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Zone ID",
-                        "name": "zone_id",
+                        "type": "string",
+                        "description": "Zone name",
+                        "name": "zone_name",
                         "in": "query",
                         "required": true
                     },
@@ -4130,10 +4130,9 @@ const docTemplatev1 = `{
                     },
                     {
                         "type": "integer",
-                        "description": "Disk in GB",
+                        "description": "Disk in GB (default 1)",
                         "name": "disk_gb",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     }
                 ],
                 "responses": {

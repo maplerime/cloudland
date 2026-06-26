@@ -247,18 +247,24 @@ function calc_resource()
     disk=10000000000000
     total_disk=10000000000000
     if [ -z "$wds_address" ]; then
-        used_disk=$(sudo du -s $image_dir | awk '{print $1}')
-        for disk in $(ls $image_dir/* 2>/dev/null); do
-            if [[ "$disk" = "/opt/cloudland/cache/instance/old_inst_list" ]]; then
-                continue
-            fi
-            vdisk=$(qemu-img info --force-share $disk | grep 'virtual size:' | cut -d' ' -f3 | tr -d '(')
+        # Physical usage of instance/volume dirs (root-owned, need sudo), unit: bytes
+        inst_used=$(sudo du -sB1 $image_dir | awk '{print $1}')
+        vol_used=$(sudo du -sB1 $volume_dir 2>/dev/null | awk '{print $1}')
+        [ -z "$vol_used" ] && vol_used=0
+        # Sum of allocated virtual size across boot disks, and local volumes.
+        # Take the bytes value in parentheses directly; restrict to *.disk to
+        # avoid double-counting *.qcow2 snapshots or scanning NVRAM/text files.
+        for f in $image_dir/*.disk $volume_dir/*.disk; do
+            [ -f "$f" ] || continue
+            vdisk=$(qemu-img info --force-share "$f" 2>/dev/null | grep -oP 'virtual size:.*\(\K[0-9]+')
             [ -z "$vdisk" ] && continue
             let virtual_disk=$virtual_disk+$vdisk
         done
-        let virtual_disk=virtual_disk*1024*1024*1024
-        total_used_disk=$(sudo du -s $mount_point | awk '{print $1}')
-        total_disk=$(echo "($total_disk-$total_used_disk+$used_disk)*$disk_over_ratio" | bc)
+        # Real capacity of the /opt/cloudland mount (instance and volume share one mount)
+        fs_info=$(df -B1 $cache_dir | tail -1)
+        fs_total=$(echo "$fs_info" | awk '{print $2}')
+        fs_used=$(echo "$fs_info" | awk '{print $3}')
+        total_disk=$(echo "($fs_total-$fs_used+$inst_used+$vol_used)*$disk_over_ratio" | bc)
         total_disk=${total_disk%.*}
         disk=$(echo "$total_disk-$virtual_disk" | bc)
         disk=${disk%.*}

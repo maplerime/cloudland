@@ -296,6 +296,10 @@ func QueryAvailableHosts(ctx context.Context, req *PlacementRequest) ([]*HostCan
 		return nil, NewCLError(ErrPlacementNotReady, "Scheduler not initialized", ErrSchedulerNotReady)
 	}
 	cfg := ResolveZoneConfig(req.ZoneID)
+	if !cfg.Enabled {
+		return nil, NewCLError(ErrPlacementDisabled,
+			fmt.Sprintf("placement disabled for zone_id=%d", req.ZoneID), nil)
+	}
 	filters := BuildFilters(cfg)
 	weighers := BuildWeighers(cfg)
 
@@ -413,6 +417,10 @@ func ValidateHostForVM(ctx context.Context, hyperID int32, req *PlacementRequest
 		zoneID = hyper.ZoneID
 	}
 	cfg := ResolveZoneConfig(zoneID)
+	if !cfg.Enabled {
+		return NewCLError(ErrPlacementDisabled,
+			fmt.Sprintf("placement disabled for zone_id=%d", zoneID), nil)
+	}
 	filters := BuildFilters(cfg)
 
 	// Run filter chain on this single host

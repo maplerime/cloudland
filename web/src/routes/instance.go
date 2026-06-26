@@ -287,13 +287,15 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			})
 			if err != nil {
 				if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
-					// Placement intentionally disabled for this zone — expected, not an error
+					// Placement disabled for this zone — fall through to GetHyperGroup
 					logger.Infof("Placement disabled for zone %d, using GetHyperGroup for instance %d", zoneID, instance.ID)
+					selectedHyperID = -1
+					err = nil
 				} else {
+					// Placement enabled but no suitable host found — fail immediately, no fallback
 					logger.Errorf("Scheduler failed to select host for instance %d: %v", instance.ID, err)
+					return nil, err
 				}
-				selectedHyperID = -1
-				// Fall through to hyperGroup fallback below
 			}
 		}
 		rcNeeded := fmt.Sprintf("cpu=%d memory=%d disk=%d network=%d", instance.Cpu, instance.Memory*1024, int64(instance.Disk)*1024*1024, 0)
@@ -553,34 +555,42 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		}
 		validateErr := scheduler.ValidateHostForVM(ctx, instance.Hyper, deltaReq)
 		if validateErr != nil {
-			logger.Infof("Resize: current hyper %d insufficient for instance %d, finding new hyper: %v",
-				instance.Hyper, instance.ID, validateErr)
-			// Find a new hyper via placement (full new spec, exclude current hyper)
-			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
-			selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
-				VCPUs:          cpu,
-				MemMB:          int64(memory),
-				DiskGB:         int64(instance.Disk),
-				ZoneID:         instance.ZoneID,
-				ExcludeHypers:  []int32{instance.Hyper},
-				HugepageSizeKB: reqHugepageSizeKB,
-			})
-			if err != nil {
-				if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
-					// Placement is disabled for this zone, so resize auto-migration
-					// (which depends on placement to pick a target) is unavailable.
-					logger.Infof("Resize: placement disabled for zone %d, cannot auto-select migration target for instance %d", instance.ZoneID, instance.ID)
-					err = NewCLError(ErrInsufficientResource,
-						fmt.Sprintf("Current hyper has insufficient resources and placement is disabled for this zone, cannot auto-migrate: %v", validateErr), err)
-					return
+			if clErr, ok := validateErr.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+				// Placement disabled globally or for this zone — skip host validation,
+				// proceed with normal in-place resize on the current hyper.
+				logger.Infof("Resize: placement disabled for zone %d, skipping host validation for instance %d",
+					instance.ZoneID, instance.ID)
+			} else {
+				logger.Infof("Resize: current hyper %d insufficient for instance %d, finding new hyper: %v",
+					instance.Hyper, instance.ID, validateErr)
+				// Find a new hyper via placement (full new spec, exclude current hyper)
+				reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
+				selectedHyperID, err = scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
+					VCPUs:          cpu,
+					MemMB:          int64(memory),
+					DiskGB:         int64(instance.Disk),
+					ZoneID:         instance.ZoneID,
+					ExcludeHypers:  []int32{instance.Hyper},
+					HugepageSizeKB: reqHugepageSizeKB,
+				})
+				if err != nil {
+					if clErr, ok := err.(*CLError); ok && clErr.Code == ErrPlacementDisabled {
+						// Placement became disabled between validate and select — treat as no migration
+						logger.Infof("Resize: placement disabled for zone %d, skipping migration for instance %d",
+							instance.ZoneID, instance.ID)
+						selectedHyperID = -1
+						err = nil
+					} else {
+						// Placement enabled but no suitable host found — fail immediately, no fallback
+						logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
+						err = NewCLError(ErrInsufficientResource,
+							fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)
+						return
+					}
 				}
-				logger.Errorf("Resize: no hyper found for instance %d resize: %v", instance.ID, err)
-				err = NewCLError(ErrInsufficientResource,
-					fmt.Sprintf("Current hyper has insufficient resources and no alternative hyper found: %v", validateErr), err)
-				return
+				needMigrate = true
+				logger.Infof("Resize: will migrate instance %d to hyper %d before resize", instance.ID, selectedHyperID)
 			}
-			needMigrate = true
-			logger.Infof("Resize: will migrate instance %d to hyper %d before resize", instance.ID, selectedHyperID)
 		}
 	}
 
@@ -602,8 +612,17 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 			logger.Error("Failed to save instance for migrate+resize", err)
 			return NewCLError(ErrInstanceUpdateFailed, "Failed to save instance", err)
 		}
-		// Create migration with pending resize
-		_, err = migrationAdmin.Create(ctx, fmt.Sprintf("resize-migrate-%d", instance.ID),
+		// Create migration with pending resize.
+		// migration.Create requires Admin permission, but resize-triggered migration
+		// is an internal system operation — user ownership is already verified above.
+		// Elevate to admin only when the caller is not already admin.
+		resizeMigrationCtx := ctx
+		if !memberShip.CheckPermission(model.Admin) {
+			elevatedMembership := *memberShip
+			elevatedMembership.Role = model.Admin
+			resizeMigrationCtx = elevatedMembership.SetContext(ctx)
+		}
+		_, err = migrationAdmin.Create(resizeMigrationCtx, fmt.Sprintf("resize-migrate-%d", instance.ID),
 			[]*model.Instance{instance}, false, selectedHyperID)
 		if err != nil {
 			logger.Errorf("Failed to create migration for resize: %v", err)
@@ -864,42 +883,6 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set password command execution failed", err)
-		return
-	}
-	return
-}
-
-func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
-	ctx, db := GetContextDB(ctx)
-	for _, iface := range instance.Interfaces {
-		err = a.deleteInterface(ctx, iface)
-		if err != nil {
-			logger.Error("Failed to delete interface", err)
-			err = nil
-			return
-		}
-		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
-			"interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to update subnet", err)
-			return NewCLError(ErrSubnetUpdateFailed, "Failed to update subnet", err)
-		}
-	}
-	return
-}
-
-func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interface) (err error) {
-	err = DeleteInterface(ctx, iface)
-	if err != nil {
-		logger.Error("Failed to create interface")
-		return
-	}
-	vlan := iface.Address.Subnet.Vlan
-	control := ""
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_host.sh '%d' '%s' '%s'", vlan, iface.MacAddr, iface.Address.Address)
-	err = HyperExecute(ctx, control, command)
-	if err != nil {
-		logger.Error("Delete interface failed")
 		return
 	}
 	return
@@ -1566,6 +1549,42 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		}
 	}
 
+	return
+}
+
+// ListByIDs batch-loads instances by their primary keys in a single query.
+func (a *InstanceAdmin) ListByIDs(ctx context.Context, ids []int64) (instanceMap map[int64]*model.Instance, err error) {
+	instanceMap = make(map[int64]*model.Instance)
+	// Deduplicate and drop invalid IDs to keep the IN clause minimal.
+	uniq := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{})
+	for _, id := range ids {
+		if id > 0 {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				uniq = append(uniq, id)
+			}
+		}
+	}
+	// Nothing valid to query: return the empty (non-nil) map so callers can range safely.
+	if len(uniq) == 0 {
+		return
+	}
+	ctx, db := GetContextDB(ctx)
+	where := GetMemberShip(ctx).GetWhere()
+	logger.Debugf("Batch loading %d instance(s) by id", len(uniq))
+	var instances []*model.Instance
+	// Single IN query, no Preload — base columns are all the callers of this method need.
+	if err = db.Where(where).Where("id in (?)", uniq).Find(&instances).Error; err != nil {
+		// Surface query failures instead of silently dropping instances.
+		logger.Errorf("Failed to batch query instances by ids, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query instances by ids", err)
+		return
+	}
+	for _, instance := range instances {
+		instanceMap[instance.ID] = instance
+	}
+	logger.Debugf("Batch loaded %d instance(s) by id", len(instanceMap))
 	return
 }
 

@@ -1,0 +1,78 @@
+---
+- name: Create prometheus-msteams config directory
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/prometheus-msteams
+    state: directory
+    mode: 0755
+  tags: [monitor]
+
+- name: Deploy prometheus-msteams connector config
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    dest: /etc/prometheus-msteams/config.yml
+    content: |
+      connectors:
+      - vm_alerts:        "{{ slack_webhook_url }}"
+      - node_status:      "{{ slack_node_status_webhook_url }}"
+      - resource_alerts:  "{{ slack_resource_webhook_url }}"
+      - drop_package:     "{{ slack_security_webhook_url }}"
+      - ipgroup:          "{{ slack_resource_webhook_url }}"
+    mode: 0644
+  register: msteams_config_result
+  tags: [monitor]
+
+- name: Deploy prometheus-msteams message template
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  copy:
+    src: roles/monitor/templates/msteams.tmpl
+    dest: /etc/prometheus-msteams/msteams.tmpl
+    mode: 0644
+  register: msteams_template_result
+  tags: [monitor]
+
+- name: Run prometheus-msteams container
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  docker_container:
+    name: prometheus-msteams
+    image: quay.io/prometheusmsteams/prometheus-msteams:v1.5.3
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    volumes:
+      - /etc/prometheus-msteams/config.yml:/tmp/config.yml
+      - /etc/prometheus-msteams/msteams.tmpl:/tmp/default.tmpl
+      - /etc/localtime:/etc/localtime:ro
+    command:
+      - "-config-file=/tmp/config.yml"
+      - "-template-file=/tmp/default.tmpl"
+      - "-workflow-webhook"
+  tags: [monitor]
+
+- name: Restart prometheus-msteams if config or template changed
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  docker_container:
+    name: prometheus-msteams
+    state: started
+    restart: true
+  when: msteams_config_result.changed or msteams_template_result.changed
+  tags: [monitor]
+
+- name: Verify prometheus-msteams running status
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  uri:
+    url: http://localhost:2000/metrics
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: msteams_health
+  until: msteams_health.status == 200
+  retries: 6
+  delay: 5
+  tags: [monitor]

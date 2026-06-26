@@ -59,6 +59,7 @@ func New() (m *macaron.Macaron) {
 				template.FuncMap{
 					"GetString": viper.GetString,
 					"Title":     func(v interface{}) string { return strings.Title(fmt.Sprint(v)) },
+					"HasPrefix": strings.HasPrefix,
 				},
 			},
 		},

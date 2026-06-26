@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudland ARP hole — replies to broadcast ARP with random MACs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/arphole/start.sh
+Restart=on-failure
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
