@@ -56,7 +56,10 @@ if [ "$allow_spoofing" != true ]; then
     nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
     ip_count=$((1 + naddrs))
     rate_pps=$((${ip_count} * 5))
-    burst_pkts=$((${ip_count} * 5 + 20))
+    # Cap rate at 100 pps: ARP rate is largely independent of IP count,
+    # avoid letting many site IPs inflate the limit into an ARP flood.
+    [ $rate_pps -gt 100 ] && rate_pps=100
+    burst_pkts=$((${rate_pps} + 20))
     nft add rule bridge cloudland arp-$vnic ether type 0x0806 limit rate $rate_pps/second burst $burst_pkts packets arp saddr ether . arp saddr ip @set-$vnic accept
     nft add rule bridge cloudland arp-$vnic ether type 0x0806 drop
     nft add rule bridge cloudland arp-$vnic limit rate $rate_pps/second burst $burst_pkts packets accept
