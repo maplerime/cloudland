@@ -392,6 +392,31 @@ func DeleteInterfaces(ctx context.Context, masterID, subnetID int64, ifType stri
 	return
 }
 
+// ReleaseInterfaceRefs releases the secondary-address and site-subnet references
+// that point to the given interface. These releases are independent of whether the
+// interface itself is deleted or kept (e.g. a floating-ip interface being reset),
+// so both the common delete path and the rpcs callback path share this helper to
+// avoid divergent cleanup logic.
+func ReleaseInterfaceRefs(ctx context.Context, ifaceID int64) (err error) {
+	_, db := GetContextDB(ctx)
+	// Release plain secondary addresses that only reference this iface as second_interface
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", ifaceID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update second_addresses (no primary), %v", err)
+		return
+	}
+	// Clear second_interface on public secondary addresses that still have a primary interface
+	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", ifaceID).Update(map[string]interface{}{"second_interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update second_addresses (has primary), %v", err)
+		return
+	}
+	// Detach site subnets attached to this iface
+	if err = db.Model(&model.Subnet{}).Where("interface = ?", ifaceID).Update(map[string]interface{}{"interface": 0}).Error; err != nil {
+		logger.Error("Failed to Update site subnets, %v", err)
+		return
+	}
+	return
+}
+
 func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 	var db *gorm.DB
 	ctx, db = GetContextDB(ctx)
@@ -405,14 +430,7 @@ func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 		logger.Error("Failed to Update addresses, %v", err)
 		return
 	}
-	// Release addresses that only have a second_interface reference to this iface
-	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update second_addresses (no primary), %v", err)
-		return
-	}
-	// Clear second_interface on addresses that still have a primary interface
-	if err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error; err != nil {
-		logger.Error("Failed to Update second_addresses (has primary), %v", err)
+	if err = ReleaseInterfaceRefs(ctx, iface.ID); err != nil {
 		return
 	}
 	return

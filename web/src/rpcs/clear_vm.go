@@ -101,20 +101,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 				return
 			}
 		}
-		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
+		err = ReleaseInterfaceRefs(ctx, iface.ID)
 		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
-			return
-		}
-		err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
-			return
-		}
-		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
-			"interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to update subnet", err)
+			logger.Error("Failed to release interface refs, %v", err)
 			return
 		}
 		if routerID > 0 && hyperNode >= 0 {
