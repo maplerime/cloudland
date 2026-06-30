@@ -74,6 +74,19 @@ else
         fi
     done
     if [ -n "$boot_volume" ]; then
+        # Synchronously remove any vhost still bound to the boot volume before deleting it.
+        # The vhost deletion in the loop above is async, so it may not have finished yet.
+        bv_vhost_str=$(wds_curl GET "api/v2/block/volumes/$boot_volume/vhost")
+        bv_vhost_count=$(echo $bv_vhost_str | jq -r '.count // 0')
+        if [ -n "$bv_vhost_count" ] && [ "$bv_vhost_count" -gt 0 ]; then
+            bv_vhost_id=$(echo $bv_vhost_str | jq -r '.vhosts[0].id')
+            bv_uss_id=$(wds_curl GET "api/v2/sync/block/vhost/$bv_vhost_id/vhost_binded_uss" | jq -r '.uss[0].id // empty')
+            if [ -n "$bv_uss_id" ]; then
+                delete_vhost "$boot_volume" "$bv_vhost_id" "$bv_uss_id"
+            else
+                delete_vhost "$boot_volume" "$bv_vhost_id"
+            fi
+        fi
         vhost_paths=$(wds_curl GET "api/v2/sync/block/volumes/$boot_volume/bind_status" | jq -r .path)
   	nvpaths=$(jq length <<< $vhost_paths)
 	j=0
