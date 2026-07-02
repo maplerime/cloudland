@@ -36,7 +36,7 @@
                                 </td>
                                 <td>{{.Status}}</td>
                                 <td>{{.Message}}</td>
-                                <td>{{.ExecutionTime.Format "2006-01-02 15:04:05"}}</td>
+                                <td data-utc="{{.ExecutionTime.UTC.Format "2006-01-02T15:04:05Z"}}">{{.ExecutionTime.Format "2006-01-02 15:04:05"}}</td>
                                 <td>{{.Duration}}s</td>
                             </tr>
                             {{end}}
@@ -44,16 +44,22 @@
                     </table>
                 </div>
                 <div class="ui attached segment">
-                    {{if .Pages}}
-                    <div class="ui pagination menu">
-                        {{range .Pages}}
-                        <a class="item" href="?offset={{.Offset}}">{{.Number}}</a>
-                        {{end}}
-                    </div>
-                    {{end}}
+                    {{template "_pagination" .}}
                 </div>
             </div>
         </div>
     </div>
 </div>
 {{template "_footer" .}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('td[data-utc]').forEach(function(td) {
+        var d = new Date(td.dataset.utc);
+        if (!isNaN(d.getTime())) {
+            var p = function(v) { return String(v).padStart(2, '0'); };
+            td.textContent = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+                ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+        }
+    });
+});
+</script>

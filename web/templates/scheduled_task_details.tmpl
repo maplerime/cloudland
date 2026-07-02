@@ -17,11 +17,7 @@
                                 </div>
                                 <div class="inline field">
                                     <label for="task_type">{{.i18n.Tr "Task Type"}}</label>
-                                    <input id="task_type" value="{{.Task.TaskType}}" disabled>
-                                </div>
-                                <div class="inline field">
-                                    <label for="resource_type">{{.i18n.Tr "Resource Type"}}</label>
-                                    <input id="resource_type" value="{{.Task.ResourceType}}" disabled>
+                                    <input id="task_type" value="{{if eq .Task.TaskType "volume_backup"}}Volume Operation{{else}}{{.Task.TaskType}}{{end}}" disabled>
                                 </div>
                                 <div class="inline field">
                                     <label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
@@ -37,7 +33,7 @@
                                 </div>
                                 <div class="inline field">
                                     <label for="execution_time">{{.i18n.Tr "Execution Time"}}</label>
-                                    <input id="execution_time" value="{{if not .Task.ExecutionTime.IsZero}}{{.Task.ExecutionTime.Format "2006-01-02 15:04:05"}}{{end}}" disabled>
+                                    <input id="execution_time" data-utc="{{if not .Task.ExecutionTime.IsZero}}{{.Task.ExecutionTime.UTC.Format "2006-01-02T15:04:05Z"}}{{end}}" value="{{if not .Task.ExecutionTime.IsZero}}{{.Task.ExecutionTime.Format "2006-01-02 15:04:05"}}{{end}}" disabled>
                                 </div>
                                 <div class="inline field">
                                     <label for="cron_expression">{{.i18n.Tr "Cron Expression"}}</label>
@@ -60,3 +56,16 @@
     </div>
 </div>
 {{template "_footer" .}}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var input = document.getElementById('execution_time');
+    if (input && input.dataset.utc) {
+        var d = new Date(input.dataset.utc);
+        if (!isNaN(d.getTime())) {
+            var p = function(v) { return String(v).padStart(2, '0'); };
+            input.value = d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) +
+                ' ' + p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
+        }
+    }
+});
+</script>

@@ -8,6 +8,7 @@
 					<div class="" >
 						<form class="ui form" action="{{.Link}}" method="post">
 							<input type="hidden" id="timezone_offset_minutes" name="timezone_offset_minutes">
+							<input type="hidden" id="client_timezone" name="client_timezone">
 							<h3 class="ui top attached header">
 								{{.i18n.Tr "Create New Scheduled Task"}}
 							</h3>
@@ -20,16 +21,10 @@
 									<label for="task_type">{{.i18n.Tr "Task Type"}}</label>
 									<select name="task_type" id="task_type" class="ui selection dropdown">
                                          <option value="instance_op" selected>Instance Operation</option>
-                                         <option value="volume_backup">Volume Backup</option>
+                                         <option value="volume_backup">Volume Operation</option>
                                     </select>
 								</div>
-								<div class="required inline field">
-									<label for="resource_type">{{.i18n.Tr "Resource Type"}}</label>
-									<select name="resource_type" id="resource_type" class="ui selection dropdown">
-                                         <option value="instance" selected>Instance</option>
-                                         <option value="volume">Volume</option>
-                                    </select>
-								</div>
+								<input type="hidden" id="resource_type_input" name="resource_type" value="instance">
 								<div class="required inline field">
 									<label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
 									<select name="resource_id" id="resource_id" class="ui selection dropdown">
@@ -137,30 +132,74 @@ function refreshOperationOptions(taskType, selectedValue) {
     operationDropdown.parent().dropdown('set selected', finalValue);
 }
 
-$('#task_type').on('change', function() {
-    var taskType = $(this).val();
-    if (taskType === 'instance_op') {
-        $('#resource_type').val('instance').change();
-        $('#resource_type option[value="instance"]').prop('selected', true);
-        $('#resource_type option[value="volume"]').prop('selected', false);
-        $('#resource_type').parent().dropdown('set selected', 'instance');
-    } else if (taskType === 'volume_backup') {
-        $('#resource_type').val('volume').change();
-        $('#resource_type option[value="volume"]').prop('selected', true);
-        $('#resource_type option[value="instance"]').prop('selected', false);
-        $('#resource_type').parent().dropdown('set selected', 'volume');
+function refreshResourceType(taskType) {
+    var resourceType = taskType === 'volume_backup' ? 'volume' : 'instance';
+    $('#resource_type_input').val(resourceType);
+    refreshResourceOptions(resourceType);
+}
+
+function updateExecutionTimeMin() {
+    var input = document.getElementById('execution_time');
+    if ($('#schedule_type').val() === 'one-time') {
+        var now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+        input.min = now.toISOString().slice(0, 16);
+    } else {
+        input.removeAttribute('min');
     }
+}
+
+function refreshRetentionCountField(taskType) {
+    var field = $('#retention_count').closest('.field');
+    if (taskType === 'volume_backup') {
+        field.show();
+    } else {
+        field.hide();
+        $('#retention_count').val('0');
+    }
+}
+
+function refreshScheduleFields(scheduleType) {
+    var execField = $('#execution_time').closest('.field');
+    var cronField = $('#cron_expression').closest('.field');
+    if (scheduleType === 'one-time') {
+        execField.show().addClass('required');
+        cronField.hide().removeClass('required');
+        $('#execution_time').prop('required', true);
+        $('#cron_expression').prop('required', false).val('');
+    } else {
+        execField.hide().removeClass('required');
+        cronField.show().addClass('required');
+        $('#execution_time').prop('required', false).val('');
+        $('#cron_expression').prop('required', true);
+    }
+}
+
+function handleTaskTypeChange(taskType) {
+    refreshResourceType(taskType);
     refreshOperationOptions(taskType);
+    refreshRetentionCountField(taskType);
+}
+
+function handleScheduleTypeChange(scheduleType) {
+    refreshScheduleFields(scheduleType);
+    updateExecutionTimeMin();
+}
+
+$('#task_type').on('change', function() {
+    handleTaskTypeChange($(this).val());
 });
 
-$('#resource_type').on('change', function() {
-    var resourceType = $(this).val();
-    refreshResourceOptions(resourceType);
+$('#schedule_type').on('change', function() {
+    handleScheduleTypeChange($(this).val());
 });
 
 $(document).ready(function() {
     $('#timezone_offset_minutes').val(new Date().getTimezoneOffset());
+    $('#client_timezone').val(Intl.DateTimeFormat().resolvedOptions().timeZone);
     refreshOperationOptions($('#task_type').val(), $('#operation').val());
-    refreshResourceOptions($('#resource_type').val(), $('#resource_id').val());
+    refreshResourceType($('#task_type').val());
+    refreshRetentionCountField($('#task_type').val());
+    refreshScheduleFields($('#schedule_type').val());
+    updateExecutionTimeMin();
 });
 </script>
