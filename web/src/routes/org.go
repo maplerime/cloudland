@@ -87,6 +87,17 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 		err = NewCLError(ErrUserUpdateFailed, "Failed to update user owner", err)
 		return
 	}
+	ms := &MemberShip{
+		UserID:   user.ID,
+		UserName: owner,
+		OrgID:    org.ID,
+		OrgName:  name,
+		Role:     model.Owner,
+	}
+	sgCtx := ms.SetContext(ctx)
+	if _, sgErr := secgroupAdmin.GetDefaultSecgroup(sgCtx); sgErr != nil {
+		logger.Errorf("Failed to create default SG for org %s: %+v", name, sgErr)
+	}
 	return
 }
 
