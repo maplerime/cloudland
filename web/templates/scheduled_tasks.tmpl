@@ -27,7 +27,6 @@
 									{{ end }}
 			                        <th>{{.i18n.Tr "Name"}}</th>
 			                        <th>{{.i18n.Tr "Task Type"}}</th>
-			                        <th>{{.i18n.Tr "Resource Type"}}</th>
 			                        <th>{{.i18n.Tr "Resource ID"}}</th>
 			                        <th>{{.i18n.Tr "Operation"}}</th>
 			                        <th>{{.i18n.Tr "Schedule Type"}}</th>
@@ -45,8 +44,7 @@
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.ID}}</a></td>
 									{{ end }}
 			                        <td><a href="{{$Link}}/{{.ID}}">{{.Name}}</a></td>
-			                        <td>{{.TaskType}}</td>
-			                        <td>{{.ResourceType}}</td>
+			                        <td>{{if eq .TaskType "volume_backup"}}Volume Operation{{else}}{{.TaskType}}{{end}}</td>
 			                        <td>{{.ResourceID}}</td>
 			                        <td>{{.Operation}}</td>
 			                        <td>{{.ScheduleType}}</td>
@@ -60,15 +58,7 @@
                         </table>
 		            </div>
 		            <div class="ui attached segment">
-                         {{ if .Pages}}
-                         <div class="ui pagination menu">
-                             {{ range  $index, $element := .Pages }}
-                                 <a class="active item">
-                                     <a href="{{$Link}}?offset={{$element.Offset}}">{{ $element.Number }}</a>
-                                 </a>
-                             {{ end }}
-                         </div>
-                         {{ end }}
+                         {{template "_pagination" .}}
 	                </div>
 	            </div>
             </div>

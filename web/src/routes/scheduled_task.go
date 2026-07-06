@@ -67,39 +67,39 @@ func validateScheduledTaskConfig(task *model.ScheduledTask) error {
 		return fmt.Errorf("task name is required")
 	}
 	if task.ResourceID <= 0 {
-		return fmt.Errorf("invalid resource ID")
+		return fmt.Errorf("invalid resource ID: %d (must be greater than 0)", task.ResourceID)
 	}
 	if task.RetentionCount < 0 {
-		return fmt.Errorf("retention count cannot be negative")
+		return fmt.Errorf("retention count cannot be negative, got %d", task.RetentionCount)
 	}
 
 	switch task.Status {
 	case "", "enabled", "disabled":
 	default:
-		return fmt.Errorf("invalid task status: %s", task.Status)
+		return fmt.Errorf("invalid task status: %q (must be one of: enabled, disabled)", task.Status)
 	}
 
 	switch task.TaskType {
 	case "instance_op":
 		if task.ResourceType != "instance" {
-			return fmt.Errorf("instance task must target instance resources")
+			return fmt.Errorf("instance operation tasks must target instance resources, got resource_type=%q", task.ResourceType)
 		}
 		switch task.Operation {
 		case model.STaskActionStart, model.STaskActionStop, model.STaskActionHardStop, model.STaskActionRestart, model.STaskActionHardRestart:
 		default:
-			return fmt.Errorf("invalid instance operation: %s", task.Operation)
+			return fmt.Errorf("invalid instance operation: %q (must be one of: start, stop, hard_stop, restart, hard_restart)", task.Operation)
 		}
 	case "volume_backup":
 		if task.ResourceType != "volume" {
-			return fmt.Errorf("volume backup task must target volume resources")
+			return fmt.Errorf("volume operation tasks must target volume resources, got resource_type=%q", task.ResourceType)
 		}
 		switch task.Operation {
 		case model.STaskActionSnapshot, model.STaskActionBackup:
 		default:
-			return fmt.Errorf("invalid volume backup operation: %s", task.Operation)
+			return fmt.Errorf("invalid volume operation: %q (must be one of: snapshot, backup)", task.Operation)
 		}
 	default:
-		return fmt.Errorf("invalid task type: %s", task.TaskType)
+		return fmt.Errorf("invalid task type: %q (must be one of: instance_op, volume_backup)", task.TaskType)
 	}
 
 	switch task.ScheduleType {
@@ -110,17 +110,80 @@ func validateScheduledTaskConfig(task *model.ScheduledTask) error {
 		task.CronExpression = ""
 	case "daily", "weekly", "monthly":
 		if task.CronExpression == "" {
-			return fmt.Errorf("cron expression is required for recurring tasks")
+			return fmt.Errorf("cron expression is required for %q tasks", task.ScheduleType)
 		}
 		if _, err := recurringCronParser.Parse(task.CronExpression); err != nil {
-			return fmt.Errorf("invalid cron expression: %w", err)
+			return fmt.Errorf("invalid cron expression %q: %w", task.CronExpression, err)
+		}
+		if err := validateCronScheduleSemantics(task.ScheduleType, task.CronExpression); err != nil {
+			return err
 		}
 		task.ExecutionTime = time.Time{}
 	default:
-		return fmt.Errorf("invalid schedule type: %s", task.ScheduleType)
+		return fmt.Errorf("invalid schedule type: %q (must be one of: one-time, daily, weekly, monthly)", task.ScheduleType)
 	}
 
 	return nil
+}
+
+// stripCronTimezonePrefix splits an optional leading "TZ=<loc>"/"CRON_TZ=<loc>"
+// prefix (as understood by robfig/cron) from the 5-field cron spec that follows.
+func stripCronTimezonePrefix(expr string) (tz string, rest string) {
+	if strings.HasPrefix(expr, "TZ=") || strings.HasPrefix(expr, "CRON_TZ=") {
+		if idx := strings.Index(expr, " "); idx != -1 {
+			eq := strings.Index(expr, "=")
+			return expr[eq+1 : idx], strings.TrimSpace(expr[idx:])
+		}
+	}
+	return "", expr
+}
+
+// validateCronScheduleSemantics ensures the cron expression's day-of-month and
+// day-of-week fields actually match the declared schedule type, so a task
+// labeled "daily"/"weekly"/"monthly" behaves the way its label implies.
+func validateCronScheduleSemantics(scheduleType, cronExpr string) error {
+	_, fieldsPart := stripCronTimezonePrefix(cronExpr)
+	fields := strings.Fields(fieldsPart)
+	if len(fields) != 5 {
+		return fmt.Errorf("cron expression %q must have exactly 5 space-separated fields (minute hour day-of-month month day-of-week), got %d", cronExpr, len(fields))
+	}
+	dom, dow := fields[2], fields[4]
+	switch scheduleType {
+	case "daily":
+		if dom != "*" || dow != "*" {
+			return fmt.Errorf("cron expression %q doesn't match schedule type \"daily\": the 3rd field (day-of-month) and 5th field (day-of-week) must both be '*', got day-of-month=%q day-of-week=%q — this looks like a weekly or monthly schedule, check the schedule type or fix these fields", cronExpr, dom, dow)
+		}
+	case "weekly":
+		if dow == "*" {
+			return fmt.Errorf("cron expression %q doesn't match schedule type \"weekly\": the 5th field (day-of-week) must be a specific value (0-6 or MON-SUN), not '*'", cronExpr)
+		}
+		if dom != "*" {
+			return fmt.Errorf("cron expression %q doesn't match schedule type \"weekly\": the 3rd field (day-of-month) must be '*', got %q — this looks like a monthly schedule", cronExpr, dom)
+		}
+	case "monthly":
+		if dom == "*" {
+			return fmt.Errorf("cron expression %q doesn't match schedule type \"monthly\": the 3rd field (day-of-month) must be a specific value (1-31), not '*'", cronExpr)
+		}
+	}
+	return nil
+}
+
+// ensureCronTimezone prepends a CRON_TZ=<location> prefix (recognized natively
+// by robfig/cron) so the cron schedule is evaluated in the client's timezone
+// instead of the scheduler's default UTC. Leaves the expression untouched if
+// it already carries a timezone prefix or the client timezone is invalid.
+func ensureCronTimezone(expr, clientTimezone string) string {
+	if tz, _ := stripCronTimezonePrefix(expr); tz != "" {
+		return expr
+	}
+	clientTimezone = strings.TrimSpace(clientTimezone)
+	if clientTimezone == "" {
+		return expr
+	}
+	if _, err := time.LoadLocation(clientTimezone); err != nil {
+		return expr
+	}
+	return fmt.Sprintf("CRON_TZ=%s %s", clientTimezone, expr)
 }
 
 func validateScheduledTaskResource(ctx context.Context, taskType, resourceType string, resourceID int64) error {
@@ -177,7 +240,7 @@ func parseScheduledTaskExecutionTime(raw string, loc *time.Location) (time.Time,
 			return ts.UTC(), nil
 		}
 	}
-	return time.Time{}, fmt.Errorf("invalid execution time format")
+	return time.Time{}, fmt.Errorf("invalid execution time %q: expected format YYYY-MM-DDTHH:MM (e.g. 2026-01-02T15:04)", raw)
 }
 
 func loadScheduledTaskFormData(ctx context.Context) (volumes []*model.Volume, instances []*model.Instance, err error) {
@@ -284,6 +347,9 @@ func (a *ScheduledTaskAdmin) Create(ctx context.Context, name, taskType, resourc
 
 	if err = validateScheduledTaskConfig(task); err != nil {
 		return nil, err
+	}
+	if task.ScheduleType == "one-time" && !task.ExecutionTime.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("execution time must be in the future")
 	}
 	if err = validateScheduledTaskResource(ctx, task.TaskType, task.ResourceType, task.ResourceID); err != nil {
 		return nil, err
@@ -415,6 +481,9 @@ func (a *ScheduledTaskAdmin) Update(ctx context.Context, id int64, opts *Schedul
 
 	if err = validateScheduledTaskConfig(&updated); err != nil {
 		return nil, err
+	}
+	if opts.ExecutionTime != nil && updated.ScheduleType == "one-time" && !updated.ExecutionTime.After(time.Now().UTC()) {
+		return nil, fmt.Errorf("execution time must be in the future")
 	}
 
 	updates := map[string]interface{}{}
@@ -586,11 +655,7 @@ func (v *ScheduledTaskView) List(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	listConfig, offset, limit := GetPaginationParams(c, "scheduled_tasks")
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -602,11 +667,9 @@ func (v *ScheduledTaskView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["Tasks"] = tasks
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
 	c.Data["Query"] = query
+	SetPaginationData(c, "scheduled_tasks", total, limit, offset, listConfig, "", []string{})
 	c.HTML(200, "scheduled_tasks")
 }
 
@@ -647,6 +710,9 @@ func (v *ScheduledTaskView) Create(c *macaron.Context, store session.Store) {
 	executionTimeStr := c.QueryTrim("execution_time")
 	clientTZ := parseScheduledTaskTimezoneOffset(c.QueryTrim("timezone_offset_minutes"))
 	cronExpression := c.QueryTrim("cron_expression")
+	if scheduleType != "one-time" {
+		cronExpression = ensureCronTimezone(cronExpression, c.QueryTrim("client_timezone"))
+	}
 	retentionCount := c.QueryInt("retention_count")
 	executionTime, err := parseScheduledTaskExecutionTime(executionTimeStr, clientTZ)
 	if err != nil {
@@ -722,6 +788,9 @@ func (v *ScheduledTaskView) Patch(c *macaron.Context, store session.Store) {
 	executionTimeStr := c.QueryTrim("execution_time")
 	clientTZ := parseScheduledTaskTimezoneOffset(c.QueryTrim("timezone_offset_minutes"))
 	cronExpression := c.QueryTrim("cron_expression")
+	if scheduleType != "one-time" {
+		cronExpression = ensureCronTimezone(cronExpression, c.QueryTrim("client_timezone"))
+	}
 	retentionCount := c.QueryInt("retention_count")
 
 	task, err := scheduledTaskAdmin.Get(c.Req.Context(), id)
@@ -799,11 +868,7 @@ func (v *ScheduledTaskView) ListHistory(c *macaron.Context, store session.Store)
 		return
 	}
 
-	offset := c.QueryInt64("offset")
-	limit := c.QueryInt64("limit")
-	if limit == 0 {
-		limit = 16
-	}
+	listConfig, offset, limit := GetPaginationParams(c, "scheduled_task_history")
 	order := c.QueryTrim("order")
 	if order == "" {
 		order = "-created_at"
@@ -819,9 +884,7 @@ func (v *ScheduledTaskView) ListHistory(c *macaron.Context, store session.Store)
 		c.HTML(500, "500")
 		return
 	}
-	pages := GetPages(total, limit)
 	c.Data["Histories"] = histories
-	c.Data["Total"] = total
-	c.Data["Pages"] = pages
+	SetPaginationData(c, "scheduled_task_history", total, limit, offset, listConfig, "", []string{})
 	c.HTML(200, "scheduled_task_history")
 }

@@ -50,8 +50,63 @@ type ScheduledTaskPatchPayload struct {
 	RetentionCount *int       `json:"retention_count"` // Updated retention count
 }
 
-// Create creates a new scheduled task with the provided parameters.
-// Returns HTTP 201 on success or appropriate error status on failure.
+// ScheduledTaskResponse is a flat, swagger-documentation-only mirror of model.ScheduledTask.
+// It exists because model.Model embeds an *Organization which itself embeds model.Model,
+// a cycle swag cannot statically resolve; the actual endpoints still serialize the real
+// model.ScheduledTask value as-is, this type only describes its shape for the docs.
+type ScheduledTaskResponse struct {
+	ID             int64
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	UUID           string
+	Owner          int64
+	Name           string
+	TaskType       string
+	ResourceType   string
+	ResourceID     int64
+	Operation      model.STaskAction
+	ScheduleType   string
+	ExecutionTime  time.Time
+	CronExpression string
+	RetentionCount int
+	Status         string
+}
+
+// ScheduledTaskListResponse represents the paginated response for listing scheduled tasks.
+type ScheduledTaskListResponse struct {
+	Total int64                    `json:"total"`
+	Tasks []*ScheduledTaskResponse `json:"tasks"`
+}
+
+// ScheduledTaskHistoryResponse is a flat, swagger-documentation-only mirror of
+// model.ScheduledTaskHistory (see ScheduledTaskResponse for why this is needed).
+type ScheduledTaskHistoryResponse struct {
+	ID              int64
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	ScheduledTaskID int64
+	Status          string
+	Message         string
+	ExecutionTime   time.Time
+	Duration        int64
+}
+
+// ScheduledTaskHistoryListResponse represents the paginated response for listing scheduled task execution history.
+type ScheduledTaskHistoryListResponse struct {
+	Total   int64                           `json:"total"`
+	History []*ScheduledTaskHistoryResponse `json:"history"`
+}
+
+// @Summary create a scheduled task
+// @Description create a scheduled task for instance operations or volume backup/snapshot
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Param   message body   ScheduledTaskPayload  true   "Scheduled task create payload"
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /scheduled_tasks [post]
 func (a *ScheduledTaskAPI) Create(c *gin.Context) {
 	logger.Info("[API] Creating new scheduled task - function entry")
 	payload := &ScheduledTaskPayload{}
@@ -74,8 +129,19 @@ func (a *ScheduledTaskAPI) Create(c *gin.Context) {
 	c.JSON(http.StatusOK, nil)
 }
 
-// List retrieves a paginated list of scheduled tasks with optional search filtering.
-// Supports offset, limit, ordering, and text search parameters.
+// @Summary list scheduled tasks
+// @Description list scheduled tasks with optional search filtering
+// @Param offset query int    false "Offset"
+// @Param limit  query int    false "Limit"
+// @Param order  query string false "Order by field"
+// @Param q      query string false "Search query on task name"
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Success 200 {object} ScheduledTaskListResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /scheduled_tasks [get]
 func (a *ScheduledTaskAPI) List(c *gin.Context) {
 	logger.Info("[API] Listing scheduled tasks - function entry")
 	offset, _ := strconv.ParseInt(c.Query("offset"), 10, 64)
@@ -98,8 +164,17 @@ func (a *ScheduledTaskAPI) List(c *gin.Context) {
 	})
 }
 
-// Get retrieves a single scheduled task by its ID.
-// Returns HTTP 404 if the task doesn't exist or user doesn't have access.
+// @Summary get a scheduled task
+// @Description get a scheduled task by its ID
+// @Param   id     path    int     true  "Scheduled task ID"
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Success 200 {object} ScheduledTaskResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Failure 404 {object} common.APIError "Not found"
+// @Router /scheduled_tasks/{id} [get]
 func (a *ScheduledTaskAPI) Get(c *gin.Context) {
 	logger.Info("[API] Getting scheduled task - function entry")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -116,8 +191,17 @@ func (a *ScheduledTaskAPI) Get(c *gin.Context) {
 	c.JSON(http.StatusOK, task)
 }
 
-// Patch updates an existing scheduled task with the provided parameters.
-// Only non-empty fields in the payload will be updated.
+// @Summary update a scheduled task
+// @Description update an existing scheduled task; only non-empty fields in the payload are updated
+// @Param   id      path    int                         true  "Scheduled task ID"
+// @Param   message body    ScheduledTaskPatchPayload   true  "Scheduled task update payload"
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Success 200
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /scheduled_tasks/{id} [patch]
 func (a *ScheduledTaskAPI) Patch(c *gin.Context) {
 	logger.Info("[API] Updating scheduled task - function entry")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -150,8 +234,16 @@ func (a *ScheduledTaskAPI) Patch(c *gin.Context) {
 	c.JSON(http.StatusOK, nil)
 }
 
-// Delete removes a scheduled task by its ID.
-// Returns HTTP 204 on successful deletion.
+// @Summary delete a scheduled task
+// @Description delete a scheduled task by its ID
+// @Param   id     path    int     true  "Scheduled task ID"
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Success 204
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /scheduled_tasks/{id} [delete]
 func (a *ScheduledTaskAPI) Delete(c *gin.Context) {
 	logger.Info("[API] Deleting scheduled task - function entry")
 	id, _ := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -168,8 +260,19 @@ func (a *ScheduledTaskAPI) Delete(c *gin.Context) {
 	c.JSON(http.StatusNoContent, nil)
 }
 
-// ListHistory retrieves the execution history for a specific scheduled task.
-// Supports pagination and ordering of history records.
+// @Summary list a scheduled task's execution history
+// @Description list execution history records for a specific scheduled task
+// @Param   id     path  int    true  "Scheduled task ID"
+// @Param offset query int    false "Offset"
+// @Param limit  query int    false "Limit"
+// @Param order  query string false "Order by field"
+// @tags Administration
+// @Accept  json
+// @Produce json
+// @Success 200 {object} ScheduledTaskHistoryListResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /scheduled_tasks/{id}/history [get]
 func (a *ScheduledTaskAPI) ListHistory(c *gin.Context) {
 	logger.Info("[API] Listing scheduled task history - function entry")
 	offset, _ := strconv.ParseInt(c.Query("offset"), 10, 64)
