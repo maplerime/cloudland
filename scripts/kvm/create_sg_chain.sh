@@ -54,15 +54,15 @@ if [ "$allow_spoofing" != true ]; then
     nft add set bridge cloudland set-$vnic '{ type ether_addr . ipv4_addr ; }' 2>/dev/null
     nft flush set bridge cloudland set-$vnic 2>/dev/null
     nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
-    ip_count=$((1 + naddrs))
-    rate_pps=$((${ip_count} * 5))
-    # Cap rate at 100 pps: ARP rate is largely independent of IP count,
-    # avoid letting many site IPs inflate the limit into an ARP flood.
-    [ $rate_pps -gt 100 ] && rate_pps=100
-    burst_pkts=$((${rate_pps} + 20))
-    nft add rule bridge cloudland arp-$vnic ether type 0x0806 limit rate $rate_pps/second burst $burst_pkts packets arp saddr ether . arp saddr ip @set-$vnic accept
+    # Fixed rate caps (independent of IP count): absorb startup bursts on
+    # low-IP VMs while preventing floods. ARP higher than other BUM.
+    arp_rate=100
+    arp_burst=500
+    bum_rate=50
+    bum_burst=$((${bum_rate} + 50))
+    nft add rule bridge cloudland arp-$vnic ether type 0x0806 limit rate $arp_rate/second burst $arp_burst packets arp saddr ether . arp saddr ip @set-$vnic accept
     nft add rule bridge cloudland arp-$vnic ether type 0x0806 drop
-    nft add rule bridge cloudland arp-$vnic limit rate $rate_pps/second burst $burst_pkts packets accept
+    nft add rule bridge cloudland arp-$vnic limit rate $bum_rate/second burst $bum_burst packets accept
     nft add rule bridge cloudland arp-$vnic drop
     nft add element bridge cloudland set-$vnic { $mac . $ip }
 
