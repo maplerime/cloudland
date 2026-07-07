@@ -1553,6 +1553,143 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.ScheduledTaskHistoryListResponse:
+    properties:
+      history:
+        items:
+          $ref: '#/definitions/apis.ScheduledTaskHistoryResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.ScheduledTaskHistoryResponse:
+    properties:
+      createdAt:
+        type: string
+      duration:
+        type: integer
+      executionTime:
+        type: string
+      id:
+        type: integer
+      message:
+        type: string
+      scheduledTaskID:
+        type: integer
+      status:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  apis.ScheduledTaskListResponse:
+    properties:
+      tasks:
+        items:
+          $ref: '#/definitions/apis.ScheduledTaskResponse'
+        type: array
+      total:
+        type: integer
+    type: object
+  apis.ScheduledTaskPatchPayload:
+    properties:
+      cron_expression:
+        description: Updated cron expression
+        type: string
+      execution_time:
+        description: Updated execution time
+        type: string
+      name:
+        description: Updated task name
+        type: string
+      retention_count:
+        description: Updated retention count
+        type: integer
+      schedule_type:
+        description: Updated schedule type
+        type: string
+      status:
+        description: Updated status (enabled/disabled)
+        type: string
+    type: object
+  apis.ScheduledTaskPayload:
+    properties:
+      cron_expression:
+        description: Cron expression for recurring tasks
+        type: string
+      execution_time:
+        description: Execution time for one-time tasks
+        type: string
+      name:
+        description: Human-readable task name
+        type: string
+      operation:
+        allOf:
+        - $ref: '#/definitions/model.STaskAction'
+        description: Operation to perform
+        enum:
+        - stop
+        - hard_stop
+        - start
+        - restart
+        - hard_restart
+        - snapshot
+        - backup
+      resource_id:
+        description: Target resource ID
+        type: integer
+      resource_type:
+        description: Type of resource (instance, volume)
+        type: string
+      retention_count:
+        description: Number of backups/snapshots to retain
+        type: integer
+      schedule_type:
+        description: Schedule type (one-time, daily, weekly, monthly)
+        type: string
+      task_type:
+        description: Type of task (instance_op, volume_backup)
+        type: string
+    required:
+    - name
+    - operation
+    - resource_id
+    - resource_type
+    - schedule_type
+    - task_type
+    type: object
+  apis.ScheduledTaskResponse:
+    properties:
+      createdAt:
+        type: string
+      cronExpression:
+        type: string
+      executionTime:
+        type: string
+      id:
+        type: integer
+      name:
+        type: string
+      operation:
+        $ref: '#/definitions/model.STaskAction'
+      owner:
+        type: integer
+      resourceID:
+        type: integer
+      resourceType:
+        type: string
+      retentionCount:
+        type: integer
+      scheduleType:
+        type: string
+      status:
+        type: string
+      taskType:
+        type: string
+      updatedAt:
+        type: string
+      uuid:
+        type: string
+    type: object
   apis.SecruleListResponse:
     properties:
       limit:
@@ -1998,6 +2135,27 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.ValidatePayload:
+    properties:
+      disk_gb:
+        minimum: 0
+        type: integer
+      hyper_id:
+        type: integer
+      memory_mb:
+        minimum: 1
+        type: integer
+      vcpus:
+        minimum: 1
+        type: integer
+      zone_id:
+        type: integer
+    required:
+    - disk_gb
+    - hyper_id
+    - memory_mb
+    - vcpus
+    type: object
   apis.VersionResponse:
     properties:
       version:
@@ -2350,6 +2508,32 @@ definitions:
     - BackupStatusReady
     - BackupStatusError
     - BackupStatusRestoring
+  model.STaskAction:
+    enum:
+    - stop
+    - hard_stop
+    - start
+    - restart
+    - hard_restart
+    - snapshot
+    - backup
+    type: string
+    x-enum-comments:
+      STaskActionBackup: Create volume backup
+      STaskActionHardRestart: Force restart instance
+      STaskActionHardStop: Force stop instance
+      STaskActionRestart: Restart instance gracefully
+      STaskActionSnapshot: Create volume snapshot
+      STaskActionStart: Start instance
+      STaskActionStop: Stop instance gracefully
+    x-enum-varnames:
+    - STaskActionStop
+    - STaskActionHardStop
+    - STaskActionStart
+    - STaskActionRestart
+    - STaskActionHardRestart
+    - STaskActionSnapshot
+    - STaskActionBackup
 host: localhost:8256
 info:
   contact: {}
@@ -5091,6 +5275,283 @@ paths:
       summary: patch a org
       tags:
       - Authorization
+  /placement/available:
+    get:
+      consumes:
+      - application/json
+      description: Runs the full filter+weigher chain and returns all passing hypers
+        sorted by score
+      parameters:
+      - description: Zone name
+        in: query
+        name: zone_name
+        required: true
+        type: string
+      - description: Number of vCPUs
+        in: query
+        name: vcpus
+        required: true
+        type: integer
+      - description: Memory in MB
+        in: query
+        name: memory_mb
+        required: true
+        type: integer
+      - description: Disk in GB (default 1)
+        in: query
+        name: disk_gb
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Query available placement candidates
+      tags:
+      - Placement
+  /placement/validate:
+    post:
+      consumes:
+      - application/json
+      description: Checks if the specified hyper passes the filter chain for the given
+        VM spec
+      parameters:
+      - description: Validation request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ValidatePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Validate hyper resource availability
+      tags:
+      - Placement
+  /scheduled_tasks:
+    get:
+      consumes:
+      - application/json
+      description: list scheduled tasks with optional search filtering
+      parameters:
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Order by field
+        in: query
+        name: order
+        type: string
+      - description: Search query on task name
+        in: query
+        name: q
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list scheduled tasks
+      tags:
+      - Administration
+    post:
+      consumes:
+      - application/json
+      description: create a scheduled task for instance operations or volume backup/snapshot
+      parameters:
+      - description: Scheduled task create payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ScheduledTaskPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create a scheduled task
+      tags:
+      - Administration
+  /scheduled_tasks/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete a scheduled task by its ID
+      parameters:
+      - description: Scheduled task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete a scheduled task
+      tags:
+      - Administration
+    get:
+      consumes:
+      - application/json
+      description: get a scheduled task by its ID
+      parameters:
+      - description: Scheduled task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get a scheduled task
+      tags:
+      - Administration
+    patch:
+      consumes:
+      - application/json
+      description: update an existing scheduled task; only non-empty fields in the
+        payload are updated
+      parameters:
+      - description: Scheduled task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Scheduled task update payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ScheduledTaskPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update a scheduled task
+      tags:
+      - Administration
+  /scheduled_tasks/{id}/history:
+    get:
+      consumes:
+      - application/json
+      description: list execution history records for a specific scheduled task
+      parameters:
+      - description: Scheduled task ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Offset
+        in: query
+        name: offset
+        type: integer
+      - description: Limit
+        in: query
+        name: limit
+        type: integer
+      - description: Order by field
+        in: query
+        name: order
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskHistoryListResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list a scheduled task's execution history
+      tags:
+      - Administration
   /security_groups:
     get:
       consumes:
