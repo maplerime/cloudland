@@ -168,11 +168,11 @@ func validateCronScheduleSemantics(scheduleType, cronExpr string) error {
 	return nil
 }
 
-// ensureCronTimezone prepends a CRON_TZ=<location> prefix (recognized natively
+// EnsureCronTimezone prepends a CRON_TZ=<location> prefix (recognized natively
 // by robfig/cron) so the cron schedule is evaluated in the client's timezone
 // instead of the scheduler's default UTC. Leaves the expression untouched if
 // it already carries a timezone prefix or the client timezone is invalid.
-func ensureCronTimezone(expr, clientTimezone string) string {
+func EnsureCronTimezone(expr, clientTimezone string) string {
 	if tz, _ := stripCronTimezonePrefix(expr); tz != "" {
 		return expr
 	}
@@ -711,7 +711,7 @@ func (v *ScheduledTaskView) Create(c *macaron.Context, store session.Store) {
 	clientTZ := parseScheduledTaskTimezoneOffset(c.QueryTrim("timezone_offset_minutes"))
 	cronExpression := c.QueryTrim("cron_expression")
 	if scheduleType != "one-time" {
-		cronExpression = ensureCronTimezone(cronExpression, c.QueryTrim("client_timezone"))
+		cronExpression = EnsureCronTimezone(cronExpression, c.QueryTrim("client_timezone"))
 	}
 	retentionCount := c.QueryInt("retention_count")
 	executionTime, err := parseScheduledTaskExecutionTime(executionTimeStr, clientTZ)
@@ -789,7 +789,7 @@ func (v *ScheduledTaskView) Patch(c *macaron.Context, store session.Store) {
 	clientTZ := parseScheduledTaskTimezoneOffset(c.QueryTrim("timezone_offset_minutes"))
 	cronExpression := c.QueryTrim("cron_expression")
 	if scheduleType != "one-time" {
-		cronExpression = ensureCronTimezone(cronExpression, c.QueryTrim("client_timezone"))
+		cronExpression = EnsureCronTimezone(cronExpression, c.QueryTrim("client_timezone"))
 	}
 	retentionCount := c.QueryInt("retention_count")
 
