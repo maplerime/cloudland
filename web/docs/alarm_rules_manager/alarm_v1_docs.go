@@ -8322,13 +8322,13 @@ const docTemplatealarm_v1 = `{
         "apis.ScheduledTaskHistoryResponse": {
             "type": "object",
             "properties": {
-                "createdAt": {
+                "created_at": {
                     "type": "string"
                 },
                 "duration": {
                     "type": "integer"
                 },
-                "executionTime": {
+                "execution_time": {
                     "type": "string"
                 },
                 "id": {
@@ -8337,13 +8337,16 @@ const docTemplatealarm_v1 = `{
                 "message": {
                     "type": "string"
                 },
-                "scheduledTaskID": {
+                "scheduled_task": {
+                    "$ref": "#/definitions/apis.ScheduledTaskResponse"
+                },
+                "scheduled_task_id": {
                     "type": "integer"
                 },
                 "status": {
                     "type": "string"
                 },
-                "updatedAt": {
+                "updated_at": {
                     "type": "string"
                 }
             }
@@ -8387,6 +8390,10 @@ const docTemplatealarm_v1 = `{
                 },
                 "status": {
                     "description": "Updated status (enabled/disabled)",
+                    "type": "string"
+                },
+                "timezone": {
+                    "description": "IANA timezone name (e.g. Asia/Shanghai) used to evaluate cron_expression for recurring tasks",
                     "type": "string"
                 }
             }
@@ -8450,19 +8457,23 @@ const docTemplatealarm_v1 = `{
                 "task_type": {
                     "description": "Type of task (instance_op, volume_backup)",
                     "type": "string"
+                },
+                "timezone": {
+                    "description": "IANA timezone name (e.g. Asia/Shanghai) used to evaluate cron_expression for recurring tasks",
+                    "type": "string"
                 }
             }
         },
         "apis.ScheduledTaskResponse": {
             "type": "object",
             "properties": {
-                "createdAt": {
+                "created_at": {
                     "type": "string"
                 },
-                "cronExpression": {
+                "cron_expression": {
                     "type": "string"
                 },
-                "executionTime": {
+                "execution_time": {
                     "type": "string"
                 },
                 "id": {
@@ -8477,25 +8488,25 @@ const docTemplatealarm_v1 = `{
                 "owner": {
                     "type": "integer"
                 },
-                "resourceID": {
+                "resource_id": {
                     "type": "integer"
                 },
-                "resourceType": {
+                "resource_type": {
                     "type": "string"
                 },
-                "retentionCount": {
+                "retention_count": {
                     "type": "integer"
                 },
-                "scheduleType": {
+                "schedule_type": {
                     "type": "string"
                 },
                 "status": {
                     "type": "string"
                 },
-                "taskType": {
+                "task_type": {
                     "type": "string"
                 },
-                "updatedAt": {
+                "updated_at": {
                     "type": "string"
                 },
                 "uuid": {

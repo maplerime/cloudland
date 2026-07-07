@@ -36,6 +36,7 @@ type ScheduledTaskPayload struct {
 	ScheduleType   string            `json:"schedule_type" binding:"required"`                                                             // Schedule type (one-time, daily, weekly, monthly)
 	ExecutionTime  time.Time         `json:"execution_time"`                                                                               // Execution time for one-time tasks
 	CronExpression string            `json:"cron_expression"`                                                                              // Cron expression for recurring tasks
+	Timezone       string            `json:"timezone"`                                                                                     // IANA timezone name (e.g. Asia/Shanghai) used to evaluate cron_expression for recurring tasks
 	RetentionCount int               `json:"retention_count"`                                                                              // Number of backups/snapshots to retain
 }
 
@@ -47,29 +48,27 @@ type ScheduledTaskPatchPayload struct {
 	ScheduleType   *string    `json:"schedule_type"`   // Updated schedule type
 	ExecutionTime  *time.Time `json:"execution_time"`  // Updated execution time
 	CronExpression *string    `json:"cron_expression"` // Updated cron expression
+	Timezone       *string    `json:"timezone"`        // IANA timezone name (e.g. Asia/Shanghai) used to evaluate cron_expression for recurring tasks
 	RetentionCount *int       `json:"retention_count"` // Updated retention count
 }
 
-// ScheduledTaskResponse is a flat, swagger-documentation-only mirror of model.ScheduledTask.
-// It exists because model.Model embeds an *Organization which itself embeds model.Model,
-// a cycle swag cannot statically resolve; the actual endpoints still serialize the real
-// model.ScheduledTask value as-is, this type only describes its shape for the docs.
+// ScheduledTaskResponse is the JSON representation of a scheduled task returned by the API.
 type ScheduledTaskResponse struct {
-	ID             int64
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	UUID           string
-	Owner          int64
-	Name           string
-	TaskType       string
-	ResourceType   string
-	ResourceID     int64
-	Operation      model.STaskAction
-	ScheduleType   string
-	ExecutionTime  time.Time
-	CronExpression string
-	RetentionCount int
-	Status         string
+	ID             int64             `json:"id"`
+	UUID           string            `json:"uuid"`
+	CreatedAt      time.Time         `json:"created_at"`
+	UpdatedAt      time.Time         `json:"updated_at"`
+	Owner          int64             `json:"owner"`
+	Name           string            `json:"name"`
+	TaskType       string            `json:"task_type"`
+	ResourceType   string            `json:"resource_type"`
+	ResourceID     int64             `json:"resource_id"`
+	Operation      model.STaskAction `json:"operation"`
+	ScheduleType   string            `json:"schedule_type"`
+	ExecutionTime  time.Time         `json:"execution_time"`
+	CronExpression string            `json:"cron_expression"`
+	RetentionCount int               `json:"retention_count"`
+	Status         string            `json:"status"`
 }
 
 // ScheduledTaskListResponse represents the paginated response for listing scheduled tasks.
@@ -78,23 +77,62 @@ type ScheduledTaskListResponse struct {
 	Tasks []*ScheduledTaskResponse `json:"tasks"`
 }
 
-// ScheduledTaskHistoryResponse is a flat, swagger-documentation-only mirror of
-// model.ScheduledTaskHistory (see ScheduledTaskResponse for why this is needed).
+// ScheduledTaskHistoryResponse is the JSON representation of a scheduled task execution history record.
 type ScheduledTaskHistoryResponse struct {
-	ID              int64
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
-	ScheduledTaskID int64
-	Status          string
-	Message         string
-	ExecutionTime   time.Time
-	Duration        int64
+	ID              int64                  `json:"id"`
+	CreatedAt       time.Time              `json:"created_at"`
+	UpdatedAt       time.Time              `json:"updated_at"`
+	ScheduledTaskID int64                  `json:"scheduled_task_id"`
+	ScheduledTask   *ScheduledTaskResponse `json:"scheduled_task,omitempty"`
+	Status          string                 `json:"status"`
+	Message         string                 `json:"message"`
+	ExecutionTime   time.Time              `json:"execution_time"`
+	Duration        int64                  `json:"duration"`
 }
 
 // ScheduledTaskHistoryListResponse represents the paginated response for listing scheduled task execution history.
 type ScheduledTaskHistoryListResponse struct {
 	Total   int64                           `json:"total"`
 	History []*ScheduledTaskHistoryResponse `json:"history"`
+}
+
+// getScheduledTaskResponse converts a model.ScheduledTask into its JSON response representation.
+func getScheduledTaskResponse(task *model.ScheduledTask) *ScheduledTaskResponse {
+	return &ScheduledTaskResponse{
+		ID:             task.ID,
+		UUID:           task.UUID,
+		CreatedAt:      task.CreatedAt,
+		UpdatedAt:      task.UpdatedAt,
+		Owner:          task.Owner,
+		Name:           task.Name,
+		TaskType:       task.TaskType,
+		ResourceType:   task.ResourceType,
+		ResourceID:     task.ResourceID,
+		Operation:      task.Operation,
+		ScheduleType:   task.ScheduleType,
+		ExecutionTime:  task.ExecutionTime,
+		CronExpression: task.CronExpression,
+		RetentionCount: task.RetentionCount,
+		Status:         task.Status,
+	}
+}
+
+// getScheduledTaskHistoryResponse converts a model.ScheduledTaskHistory into its JSON response representation.
+func getScheduledTaskHistoryResponse(h *model.ScheduledTaskHistory) *ScheduledTaskHistoryResponse {
+	resp := &ScheduledTaskHistoryResponse{
+		ID:              h.ID,
+		CreatedAt:       h.CreatedAt,
+		UpdatedAt:       h.UpdatedAt,
+		ScheduledTaskID: h.ScheduledTaskID,
+		Status:          h.Status,
+		Message:         h.Message,
+		ExecutionTime:   h.ExecutionTime,
+		Duration:        h.Duration,
+	}
+	if h.ScheduledTask != nil {
+		resp.ScheduledTask = getScheduledTaskResponse(h.ScheduledTask)
+	}
+	return resp
 }
 
 // @Summary create a scheduled task
@@ -118,7 +156,11 @@ func (a *ScheduledTaskAPI) Create(c *gin.Context) {
 	}
 
 	logger.Debugf("[API] Scheduled task payload received: %+v", payload)
-	_, err = scheduledTaskAdmin.Create(c.Request.Context(), payload.Name, payload.TaskType, payload.ResourceType, payload.Operation, payload.ScheduleType, payload.CronExpression, payload.ResourceID, payload.RetentionCount, payload.ExecutionTime)
+	cronExpression := payload.CronExpression
+	if payload.ScheduleType != "one-time" {
+		cronExpression = routes.EnsureCronTimezone(cronExpression, payload.Timezone)
+	}
+	_, err = scheduledTaskAdmin.Create(c.Request.Context(), payload.Name, payload.TaskType, payload.ResourceType, payload.Operation, payload.ScheduleType, cronExpression, payload.ResourceID, payload.RetentionCount, payload.ExecutionTime)
 	if err != nil {
 		logger.Errorf("[API] Failed to create scheduled task: %v", err)
 		common.ErrorResponse(c, http.StatusInternalServerError, "Failed to create scheduled task", err)
@@ -157,10 +199,15 @@ func (a *ScheduledTaskAPI) List(c *gin.Context) {
 		return
 	}
 
+	taskResps := make([]*ScheduledTaskResponse, len(tasks))
+	for i, t := range tasks {
+		taskResps[i] = getScheduledTaskResponse(t)
+	}
+
 	logger.Infof("[API] Successfully found %d scheduled tasks - function exit", total)
-	c.JSON(http.StatusOK, gin.H{
-		"total": total,
-		"tasks": tasks,
+	c.JSON(http.StatusOK, ScheduledTaskListResponse{
+		Total: total,
+		Tasks: taskResps,
 	})
 }
 
@@ -188,7 +235,7 @@ func (a *ScheduledTaskAPI) Get(c *gin.Context) {
 	}
 
 	logger.Info("[API] Successfully retrieved scheduled task - function exit")
-	c.JSON(http.StatusOK, task)
+	c.JSON(http.StatusOK, getScheduledTaskResponse(task))
 }
 
 // @Summary update a scheduled task
@@ -216,6 +263,15 @@ func (a *ScheduledTaskAPI) Patch(c *gin.Context) {
 	}
 
 	logger.Debugf("[API] Patch payload: %+v", payload)
+	if payload.CronExpression != nil {
+		timezone := ""
+		if payload.Timezone != nil {
+			timezone = *payload.Timezone
+		}
+		cronExpression := routes.EnsureCronTimezone(*payload.CronExpression, timezone)
+		payload.CronExpression = &cronExpression
+	}
+
 	_, err = scheduledTaskAdmin.Update(c.Request.Context(), id, &routes.ScheduledTaskUpdateOptions{
 		Name:           payload.Name,
 		Status:         payload.Status,
@@ -311,9 +367,14 @@ func (a *ScheduledTaskAPI) ListHistory(c *gin.Context) {
 		return
 	}
 
+	historyResps := make([]*ScheduledTaskHistoryResponse, len(history))
+	for i, h := range history {
+		historyResps[i] = getScheduledTaskHistoryResponse(h)
+	}
+
 	logger.Infof("[API] Successfully found %d history records - function exit", total)
-	c.JSON(http.StatusOK, gin.H{
-		"total":   total,
-		"history": history,
+	c.JSON(http.StatusOK, ScheduledTaskHistoryListResponse{
+		Total:   total,
+		History: historyResps,
 	})
 }
