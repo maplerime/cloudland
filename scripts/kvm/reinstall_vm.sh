@@ -64,7 +64,7 @@ if [ -z "$wds_address" ]; then
 else
     get_wds_token
     # default the system-disk copy_clone threshold (GB) if the config is unset/empty
-    if [ -z "$clone_volume_size_threshold" ]; then clone_volume_size_threshold=1024; fi
+    if [ -z "$wds_copy_clone_threshold" ]; then wds_copy_clone_threshold=1024; fi
     image=$(basename $img_name .raw)
     old_vhost_name=$(basename $(ls /var/run/wds/instance-$ID-volume-$vol_ID-*))
     vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$old_vhost_name" | jq -r '.vhosts[0].id')
@@ -84,10 +84,10 @@ else
         vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
         [ "$vhost_name" != "$old_vhost_name" ] && break
     done
-    if [ "$disk_size" -lt "$clone_volume_size_threshold" ]; then
+    if [ "$disk_size" -lt "$wds_copy_clone_threshold" ]; then
         # ---- linked clone path (system disk < threshold): unchanged behaviour ----
         is_copy_clone=false
-        log_debug $vol_ID "reinstall: system disk $disk_size GB < threshold $clone_volume_size_threshold GB, using linked clone"
+        log_debug $vol_ID "reinstall: system disk $disk_size GB < threshold $wds_copy_clone_threshold GB, using linked clone"
         snapshot_name=${image}-${snapshot}
         read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
         if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
@@ -113,7 +113,7 @@ else
     else
         # ---- copy_clone path (system disk >= threshold): independent volume from image volume ----
         is_copy_clone=true
-        log_debug $vol_ID "reinstall: system disk $disk_size GB >= threshold $clone_volume_size_threshold GB, using copy_clone from image volume $image_volume_id"
+        log_debug $vol_ID "reinstall: system disk $disk_size GB >= threshold $wds_copy_clone_threshold GB, using copy_clone from image volume $image_volume_id"
         # error handling: copy_clone needs a valid source image volume id
         if [ -z "$image_volume_id" -o "$image_volume_id" = null ]; then
             log_debug $vol_ID "reinstall: image_volume_id is empty, cannot copy_clone boot volume"
