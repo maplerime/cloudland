@@ -19,7 +19,7 @@ pool_ID=$9
 state='error'
 
 if [ -z "$wds_address" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' '' 'wds_address is not set'"
+    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' '' 'wds_address is not set' 'false'"
     exit -1
 fi
 
@@ -27,7 +27,7 @@ if [ -z "$pool_ID" ]; then
     pool_ID=$wds_pool_id
 fi
 if [ -z "$pool_ID" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' '' 'pool_ID is not set'"
+    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' '' 'pool_ID is not set' 'false'"
     exit -1
 fi
 
@@ -48,17 +48,17 @@ bps_limit=$(($bps_limit * $wds_bps_factor))
 result=$(wds_curl "POST" "api/v2/sync/block/volumes" "{\"phy_pool_id\": \"$pool_ID\", \"name\": \"$vol_WDS_NAME\", \"volume_size\": $size, \"qos\":{\"iops_limit\": $iops_limit, \"iops_burst\": $iops_burst, \"bps_limit\": $bps_limit, \"bps_burst\": $bps_burst}}")
 ret_code=$(echo $result | jq -r .ret_code)
 if [ "$ret_code" != "0" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' 'error' '' 'failed to create volume: $result'"
+    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' 'error' '' 'failed to create volume: $result' 'false'"
     exit -1
 fi
 wds_volume_id=$(echo $result | jq -r .id)
 if [ -z "$wds_volume_id" ]; then
-    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' 'error' '' 'failed to get volume ID'"
+    echo "|:-COMMAND-:| $(basename $0) '$vol_ID' 'error' '' 'failed to get volume ID' 'false'"
     exit -1
 fi
 state='available'
 
-echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' 'wds_vhost://$pool_ID/$wds_volume_id' 'success'"
+echo "|:-COMMAND-:| $(basename $0) '$vol_ID' '$state' 'wds_vhost://$pool_ID/$wds_volume_id' 'success' 'false'"
 
 if [ -n "$inst_ID" ] && [ "$inst_ID" != "0" ]; then
     ./attach_volume_wds_vhost.sh "$inst_ID" "$vol_ID" "wds_vhost://$pool_ID/$wds_volume_id" "$wds_volume_id"
