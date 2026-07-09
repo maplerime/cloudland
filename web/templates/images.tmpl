@@ -111,9 +111,11 @@
                                                     <div class="item" data-text="StoragePool">
                                                         <a href="/images/{{.ID}}/storages">{{$.i18n.Tr "StoragePool"}}</a>
                                                     </div>
+                                                    {{if ne .StorageType "local"}}
                                                     <div class="item" data-text="ExportImage">
                                                         <a href="/images/{{.ID}}/export">{{$.i18n.Tr "Export Image"}}</a>
                                                     </div>
+                                                    {{end}}
                                                     <div class="item" data-text="DeleteImage">
                                                         <a class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}" href="javascript:void(0)">{{$.i18n.Tr "Delete"}}</a>
                                                     </div>

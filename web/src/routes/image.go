@@ -753,6 +753,10 @@ func (a *ImageAdmin) Export(ctx context.Context, imageUUID string, storageID int
 		err = NewCLError(ErrPermissionDenied, "not authorized to export the image", nil)
 		return
 	}
+	if image.StorageType == "local" {
+		err = NewCLError(ErrExportCreationFailed, "export not supported for local storage images", nil)
+		return
+	}
 
 	db := DB()
 	storage := &model.ImageStorage{}
