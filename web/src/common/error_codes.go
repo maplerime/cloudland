@@ -116,6 +116,12 @@ const (
 	ErrCannotRestoreFromBackup             ErrCode = 125106
 	ErrBackupInvalidState                  ErrCode = 125107
 
+	// Export related errors (126xxx)
+	ErrExportNotFound          ErrCode = 126001
+	ErrExportCreationFailed    ErrCode = 126002
+	ErrExportInvalidState      ErrCode = 126003
+	ErrExportVolumeNotAvail    ErrCode = 126004 // volume must be available (not attached) to export
+
 	// Consistency Group related errors (1252xx)
 	ErrCGNotFound                  ErrCode = 125200
 	ErrCGCreationFailed            ErrCode = 125201
