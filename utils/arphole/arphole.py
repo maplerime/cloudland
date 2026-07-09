@@ -581,16 +581,26 @@ class ArpHole:
     def _sniff_iface(self, iface: str, role: str) -> None:
         """role: 'request' (op=1 producer) or 'reply' (op=2 response matcher)."""
         handler = self._on_request if role == "request" else self._on_reply
+        # Filter by ARP opcode in the kernel so each sniff thread only wakes
+        # for the packets it handles. Under an ARP request flood a shared
+        # "arp" filter would drown the reply thread in op=1 packets it just
+        # drops in Python, and the kernel ring buffer would drop the rare
+        # op=2 is-at we actually need — causing a live IP to be falsely
+        # reclaimed. ARP opcode is a 2-byte field at offset 6; the `vlan`
+        # keyword shifts subsequent offsets by the 4-byte tag automatically.
+        op = 1 if role == "request" else 2
+        bpf = "arp[6:2] = %d or (vlan and arp[6:2] = %d)" % (op, op)
         logger.info(
-            "sniffing %s on %s (mac=%s)",
+            "sniffing %s on %s (mac=%s filter=%r)",
             role,
             iface,
             self._iface_macs.get(iface),
+            bpf,
         )
         try:
             sniff(
                 iface=iface,
-                filter="arp or (vlan and arp)",
+                filter=bpf,
                 prn=lambda pkt: handler(iface, pkt),
                 store=False,
             )
