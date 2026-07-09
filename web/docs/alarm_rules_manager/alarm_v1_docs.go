@@ -4312,22 +4312,22 @@ const docTemplatealarm_v1 = `{
                             "$ref": "#/definitions/apis.ScheduledTaskListResponse"
                         }
                     },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
                     "401": {
                         "description": "Not authorized",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
                     }
                 }
             },
             "post": {
-                "description": "create a scheduled task for instance operations or volume backup/snapshot",
+                "description": "create a scheduled task for instance operations or volume backup/snapshot.\nThe resource_id in the payload is the UUID of the target instance/volume\n(as returned by the instances/volumes APIs). The id field in the response\nis the task's numeric ID, which is the path parameter accepted by the\nget/patch/delete/history endpoints.",
                 "consumes": [
                     "application/json"
                 ],
@@ -4351,12 +4351,15 @@ const docTemplatealarm_v1 = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskOperationResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad request",
                         "schema": {
-                            "$ref": "#/definitions/common.APIError"
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
                         }
                     },
                     "401": {
@@ -4364,13 +4367,19 @@ const docTemplatealarm_v1 = `{
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
                     }
                 }
             }
         },
         "/scheduled_tasks/{id}": {
             "get": {
-                "description": "get a scheduled task by its ID",
+                "description": "get a scheduled task by its UUID. The UUID is the uuid field\nreturned by the create/list endpoints and is unique across regions\n(the numeric id is region-local and NOT accepted here).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4383,8 +4392,8 @@ const docTemplatealarm_v1 = `{
                 "summary": "get a scheduled task",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Scheduled task ID",
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4397,12 +4406,6 @@ const docTemplatealarm_v1 = `{
                             "$ref": "#/definitions/apis.ScheduledTaskResponse"
                         }
                     },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
                     "401": {
                         "description": "Not authorized",
                         "schema": {
@@ -4412,13 +4415,13 @@ const docTemplatealarm_v1 = `{
                     "404": {
                         "description": "Not found",
                         "schema": {
-                            "$ref": "#/definitions/common.APIError"
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
                         }
                     }
                 }
             },
             "delete": {
-                "description": "delete a scheduled task by its ID",
+                "description": "delete a scheduled task by its UUID. The UUID is the uuid field\nreturned by the create/list endpoints and is unique across regions\n(the region-local numeric id is NOT accepted here).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4431,21 +4434,24 @@ const docTemplatealarm_v1 = `{
                 "summary": "delete a scheduled task",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Scheduled task ID",
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
                         "name": "id",
                         "in": "path",
                         "required": true
                     }
                 ],
                 "responses": {
-                    "204": {
-                        "description": "No Content"
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskStatusResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad request",
                         "schema": {
-                            "$ref": "#/definitions/common.APIError"
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
                         }
                     },
                     "401": {
@@ -4453,11 +4459,23 @@ const docTemplatealarm_v1 = `{
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
                     }
                 }
             },
             "patch": {
-                "description": "update an existing scheduled task; only non-empty fields in the payload are updated",
+                "description": "update an existing scheduled task; only non-empty fields in the payload are updated.\nThe path parameter is the task UUID returned by the create/list endpoints,\nunique across regions (the region-local numeric id is NOT accepted here).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4470,8 +4488,8 @@ const docTemplatealarm_v1 = `{
                 "summary": "update a scheduled task",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Scheduled task ID",
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4488,12 +4506,15 @@ const docTemplatealarm_v1 = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "OK"
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskOperationResponse"
+                        }
                     },
                     "400": {
                         "description": "Bad request",
                         "schema": {
-                            "$ref": "#/definitions/common.APIError"
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
                         }
                     },
                     "401": {
@@ -4501,13 +4522,25 @@ const docTemplatealarm_v1 = `{
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
                     }
                 }
             }
         },
         "/scheduled_tasks/{id}/history": {
             "get": {
-                "description": "list execution history records for a specific scheduled task",
+                "description": "list execution history records for a specific scheduled task.\nThe path parameter is the task UUID returned by the create/list endpoints,\nunique across regions (the region-local numeric id is NOT accepted here).",
                 "consumes": [
                     "application/json"
                 ],
@@ -4520,8 +4553,8 @@ const docTemplatealarm_v1 = `{
                 "summary": "list a scheduled task's execution history",
                 "parameters": [
                     {
-                        "type": "integer",
-                        "description": "Scheduled task ID",
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4552,16 +4585,22 @@ const docTemplatealarm_v1 = `{
                             "$ref": "#/definitions/apis.ScheduledTaskHistoryListResponse"
                         }
                     },
-                    "400": {
-                        "description": "Bad request",
-                        "schema": {
-                            "$ref": "#/definitions/common.APIError"
-                        }
-                    },
                     "401": {
                         "description": "Not authorized",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
                         }
                     }
                 }
@@ -8305,14 +8344,37 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.ScheduledTaskAPIError": {
+            "type": "object",
+            "properties": {
+                "error_code": {
+                    "type": "integer"
+                },
+                "error_code_str": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.ScheduledTaskHistoryListResponse": {
             "type": "object",
             "properties": {
+                "error_message": {
+                    "type": "string"
+                },
                 "history": {
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/apis.ScheduledTaskHistoryResponse"
                     }
+                },
+                "status": {
+                    "type": "string"
                 },
                 "total": {
                     "type": "integer"
@@ -8343,6 +8405,9 @@ const docTemplatealarm_v1 = `{
                 "scheduled_task_id": {
                     "type": "integer"
                 },
+                "scheduled_task_uuid": {
+                    "type": "string"
+                },
                 "status": {
                     "type": "string"
                 },
@@ -8354,6 +8419,12 @@ const docTemplatealarm_v1 = `{
         "apis.ScheduledTaskListResponse": {
             "type": "object",
             "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
                 "tasks": {
                     "type": "array",
                     "items": {
@@ -8362,6 +8433,20 @@ const docTemplatealarm_v1 = `{
                 },
                 "total": {
                     "type": "integer"
+                }
+            }
+        },
+        "apis.ScheduledTaskOperationResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task": {
+                    "$ref": "#/definitions/apis.ScheduledTaskResponse"
                 }
             }
         },
@@ -8439,8 +8524,8 @@ const docTemplatealarm_v1 = `{
                     ]
                 },
                 "resource_id": {
-                    "description": "Target resource ID",
-                    "type": "integer"
+                    "description": "UUID of the target resource: instance UUID for instance_op tasks, volume UUID for volume_backup tasks",
+                    "type": "string"
                 },
                 "resource_type": {
                     "description": "Type of resource (instance, volume)",
@@ -8489,7 +8574,7 @@ const docTemplatealarm_v1 = `{
                     "type": "integer"
                 },
                 "resource_id": {
-                    "type": "integer"
+                    "type": "string"
                 },
                 "resource_type": {
                     "type": "string"
@@ -8510,6 +8595,17 @@ const docTemplatealarm_v1 = `{
                     "type": "string"
                 },
                 "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ScheduledTaskStatusResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
                     "type": "string"
                 }
             }

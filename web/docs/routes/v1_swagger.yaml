@@ -1553,12 +1553,27 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.ScheduledTaskAPIError:
+    properties:
+      error_code:
+        type: integer
+      error_code_str:
+        type: string
+      error_message:
+        type: string
+      status:
+        type: string
+    type: object
   apis.ScheduledTaskHistoryListResponse:
     properties:
+      error_message:
+        type: string
       history:
         items:
           $ref: '#/definitions/apis.ScheduledTaskHistoryResponse'
         type: array
+      status:
+        type: string
       total:
         type: integer
     type: object
@@ -1578,6 +1593,8 @@ definitions:
         $ref: '#/definitions/apis.ScheduledTaskResponse'
       scheduled_task_id:
         type: integer
+      scheduled_task_uuid:
+        type: string
       status:
         type: string
       updated_at:
@@ -1585,12 +1602,25 @@ definitions:
     type: object
   apis.ScheduledTaskListResponse:
     properties:
+      error_message:
+        type: string
+      status:
+        type: string
       tasks:
         items:
           $ref: '#/definitions/apis.ScheduledTaskResponse'
         type: array
       total:
         type: integer
+    type: object
+  apis.ScheduledTaskOperationResponse:
+    properties:
+      error_message:
+        type: string
+      status:
+        type: string
+      task:
+        $ref: '#/definitions/apis.ScheduledTaskResponse'
     type: object
   apis.ScheduledTaskPatchPayload:
     properties:
@@ -1641,8 +1671,9 @@ definitions:
         - snapshot
         - backup
       resource_id:
-        description: Target resource ID
-        type: integer
+        description: 'UUID of the target resource: instance UUID for instance_op tasks,
+          volume UUID for volume_backup tasks'
+        type: string
       resource_type:
         description: Type of resource (instance, volume)
         type: string
@@ -1684,7 +1715,7 @@ definitions:
       owner:
         type: integer
       resource_id:
-        type: integer
+        type: string
       resource_type:
         type: string
       retention_count:
@@ -1698,6 +1729,13 @@ definitions:
       updated_at:
         type: string
       uuid:
+        type: string
+    type: object
+  apis.ScheduledTaskStatusResponse:
+    properties:
+      error_message:
+        type: string
+      status:
         type: string
     type: object
   apis.SecruleListResponse:
@@ -5316,21 +5354,26 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/apis.ScheduledTaskListResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
         "401":
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
       summary: list scheduled tasks
       tags:
       - Administration
     post:
       consumes:
       - application/json
-      description: create a scheduled task for instance operations or volume backup/snapshot
+      description: |-
+        create a scheduled task for instance operations or volume backup/snapshot.
+        The resource_id in the payload is the UUID of the target instance/volume
+        (as returned by the instances/volumes APIs). The id field in the response
+        is the task's numeric ID, which is the path parameter accepted by the
+        get/patch/delete/history endpoints.
       parameters:
       - description: Scheduled task create payload
         in: body
@@ -5343,14 +5386,20 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskOperationResponse'
         "400":
           description: Bad request
           schema:
-            $ref: '#/definitions/common.APIError'
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
         "401":
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
       summary: create a scheduled task
       tags:
       - Administration
@@ -5358,50 +5407,27 @@ paths:
     delete:
       consumes:
       - application/json
-      description: delete a scheduled task by its ID
+      description: |-
+        delete a scheduled task by its UUID. The UUID is the uuid field
+        returned by the create/list endpoints and is unique across regions
+        (the region-local numeric id is NOT accepted here).
       parameters:
-      - description: Scheduled task ID
+      - description: Task UUID (the uuid field returned by create/list)
         in: path
         name: id
         required: true
-        type: integer
-      produces:
-      - application/json
-      responses:
-        "204":
-          description: No Content
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
-        "401":
-          description: Not authorized
-          schema:
-            $ref: '#/definitions/common.APIError'
-      summary: delete a scheduled task
-      tags:
-      - Administration
-    get:
-      consumes:
-      - application/json
-      description: get a scheduled task by its ID
-      parameters:
-      - description: Scheduled task ID
-        in: path
-        name: id
-        required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/apis.ScheduledTaskResponse'
+            $ref: '#/definitions/apis.ScheduledTaskStatusResponse'
         "400":
           description: Bad request
           schema:
-            $ref: '#/definitions/common.APIError'
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
         "401":
           description: Not authorized
           schema:
@@ -5409,21 +5435,58 @@ paths:
         "404":
           description: Not found
           schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
+      summary: delete a scheduled task
+      tags:
+      - Administration
+    get:
+      consumes:
+      - application/json
+      description: |-
+        get a scheduled task by its UUID. The UUID is the uuid field
+        returned by the create/list endpoints and is unique across regions
+        (the numeric id is region-local and NOT accepted here).
+      parameters:
+      - description: Task UUID (the uuid field returned by create/list)
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskResponse'
+        "401":
+          description: Not authorized
+          schema:
             $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
       summary: get a scheduled task
       tags:
       - Administration
     patch:
       consumes:
       - application/json
-      description: update an existing scheduled task; only non-empty fields in the
-        payload are updated
+      description: |-
+        update an existing scheduled task; only non-empty fields in the payload are updated.
+        The path parameter is the task UUID returned by the create/list endpoints,
+        unique across regions (the region-local numeric id is NOT accepted here).
       parameters:
-      - description: Scheduled task ID
+      - description: Task UUID (the uuid field returned by create/list)
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       - description: Scheduled task update payload
         in: body
         name: message
@@ -5435,14 +5498,24 @@ paths:
       responses:
         "200":
           description: OK
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskOperationResponse'
         "400":
           description: Bad request
           schema:
-            $ref: '#/definitions/common.APIError'
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
         "401":
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
       summary: update a scheduled task
       tags:
       - Administration
@@ -5450,13 +5523,16 @@ paths:
     get:
       consumes:
       - application/json
-      description: list execution history records for a specific scheduled task
+      description: |-
+        list execution history records for a specific scheduled task.
+        The path parameter is the task UUID returned by the create/list endpoints,
+        unique across regions (the region-local numeric id is NOT accepted here).
       parameters:
-      - description: Scheduled task ID
+      - description: Task UUID (the uuid field returned by create/list)
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       - description: Offset
         in: query
         name: offset
@@ -5476,14 +5552,18 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/apis.ScheduledTaskHistoryListResponse'
-        "400":
-          description: Bad request
-          schema:
-            $ref: '#/definitions/common.APIError'
         "401":
           description: Not authorized
           schema:
             $ref: '#/definitions/common.APIError'
+        "404":
+          description: Not found
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
+        "500":
+          description: Internal error
+          schema:
+            $ref: '#/definitions/apis.ScheduledTaskAPIError'
       summary: list a scheduled task's execution history
       tags:
       - Administration

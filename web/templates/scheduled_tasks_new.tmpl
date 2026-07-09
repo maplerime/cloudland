@@ -27,11 +27,16 @@
 								<input type="hidden" id="resource_type_input" name="resource_type" value="instance">
 								<div class="required inline field">
 									<label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
-									<select name="resource_id" id="resource_id" class="ui selection dropdown">
-										{{range .Instances}}
-											<option value="{{.ID}}">{{.Hostname}}</option>
-										{{end}}
-                                    </select>
+									<div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
+										<input type="text" id="resourceSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
+										<i class="search icon link" onclick="$('#resourceSearch').trigger('input')"></i>
+									</div>
+									<div class="ui selection dropdown" id="resourceDropdown">
+										<input id="resource_id" name="resource_id" type="hidden">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "Resource ID"}}</div>
+										<div class="menu" id="resourceMenu"></div>
+									</div>
 								</div>
 								<div class="required inline field">
 									<label for="operation">{{.i18n.Tr "Operation"}}</label>
@@ -78,12 +83,6 @@
 </div>
 {{template "_footer" .}}
 <script>
-var instanceOptions = [
-    {{range $index, $instance := .Instances}}{{if $index}},{{end}}{ value: {{$instance.ID}}, text: {{printf "%q" $instance.Hostname}} }{{end}}
-];
-var volumeOptions = [
-    {{range $index, $volume := .Volumes}}{{if $index}},{{end}}{ value: {{$volume.ID}}, text: {{printf "%q" $volume.Name}} }{{end}}
-];
 var taskOperations = {
     instance_op: [
         { value: 'stop', text: 'Stop' },
@@ -98,21 +97,46 @@ var taskOperations = {
     ]
 };
 
-function refreshResourceOptions(resourceType, selectedValue) {
-    var resourceIdDropdown = $('#resource_id');
-    var options = resourceType === 'volume' ? volumeOptions : instanceOptions;
-    resourceIdDropdown.empty();
-
-    $.each(options, function(_, option) {
-        resourceIdDropdown.append($('<option>', {
-            value: option.value,
-            text: option.text,
-            selected: String(option.value) === String(selectedValue)
-        }));
+// searchResources queries the search endpoint matching the current resource
+// type (numeric q matches the ID exactly, text matches the name fuzzily) and
+// rebuilds the resource dropdown with at most 20 results. When triggered by a
+// user search (userTriggered), a single match is selected automatically and
+// multiple matches open the dropdown for picking; the initial/default load
+// leaves the dropdown closed.
+function searchResources(q, userTriggered) {
+    var resourceType = $('#resource_type_input').val();
+    var url = resourceType === 'volume' ? '/volumes/search.json' : '/instances/search.json';
+    $.getJSON(url, {q: q || ''}, function(data){
+        var menu = document.getElementById('resourceMenu');
+        var currentVal = $('#resourceDropdown').dropdown('get value');
+        var results = data.results || [];
+        var html = '';
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            html += '<div class="item" data-value="' + r.value + '">' + r.name + '</div>';
+        }
+        menu.innerHTML = html;
+        $('#resourceDropdown').dropdown('refresh');
+        if (userTriggered && results.length === 1) {
+            $('#resourceDropdown').dropdown('set selected', String(results[0].value));
+            return;
+        }
+        // Keep the previous selection only while it is still part of the new
+        // result set; otherwise a stale value (e.g. "11-test" after searching
+        // "12" with no match) would silently stay in the form.
+        var stillValid = false;
+        for (var j = 0; j < results.length; j++) {
+            if (String(results[j].value) === String(currentVal)) { stillValid = true; break; }
+        }
+        if (currentVal && stillValid) {
+            $('#resourceDropdown').dropdown('set selected', currentVal);
+        } else if (userTriggered) {
+            $('#resourceDropdown').dropdown('clear');
+        }
+        if (userTriggered && results.length > 1) {
+            $('#resourceDropdown').dropdown('show');
+        }
     });
-
-    var finalValue = selectedValue || resourceIdDropdown.val();
-    resourceIdDropdown.parent().dropdown('set selected', finalValue);
 }
 
 function refreshOperationOptions(taskType, selectedValue) {
@@ -135,7 +159,11 @@ function refreshOperationOptions(taskType, selectedValue) {
 function refreshResourceType(taskType) {
     var resourceType = taskType === 'volume_backup' ? 'volume' : 'instance';
     $('#resource_type_input').val(resourceType);
-    refreshResourceOptions(resourceType);
+    // The previous selection belongs to the other resource type: clear it and
+    // reload the default options (20 most recent) for the new type.
+    $('#resourceSearch').val('');
+    $('#resourceDropdown').dropdown('clear');
+    searchResources('');
 }
 
 function updateExecutionTimeMin() {
@@ -193,6 +221,15 @@ $('#schedule_type').on('change', function() {
     handleScheduleTypeChange($(this).val());
 });
 
+(function(){
+    var timer;
+    $('#resourceSearch').on('input', function(){
+        var q = $(this).val();
+        clearTimeout(timer);
+        timer = setTimeout(function(){ searchResources(q, true); }, 300);
+    });
+})();
+
 $(document).ready(function() {
     $('#timezone_offset_minutes').val(new Date().getTimezoneOffset());
     $('#client_timezone').val(Intl.DateTimeFormat().resolvedOptions().timeZone);
@@ -201,5 +238,14 @@ $(document).ready(function() {
     refreshRetentionCountField($('#task_type').val());
     refreshScheduleFields($('#schedule_type').val());
     updateExecutionTimeMin();
+
+    // The resource dropdown no longer has a preselected first option, so block
+    // submission until a resource is chosen.
+    $('form.ui.form').on('submit', function(e){
+        if (!$('#resource_id').val()) {
+            e.preventDefault();
+            alert('{{.i18n.Tr "Please_Select_Resource"}}');
+        }
+    });
 });
 </script>
