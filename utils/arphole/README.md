@@ -45,7 +45,7 @@ All knobs are available as CLI flags (`--threshold`, `--probe-timeout`,
 | `ARPHOLE_WINDOW`         | 15      | Rolling window in seconds.                           |
 | `ARPHOLE_CLAIM_COOLDOWN` | 300     | Seconds to silence (iface, IP) after probe/reclaim.  |
 | `ARPHOLE_PROBE_COUNT`    | 2       | Number of who-has probes fired per task.             |
-| `ARPHOLE_PROBE_TIMEOUT`  | 2       | Seconds after probe send with no reply before sweep-reclaim. |
+| `ARPHOLE_PROBE_TIMEOUT`  | 5       | Seconds after probe send with no reply before sweep-reclaim. |
 | `ARPHOLE_VLANS`          | (all)   | VLAN allow-list, see below.                          |
 
 ## Run

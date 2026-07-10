@@ -127,7 +127,7 @@ class ArpHole:
         window: float = 15.0,
         claim_cooldown: float = 300.0,
         probe_count: int = 2,
-        probe_timeout: float = 2.0,
+        probe_timeout: float = 5.0,
         allowed_vlans: set[int] | None = None,
     ):
         self.ifaces = ifaces
@@ -179,6 +179,28 @@ class ArpHole:
             self._silent_until.pop(key, None)
             return False
         return True
+
+    def _silence_ip(self, iface: str, ip: str, vlan_id: int, reason: str) -> None:
+        """Force (iface, ip, vlan) into the silence zone on direct proof of
+        ownership (e.g. gratuitous ARP): cancel any in-flight probe so the
+        sweeper cannot reclaim it, clear the request counter, and suppress
+        probing for claim_cooldown seconds.
+        """
+        now = time.monotonic()
+        with self._lock:
+            self._silent_until[(iface, ip, vlan_id)] = now + self.claim_cooldown
+            self._probing.pop((iface, ip, vlan_id), None)
+            self._inflight.discard((iface, ip, vlan_id))
+            self._pending.pop((iface, ip, vlan_id), None)
+        vlan_info = " vlan=%d" % vlan_id if vlan_id else ""
+        logger.info(
+            "[%s] %s for %s%s; silent for %.0fs",
+            iface,
+            reason,
+            ip,
+            vlan_info,
+            self.claim_cooldown,
+        )
 
     def _get_or_create_mac(self, iface: str, ip: str, vlan_id: int) -> str:
         """Return cached reclaim MAC for (iface, ip, vlan), creating one on first use.
@@ -488,6 +510,7 @@ class ArpHole:
             del self._probing[(iface, ip, vlan_id)]
             self._silent_until[(iface, ip, vlan_id)] = now + self.claim_cooldown
             self._inflight.discard((iface, ip, vlan_id))
+            self._pending.pop((iface, ip, vlan_id), None)
         vlan_info = " vlan=%d" % vlan_id if vlan_id else ""
         logger.info(
             "[%s] probe answered by %s for %s%s; silent for %.0fs",
@@ -530,9 +553,13 @@ class ArpHole:
         # each other into a feedback loop.
         if sender_ip == _PROBE_SRC_IP:
             return
-        # Skip gratuitous ARP (psrc == pdst): host announcing its own
-        # address, e.g. on failover. Not a request to claim.
+        # Gratuitous ARP (psrc == pdst): the host is announcing that it owns
+        # this address (e.g. on boot or failover). That is direct proof of
+        # ownership, so silence the IP outright instead of probing it — this
+        # protects live IPs whose owner never answers our who-has in time
+        # under heavy ARP load.
         if sender_ip == target_ip:
+            self._silence_ip(iface, target_ip, vlan_id, "gratuitous ARP")
             return
         # Extract pure fields; never touch pkt again after this point.
         task = ProbeTask(
@@ -573,6 +600,12 @@ class ArpHole:
             return
         # VLAN tag must match what we probed; 0 = untagged.
         vlan_id = pkt[Dot1Q].vlan if Dot1Q in pkt else 0
+        # Gratuitous reply (psrc == pdst): unsolicited announcement of
+        # ownership. Silence the IP even if we were not probing it — same
+        # ownership proof as a gratuitous request, arriving as op=2.
+        if src_ip == pkt[ARP].pdst:
+            self._silence_ip(iface, src_ip, vlan_id, "gratuitous ARP reply")
+            return
         # Cheap lock-free pre-check; the handler re-checks under the lock.
         if (iface, src_ip, vlan_id) not in self._probing:
             return
@@ -581,16 +614,26 @@ class ArpHole:
     def _sniff_iface(self, iface: str, role: str) -> None:
         """role: 'request' (op=1 producer) or 'reply' (op=2 response matcher)."""
         handler = self._on_request if role == "request" else self._on_reply
+        # Filter by ARP opcode in the kernel so each sniff thread only wakes
+        # for the packets it handles. Under an ARP request flood a shared
+        # "arp" filter would drown the reply thread in op=1 packets it just
+        # drops in Python, and the kernel ring buffer would drop the rare
+        # op=2 is-at we actually need — causing a live IP to be falsely
+        # reclaimed. ARP opcode is a 2-byte field at offset 6; the `vlan`
+        # keyword shifts subsequent offsets by the 4-byte tag automatically.
+        op = 1 if role == "request" else 2
+        bpf = "arp[6:2] = %d or (vlan and arp[6:2] = %d)" % (op, op)
         logger.info(
-            "sniffing %s on %s (mac=%s)",
+            "sniffing %s on %s (mac=%s filter=%r)",
             role,
             iface,
             self._iface_macs.get(iface),
+            bpf,
         )
         try:
             sniff(
                 iface=iface,
-                filter="arp or (vlan and arp)",
+                filter=bpf,
                 prn=lambda pkt: handler(iface, pkt),
                 store=False,
             )
@@ -678,9 +721,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--probe-timeout",
         type=float,
-        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "2")),
+        default=float(os.environ.get("ARPHOLE_PROBE_TIMEOUT", "5")),
         help="seconds after probe send with no reply before sweeper reclaims "
-        "(env: ARPHOLE_PROBE_TIMEOUT, default: 2)",
+        "(env: ARPHOLE_PROBE_TIMEOUT, default: 5)",
     )
     p.add_argument(
         "--vlans",

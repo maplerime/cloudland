@@ -1,0 +1,13 @@
+[Unit]
+Description=Cloudland ARP reply — answers arphole probes for locally-owned VM IPs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/opt/arpreply/start.sh
+Restart=on-failure
+RestartSec=5
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
