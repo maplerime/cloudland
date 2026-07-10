@@ -348,14 +348,28 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
 				return
 			}
-			if primaryFip.ID != iface.FloatingIp {
-				for i, pubAddr := range publicIps {
-					if primaryFip.ID == pubAddr.ID {
-						publicIps = append(publicIps[:i], publicIps[i+1:]...)
-						break
-					}
+			// Always place the requested primary at index 0, even when it equals
+			// the current primary: publicIps may have been reloaded from the DB in
+			// created_at order, which is not guaranteed to start with it.
+			for i, pubAddr := range publicIps {
+				if primaryFip.ID == pubAddr.ID {
+					publicIps = append(publicIps[:i], publicIps[i+1:]...)
+					break
 				}
-				publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
+			}
+			publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
+		} else {
+			// No explicit primary change requested: keep the current primary at
+			// index 0 so a bandwidth/name/SG-only patch does not re-elect another
+			// public IP due to the created_at ordering of the reloaded list.
+			for i, pubAddr := range publicIps {
+				if pubAddr.ID == iface.FloatingIp {
+					if i != 0 {
+						publicIps = append(publicIps[:i], publicIps[i+1:]...)
+						publicIps = append([]*model.FloatingIp{pubAddr}, publicIps...)
+					}
+					break
+				}
 			}
 		}
 	} else {
