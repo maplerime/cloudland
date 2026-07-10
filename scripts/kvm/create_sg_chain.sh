@@ -40,6 +40,20 @@ more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
 
 if [ "$allow_spoofing" != true ]; then
+    # Wait for the tap to be enslaved to its bridge
+    for i in {1..300}; do
+        bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
+        [ -n "$bridge" ] && break
+        sleep 2
+    done
+    # Suppress unknown-unicast flooding to this VM port: pin the VM MAC into
+    # the bridge FDB (so known unicast still reaches it) then disable flood.
+    # Keep mcast_flood/bcast_flood on (DHCP/ARP/multicast must still work).
+    if [ -n "$bridge" ]; then
+        bridge fdb replace $mac dev $vnic master static
+        bridge link set dev $vnic flood off
+    fi
+
     # nftables: vmap dispatch + per-vnic set for ARP filtering with rate limit
     nft add table bridge cloudland 2>/dev/null
     nft add chain bridge cloudland forward '{ type filter hook forward priority 0 ; policy accept ; }' 2>/dev/null
@@ -54,24 +68,12 @@ if [ "$allow_spoofing" != true ]; then
     nft add set bridge cloudland set-$vnic '{ type ether_addr . ipv4_addr ; }' 2>/dev/null
     nft flush set bridge cloudland set-$vnic 2>/dev/null
     nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
-    # Fixed rate caps (independent of IP count): absorb startup bursts on
-    # low-IP VMs while preventing floods. ARP higher than other BUM.
-    arp_rate=100
-    arp_burst=500
-    bum_rate=50
-    bum_burst=$((${bum_rate} + 50))
-    nft add rule bridge cloudland arp-$vnic ether type 0x0806 limit rate $arp_rate/second burst $arp_burst packets arp saddr ether . arp saddr ip @set-$vnic accept
-    nft add rule bridge cloudland arp-$vnic ether type 0x0806 drop
-    nft add rule bridge cloudland arp-$vnic limit rate $bum_rate/second burst $bum_burst packets accept
-    nft add rule bridge cloudland arp-$vnic drop
+    nft add rule bridge cloudland arp-$vnic ether type 0x0806 arp saddr ether . arp saddr ip @set-$vnic counter accept
+    nft add rule bridge cloudland arp-$vnic ether type 0x0806 counter drop
+    nft add rule bridge cloudland arp-$vnic counter accept
     nft add element bridge cloudland set-$vnic { $mac . $ip }
 
     if [ $naddrs -gt 0 ]; then
-        for i in {1..300}; do
-            bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
-            [ -n "$bridge" ] && break
-            sleep 2
-        done
         # Resolve all extra IPs once (strip /mask in a single jq call), then
         # batch ipset (restore), nft elements, and a single ARP send
         extra_ips=$(jq -r '.[] | split("/")[0]' <<<$more_addresses)
