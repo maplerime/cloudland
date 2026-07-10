@@ -893,7 +893,7 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 	memberShip := GetMemberShip(ctx)
 
 	if len(ifaceInfo.PublicIps) > 0 {
-		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "", "", ifaceInfo.Inbound, ifaceInfo.Outbound, ifaceInfo.AllowSpoofing)
+		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "", "")
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
@@ -904,6 +904,18 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 				return nil, nil, NewCLError(ErrAssociateSG2InterfaceFailed, "Failed to associate security groups with interface", err)
 			}
 			iface.SecurityGroups = ifaceInfo.SecurityGroups
+		}
+		iface.Inbound = ifaceInfo.Inbound
+		iface.Outbound = ifaceInfo.Outbound
+		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
+		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
+			"inbound":        iface.Inbound,
+			"outbound":       iface.Outbound,
+			"allow_spoofing": iface.AllowSpoofing,
+		}).Error
+		if err != nil {
+			logger.Debug("Failed to update interface", err)
+			return nil, nil, NewCLError(ErrInterfaceUpdateFailed, "Failed to update interface", err)
 		}
 	} else {
 		subnets := ifaceInfo.Subnets

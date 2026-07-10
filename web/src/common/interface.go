@@ -192,7 +192,7 @@ func GenerateMacaddr() (mac string, err error) {
 	return mac, nil
 }
 
-func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp, primaryMac, primaryUUID string, inbound, outbound int32, allowSpoofing bool) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
+func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp, primaryMac, primaryUUID string) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	primaryIface = iface
 	updatePrimary := false
@@ -228,10 +228,6 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 			primaryIface.Instance = instance.ID
 			primaryIface.Name = "eth0"
 			primaryIface.PrimaryIf = true
-			// Carry the bandwidth and spoofing settings onto the newly derived primary interface
-			primaryIface.Inbound = inbound
-			primaryIface.Outbound = outbound
-			primaryIface.AllowSpoofing = allowSpoofing
 			if primaryMac != "" {
 				primaryIface.MacAddr = primaryMac
 			}
@@ -239,14 +235,11 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 				primaryIface.UUID = primaryUUID
 			}
 			err = db.Model(&model.Interface{}).Where("id = ?", primaryIface.ID).Updates(map[string]interface{}{
-				"instance":       primaryIface.Instance,
-				"name":           primaryIface.Name,
-				"primary_if":     primaryIface.PrimaryIf,
-				"inbound":        primaryIface.Inbound,
-				"outbound":       primaryIface.Outbound,
-				"allow_spoofing": primaryIface.AllowSpoofing,
-				"mac_addr":       primaryIface.MacAddr,
-				"uuid":           primaryIface.UUID}).Error
+				"instance":   primaryIface.Instance,
+				"name":       primaryIface.Name,
+				"primary_if": primaryIface.PrimaryIf,
+				"mac_addr":   primaryIface.MacAddr,
+				"uuid":       primaryIface.UUID}).Error
 			if err != nil {
 				logger.Errorf("Failed to update interface, %v", err)
 				return
