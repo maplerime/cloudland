@@ -166,6 +166,7 @@ func New() (m *macaron.Macaron) {
 	m.Get("/migrations/new", migrationView.New)
 	m.Post("/migrations/new", migrationView.Create)
 	m.Get("/volumes", volumeView.List)
+	m.Get("/volumes/search.json", volumeView.SearchJSON)
 	m.Get("/volumes/new", volumeView.New)
 	m.Post("/volumes/new", volumeView.Create)
 	m.Delete("/volumes/:id", volumeView.Delete)
