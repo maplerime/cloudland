@@ -7,6 +7,7 @@ package routes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -243,21 +244,6 @@ func parseScheduledTaskExecutionTime(raw string, loc *time.Location) (time.Time,
 	return time.Time{}, fmt.Errorf("invalid execution time %q: expected format YYYY-MM-DDTHH:MM (e.g. 2026-01-02T15:04)", raw)
 }
 
-func loadScheduledTaskFormData(ctx context.Context) (volumes []*model.Volume, instances []*model.Instance, err error) {
-	_, volumes, err = volumeAdmin.List(ctx, 0, -1, "", "")
-	if err != nil {
-		logger.Error("Failed to query volumes %v", err)
-		return nil, nil, err
-	}
-
-	_, instances, err = instanceAdmin.List(ctx, 0, -1, "", "")
-	if err != nil {
-		logger.Error("Failed to query instances %v", err)
-		return nil, nil, err
-	}
-	return
-}
-
 func shouldResetTaskLockOnUpdate(before, after *model.ScheduledTask, opts *ScheduledTaskUpdateOptions) bool {
 	if before == nil || after == nil || opts == nil {
 		return false
@@ -346,13 +332,13 @@ func (a *ScheduledTaskAdmin) Create(ctx context.Context, name, taskType, resourc
 	}
 
 	if err = validateScheduledTaskConfig(task); err != nil {
-		return nil, err
+		return nil, NewCLError(ErrInvalidParameter, err.Error(), err)
 	}
 	if task.ScheduleType == "one-time" && !task.ExecutionTime.After(time.Now().UTC()) {
-		return nil, fmt.Errorf("execution time must be in the future")
+		return nil, NewCLError(ErrInvalidParameter, "execution time must be in the future", nil)
 	}
 	if err = validateScheduledTaskResource(ctx, task.TaskType, task.ResourceType, task.ResourceID); err != nil {
-		return nil, err
+		return nil, NewCLError(ErrInvalidParameter, err.Error(), err)
 	}
 
 	// Save to database
@@ -436,6 +422,103 @@ func (a *ScheduledTaskAdmin) Get(ctx context.Context, id int64) (task *model.Sch
 	return
 }
 
+// GetTaskByUUID retrieves a single scheduled task by its UUID with
+// organization filtering. Returns ErrResourceNotFound when no task matches,
+// so API callers can map it to HTTP 404.
+func (a *ScheduledTaskAdmin) GetTaskByUUID(ctx context.Context, uuID string) (task *model.ScheduledTask, err error) {
+	logger.Debugf("[Admin] Getting scheduled task - function entry: uuid=%s", uuID)
+
+	db := DB()
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
+
+	task = &model.ScheduledTask{}
+	err = db.Where(where).Where("uuid = ?", uuID).First(task).Error
+	if err != nil {
+		logger.Errorf("[Admin] Failed to retrieve scheduled task %s: %v", uuID, err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, NewCLError(ErrResourceNotFound, fmt.Sprintf("scheduled task %s not found", uuID), err)
+		}
+		return
+	}
+
+	logger.Debugf("[Admin] Successfully retrieved scheduled task %s - function exit", uuID)
+	return
+}
+
+// GetScheduledTaskResourceUUID converts the task's internal resource ID to the
+// resource's UUID for external consumption (API responses and Web Console).
+// Returns an empty string when the resource no longer exists.
+func GetScheduledTaskResourceUUID(ctx context.Context, task *model.ScheduledTask) string {
+	switch task.ResourceType {
+	case "instance":
+		instance, err := instanceAdmin.Get(ctx, task.ResourceID)
+		if err == nil {
+			return instance.UUID
+		}
+		logger.Warningf("Failed to resolve instance %d of scheduled task %d: %v", task.ResourceID, task.ID, err)
+	case "volume":
+		volume, err := volumeAdmin.Get(ctx, task.ResourceID)
+		if err == nil {
+			return volume.UUID
+		}
+		logger.Warningf("Failed to resolve volume %d of scheduled task %d: %v", task.ResourceID, task.ID, err)
+	}
+	return ""
+}
+
+// GetScheduledTaskResourceUUIDs resolves the target resource UUIDs of the
+// given tasks in batch — one IN query per resource type instead of one point
+// query per task. Returns a map keyed by task ID; tasks whose resource no
+// longer exists map to an empty string.
+func GetScheduledTaskResourceUUIDs(ctx context.Context, tasks []*model.ScheduledTask) map[int64]string {
+	result := make(map[int64]string, len(tasks))
+	var instanceIDs, volumeIDs []int64
+	for _, task := range tasks {
+		result[task.ID] = ""
+		switch task.ResourceType {
+		case "instance":
+			instanceIDs = append(instanceIDs, task.ResourceID)
+		case "volume":
+			volumeIDs = append(volumeIDs, task.ResourceID)
+		}
+	}
+
+	db := DB()
+	memberShip := GetMemberShip(ctx)
+	where := memberShip.GetWhere()
+	instanceUUIDs := make(map[int64]string, len(instanceIDs))
+	if len(instanceIDs) > 0 {
+		instances := []*model.Instance{}
+		if err := db.Select("id, uuid").Where(where).Where("id IN (?)", instanceIDs).Find(&instances).Error; err != nil {
+			logger.Warningf("Failed to batch resolve instances of scheduled tasks: %v", err)
+		}
+		for _, inst := range instances {
+			instanceUUIDs[inst.ID] = inst.UUID
+		}
+	}
+	volumeUUIDs := make(map[int64]string, len(volumeIDs))
+	if len(volumeIDs) > 0 {
+		volumes := []*model.Volume{}
+		if err := db.Select("id, uuid").Where(where).Where("id IN (?)", volumeIDs).Find(&volumes).Error; err != nil {
+			logger.Warningf("Failed to batch resolve volumes of scheduled tasks: %v", err)
+		}
+		for _, vol := range volumes {
+			volumeUUIDs[vol.ID] = vol.UUID
+		}
+	}
+
+	for _, task := range tasks {
+		switch task.ResourceType {
+		case "instance":
+			result[task.ID] = instanceUUIDs[task.ResourceID]
+		case "volume":
+			result[task.ID] = volumeUUIDs[task.ResourceID]
+		}
+	}
+	return result
+}
+
 // Update modifies an existing scheduled task with the provided parameters.
 // Only non-empty fields are updated. Validates ownership before modification.
 func (a *ScheduledTaskAdmin) Update(ctx context.Context, id int64, opts *ScheduledTaskUpdateOptions) (task *model.ScheduledTask, err error) {
@@ -451,6 +534,9 @@ func (a *ScheduledTaskAdmin) Update(ctx context.Context, id int64, opts *Schedul
 	err = db.Where(where).Where("id = ?", id).First(task).Error
 	if err != nil {
 		logger.Errorf("[Admin] Failed to retrieve scheduled task %d for update: %v", id, err)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, NewCLError(ErrResourceNotFound, fmt.Sprintf("scheduled task %d not found", id), err)
+		}
 		return
 	}
 
@@ -480,10 +566,10 @@ func (a *ScheduledTaskAdmin) Update(ctx context.Context, id int64, opts *Schedul
 	}
 
 	if err = validateScheduledTaskConfig(&updated); err != nil {
-		return nil, err
+		return nil, NewCLError(ErrInvalidParameter, err.Error(), err)
 	}
 	if opts.ExecutionTime != nil && updated.ScheduleType == "one-time" && !updated.ExecutionTime.After(time.Now().UTC()) {
-		return nil, fmt.Errorf("execution time must be in the future")
+		return nil, NewCLError(ErrInvalidParameter, "execution time must be in the future", nil)
 	}
 
 	updates := map[string]interface{}{}
@@ -535,9 +621,17 @@ func (a *ScheduledTaskAdmin) Delete(ctx context.Context, id int64) (err error) {
 	where := memberShip.GetWhere()
 
 	// Delete the task with organization filtering
-	err = db.Where(where).Where("id = ?", id).Delete(&model.ScheduledTask{}).Error
-	if err != nil {
-		logger.Errorf("[Admin] Failed to delete scheduled task %d: %v", id, err)
+	result := db.Where(where).Where("id = ?", id).Delete(&model.ScheduledTask{})
+	if result.Error != nil {
+		logger.Errorf("[Admin] Failed to delete scheduled task %d: %v", id, result.Error)
+		err = result.Error
+		return
+	}
+	// gorm's Delete does not error when nothing matches; report it as not
+	// found instead of pretending the deletion succeeded.
+	if result.RowsAffected == 0 {
+		logger.Errorf("[Admin] Scheduled task %d not found for deletion", id)
+		err = NewCLError(ErrResourceNotFound, fmt.Sprintf("scheduled task %d not found", id), nil)
 		return
 	}
 
@@ -667,9 +761,14 @@ func (v *ScheduledTaskView) List(c *macaron.Context, store session.Store) {
 		c.HTML(500, "500")
 		return
 	}
+	// Resolve the target resource UUID of each task for display (task ID -> resource UUID)
+	resourceUUIDs := GetScheduledTaskResourceUUIDs(c.Req.Context(), tasks)
 	c.Data["Tasks"] = tasks
+	c.Data["ResourceUUIDs"] = resourceUUIDs
 	c.Data["Query"] = query
-	SetPaginationData(c, "scheduled_tasks", total, limit, offset, listConfig, "", []string{})
+	SetPaginationData(c, "scheduled_tasks", total, limit, offset, listConfig,
+		`["ID", "TaskUUID", "Name", "TaskType", "ResourceID", "ResourceUUID", "Operation", "ScheduleType", "Status", "History", "Edit", "Delete"]`,
+		[]string{"ID", "TaskUUID", "Name", "TaskType", "ResourceID", "ResourceUUID", "Operation", "ScheduleType", "Status", "History", "Edit", "Delete"})
 	c.HTML(200, "scheduled_tasks")
 }
 
@@ -681,14 +780,6 @@ func (v *ScheduledTaskView) New(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	volumes, instances, err := loadScheduledTaskFormData(c.Req.Context())
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusInternalServerError, "error")
-		return
-	}
-	c.Data["Volumes"] = volumes
-	c.Data["Instances"] = instances
 	c.HTML(200, "scheduled_tasks_new")
 }
 
@@ -745,16 +836,8 @@ func (v *ScheduledTaskView) Edit(c *macaron.Context, store session.Store) {
 		return
 	}
 
-	volumes, instances, err := loadScheduledTaskFormData(c.Req.Context())
-	if err != nil {
-		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusInternalServerError, "error")
-		return
-	}
-
 	c.Data["Task"] = task
-	c.Data["Volumes"] = volumes
-	c.Data["Instances"] = instances
+	c.Data["ResourceUUID"] = GetScheduledTaskResourceUUID(c.Req.Context(), task)
 	c.HTML(200, "scheduled_tasks_patch")
 }
 
@@ -776,6 +859,7 @@ func (v *ScheduledTaskView) View(c *macaron.Context, store session.Store) {
 	}
 
 	c.Data["Task"] = task
+	c.Data["ResourceUUID"] = GetScheduledTaskResourceUUID(c.Req.Context(), task)
 	c.HTML(200, "scheduled_task_details")
 }
 

@@ -19,11 +19,15 @@
 								</div>
 								<div class="required inline disabled field">
 									<label for="task_type">{{.i18n.Tr "Task Type"}}</label>
-									<input id="task_type" data-value="{{.Task.TaskType}}" value="{{if eq .Task.TaskType "volume_backup"}}Volume Operation{{else}}{{.Task.TaskType}}{{end}}" readonly disabled>
+									<input id="task_type" data-value="{{.Task.TaskType}}" value="{{if eq .Task.TaskType "volume_backup"}}Volume Operation{{else if eq .Task.TaskType "instance_op"}}Instance Operation{{else}}{{.Task.TaskType}}{{end}}" readonly disabled>
 								</div>
 								<div class="required inline disabled field">
 									<label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
 									<input id="resource_id" value="{{.Task.ResourceID}}" readonly disabled>
+								</div>
+								<div class="inline disabled field">
+									<label for="resource_uuid">{{.i18n.Tr "Resource UUID"}}</label>
+									<input id="resource_uuid" value="{{.ResourceUUID}}" readonly disabled>
 								</div>
 								<div class="required inline disabled field">
 									<label for="operation">{{.i18n.Tr "Operation"}}</label>

@@ -16,12 +16,20 @@
                                     <input id="name" value="{{.Task.Name}}" disabled>
                                 </div>
                                 <div class="inline field">
+                                    <label for="task_uuid">{{.i18n.Tr "Task UUID"}}</label>
+                                    <input id="task_uuid" value="{{.Task.UUID}}" disabled>
+                                </div>
+                                <div class="inline field">
                                     <label for="task_type">{{.i18n.Tr "Task Type"}}</label>
-                                    <input id="task_type" value="{{if eq .Task.TaskType "volume_backup"}}Volume Operation{{else}}{{.Task.TaskType}}{{end}}" disabled>
+                                    <input id="task_type" value="{{if eq .Task.TaskType "volume_backup"}}Volume Operation{{else if eq .Task.TaskType "instance_op"}}Instance Operation{{else}}{{.Task.TaskType}}{{end}}" disabled>
                                 </div>
                                 <div class="inline field">
                                     <label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
                                     <input id="resource_id" value="{{.Task.ResourceID}}" disabled>
+                                </div>
+                                <div class="inline field">
+                                    <label for="resource_uuid">{{.i18n.Tr "Resource UUID"}}</label>
+                                    <input id="resource_uuid" value="{{.ResourceUUID}}" disabled>
                                 </div>
                                 <div class="inline field">
                                     <label for="operation">{{.i18n.Tr "Operation"}}</label>
