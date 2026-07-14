@@ -209,22 +209,6 @@ func (v *InterfaceAPI) getInterfaceResponse(ctx context.Context, instance *model
 	return
 }
 
-// moveFipToFront moves the floating IP with the given id to index 0, preserving
-// the relative order of the rest. It is a no-op if the id is not present in the
-// list or is already at the front.
-func moveFipToFront(fips []*model.FloatingIp, id int64) []*model.FloatingIp {
-	for i, fip := range fips {
-		if fip.ID == id {
-			if i != 0 {
-				fips = append(fips[:i], fips[i+1:]...)
-				fips = append([]*model.FloatingIp{fip}, fips...)
-			}
-			break
-		}
-	}
-	return fips
-}
-
 // @Summary patch a interface
 // @Description patch a interface
 // @tags Network
@@ -364,18 +348,15 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 				ErrorResponse(c, http.StatusBadRequest, "New primary ip is not allowed to be in different vlan", nil)
 				return
 			}
-			// Move the requested primary to index 0; if it was not in the list,
-			// add it as the new primary. publicIps may have been reloaded from the
-			// DB in created_at order, which is not guaranteed to start with it.
-			publicIps = moveFipToFront(publicIps, primaryFip.ID)
-			if len(publicIps) == 0 || publicIps[0].ID != primaryFip.ID {
+			if primaryFip.ID != iface.FloatingIp {
+				for i, pubAddr := range publicIps {
+					if primaryFip.ID == pubAddr.ID {
+						publicIps = append(publicIps[:i], publicIps[i+1:]...)
+						break
+					}
+				}
 				publicIps = append([]*model.FloatingIp{primaryFip}, publicIps...)
 			}
-		} else {
-			// No explicit primary change requested: keep the current primary at
-			// index 0 so a bandwidth/name/SG-only patch does not re-elect another
-			// public IP due to the created_at ordering of the reloaded list.
-			publicIps = moveFipToFront(publicIps, iface.FloatingIp)
 		}
 	} else {
 		for _, subnet := range payload.Subnets {
