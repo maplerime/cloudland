@@ -1,34 +1,40 @@
 #!/usr/bin/env python3
 """
-arpreply — answer ARP probes for VM IPs this host actually owns.
+arpreply — intercept arphole's ARP probes, answer for locally-owned VM IPs,
+and drop the probe so it never reaches the VMs.
 
 Counterpart to arphole. arphole floods who-has probes for contended IPs using
 a fixed sender IP (192.0.2.100, RFC 5737 TEST-NET-1) and reclaims any IP that
-stays silent past probe_timeout. This tool defends the VMs living on THIS host:
-when a who-has for one of our VM IPs arrives from arphole's probe source, we
-answer with the VM's real MAC so arphole sees the IP as occupied and leaves it
-alone.
+stays silent past its probe timeout. This tool defends the VMs living on THIS
+compute node.
 
-Ownership comes straight from the anti-spoofing ipsets the security-group
-machinery already maintains: `sgas-<vnic>` (type hash:ip,mac) holds every
-(IP, MAC) pair a VM is allowed to source from. Each vnic is bridged onto
-`br<vlan>`, so the VLAN an IP lives on is the numeric suffix of that bridge.
+Unlike a passive sniffer, arpreply sits INLINE via an nftables `queue` rule in
+the bridge datapath. A single rule matches only arphole's who-has
+(`arp saddr ip 192.0.2.100`) and hands each such frame to this process:
 
-Only requests matching ALL of these get a reply:
-  * ARP op=1 (who-has),
-  * sender IP == the probe source (default 192.0.2.100),
-  * target IP present in one of our sgas-* ipsets,
-  * (unless --ignore-vlan) arriving on the VLAN that IP's vnic is bridged to.
+  * If the queried IP belongs to a local VM, we emit an is-at with the VM's
+    real MAC (from the sgas-* anti-spoofing ipset), UNICAST back to arphole,
+    then verdict DROP — so the VM never sees the probe and never double-answers.
+  * Otherwise verdict ACCEPT — let it flood (another node may own it, or a VM
+    can answer for itself).
 
-The reply is shaped from the OWNED (ip, mac) pair and sent back on the request's
-original VLAN tag, over the same interface it came in on. The ownership map is
-rebuilt from ipset every REFRESH_INTERVAL seconds so VM churn is picked up.
+The nft rule carries `queue ... bypass`, so if this process is down or the
+queue is full the probe is ACCEPTed (flooded) and the VM answers itself — a
+fail-safe. Because only arphole's probes ever match the rule, VM data traffic
+never reaches userspace: zero data-plane cost.
+
+Ownership comes from the `sgas-<vnic>` ipsets (type hash:ip,mac) the
+security-group machinery already maintains; each vnic is bridged onto
+`br<vlan>`, so the VLAN an IP lives on is that bridge's numeric suffix. The
+reply is sent untagged on `br<vlan>`; `v-<vlan>` re-tags it toward the trunk.
+The ownership map is rebuilt from ipset every REFRESH_INTERVAL seconds.
 """
 
 import argparse
 import logging
 import os
 import re
+import select
 import signal
 import socket
 import struct
@@ -37,37 +43,40 @@ import sys
 import threading
 import time
 
-from scapy.all import (
-    ARP,
-    Dot1Q,
-    conf,
-    sniff,
-)
-
 logger = logging.getLogger("arpreply")
 
 DESCRIPTION = (
-    "Answer ARP who-has probes (from arphole's probe source) for VM IPs this "
-    "host owns, using the IP/MAC recorded in the sgas-* anti-spoofing ipsets "
-    "and replying on the request's original VLAN."
+    "Inline (nftables NFQUEUE) responder: intercept arphole's who-has probes, "
+    "answer for locally-owned VM IPs from the sgas-* ipsets, and drop the probe "
+    "so VMs never see it. Fail-safe via `queue ... bypass`."
 )
 
-# Only requests whose ARP psrc equals this get a reply. Must match arphole's
-# _PROBE_SRC_IP (RFC 5737 TEST-NET-1, reserved for documentation so it can
-# never be a real host). Overridable via --probe-src / ARPREPLY_PROBE_SRC.
+# Only requests whose ARP psrc equals this are queued/answered. Must match
+# arphole's probe source (RFC 5737 TEST-NET-1, reserved for documentation so it
+# can never be a real host). Overridable via --probe-src / ARPREPLY_PROBE_SRC.
 _PROBE_SRC_IP = "192.0.2.100"
 
-# How often the (vlan, ip) -> mac ownership map is rebuilt from ipset.
+# How often the ownership map is rebuilt from ipset.
 _REFRESH_INTERVAL = 15.0
+
+# NFQUEUE number the nft rule dispatches to (must be free on the host).
+_QUEUE_NUM = 40
+
+# Dedicated nft bridge table we own (decoupled from `bridge cloudland`).
+_NFT_TABLE = "arpreply"
 
 # Prefix of the per-vnic anti-spoofing ipsets created by create_sg_chain.sh.
 _IPSET_PREFIX = "sgas-"
 
-# ipset member line, e.g. "192.168.1.5,52:54:00:aa:bb:cc" (counters/comments,
-# if ever enabled, follow after more whitespace and are ignored).
-_MEMBER_RE = re.compile(
-    r"^(\d{1,3}(?:\.\d{1,3}){3}),\s*([0-9A-Fa-f:]{17})"
-)
+# ipset member line, e.g. "192.168.1.5,52:54:00:aa:bb:cc".
+_MEMBER_RE = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3}),\s*([0-9A-Fa-f:]{17})")
+
+# Fixed ARP-reply prefix: htype=Ethernet(1), ptype=IPv4(0x0800), hlen=6,
+# plen=4, oper=reply(2). Everything after this is address bytes.
+_ARP_REPLY_FIXED = struct.pack("!HHBBH", 1, 0x0800, 6, 4, 2)
+
+# ARP who-has opcode, as the 2-byte oper field.
+_ARP_OP_REQUEST = b"\x00\x01"
 
 
 def _run(cmd: list[str]) -> str:
@@ -86,24 +95,24 @@ def _run(cmd: list[str]) -> str:
         return ""
 
 
-def _ip_to_u32(ip: str) -> int:
-    """Pack a dotted-quad IPv4 string into its 32-bit big-endian integer,
-    for use as a numeric literal in a BPF field comparison."""
-    parts = ip.split(".")
-    if len(parts) != 4:
-        raise ValueError("invalid IPv4 address: %r" % ip)
-    n = 0
-    for p in parts:
-        v = int(p)
-        if not 0 <= v <= 255:
-            raise ValueError("invalid IPv4 address: %r" % ip)
-        n = (n << 8) | v
-    return n
-
-
-# Fixed ARP-reply prefix: htype=Ethernet(1), ptype=IPv4(0x0800), hlen=6,
-# plen=4, oper=reply(2). Everything after this is address bytes.
-_ARP_REPLY_FIXED = struct.pack("!HHBBH", 1, 0x0800, 6, 4, 2)
+def _nft_load(script: str) -> bool:
+    """Apply an nft ruleset script atomically via `nft -f -`. Returns success."""
+    try:
+        r = subprocess.run(
+            ["nft", "-f", "-"],
+            input=script,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except FileNotFoundError:
+        logger.error("nft not found; cannot manage the queue rule")
+        return False
+    if r.returncode != 0:
+        logger.error("nft failed (rc=%d): %s", r.returncode, (r.stderr or "").strip())
+        return False
+    return True
 
 
 def _mac_to_bytes(mac: str) -> bytes:
@@ -126,8 +135,7 @@ def _pack_reply(
     'target_ip is at src_mac', addressed to the requester (dst_mac / req_ip),
     carrying an 802.1Q tag when vlan_id != 0. Verified byte-identical to the
     equivalent scapy Ether()/Dot1Q()/ARP() serialization; doing it by hand
-    keeps the hot path at ~1us/frame instead of scapy's ~1ms, so a whole
-    host's worth of IPs can be answered well inside arphole's probe timeout.
+    keeps the hot path at ~1us/frame.
     """
     if vlan_id:
         l2 = (
@@ -139,6 +147,25 @@ def _pack_reply(
         l2 = dst_mac_b + src_mac_b + b"\x08\x06"
     # ARP: <fixed> sha=src_mac spa=target_ip tha=req_mac tpa=req_ip
     return l2 + _ARP_REPLY_FIXED + src_mac_b + target_ip_b + dst_mac_b + req_ip_b
+
+
+def _locate_arp(payload: bytes) -> int | None:
+    """Find where the ARP header starts in a queued frame.
+
+    An nft bridge-family `queue` was observed to hand us the BARE ARP header
+    (no Ethernet header, offset 0). We still detect the Ethernet-II (offset 14)
+    and 802.1Q (offset 18) framings defensively, so the parse never depends on
+    the queue's payload convention. Returns the ARP-header offset, or None if
+    this isn't a parseable ARP frame.
+    """
+    n = len(payload)
+    if n >= 42 and payload[12:14] == b"\x08\x06":            # Ethernet II + ARP
+        return 14
+    if n >= 46 and payload[12:14] == b"\x81\x00" and payload[16:18] == b"\x08\x06":
+        return 18                                            # 802.1Q + ARP
+    if n >= 28 and payload[0:2] == b"\x00\x01":              # bare ARP (htype=1)
+        return 0
+    return None
 
 
 def _vnic_vlan(vnic: str) -> int | None:
@@ -156,20 +183,20 @@ def _vnic_vlan(vnic: str) -> int | None:
     return None
 
 
-# Map value: (mac_str, mac_bytes, target_ip_bytes). The byte forms are
-# precomputed once per refresh so the reply hot path never re-parses them.
+# Map value: (mac_str, mac_bytes, ip_bytes). Byte forms precomputed per refresh.
 OwnerEntry = tuple[str, bytes, bytes]
+# by-IP projection value: (vlan, mac_str, mac_bytes, ip_bytes).
+IpEntry = tuple[int, str, bytes, bytes]
 
 
 def build_owner_map() -> dict[tuple[int, str], OwnerEntry]:
     """Build a (vlan, ip) -> (mac, mac_bytes, ip_bytes) map from all sgas-*
     ipsets on this host.
 
-    Uses a single `ipset save` (one fork) rather than `ipset list` per set,
-    so a host with hundreds of vnics still rebuilds cheaply. Save emits
-    lines like `add sgas-<vnic> <ip>,<mac>`. An IP whose vnic VLAN can't be
-    resolved is skipped: without the VLAN we can't decide which segment to
-    answer on.
+    Uses a single `ipset save` (one fork) rather than `ipset list` per set.
+    Save emits lines like `add sgas-<vnic> <ip>,<mac>`. An IP whose vnic VLAN
+    can't be resolved is skipped: without the VLAN we don't know which bridge
+    to answer on.
     """
     owned: dict[tuple[int, str], OwnerEntry] = {}
     vlan_cache: dict[str, int | None] = {}
@@ -197,56 +224,50 @@ def build_owner_map() -> dict[tuple[int, str], OwnerEntry]:
 class ArpReply:
     def __init__(
         self,
-        ifaces: list[str],
         probe_src: str = _PROBE_SRC_IP,
-        ignore_vlan: bool = False,
+        queue_num: int = _QUEUE_NUM,
         refresh_interval: float = _REFRESH_INTERVAL,
     ):
-        self.ifaces = ifaces
         self.probe_src = probe_src
-        self.ignore_vlan = ignore_vlan
+        self.queue_num = queue_num
         self.refresh_interval = refresh_interval
-        # Requester IP is always the probe source (the BPF filter guarantees
-        # it), so its wire bytes are constant — precompute once.
+        # Requester IP is always the probe source (the nft rule guarantees it);
+        # its wire bytes are constant — precompute for the spa re-check + reply.
         self._probe_src_b = _ip_to_bytes(probe_src)
-        # (vlan, ip) -> OwnerEntry, rebuilt periodically. Guarded by _lock.
-        self._owned: dict[tuple[int, str], OwnerEntry] = {}
-        # ip -> OwnerEntry projection used only when --ignore-vlan is set.
-        self._owned_by_ip: dict[str, OwnerEntry] = {}
+        # ip -> IpEntry, rebuilt periodically. Guarded by _lock. Lookups are by
+        # IP because the frame is untagged on the bridge; the stored VLAN says
+        # which br<vlan> to answer on.
+        self._owned_by_ip: dict[str, IpEntry] = {}
         self._lock = threading.Lock()
-        # iface -> raw AF_PACKET send socket. A raw socket + a hand-packed
-        # frame (~1us) replaces scapy's sendp (~1ms/frame), so a whole host's
-        # worth of IPs answers well inside arphole's probe timeout.
+        # br<vlan> -> raw AF_PACKET send socket. Reused; reopened on error.
         self._sockets: dict[str, socket.socket] = {}
         self._sock_lock = threading.Lock()
+        self._stop = threading.Event()
+        self._refresher: threading.Thread | None = None
 
     # ------------------------------------------------------------ ownership
 
     def _refresh(self) -> None:
         owned = build_owner_map()
-        by_ip = {ip: entry for (_vlan, ip), entry in owned.items()}
+        by_ip = {
+            ip: (vlan, mac, mac_b, ip_b)
+            for (vlan, ip), (mac, mac_b, ip_b) in owned.items()
+        }
         with self._lock:
-            self._owned = owned
             self._owned_by_ip = by_ip
-        logger.info(
-            "owner map refreshed: %d (vlan,ip) pair(s) across %d IP(s)",
-            len(owned),
-            len(by_ip),
-        )
+        logger.info("owner map refreshed: %d owned IP(s)", len(by_ip))
 
     def _refresh_loop(self) -> None:
-        while True:
+        while not self._stop.is_set():
             try:
                 self._refresh()
             except Exception:
                 logger.exception("owner map refresh failed")
-            time.sleep(self.refresh_interval)
+            self._stop.wait(self.refresh_interval)
 
-    def _lookup(self, ip: str, vlan_id: int) -> OwnerEntry | None:
+    def _lookup_ip(self, ip: str) -> IpEntry | None:
         with self._lock:
-            if self.ignore_vlan:
-                return self._owned_by_ip.get(ip)
-            return self._owned.get((vlan_id, ip))
+            return self._owned_by_ip.get(ip)
 
     # ---------------------------------------------------------------- send
 
@@ -271,130 +292,155 @@ class ArpReply:
             except OSError:
                 pass
 
-    def _reply(self, iface: str, entry: OwnerEntry, target_ip: str,
-               vlan_id: int, req_mac: str) -> None:
-        mac, mac_b, ip_b = entry
-        frame = _pack_reply(
-            mac_b, ip_b, vlan_id, _mac_to_bytes(req_mac), self._probe_src_b
-        )
+    def _send_frame(self, iface: str, frame: bytes, target_ip: str) -> bool:
         try:
             self._get_send_socket(iface).send(frame)
-        except OSError:
-            # iface likely went down; drop the socket so it reopens next time.
+            return True
+        except OSError as e:
+            # Bridge likely gone (VM/vnic removed); reopen next time.
             self._drop_socket(iface)
-            logger.exception("[%s] failed to reply for %s", iface, target_ip)
-            return
-        if logger.isEnabledFor(logging.INFO):
-            vlan_info = " vlan=%d" % vlan_id if vlan_id else ""
+            logger.warning("[%s] failed to send reply for %s: %s", iface, target_ip, e)
+            return False
+
+    # -------------------------------------------------------------- nftables
+
+    def _install_nft(self) -> bool:
+        """Idempotently install our queue rule. flush+re-add avoids stacking."""
+        t = _NFT_TABLE
+        script = (
+            "add table bridge {t}\n"
+            "add chain bridge {t} forward "
+            "{{ type filter hook forward priority -10 ; policy accept ; }}\n"
+            "flush chain bridge {t} forward\n"
+            "add rule bridge {t} forward ether type 0x0806 arp operation request "
+            "arp saddr ip {src} queue num {q} bypass\n"
+        ).format(t=t, src=self.probe_src, q=self.queue_num)
+        ok = _nft_load(script)
+        if ok:
             logger.info(
-                "[%s] answered who-has %s -> %s (asked by %s/%s%s)",
-                iface, target_ip, mac, req_mac, self.probe_src, vlan_info,
+                "installed nft queue rule: bridge %s forward -> queue %d "
+                "(arp request saddr %s)",
+                t, self.queue_num, self.probe_src,
             )
+        return ok
 
-    # --------------------------------------------------------------- sniff
+    def _remove_nft(self) -> None:
+        _nft_load("delete table bridge %s\n" % _NFT_TABLE)
 
-    def _on_request(self, iface: str, pkt) -> None:
-        if ARP not in pkt:
-            return
-        arp = pkt[ARP]
-        if arp.op != 1:
-            return
-        # Redundant safety net: the BPF filter already restricts to op=1 with
-        # this sender IP, but re-check in case sniff ever falls back to an
-        # unfiltered capture.
-        if arp.psrc != self.probe_src:
-            return
-        target_ip = arp.pdst
-        if not target_ip:
-            return
-        vlan_id = pkt[Dot1Q].vlan if Dot1Q in pkt else 0
-        entry = self._lookup(target_ip, vlan_id)
-        if entry is None:
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "[%s] not ours: %s vlan=%d (from %s)",
-                    iface, target_ip, vlan_id, arp.psrc,
-                )
-            return
-        self._reply(iface, entry, target_ip, vlan_id, arp.hwsrc)
+    # ---------------------------------------------------------------- queue
 
-    def _sniff_iface(self, iface: str) -> None:
-        # Kernel-filter down to exactly the packets we might answer: ARP
-        # who-has (op=1, arp[6:2]) whose ARP sender IP (spa, arp[14:4]) equals
-        # our probe source. Matching the sender IP in the kernel — not in
-        # Python — means an ARP request flood from other hosts never wakes
-        # this process at all; only arphole's own probes get through, so the
-        # pcap ring buffer can't overflow and drop the ones we care about.
-        # The `vlan` keyword shifts every subsequent arp offset by the 4-byte
-        # 802.1Q tag, so tagged probes match at the same logical fields.
-        src = _ip_to_u32(self.probe_src)
-        match = "arp[6:2] = 1 and arp[14:4] = %d" % src
-        bpf = "(%s) or (vlan and %s)" % (match, match)
-        logger.info("sniffing requests on %s (filter=%r)", iface, bpf)
+    def _on_packet(self, pkt) -> None:
+        """NFQUEUE callback: answer + drop if owned, else accept. Never let an
+        exception escape without issuing a verdict (that would stall the queue).
+        """
         try:
-            sniff(
-                iface=iface,
-                filter=bpf,
-                prn=lambda pkt: self._on_request(iface, pkt),
-                store=False,
-            )
+            payload = pkt.get_payload()
+            off = _locate_arp(payload)
+            if off is None:
+                pkt.accept()
+                return
+            arp = payload[off:off + 28]
+            if len(arp) < 28 or arp[6:8] != _ARP_OP_REQUEST:
+                pkt.accept()
+                return
+            sha = arp[8:14]       # requester (arphole) MAC
+            spa = arp[14:18]      # requester IP (must be the probe source)
+            tpa = arp[24:28]      # queried target IP (the VM IP)
+            if spa != self._probe_src_b:
+                pkt.accept()
+                return
+            target_ip = "%d.%d.%d.%d" % (tpa[0], tpa[1], tpa[2], tpa[3])
+            ent = self._lookup_ip(target_ip)
+            if ent is None:
+                pkt.accept()
+                return
+            vlan, mac, mac_b, _ip_b = ent
+            frame = _pack_reply(mac_b, tpa, 0, sha, spa)
+            if self._send_frame("br%d" % vlan, frame, target_ip):
+                pkt.drop()
+                if logger.isEnabledFor(logging.INFO):
+                    logger.info(
+                        "answered+dropped who-has %s -> %s on br%d (asked by %s)",
+                        target_ip, mac, vlan,
+                        ":".join("%02x" % b for b in sha),
+                    )
+            else:
+                # Couldn't reply — let it through so a VM can answer.
+                pkt.accept()
         except Exception:
-            logger.exception("[%s] request sniff loop crashed", iface)
+            logger.exception("error handling queued packet")
+            try:
+                pkt.accept()
+            except Exception:
+                pass
 
     def run(self) -> None:
+        try:
+            from netfilterqueue import NetfilterQueue
+        except ImportError as e:
+            raise RuntimeError(
+                "python NetfilterQueue is required (pip install NetfilterQueue; "
+                "needs libnetfilter-queue)"
+            ) from e
+
         logger.info(
-            "arpreply starting on %s (probe-src=%s ignore-vlan=%s refresh=%.0fs)",
-            ", ".join(self.ifaces),
-            self.probe_src,
-            self.ignore_vlan,
-            self.refresh_interval,
+            "arpreply starting (probe-src=%s queue=%d refresh=%.0fs)",
+            self.probe_src, self.queue_num, self.refresh_interval,
         )
-        conf.verb = 0
-        # Prime the map before we start answering.
+        # Prime ownership before we install the rule so the first probe is
+        # answerable.
         self._refresh()
-        threads = []
-        refresher = threading.Thread(
-            target=self._refresh_loop, name="refresh", daemon=True
-        )
-        refresher.start()
-        threads.append(refresher)
-        for iface in self.ifaces:
-            t = threading.Thread(
-                target=self._sniff_iface,
-                args=(iface,),
-                daemon=True,
-                name="sniff-%s" % iface,
+        if not self._install_nft():
+            raise RuntimeError("failed to install nft queue rule")
+
+        # Start the refresh loop once; run() may be re-entered by main()'s
+        # crash-retry, and we don't want to pile up refresh threads.
+        if self._refresher is None or not self._refresher.is_alive():
+            self._refresher = threading.Thread(
+                target=self._refresh_loop, name="refresh", daemon=True
             )
-            t.start()
-            threads.append(t)
-        for t in threads:
-            t.join()
+            self._refresher.start()
+
+        nfq = NetfilterQueue()
+        nfq.bind(self.queue_num, self._on_packet)
+        # Drive the queue through a select loop so SIGTERM/SIGINT (which set
+        # self._stop) break us out promptly for a clean nft teardown.
+        qsock = socket.fromfd(nfq.get_fd(), socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            while not self._stop.is_set():
+                try:
+                    ready, _, _ = select.select([qsock], [], [], 1.0)
+                except InterruptedError:
+                    continue
+                if ready:
+                    nfq.run_socket(qsock)
+        finally:
+            try:
+                nfq.unbind()
+            except Exception:
+                pass
+            qsock.close()
+            self._remove_nft()
+            logger.info("arpreply stopped; nft rule removed")
+
+    def shutdown(self) -> None:
+        self._stop.set()
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=DESCRIPTION)
     p.add_argument(
-        "--iface",
-        nargs="+",
-        default=os.environ.get("ARPREPLY_IFACE", "").split(","),
-        required=not os.environ.get("ARPREPLY_IFACE"),
-        help="one or more interfaces to listen on, e.g. --iface ens5 ens6 "
-        "(env: ARPREPLY_IFACE=ens5,ens6)",
-    )
-    p.add_argument(
         "--probe-src",
         default=os.environ.get("ARPREPLY_PROBE_SRC", _PROBE_SRC_IP),
-        help="only answer requests whose ARP sender IP equals this "
+        help="only intercept/answer requests whose ARP sender IP equals this "
         "(env: ARPREPLY_PROBE_SRC, default: %s)" % _PROBE_SRC_IP,
     )
     p.add_argument(
-        "--ignore-vlan",
-        action="store_true",
-        default=os.environ.get("ARPREPLY_IGNORE_VLAN", "").lower()
-        in ("1", "true", "yes"),
-        help="match owned IPs regardless of VLAN (reply still uses the "
-        "request's VLAN). Default: require the request VLAN to match the "
-        "IP's vnic bridge (env: ARPREPLY_IGNORE_VLAN)",
+        "--queue-num",
+        type=int,
+        default=int(os.environ.get("ARPREPLY_QUEUE_NUM", str(_QUEUE_NUM))),
+        help="NFQUEUE number the nft rule dispatches to "
+        "(env: ARPREPLY_QUEUE_NUM, default: %d)" % _QUEUE_NUM,
     )
     p.add_argument(
         "--refresh-interval",
@@ -413,33 +459,32 @@ def main() -> int:
         level=args.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
-    ifaces = [i.strip() for i in args.iface if i.strip()]
-    if not ifaces:
-        print("error: no interfaces specified", file=sys.stderr)
-        return 1
 
     responder = ArpReply(
-        ifaces=ifaces,
         probe_src=args.probe_src,
-        ignore_vlan=args.ignore_vlan,
+        queue_num=args.queue_num,
         refresh_interval=args.refresh_interval,
     )
 
     def _stop(*_):
         logger.info("shutting down")
-        sys.exit(0)
+        responder.shutdown()
 
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
-    while True:
+    while not responder._stop.is_set():
         try:
             responder.run()
-        except KeyboardInterrupt:
             return 0
+        except RuntimeError as e:
+            logger.error("%s", e)
+            return 1
         except Exception:
             logger.exception("run loop crashed; retrying in 5s")
-            time.sleep(5)
+            responder._remove_nft()
+            responder._stop.wait(5)
+    return 0
 
 
 if __name__ == "__main__":
