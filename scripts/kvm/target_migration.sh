@@ -145,6 +145,9 @@ if [ "$migration_type" = "cold" ]; then
         virsh undefine --nvram $vm_ID
         rm -f ${cache_dir}/meta/${vm_ID}.iso
         rm -rf $xml_dir/$vm_ID
+    elif [ "${cpu_over_ratio:-1}" -gt 1 ] 2>/dev/null; then
+        cpu_quota=$((100000 / cpu_over_ratio))
+        virsh schedinfo $vm_ID --set vcpu_period=100000 --set vcpu_quota=$cpu_quota --live --config
     fi
 fi
 

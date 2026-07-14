@@ -201,7 +201,13 @@ sed -i "$sed_cmd" $vm_xml
 virsh define $vm_xml
 virsh autostart $vm_ID --disable
 virsh start $vm_ID
-[ $? -eq 0 ] && state=running
+if [ $? -eq 0 ]; then
+    state=running
+    if [ "${cpu_over_ratio:-1}" -gt 1 ] 2>/dev/null; then
+        cpu_quota=$((100000 / cpu_over_ratio))
+        virsh schedinfo $vm_ID --set vcpu_period=100000 --set vcpu_quota=$cpu_quota --live --config
+    fi
+fi
 echo "|:-COMMAND-:| launch_vm.sh '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port

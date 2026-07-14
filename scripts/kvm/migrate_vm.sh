@@ -16,7 +16,7 @@ ephemeral=$image_dir/${vm_ID}.ephemeral
 [ -f "$ephemeral" ] && copy_target $ephemeral $hyper
 metaiso=$cache_dir/meta/${vm_ID}.iso
 [ -f "$metaiso" ] && copy_target $metaiso $hyper
-action_target $hyper "sudo virsh define $xml_dir/${vm_ID}.xml && sudo virsh start $vm_ID"
+action_target $hyper "sudo virsh define $xml_dir/${vm_ID}.xml && sudo virsh start $vm_ID && source /opt/cloudland/scripts/cloudrc && [ \"\${cpu_over_ratio:-1}\" -gt 1 ] 2>/dev/null && sudo virsh schedinfo $vm_ID --set vcpu_period=100000 --set vcpu_quota=\$((100000 / cpu_over_ratio)) --live --config || true"
 state=$(action_target $hyper "sudo virsh dominfo $vm_ID" | grep State | cut -d: -f2- | xargs)
 if [ "$state" = "running" ]; then
     mv $xml_dir $backup_dir
