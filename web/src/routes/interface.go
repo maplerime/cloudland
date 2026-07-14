@@ -253,7 +253,7 @@ func (a *InterfaceAdmin) allocateSecondAddresses(ctx context.Context, instance *
 	return
 }
 
-func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp, secgroups []*model.SecurityGroup, inbound, outbound int32, allowSpoofing bool) (iface2 *model.Interface, err error) {
+func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.Instance, iface *model.Interface, ifaceSubnets, siteSubnets []*model.Subnet, secondAddrsCount int, publicIps []*model.FloatingIp, secgroups []*model.SecurityGroup) (iface2 *model.Interface, err error) {
 	ctx, db := GetContextDB(ctx)
 	for _, site := range iface.SiteSubnets {
 		err = db.Model(&model.Subnet{}).Where("id = ?", site.ID).Updates(map[string]interface{}{"interface": 0}).Error
@@ -333,7 +333,7 @@ func (a *InterfaceAdmin) changeAddresses(ctx context.Context, instance *model.In
 			}
 			iface = nil
 		}
-		iface, _, err = DerivePublicInterface(ctx, instance, iface, publicIps, primaryMac, primaryUUID, inbound, outbound, allowSpoofing)
+		iface, _, err = DerivePublicInterface(ctx, instance, iface, publicIps, primaryMac, primaryUUID)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
@@ -594,7 +594,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 				return
 			}
 			// 1. Get old addresses 2. Change addresses 3. Remote execute
-			iface, err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps, secgroups, inbound, outbound, allowSpoofing)
+			iface, err = a.changeAddresses(ctx, instance, iface, ifaceSubnets, siteSubnets, secondAddrsCount, publicIps, secgroups)
 			if err != nil {
 				logger.Errorf("Failed to get instance networks, %v", err)
 				return
