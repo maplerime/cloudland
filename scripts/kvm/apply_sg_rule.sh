@@ -3,21 +3,13 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 1 ] && echo "$0 <interface> [add|delete]" && exit -1
+[ $# -lt 1 ] && echo "$0 <interface>" && exit -1
 
 vnic=$1
-act=$2
 # Build all rules for this nic's chains and apply them in a single
 # iptables-restore transaction (noflush) instead of one fork per rule.
-# add -> insert at head (-I chain 1); delete -> -D chain.
-if [ "$act" = "delete" ]; then
-    op="-D"
-    tail=""
-else
-    op="-I"
-    tail=" 1"
-fi
-
+# Rules are inserted at the head (-I chain 1), ahead of the chain's
+# terminating DROP built by create_sg_chain.sh.
 chain_in=secgroup-in-$vnic
 chain_out=secgroup-out-$vnic
 
@@ -28,7 +20,7 @@ function emit()
 {
     chain=$1
     shift
-    rules="${rules}${op} ${chain}${tail} $*"$'\n'
+    rules="${rules}-I ${chain} 1 $*"$'\n'
 }
 
 function allow_ipv4()
@@ -100,7 +92,16 @@ while [ $i -lt $len ]; do
 done
 
 # Apply all collected rules atomically in one transaction (chains already
-# exist, so use --noflush to only append/delete without touching other chains).
+# exist, so use --noflush to only append without touching other chains).
+# NOTE: iptables-restore is all-or-nothing - if any single rule is rejected
+# the WHOLE batch is dropped, leaving the chain with only its skeleton DROP
+# (i.e. all inbound allow rules gone -> VM traffic blackholed). Fail loud so
+# this never happens silently: log to syslog on failure.
 if [ -n "$rules" ]; then
-    printf '*filter\n%sCOMMIT\n' "$rules" | iptables-restore --noflush
+    restore_err=$(printf '*filter\n%sCOMMIT\n' "$rules" | iptables-restore --noflush 2>&1)
+    if [ $? -ne 0 ]; then
+        logger -t apply_sg_rule "FAILED to apply security group rules for $vnic (whole batch rejected, chain left with skeleton only): $restore_err"
+        echo "apply_sg_rule: iptables-restore failed for $vnic: $restore_err" >&2
+        exit 1
+    fi
 fi
