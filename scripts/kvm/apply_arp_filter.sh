@@ -49,18 +49,19 @@ nft add table bridge cloudland 2>/dev/null
 nft add chain bridge cloudland forward '{ type filter hook forward priority 0 ; policy accept ; }' 2>/dev/null
 nft add map bridge cloudland arp_dispatch '{ type ifname : verdict ; }' 2>/dev/null
 nft list chain bridge cloudland forward 2>/dev/null | grep -q "arp_dispatch" || {
+    # Only ARP is dispatched to the per-vnic chain for anti-spoof checking.
+    # Non-ARP BUM (broadcast/multicast) falls through to the chain policy
+    # (accept) - add a BUM rate-limit dispatch here if throttling is needed.
     nft add rule bridge cloudland forward ether type 0x0806 meta iifname vmap @arp_dispatch
-    nft add rule bridge cloudland forward ether daddr ff:ff:ff:ff:ff:ff meta iifname vmap @arp_dispatch
-    nft add rule bridge cloudland forward ether daddr 01:00:00:00:00:00/01:00:00:00:00:00 meta iifname vmap @arp_dispatch
 }
 nft add chain bridge cloudland arp-$vnic
 nft flush chain bridge cloudland arp-$vnic
 nft add set bridge cloudland set-$vnic '{ type ether_addr . ipv4_addr ; }' 2>/dev/null
 nft flush set bridge cloudland set-$vnic 2>/dev/null
 nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
-nft add rule bridge cloudland arp-$vnic ether type 0x0806 arp saddr ether . arp saddr ip @set-$vnic counter accept
-nft add rule bridge cloudland arp-$vnic ether type 0x0806 counter drop
-nft add rule bridge cloudland arp-$vnic counter accept
+# Only ARP reaches this chain, so: legit (mac,ip) accept, everything else drop.
+nft add rule bridge cloudland arp-$vnic arp saddr ether . arp saddr ip @set-$vnic counter accept
+nft add rule bridge cloudland arp-$vnic counter drop
 # Batch all set elements (primary + extras) into a single nft call
 nft_elements="$mac . $ip"
 for extra_ip in $extra_ips; do
