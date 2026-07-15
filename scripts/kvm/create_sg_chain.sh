@@ -40,53 +40,20 @@ more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
 
 if [ "$allow_spoofing" != true ]; then
-    # Wait for the tap to be enslaved to its bridge
-    for i in {1..300}; do
-        bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
-        [ -n "$bridge" ] && break
-        sleep 2
-    done
-    # Suppress unknown-unicast flooding to this VM port: pin the VM MAC into
-    # the bridge FDB (so known unicast still reaches it) then disable flood.
-    # Keep mcast_flood/bcast_flood on (DHCP/ARP/multicast must still work).
-    if [ -n "$bridge" ]; then
-        bridge fdb replace $mac dev $vnic master static
-        bridge link set dev $vnic flood off
-    fi
-
-    # nftables: vmap dispatch + per-vnic set for ARP filtering with rate limit
-    nft add table bridge cloudland 2>/dev/null
-    nft add chain bridge cloudland forward '{ type filter hook forward priority 0 ; policy accept ; }' 2>/dev/null
-    nft add map bridge cloudland arp_dispatch '{ type ifname : verdict ; }' 2>/dev/null
-    nft list chain bridge cloudland forward 2>/dev/null | grep -q "arp_dispatch" || {
-        nft add rule bridge cloudland forward ether type 0x0806 meta iifname vmap @arp_dispatch
-        nft add rule bridge cloudland forward ether daddr ff:ff:ff:ff:ff:ff meta iifname vmap @arp_dispatch
-        nft add rule bridge cloudland forward ether daddr 01:00:00:00:00:00/01:00:00:00:00:00 meta iifname vmap @arp_dispatch
-    }
-    nft add chain bridge cloudland arp-$vnic
-    nft flush chain bridge cloudland arp-$vnic
-    nft add set bridge cloudland set-$vnic '{ type ether_addr . ipv4_addr ; }' 2>/dev/null
-    nft flush set bridge cloudland set-$vnic 2>/dev/null
-    nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
-    nft add rule bridge cloudland arp-$vnic ether type 0x0806 arp saddr ether . arp saddr ip @set-$vnic counter accept
-    nft add rule bridge cloudland arp-$vnic ether type 0x0806 counter drop
-    nft add rule bridge cloudland arp-$vnic counter accept
-    nft add element bridge cloudland set-$vnic { $mac . $ip }
-
+    # ipset holds the (ip,mac) anti-spoofing pairs. It applies regardless of
+    # whether the tap exists yet (e.g. a shutoff VM being reapplied): the rule
+    # set is ready before the tap appears. NB: bridge FDB / flood / nftables ARP
+    # filtering are handled by apply_arp_filter.sh OUTSIDE the iptables lock,
+    # because they depend on the tap being present and would otherwise block.
+    extra_ips=""
     if [ $naddrs -gt 0 ]; then
-        # Resolve all extra IPs once (strip /mask in a single jq call), then
-        # batch ipset (restore), nft elements, and a single ARP send
         extra_ips=$(jq -r '.[] | split("/")[0]' <<<$more_addresses)
-        ipset_restore=""
-        nft_elements=""
-        for extra_ip in $extra_ips; do
-            ipset_restore="${ipset_restore}add sgas-$vnic $extra_ip,$mac -exist"$'\n'
-            nft_elements="$nft_elements $mac . $extra_ip,"
-        done
-        [ -n "$ipset_restore" ] && printf '%s' "$ipset_restore" | ipset restore -exist
-        [ -n "$nft_elements" ] && nft add element bridge cloudland set-$vnic { ${nft_elements%,} }
-        ./send_spoof_arp.py $bridge $mac $extra_ips &
     fi
+    ipset_restore=""
+    for extra_ip in $extra_ips; do
+        ipset_restore="${ipset_restore}add sgas-$vnic $extra_ip,$mac -exist"$'\n'
+    done
+    [ -n "$ipset_restore" ] && printf '%s' "$ipset_restore" | ipset restore -exist
 fi
 
 apply_fw -N $chain_out
