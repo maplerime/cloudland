@@ -1,13 +1,18 @@
 [Unit]
-Description=Cloudland ARP reply — answers arphole probes for locally-owned VM IPs
+Description=Cloudland ARP reply — inline NFQUEUE responder that answers arphole probes for local VM IPs and drops them
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 ExecStart=/opt/arpreply/start.sh
+# Best-effort teardown of our nft table on stop/crash. The `queue ... bypass`
+# flag already makes a lingering rule fail-safe, so this is just cleanup.
+ExecStopPost=-/usr/sbin/nft delete table bridge arpreply
 Restart=on-failure
 RestartSec=5
 KillMode=process
+# nft + NFQUEUE need CAP_NET_ADMIN; raw reply send needs CAP_NET_RAW.
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
 
 [Install]
 WantedBy=multi-user.target
