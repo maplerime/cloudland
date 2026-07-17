@@ -22,5 +22,5 @@ for vnic in $*; do
         conntrack -D -s $ip 2>/dev/null
         conntrack -D -d $ip 2>/dev/null
     done
-#    [ -n "$ips" ] && ./send_spoof_arp.py $bridge $useless_mac $ips
+    [ -n "$ips" ] && ./send_spoof_arp.py $bridge $useless_mac $ips
 done
