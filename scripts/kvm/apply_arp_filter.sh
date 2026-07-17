@@ -69,4 +69,4 @@ for extra_ip in $extra_ips; do
 done
 nft add element bridge cloudland set-$vnic { $nft_elements }
 
-#[ -n "$extra_ips" ] && ./send_spoof_arp.py $bridge $mac $extra_ips &
+[ -n "$extra_ips" ] && ./send_spoof_arp.py $bridge $mac $extra_ips &
