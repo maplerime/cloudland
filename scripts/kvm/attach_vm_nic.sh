@@ -29,7 +29,7 @@ if [ $? -ne 0 ]; then
     echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 fi
 udevadm settle
-async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
+#async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
 ./set_nic_speed.sh "$ID" "$nic_name" "$inbound" "$outbound"
 ./reapply_secgroup.sh "$ip" "$mac" "$allow_spoofing" "$nic_name" <<< $vlan_info
 ./set_subnet_gw.sh "$router" "$vlan" "$gateway" "$ext_vlan"

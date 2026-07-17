@@ -172,7 +172,7 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 	}
 	err = db.Preload("SiteSubnets").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet.Router").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
-	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instID).Order("primary_if desc").Find(&instance.Interfaces).Error
 	if err != nil {
 		logger.Error("Failed to get interfaces", err)
 		reason = err.Error()
