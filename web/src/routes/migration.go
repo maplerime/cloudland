@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,8 +62,48 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			return
 		}
 	}
+	// Sort instances by ID before locking so that any two concurrent batch requests
+	// acquire per-instance row locks in the same order, preventing lock-ordering deadlock.
+	sort.Slice(instances, func(i, j int) bool {
+		return instances[i].ID < instances[j].ID
+	})
 	for _, instance := range instances {
+		// Row-lock the instance to serialize concurrent migration-create attempts for the
+		// same instance. The instance row always exists, so it is the reliable mutex; a lock
+		// on the migration table cannot block the first-ever migration (no row to lock yet).
+		lockedInstance := &model.Instance{}
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", instance.ID).Take(lockedInstance).Error
+		if err != nil {
+			logger.Errorf("Failed to lock instance %d for migration, %v", instance.ID, err)
+			err = NewCLError(ErrInstanceNotFound, "Failed to lock instance for migration", err)
+			return
+		}
+		// The instance passed from the API layer is a stale read (GetInstanceByUUID, no lock).
+		// Refresh the volatile fields from the locked row before validating and dispatching.
+		instance.Status = lockedInstance.Status
+		instance.Hyper = lockedInstance.Hyper
+		// Re-validate migratable state against the freshly-locked row.
 		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
+			logger.Infof("Skip instance %d: status %s is not migratable", instance.ID, instance.Status)
+			continue
+		}
+		// Authoritative duplicate check: is there already a non-terminal migration for this
+		// instance? Use the migration table (not instance.status, which is set late and reused
+		// by resize). Terminal states = completed/failed/timeout/not_doing.
+		var inflightCount int64
+		err = db.Model(&model.Migration{}).
+			Where("instance_id = ? AND status NOT IN (?)", instance.ID,
+				[]string{"completed", "failed", "timeout", "not_doing"}).
+			Count(&inflightCount).Error
+		if err != nil {
+			logger.Errorf("Failed to check in-flight migration for instance %d, %v", instance.ID, err)
+			err = NewCLError(ErrMigrationCreateFailed, "Failed to check existing migration", err)
+			return
+		}
+		if inflightCount > 0 {
+			// User decision: skip this instance and keep migrating the rest (do not fail the
+			// whole batch). ErrMigrationInProgress (111805) documents this condition.
+			logger.Infof("Skip instance %d: %s", instance.ID, ErrMigrationInProgress)
 			continue
 		}
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
