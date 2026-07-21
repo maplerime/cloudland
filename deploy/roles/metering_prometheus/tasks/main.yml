@@ -17,7 +17,7 @@
           tls_config:
             insecure_skip_verify: true
           queue_config:
-            capacity: 10000
+            capacity: 15000
             max_shards: 8
             min_shards: 2
             max_samples_per_send: 5000
