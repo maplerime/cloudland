@@ -1,0 +1,6 @@
+# Inline NFQUEUE consumer. Needs the system library libnetfilter-queue at
+# runtime, and (unless a wheel is available) libnetfilter-queue-dev +
+# libnfnetlink-dev + a C toolchain at build time.
+#   Debian/Ubuntu: apt install libnetfilter-queue1 libnetfilter-queue-dev libnfnetlink-dev
+# No scapy needed: the reply frame is hand-packed and sent over a raw socket.
+NetfilterQueue>=1.1.0

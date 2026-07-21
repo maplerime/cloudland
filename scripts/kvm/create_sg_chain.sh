@@ -28,31 +28,33 @@ apply_fw -F $chain_as
 if [ "$allow_spoofing" = true ]; then
     apply_fw -I $chain_as -j RETURN
 else
-    apply_fw -A $chain_as -s $ip/32 -m mac --mac-source $mac -j RETURN
+    # ipset: single hash:ip,mac set replaces per-IP RETURN rules
+    ipset create sgas-$vnic hash:ip,mac -exist
+    ipset flush sgas-$vnic
+    ipset add sgas-$vnic $ip,$mac -exist
+    apply_fw -A $chain_as -m set --match-set sgas-$vnic src,src -j RETURN
     apply_fw -A $chain_as -j DROP
 fi
 
 more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
-ip_count=$((1 + naddrs))
 
-if [ "$allow_spoofing" != true ] && [ $naddrs -gt 0 ]; then
-    for i in {1..300}; do
-        bridge=$(readlink /sys/class/net/$vnic/master | xargs basename)
-        [ -n "$bridge" ] && break
-        sleep 2
+if [ "$allow_spoofing" != true ]; then
+    # ipset holds the (ip,mac) anti-spoofing pairs. It applies regardless of
+    # whether the tap exists yet (e.g. a shutoff VM being reapplied): the rule
+    # set is ready before the tap appears. NB: bridge FDB / flood / nftables ARP
+    # filtering are handled by apply_arp_filter.sh OUTSIDE the iptables lock,
+    # because they depend on the tap being present and would otherwise block.
+    extra_ips=""
+    if [ $naddrs -gt 0 ]; then
+        extra_ips=$(jq -r '.[] | split("/")[0]' <<<$more_addresses)
+    fi
+    ipset_restore=""
+    for extra_ip in $extra_ips; do
+        ipset_restore="${ipset_restore}add sgas-$vnic $extra_ip,$mac -exist"$'\n'
     done
-    i=0
-    while [ $i -lt $naddrs ]; do
-        read -d'\n' -r address < <(jq -r ".[$i]" <<<$more_addresses)
-        read -d'\n' -r extra_ip netmask < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
-        apply_fw -I $chain_as -s $extra_ip/32 -m mac --mac-source $mac -j RETURN
-        ./send_spoof_arp.py $bridge $extra_ip $mac &
-        let i=$i+1
-    done
+    [ -n "$ipset_restore" ] && printf '%s' "$ipset_restore" | ipset restore -exist
 fi
-
-#./limit_arp_rate.sh $vnic add $ip_count
 
 apply_fw -N $chain_out
 apply_fw -F $chain_out

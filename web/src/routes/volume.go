@@ -840,6 +840,35 @@ func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	c.HTML(200, "volumes")
 }
 
+// SearchJSON returns up to 20 volumes matching the query for search dropdowns:
+// a numeric query matches the volume ID exactly, otherwise the name fuzzily.
+func (v *VolumeView) SearchJSON(c *macaron.Context, store session.Store) {
+	q := c.QueryTrim("q")
+	params := &VolumeSearchParams{}
+	if id, err := strconv.Atoi(q); err == nil && q != "" {
+		params.ID = int64(id)
+	} else if q != "" {
+		params.Name = q
+	}
+	_, volumes, err := volumeAdmin.List4View(c.Req.Context(), 0, 20, "-created_at", params)
+	if err != nil {
+		c.JSON(500, map[string]interface{}{"success": false, "message": err.Error()})
+		return
+	}
+	type Result struct {
+		Name  string `json:"name"`
+		Value int64  `json:"value"`
+	}
+	results := make([]Result, 0, len(volumes))
+	for _, vol := range volumes {
+		results = append(results, Result{
+			Name:  fmt.Sprintf("%d-%s", vol.ID, vol.Name),
+			Value: vol.ID,
+		})
+	}
+	c.JSON(200, map[string]interface{}{"success": true, "results": results})
+}
+
 func (v *VolumeView) Delete(c *macaron.Context, store session.Store) (err error) {
 	ctx := c.Req.Context()
 	id := c.Params("id")
@@ -1154,4 +1183,32 @@ func (v *VolumeView) Resize(c *macaron.Context, store session.Store) {
 		}
 		c.Redirect(redirectTo)
 	}
+}
+
+func (a *VolumeAdmin) Restore(ctx context.Context, volume *model.Volume, backup *model.VolumeBackup) (err error) {
+	logger.Debugf("Restore volume %s from backup %s", volume.UUID, backup.UUID)
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.ValidateOwner(model.Writer, volume.Owner)
+	if !permit {
+		logger.Errorf("Not authorized to restore volume(%s)", volume.UUID)
+		err = fmt.Errorf("Not authorized")
+		return
+	}
+	control := fmt.Sprintf("inter=")
+	vol_driver := volume.GetVolumeDriver()
+	if vol_driver != "local" {
+		volume_wds_uuid := volume.GetOriginVolumeID()
+		snapshot_wds_uuid := backup.GetOriginBackupID()
+		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/vol_restore_%s.sh '%d' '%s' '%s'", vol_driver, volume.ID, volume_wds_uuid, snapshot_wds_uuid)
+		err = HyperExecute(ctx, control, command)
+		if err != nil {
+			logger.Error("Restore volume execution failed", err)
+			return
+		}
+	} else {
+		logger.Error("Restore not supported for local volume")
+		err = fmt.Errorf("Restore not supported for local volume")
+		return
+	}
+	return
 }

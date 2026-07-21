@@ -101,20 +101,9 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 				return
 			}
 		}
-		err = db.Model(&model.Address{}).Where("second_interface = ? and interface = 0", iface.ID).Update(map[string]interface{}{"allocated": false, "second_interface": 0}).Error
+		err = ReleaseInterfaceRefs(ctx, iface.ID)
 		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
-			return
-		}
-		err = db.Model(&model.Address{}).Where("second_interface = ? and interface > 0", iface.ID).Update(map[string]interface{}{"second_interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to Update addresses, %v", err)
-			return
-		}
-		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
-			"interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to update subnet", err)
+			logger.Error("Failed to release interface refs, %v", err)
 			return
 		}
 		if routerID > 0 && hyperNode >= 0 {
@@ -159,7 +148,7 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		reason = err.Error()
 		return
 	}
-	err = db.Preload("Address").Preload("Address.Subnet").Preload("Address.Subnet").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+	err = db.Preload("Address").Preload("Address.Subnet").Where("instance = ?", instID).Order("primary_if desc").Find(&instance.Interfaces).Error
 	if err != nil {
 		logger.Error("Failed to get interfaces", err)
 		reason = err.Error()

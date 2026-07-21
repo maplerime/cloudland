@@ -1,0 +1,251 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<input type="hidden" id="timezone_offset_minutes" name="timezone_offset_minutes">
+							<input type="hidden" id="client_timezone" name="client_timezone">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Create New Scheduled Task"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="required inline field">
+									<label for="name">{{.i18n.Tr "Name"}}</label>
+									<input id="name" name="name" autofocus required>
+								</div>
+								<div class="required inline field">
+									<label for="task_type">{{.i18n.Tr "Task Type"}}</label>
+									<select name="task_type" id="task_type" class="ui selection dropdown">
+                                         <option value="instance_op" selected>Instance Operation</option>
+                                         <option value="volume_backup">Volume Operation</option>
+                                    </select>
+								</div>
+								<input type="hidden" id="resource_type_input" name="resource_type" value="instance">
+								<div class="required inline field">
+									<label for="resource_id">{{.i18n.Tr "Resource ID"}}</label>
+									<div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
+										<input type="text" id="resourceSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
+										<i class="search icon link" onclick="$('#resourceSearch').trigger('input')"></i>
+									</div>
+									<div class="ui selection dropdown" id="resourceDropdown">
+										<input id="resource_id" name="resource_id" type="hidden">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "Resource ID"}}</div>
+										<div class="menu" id="resourceMenu"></div>
+									</div>
+								</div>
+								<div class="required inline field">
+									<label for="operation">{{.i18n.Tr "Operation"}}</label>
+									<select name="operation" id="operation" class="ui selection dropdown">
+                                         <option value="stop" selected>Stop</option>
+                                         <option value="hard_stop">Hard Stop</option>
+                                         <option value="start">Start</option>
+                                         <option value="restart">Restart</option>
+                                         <option value="hard_restart">Hard Restart</option>
+                                    </select>
+								</div>
+								<div class="required inline field">
+									<label for="schedule_type">{{.i18n.Tr "Schedule Type"}}</label>
+									<select name="schedule_type" id="schedule_type" class="ui selection dropdown">
+                                         <option value="one-time" selected>One Time</option>
+                                         <option value="daily">Daily</option>
+                                         <option value="weekly">Weekly</option>
+                                         <option value="monthly">Monthly</option>
+                                    </select>
+								</div>
+								<div class="inline field">
+									<label for="execution_time">{{.i18n.Tr "Execution Time"}}</label>
+									<input id="execution_time" name="execution_time" type="datetime-local">
+								</div>
+								<div class="inline field">
+									<label for="cron_expression">{{.i18n.Tr "Cron Expression"}}</label>
+									<input id="cron_expression" name="cron_expression">
+								</div>
+								<div class="inline field">
+									<label for="retention_count">{{.i18n.Tr "Retention Count"}}</label>
+									<input id="retention_count" name="retention_count" value="0">
+								</div>
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "Create"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+{{template "_footer" .}}
+<script>
+var taskOperations = {
+    instance_op: [
+        { value: 'stop', text: 'Stop' },
+        { value: 'hard_stop', text: 'Hard Stop' },
+        { value: 'start', text: 'Start' },
+        { value: 'restart', text: 'Restart' },
+        { value: 'hard_restart', text: 'Hard Restart' }
+    ],
+    volume_backup: [
+        { value: 'snapshot', text: 'Snapshot' },
+        { value: 'backup', text: 'Backup' }
+    ]
+};
+
+// searchResources queries the search endpoint matching the current resource
+// type (numeric q matches the ID exactly, text matches the name fuzzily) and
+// rebuilds the resource dropdown with at most 20 results. When triggered by a
+// user search (userTriggered), a single match is selected automatically and
+// multiple matches open the dropdown for picking; the initial/default load
+// leaves the dropdown closed.
+function searchResources(q, userTriggered) {
+    var resourceType = $('#resource_type_input').val();
+    var url = resourceType === 'volume' ? '/volumes/search.json' : '/instances/search.json';
+    $.getJSON(url, {q: q || ''}, function(data){
+        var menu = document.getElementById('resourceMenu');
+        var currentVal = $('#resourceDropdown').dropdown('get value');
+        var results = data.results || [];
+        var html = '';
+        for (var i = 0; i < results.length; i++) {
+            var r = results[i];
+            html += '<div class="item" data-value="' + r.value + '">' + r.name + '</div>';
+        }
+        menu.innerHTML = html;
+        $('#resourceDropdown').dropdown('refresh');
+        if (userTriggered && results.length === 1) {
+            $('#resourceDropdown').dropdown('set selected', String(results[0].value));
+            return;
+        }
+        // Keep the previous selection only while it is still part of the new
+        // result set; otherwise a stale value (e.g. "11-test" after searching
+        // "12" with no match) would silently stay in the form.
+        var stillValid = false;
+        for (var j = 0; j < results.length; j++) {
+            if (String(results[j].value) === String(currentVal)) { stillValid = true; break; }
+        }
+        if (currentVal && stillValid) {
+            $('#resourceDropdown').dropdown('set selected', currentVal);
+        } else if (userTriggered) {
+            $('#resourceDropdown').dropdown('clear');
+        }
+        if (userTriggered && results.length > 1) {
+            $('#resourceDropdown').dropdown('show');
+        }
+    });
+}
+
+function refreshOperationOptions(taskType, selectedValue) {
+    var operationDropdown = $('#operation');
+    var options = taskOperations[taskType] || [];
+    operationDropdown.empty();
+
+    $.each(options, function(_, option) {
+        operationDropdown.append($('<option>', {
+            value: option.value,
+            text: option.text,
+            selected: option.value === selectedValue
+        }));
+    });
+
+    var finalValue = selectedValue || (options.length ? options[0].value : '');
+    operationDropdown.parent().dropdown('set selected', finalValue);
+}
+
+function refreshResourceType(taskType) {
+    var resourceType = taskType === 'volume_backup' ? 'volume' : 'instance';
+    $('#resource_type_input').val(resourceType);
+    // The previous selection belongs to the other resource type: clear it and
+    // reload the default options (20 most recent) for the new type.
+    $('#resourceSearch').val('');
+    $('#resourceDropdown').dropdown('clear');
+    searchResources('');
+}
+
+function updateExecutionTimeMin() {
+    var input = document.getElementById('execution_time');
+    if ($('#schedule_type').val() === 'one-time') {
+        var now = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+        input.min = now.toISOString().slice(0, 16);
+    } else {
+        input.removeAttribute('min');
+    }
+}
+
+function refreshRetentionCountField(taskType) {
+    var field = $('#retention_count').closest('.field');
+    if (taskType === 'volume_backup') {
+        field.show();
+    } else {
+        field.hide();
+        $('#retention_count').val('0');
+    }
+}
+
+function refreshScheduleFields(scheduleType) {
+    var execField = $('#execution_time').closest('.field');
+    var cronField = $('#cron_expression').closest('.field');
+    if (scheduleType === 'one-time') {
+        execField.show().addClass('required');
+        cronField.hide().removeClass('required');
+        $('#execution_time').prop('required', true);
+        $('#cron_expression').prop('required', false).val('');
+    } else {
+        execField.hide().removeClass('required');
+        cronField.show().addClass('required');
+        $('#execution_time').prop('required', false).val('');
+        $('#cron_expression').prop('required', true);
+    }
+}
+
+function handleTaskTypeChange(taskType) {
+    refreshResourceType(taskType);
+    refreshOperationOptions(taskType);
+    refreshRetentionCountField(taskType);
+}
+
+function handleScheduleTypeChange(scheduleType) {
+    refreshScheduleFields(scheduleType);
+    updateExecutionTimeMin();
+}
+
+$('#task_type').on('change', function() {
+    handleTaskTypeChange($(this).val());
+});
+
+$('#schedule_type').on('change', function() {
+    handleScheduleTypeChange($(this).val());
+});
+
+(function(){
+    var timer;
+    $('#resourceSearch').on('input', function(){
+        var q = $(this).val();
+        clearTimeout(timer);
+        timer = setTimeout(function(){ searchResources(q, true); }, 300);
+    });
+})();
+
+$(document).ready(function() {
+    $('#timezone_offset_minutes').val(new Date().getTimezoneOffset());
+    $('#client_timezone').val(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    refreshOperationOptions($('#task_type').val(), $('#operation').val());
+    refreshResourceType($('#task_type').val());
+    refreshRetentionCountField($('#task_type').val());
+    refreshScheduleFields($('#schedule_type').val());
+    updateExecutionTimeMin();
+
+    // The resource dropdown no longer has a preselected first option, so block
+    // submission until a resource is chosen.
+    $('form.ui.form').on('submit', function(e){
+        if (!$('#resource_id').val()) {
+            e.preventDefault();
+            alert('{{.i18n.Tr "Please_Select_Resource"}}');
+        }
+    });
+});
+</script>

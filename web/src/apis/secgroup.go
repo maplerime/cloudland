@@ -223,6 +223,19 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 	if err != nil {
 		return
 	}
+	// Collect the instance IDs referenced by the interfaces and load them in a single
+	// query, instead of issuing a heavyweight instanceAdmin.Get per interface (N+1).
+	instanceIDs := make([]int64, 0, len(secgroup.Interfaces))
+	for _, iface := range secgroup.Interfaces {
+		if iface.Instance > 0 {
+			instanceIDs = append(instanceIDs, iface.Instance)
+		}
+	}
+	var instanceMap map[int64]*model.Instance
+	instanceMap, err = instanceAdmin.ListByIDs(ctx, instanceIDs)
+	if err != nil {
+		return
+	}
 	for _, iface := range secgroup.Interfaces {
 		targetIface := &TargetInterface{
 			ResourceReference: &ResourceReference{
@@ -233,13 +246,13 @@ func (v *SecgroupAPI) getSecgroupResponse(ctx context.Context, secgroup *model.S
 			targetIface.IpAddress = strings.Split(iface.Address.Address, "/")[0]
 		}
 		if iface.Instance > 0 {
-			var instance *model.Instance
-			instance, err = instanceAdmin.Get(ctx, iface.Instance)
-			if err != nil {
-				err = nil
+			// Skip interfaces whose instance is not visible to the caller or no longer
+			// exists — preserves the previous behavior where Get failures were skipped.
+			instance, ok := instanceMap[iface.Instance]
+			if !ok {
 				continue
 			}
-			owner := orgAdmin.GetOrgName(ctx, instance.Owner)
+			owner = orgAdmin.GetOrgName(ctx, instance.Owner)
 			targetIface.FromInstance = &InstanceInfo{
 				ResourceReference: &ResourceReference{
 					ID:    instance.UUID,

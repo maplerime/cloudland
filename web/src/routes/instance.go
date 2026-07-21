@@ -888,48 +888,12 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	return
 }
 
-func (a *InstanceAdmin) deleteInterfaces(ctx context.Context, instance *model.Instance) (err error) {
-	ctx, db := GetContextDB(ctx)
-	for _, iface := range instance.Interfaces {
-		err = a.deleteInterface(ctx, iface)
-		if err != nil {
-			logger.Error("Failed to delete interface", err)
-			err = nil
-			return
-		}
-		err = db.Model(&model.Subnet{}).Where("interface = ?", iface.ID).Updates(map[string]interface{}{
-			"interface": 0}).Error
-		if err != nil {
-			logger.Error("Failed to update subnet", err)
-			return NewCLError(ErrSubnetUpdateFailed, "Failed to update subnet", err)
-		}
-	}
-	return
-}
-
-func (a *InstanceAdmin) deleteInterface(ctx context.Context, iface *model.Interface) (err error) {
-	err = DeleteInterface(ctx, iface)
-	if err != nil {
-		logger.Error("Failed to create interface")
-		return
-	}
-	vlan := iface.Address.Subnet.Vlan
-	control := ""
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_host.sh '%d' '%s' '%s'", vlan, iface.MacAddr, iface.Address.Address)
-	err = HyperExecute(ctx, control, command)
-	if err != nil {
-		logger.Error("Delete interface failed")
-		return
-	}
-	return
-}
-
 func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *InterfaceInfo, instance *model.Instance, ifname string) (iface *model.Interface, ifaceSubnet *model.Subnet, err error) {
 	ctx, db := GetContextDB(ctx)
 	memberShip := GetMemberShip(ctx)
 
 	if len(ifaceInfo.PublicIps) > 0 {
-		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "", "")
+		iface, ifaceSubnet, err = DerivePublicInterface(ctx, instance, nil, ifaceInfo.PublicIps, "", "", ifaceInfo.Inbound, ifaceInfo.Outbound, ifaceInfo.AllowSpoofing)
 		if err != nil {
 			logger.Error("Failed to derive primary interface", err)
 			return
@@ -940,18 +904,6 @@ func (a *InstanceAdmin) createInterface(ctx context.Context, ifaceInfo *Interfac
 				return nil, nil, NewCLError(ErrAssociateSG2InterfaceFailed, "Failed to associate security groups with interface", err)
 			}
 			iface.SecurityGroups = ifaceInfo.SecurityGroups
-		}
-		iface.Inbound = ifaceInfo.Inbound
-		iface.Outbound = ifaceInfo.Outbound
-		iface.AllowSpoofing = ifaceInfo.AllowSpoofing
-		err = db.Model(&model.Interface{Model: model.Model{ID: int64(iface.ID)}}).Update(map[string]interface{}{
-			"inbound":        iface.Inbound,
-			"outbound":       iface.Outbound,
-			"allow_spoofing": iface.AllowSpoofing,
-		}).Error
-		if err != nil {
-			logger.Debug("Failed to update interface", err)
-			return nil, nil, NewCLError(ErrInterfaceUpdateFailed, "Failed to update interface", err)
 		}
 	} else {
 		subnets := ifaceInfo.Subnets
@@ -1412,7 +1364,7 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 	}
 	if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 		return db.Order("addresses.updated_at")
-	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+	}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Order("primary_if desc").Find(&instance.Interfaces).Error; err != nil {
 		logger.Errorf("Failed to query interfaces %v", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
 	}
@@ -1554,7 +1506,7 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 	for _, instance := range instances {
 		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 			return db.Order("addresses.updated_at")
-		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Order("primary_if desc").Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 			return
@@ -1585,6 +1537,42 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 		}
 	}
 
+	return
+}
+
+// ListByIDs batch-loads instances by their primary keys in a single query.
+func (a *InstanceAdmin) ListByIDs(ctx context.Context, ids []int64) (instanceMap map[int64]*model.Instance, err error) {
+	instanceMap = make(map[int64]*model.Instance)
+	// Deduplicate and drop invalid IDs to keep the IN clause minimal.
+	uniq := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{})
+	for _, id := range ids {
+		if id > 0 {
+			if _, ok := seen[id]; !ok {
+				seen[id] = struct{}{}
+				uniq = append(uniq, id)
+			}
+		}
+	}
+	// Nothing valid to query: return the empty (non-nil) map so callers can range safely.
+	if len(uniq) == 0 {
+		return
+	}
+	ctx, db := GetContextDB(ctx)
+	where := GetMemberShip(ctx).GetWhere()
+	logger.Debugf("Batch loading %d instance(s) by id", len(uniq))
+	var instances []*model.Instance
+	// Single IN query, no Preload — base columns are all the callers of this method need.
+	if err = db.Where(where).Where("id in (?)", uniq).Find(&instances).Error; err != nil {
+		// Surface query failures instead of silently dropping instances.
+		logger.Errorf("Failed to batch query instances by ids, %v", err)
+		err = NewCLError(ErrSQLSyntaxError, "Failed to query instances by ids", err)
+		return
+	}
+	for _, instance := range instances {
+		instanceMap[instance.ID] = instance
+	}
+	logger.Debugf("Batch loaded %d instance(s) by id", len(instanceMap))
 	return
 }
 
@@ -1645,7 +1633,7 @@ func (a *InstanceAdmin) List4View(ctx context.Context, offset, limit int64, orde
 	for _, instance := range instances {
 		if err = db.Preload("SiteSubnets").Preload("SiteSubnets.Group").Preload("SecurityGroups").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses", func(db *gorm.DB) *gorm.DB {
 			return db.Order("addresses.updated_at")
-		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Find(&instance.Interfaces).Error; err != nil {
+		}).Preload("SecondAddresses.Subnet").Where("instance = ?", instance.ID).Order("primary_if desc").Find(&instance.Interfaces).Error; err != nil {
 			logger.Errorf("Failed to query interfaces %v", err)
 			err = NewCLError(ErrSQLSyntaxError, "Failed to query interfaces", err)
 			return

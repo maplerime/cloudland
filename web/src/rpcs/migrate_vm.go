@@ -276,7 +276,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 			return
 		}
 	} else if status == "source_prepared" {
-		err = db.Preload("SiteSubnets").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Find(&instance.Interfaces).Error
+		err = db.Preload("SiteSubnets").Preload("Address").Preload("Address.Subnet").Preload("SecondAddresses").Preload("SecondAddresses.Subnet").Preload("Address.Subnet.Router").Where("instance = ?", instID).Order("primary_if desc").Find(&instance.Interfaces).Error
 		if err != nil {
 			logger.Error("Failed to get interfaces", err)
 			return

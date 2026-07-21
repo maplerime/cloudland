@@ -86,14 +86,15 @@ func New() (m *macaron.Macaron) {
 	adminInit()
 	m.Use(macaron.Renderer(
 		macaron.RenderOptions{
-			Funcs: []template.FuncMap{
-				template.FuncMap{
-					"GetString": viper.GetString,
-					"Title":     func(v interface{}) string { return strings.Title(fmt.Sprint(v)) },
+				Funcs: []template.FuncMap{
+					template.FuncMap{
+						"GetString": viper.GetString,
+						"Title":     func(v interface{}) string { return strings.Title(fmt.Sprint(v)) },
+						"HasPrefix": strings.HasPrefix,
+					},
 				},
 			},
-		},
-	))
+		))
 	m.Use(LinkHandler)
 	m.Use(SysVersion)
 	m.Get("/", Index)
@@ -165,6 +166,7 @@ func New() (m *macaron.Macaron) {
 	m.Get("/migrations/new", migrationView.New)
 	m.Post("/migrations/new", migrationView.Create)
 	m.Get("/volumes", volumeView.List)
+	m.Get("/volumes/search.json", volumeView.SearchJSON)
 	m.Get("/volumes/new", volumeView.New)
 	m.Post("/volumes/new", volumeView.Create)
 	m.Delete("/volumes/:id", volumeView.Delete)
@@ -252,6 +254,21 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/dictionaries/:id", dictionaryView.Delete)
 	m.Get("/dictionaries/:id", dictionaryView.Edit)
 	m.Post("/dictionaries/:id", dictionaryView.Patch)
+	m.Get("/scheduled_tasks", scheduledTaskView.List)
+	m.Get("/scheduled_tasks/new", scheduledTaskView.New)
+	m.Post("/scheduled_tasks/new", scheduledTaskView.Create)
+	m.Get("/scheduled_tasks/:id/view", scheduledTaskView.View)
+	m.Get("/scheduled_tasks/:id", scheduledTaskView.Edit)
+	m.Post("/scheduled_tasks/:id", scheduledTaskView.Patch)
+	m.Delete("/scheduled_tasks/:id", scheduledTaskView.Delete)
+	m.Get("/scheduled_tasks/:id/history", scheduledTaskView.ListHistory)
+	m.Get("/scheduled_task_history", scheduledTaskView.ListHistory)
+	m.Get("/scheduled_task_history/:id", scheduledTaskView.ListHistory)
+	m.Get("/scheduled_task_history/:id/history", scheduledTaskView.ListHistory)
+	m.Get("/scheduled_task_history/:id/:historyid", scheduledTaskView.ListHistory)
+	m.Get("/scheduled_task_history/:id/:historyid/history", scheduledTaskView.ListHistory)
+	m.Get("/scheduled_task_history/:id/view", scheduledTaskView.View)
+	m.Get("/scheduled_task_history/:id/edit", scheduledTaskView.Edit)
 	m.Post("/alarms/node", alarmView.CreateNodeAlarmRule)
 	m.Get("/alarms/node", alarmView.GetNodeAlarmRules)
 	m.Get("/alarms/node/new", alarmView.NewNodeAlarmRule)

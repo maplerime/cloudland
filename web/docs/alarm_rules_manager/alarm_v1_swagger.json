@@ -4148,6 +4148,458 @@
                 }
             }
         },
+        "/placement/available": {
+            "get": {
+                "description": "Runs the full filter+weigher chain and returns all passing hypers sorted by score",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Query available placement candidates",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Zone name",
+                        "name": "zone_name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of vCPUs",
+                        "name": "vcpus",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Memory in MB",
+                        "name": "memory_mb",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Disk in GB (default 1)",
+                        "name": "disk_gb",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement/validate": {
+            "post": {
+                "description": "Checks if the specified hyper passes the filter chain for the given VM spec",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Validate hyper resource availability",
+                "parameters": [
+                    {
+                        "description": "Validation request",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ValidatePayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/scheduled_tasks": {
+            "get": {
+                "description": "list scheduled tasks with optional search filtering",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "list scheduled tasks",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order by field",
+                        "name": "order",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Search query on task name",
+                        "name": "q",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a scheduled task for instance operations or volume backup/snapshot.\nThe resource_id in the payload is the UUID of the target instance/volume\n(as returned by the instances/volumes APIs). The id field in the response\nis the task's numeric ID, which is the path parameter accepted by the\nget/patch/delete/history endpoints.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "create a scheduled task",
+                "parameters": [
+                    {
+                        "description": "Scheduled task create payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskOperationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/scheduled_tasks/{id}": {
+            "get": {
+                "description": "get a scheduled task by its UUID. The UUID is the uuid field\nreturned by the create/list endpoints and is unique across regions\n(the numeric id is region-local and NOT accepted here).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "get a scheduled task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete a scheduled task by its UUID. The UUID is the uuid field\nreturned by the create/list endpoints and is unique across regions\n(the region-local numeric id is NOT accepted here).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "delete a scheduled task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskStatusResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "update an existing scheduled task; only non-empty fields in the payload are updated.\nThe path parameter is the task UUID returned by the create/list endpoints,\nunique across regions (the region-local numeric id is NOT accepted here).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "update a scheduled task",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Scheduled task update payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskOperationResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/scheduled_tasks/{id}/history": {
+            "get": {
+                "description": "list execution history records for a specific scheduled task.\nThe path parameter is the task UUID returned by the create/list endpoints,\nunique across regions (the region-local numeric id is NOT accepted here).",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "list a scheduled task's execution history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Task UUID (the uuid field returned by create/list)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Offset",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Limit",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Order by field",
+                        "name": "order",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskHistoryListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not found",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal error",
+                        "schema": {
+                            "$ref": "#/definitions/apis.ScheduledTaskAPIError"
+                        }
+                    }
+                }
+            }
+        },
         "/security_groups": {
             "get": {
                 "description": "list secgroups",
@@ -7886,6 +8338,272 @@
                 }
             }
         },
+        "apis.ScheduledTaskAPIError": {
+            "type": "object",
+            "properties": {
+                "error_code": {
+                    "type": "integer"
+                },
+                "error_code_str": {
+                    "type": "string"
+                },
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ScheduledTaskHistoryListResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "history": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ScheduledTaskHistoryResponse"
+                    }
+                },
+                "status": {
+                    "type": "string"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.ScheduledTaskHistoryResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "duration": {
+                    "type": "integer"
+                },
+                "execution_time": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "scheduled_task": {
+                    "$ref": "#/definitions/apis.ScheduledTaskResponse"
+                },
+                "scheduled_task_id": {
+                    "type": "integer"
+                },
+                "scheduled_task_uuid": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ScheduledTaskListResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.ScheduledTaskResponse"
+                    }
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.ScheduledTaskOperationResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task": {
+                    "$ref": "#/definitions/apis.ScheduledTaskResponse"
+                }
+            }
+        },
+        "apis.ScheduledTaskPatchPayload": {
+            "type": "object",
+            "properties": {
+                "cron_expression": {
+                    "description": "Updated cron expression",
+                    "type": "string"
+                },
+                "execution_time": {
+                    "description": "Updated execution time",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Updated task name",
+                    "type": "string"
+                },
+                "retention_count": {
+                    "description": "Updated retention count",
+                    "type": "integer"
+                },
+                "schedule_type": {
+                    "description": "Updated schedule type",
+                    "type": "string"
+                },
+                "status": {
+                    "description": "Updated status (enabled/disabled)",
+                    "type": "string"
+                },
+                "timezone": {
+                    "description": "IANA timezone name (e.g. Asia/Shanghai) used to evaluate cron_expression for recurring tasks",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ScheduledTaskPayload": {
+            "type": "object",
+            "required": [
+                "name",
+                "operation",
+                "resource_id",
+                "resource_type",
+                "schedule_type",
+                "task_type"
+            ],
+            "properties": {
+                "cron_expression": {
+                    "description": "Cron expression for recurring tasks",
+                    "type": "string"
+                },
+                "execution_time": {
+                    "description": "Execution time for one-time tasks",
+                    "type": "string"
+                },
+                "name": {
+                    "description": "Human-readable task name",
+                    "type": "string"
+                },
+                "operation": {
+                    "description": "Operation to perform",
+                    "enum": [
+                        "stop",
+                        "hard_stop",
+                        "start",
+                        "restart",
+                        "hard_restart",
+                        "snapshot",
+                        "backup"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.STaskAction"
+                        }
+                    ]
+                },
+                "resource_id": {
+                    "description": "UUID of the target resource: instance UUID for instance_op tasks, volume UUID for volume_backup tasks",
+                    "type": "string"
+                },
+                "resource_type": {
+                    "description": "Type of resource (instance, volume)",
+                    "type": "string"
+                },
+                "retention_count": {
+                    "description": "Number of backups/snapshots to retain",
+                    "type": "integer"
+                },
+                "schedule_type": {
+                    "description": "Schedule type (one-time, daily, weekly, monthly)",
+                    "type": "string"
+                },
+                "task_type": {
+                    "description": "Type of task (instance_op, volume_backup)",
+                    "type": "string"
+                },
+                "timezone": {
+                    "description": "IANA timezone name (e.g. Asia/Shanghai) used to evaluate cron_expression for recurring tasks",
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ScheduledTaskResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "cron_expression": {
+                    "type": "string"
+                },
+                "execution_time": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "operation": {
+                    "$ref": "#/definitions/model.STaskAction"
+                },
+                "owner": {
+                    "type": "integer"
+                },
+                "resource_id": {
+                    "type": "string"
+                },
+                "resource_type": {
+                    "type": "string"
+                },
+                "retention_count": {
+                    "type": "integer"
+                },
+                "schedule_type": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "task_type": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.ScheduledTaskStatusResponse": {
+            "type": "object",
+            "properties": {
+                "error_message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.SecruleListResponse": {
             "type": "object",
             "properties": {
@@ -8548,6 +9266,35 @@
                 }
             }
         },
+        "apis.ValidatePayload": {
+            "type": "object",
+            "required": [
+                "disk_gb",
+                "hyper_id",
+                "memory_mb",
+                "vcpus"
+            ],
+            "properties": {
+                "disk_gb": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "hyper_id": {
+                    "type": "integer"
+                },
+                "memory_mb": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "vcpus": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "zone_id": {
+                    "type": "integer"
+                }
+            }
+        },
         "apis.VersionResponse": {
             "type": "object",
             "properties": {
@@ -9037,6 +9784,36 @@
                 "BackupStatusReady",
                 "BackupStatusError",
                 "BackupStatusRestoring"
+            ]
+        },
+        "model.STaskAction": {
+            "type": "string",
+            "enum": [
+                "stop",
+                "hard_stop",
+                "start",
+                "restart",
+                "hard_restart",
+                "snapshot",
+                "backup"
+            ],
+            "x-enum-comments": {
+                "STaskActionBackup": "Create volume backup",
+                "STaskActionHardRestart": "Force restart instance",
+                "STaskActionHardStop": "Force stop instance",
+                "STaskActionRestart": "Restart instance gracefully",
+                "STaskActionSnapshot": "Create volume snapshot",
+                "STaskActionStart": "Start instance",
+                "STaskActionStop": "Stop instance gracefully"
+            },
+            "x-enum-varnames": [
+                "STaskActionStop",
+                "STaskActionHardStop",
+                "STaskActionStart",
+                "STaskActionRestart",
+                "STaskActionHardRestart",
+                "STaskActionSnapshot",
+                "STaskActionBackup"
             ]
         }
     }

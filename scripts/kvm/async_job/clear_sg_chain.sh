@@ -28,10 +28,18 @@ apply_fw -D secgroup-chain -m physdev --physdev-out $vnic --physdev-is-bridged -
 apply_fw -D secgroup-chain -m physdev --physdev-in $vnic --physdev-is-bridged -j $chain_out
 apply_fw -D INPUT -m physdev --physdev-in $vnic --physdev-is-bridged -j $chain_out
 
+# nftables: remove ARP filtering for this vnic
+nft delete element bridge cloudland arp_dispatch { $vnic } 2>/dev/null
+nft delete chain bridge cloudland arp-$vnic 2>/dev/null
+nft delete set bridge cloudland set-$vnic 2>/dev/null
+
 apply_fw -F $chain_in
 apply_fw -F $chain_as
 apply_fw -F $chain_out
 apply_fw -X $chain_in
 apply_fw -X $chain_as
 apply_fw -X $chain_out
+
+# ipset: destroy anti-spoofing set after iptables rules referencing it are gone
+ipset destroy sgas-$vnic 2>/dev/null
 flock -u 200
