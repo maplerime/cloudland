@@ -15,6 +15,10 @@ state="failed"
 
 for i in {1..600}; do
     sleep 3
+    # Report "migrating" every ~30s (every 10th 3s poll) so instances.updated_at stays fresh
+    # during a long completion (inst_status.go 6-minute guard). Nested async_exec so the
+    # heartbeat lands its own .done file, harvested by report_rc.sh.
+    [ $((i % 10)) -eq 0 ] && async_exec echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$ID migrating'"
     if [ "$migration_type" = "warm" ]; then
         virsh domjobinfo --completed --keep-completed $vm_ID | grep Completed
         [ $? -eq 0 ] && state="completed"

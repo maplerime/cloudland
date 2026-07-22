@@ -87,25 +87,6 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			logger.Infof("Skip instance %d: status %s is not migratable", instance.ID, instance.Status)
 			continue
 		}
-		// Authoritative duplicate check: is there already a non-terminal migration for this
-		// instance? Use the migration table (not instance.status, which is set late and reused
-		// by resize). Terminal states = completed/failed/timeout/not_doing.
-		var inflightCount int64
-		err = db.Model(&model.Migration{}).
-			Where("instance_id = ? AND status NOT IN (?)", instance.ID,
-				[]string{"completed", "failed", "timeout", "not_doing"}).
-			Count(&inflightCount).Error
-		if err != nil {
-			logger.Errorf("Failed to check in-flight migration for instance %d, %v", instance.ID, err)
-			err = NewCLError(ErrMigrationCreateFailed, "Failed to check existing migration", err)
-			return
-		}
-		if inflightCount > 0 {
-			// User decision: skip this instance and keep migrating the rest (do not fail the
-			// whole batch). ErrMigrationInProgress (111805) documents this condition.
-			logger.Infof("Skip instance %d: %s", instance.ID, ErrMigrationInProgress)
-			continue
-		}
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
 		err = db.Where(sourceHyper).Take(sourceHyper).Error
 		if err != nil {
