@@ -78,7 +78,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		if status == "migrating" {
 			// Heartbeat from the migration worker: refresh updated_at so the
 			// 6-minute stuck guard below stays satisfied during a long migration.
-			err = db.Model(&model.Instance{}).Where("id = ?", instID).Update("status", model.InstanceStatusMigrating).Error
+			err = db.Model(&model.Instance{}).Where("id = ?", instID).Update("updated_at", time.Now()).Error
 			if err != nil {
 				logger.Error("Failed to refresh migrating heartbeat", err)
 			}

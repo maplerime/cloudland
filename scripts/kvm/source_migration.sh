@@ -3,4 +3,4 @@
 cd $(dirname $0)
 source ../cloudrc
 
-async_exec ./async_job/source_migration.sh $*
+async_exec ./async_job/$(basename $0) $*
