@@ -78,15 +78,15 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			err = NewCLError(ErrInstanceNotFound, "Failed to lock instance for migration", err)
 			return
 		}
-		// The instance passed from the API layer is a stale read (GetInstanceByUUID, no lock).
-		// Refresh the volatile fields from the locked row before validating and dispatching.
-		instance.Status = lockedInstance.Status
-		instance.Hyper = lockedInstance.Hyper
-		// Re-validate migratable state against the freshly-locked row.
-		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
-			logger.Infof("Skip instance %d: status %s is not migratable", instance.ID, instance.Status)
+		// Re-validate migratable state against the freshly-locked row (the instance from the
+		// API layer is a stale read via GetInstanceByUUID, taken without a lock). Read the
+		// status straight off lockedInstance; leave the preloaded associations on instance intact.
+		if lockedInstance.Status != model.InstanceStatusShutoff && lockedInstance.Status != model.InstanceStatusRunning && lockedInstance.Status != model.InstanceStatusPaused {
+			logger.Infof("Skip instance %d: status %s is not migratable", instance.ID, lockedInstance.Status)
 			continue
 		}
+		// Use the freshly-locked source hypervisor for the rest of the flow.
+		instance.Hyper = lockedInstance.Hyper
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
 		err = db.Where(sourceHyper).Take(sourceHyper).Error
 		if err != nil {
