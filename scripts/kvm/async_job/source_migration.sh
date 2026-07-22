@@ -21,24 +21,24 @@ virsh dumpxml $vm_ID >$xml_dir/$vm_ID/${vm_ID}.xml
 if [ "$migration_type" = "warm" ]; then
     state='source_rollback'
     vm_state=$(virsh domstate $vm_ID)
+    # Run the migration in the background (same handling for offline and live) so we can
+    # report a "migrating" heartbeat every 30s while it runs, keeping instances.updated_at
+    # fresh (inst_status.go 6-minute guard). Nested async_exec makes each heartbeat land its
+    # own .done file, harvested by report_rc.sh.
     if [ "$vm_state" = "shut off" ]; then
         log_debug $ID "source_migration.sh: Starting offline migration to $target_hyper"
-        virsh migrate --undefinesource --persistent --offline $vm_ID qemu+ssh://$target_hyper/system
-        migrate_rc=$?
+        virsh migrate --undefinesource --persistent --offline $vm_ID qemu+ssh://$target_hyper/system &
     else
         log_debug $ID "source_migration.sh: Starting live migration to $target_hyper"
         virsh migrate --undefinesource --persistent --suspend --live $vm_ID qemu+ssh://$target_hyper/system &
-        migrate_pid=$!
-        # Report "migrating" every 30s while the live migration runs so instances.updated_at
-        # stays fresh (inst_status.go 6-minute guard). Nested async_exec makes each heartbeat
-        # land its own .done file, harvested by report_rc.sh.
-        while kill -0 $migrate_pid 2>/dev/null; do
-            async_exec echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$ID migrating'"
-            sleep 30
-        done
-        wait $migrate_pid
-        migrate_rc=$?
     fi
+    migrate_pid=$!
+    while kill -0 $migrate_pid 2>/dev/null; do
+        async_exec echo "|:-COMMAND-:| inst_status.sh '$SCI_CLIENT_ID' '$ID migrating'"
+        sleep 30
+    done
+    wait $migrate_pid
+    migrate_rc=$?
     old_state=$vm_state
     if [ $migrate_rc -ne 0 ]; then
         log_debug $ID "source_migration.sh: virsh migrate failed with non-zero exit code"
