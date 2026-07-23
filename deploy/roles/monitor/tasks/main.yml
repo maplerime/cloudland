@@ -452,6 +452,21 @@
                 receiver: 'teams-node-status'
                 continue: true
 
+              # Node reboot detection alerts (abnormal/command/detection-broken) → Teams
+              # (teams-node-status is the human-notification channel for node health
+              # status alerts; node-webhook is cloudland's own automation endpoint and
+              # has no handling for this alert_type, so it would silently notify no one).
+              # Dedicated repeat_interval (15m) so an abnormal reboot re-notifies ~4 times
+              # within its 1h detection window without touching any other route's interval.
+              - match_re:
+                  alert_type: node-reboot-(abnormal|command|detection-broken)
+                group_by: ['alertname', 'instance', 'hostname', 'alert_type', 'severity', 'node_type']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 15m
+                receiver: 'teams-node-status'
+                continue: true
+
               # Node hypervisor resource available alerts → teams-resource-alerts
               - match:
                   alert_type: node-hypervisor-resource
@@ -937,7 +952,7 @@
       Type=simple
       User=prometheus
       Group=prometheus
-      ExecStart=/usr/bin/socat -T 1 TCP-LISTEN:9109,bind=127.0.0.1,reuseaddr,fork SYSTEM:"cat /etc/vm-metadata-anchor/response.http"
+      ExecStart=/usr/bin/socat -T 10 TCP-LISTEN:9109,bind=127.0.0.1,reuseaddr,fork,backlog=4096 SYSTEM:"cat /etc/vm-metadata-anchor/response.http"
       Restart=always
       RestartSec=1
 

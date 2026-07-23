@@ -1,7 +1,7 @@
 {{/* =========================================================
   总入口：按 alert_type 分发到对应子模板
   优先级：packet_drop → ipgroup_low_ips → node-hypervisor-resource
-          → node-(unavailable|cpu|memory|disk|network) → 默认(cpu|memory|bw)
+          → node-(unavailable|cpu|memory|disk|network|reboot-(abnormal|command|detection-broken)) → 默认(cpu|memory|bw)
   注：match 若不可用，将 node-* 分支改为明确枚举（见注释）
   ========================================================= */}}
 {{ define "teams.card" -}}
@@ -11,7 +11,7 @@
 {{ template "teams.ipgroup.card" . }}
 {{- else if eq .CommonLabels.alert_type "node-hypervisor-resource" -}}
 {{ template "teams.resource.card" . }}
-{{- else if match "^node-(unavailable|cpu|memory|disk|network)$" .CommonLabels.alert_type -}}
+{{- else if match "^node-(unavailable|cpu|memory|disk|network|reboot-(abnormal|command|detection-broken))$" .CommonLabels.alert_type -}}
 {{ template "teams.node_status.card" . }}
 {{- else -}}
 {{ template "teams.default.card" . }}
