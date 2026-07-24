@@ -1958,6 +1958,62 @@
                 }
             }
         },
+        "/images/{id}/export": {
+            "post": {
+                "description": "export an image to a file on the USS node; poll /api/v1/tasks/{task_id} for status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "export an image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Image UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Export payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ImageExportPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/images/{id}/storages": {
             "get": {
                 "description": "list image storages",
@@ -5550,6 +5606,53 @@
                 }
             }
         },
+        "/volumes/{id}/export": {
+            "post": {
+                "description": "export a volume to a file on the USS node; poll /api/v1/tasks/{task_id} for status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "export a volume",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Volume UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/volumes/{id}/qos": {
             "put": {
                 "description": "update iops and bps limit of a volume",
@@ -7000,6 +7103,17 @@
                 },
                 "zone_name": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.ImageExportPayload": {
+            "type": "object",
+            "required": [
+                "storage_id"
+            ],
+            "properties": {
+                "storage_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -9718,6 +9832,15 @@
                 "STaskActionStart": "Start instance",
                 "STaskActionStop": "Stop instance gracefully"
             },
+            "x-enum-descriptions": [
+                "Stop instance gracefully",
+                "Force stop instance",
+                "Start instance",
+                "Restart instance gracefully",
+                "Force restart instance",
+                "Create volume snapshot",
+                "Create volume backup"
+            ],
             "x-enum-varnames": [
                 "STaskActionStop",
                 "STaskActionHardStop",

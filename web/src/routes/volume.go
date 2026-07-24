@@ -784,6 +784,64 @@ func (a *VolumeAdmin) UpdateDataVolumeStatus(ctx context.Context, instanceID int
 	return
 }
 
+func (a *VolumeAdmin) Export(ctx context.Context, volumeUUID string) (task *model.Task, err error) {
+	volume, err := a.GetVolumeByUUID(ctx, volumeUUID)
+	if err != nil {
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.ValidateOwner(model.Writer, volume.Owner) {
+		err = NewCLError(ErrPermissionDenied, "not authorized to export the volume", nil)
+		return
+	}
+	if volume.Status != model.VolumeStatusAvailable {
+		err = NewCLError(ErrExportVolumeNotAvail,
+			fmt.Sprintf("volume must be available to export, current status: %s", volume.Status), nil)
+		return
+	}
+	if volume.GetVolumeDriver() == "local" {
+		err = NewCLError(ErrExportCreationFailed, "export not supported for local volumes", nil)
+		return
+	}
+
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+
+	task = &model.Task{
+		Owner:     memberShip.OrgID,
+		Name:      fmt.Sprintf("export_volume_%s", volume.UUID),
+		Summary:   fmt.Sprintf("Exporting volume %s (%s)", volume.Name, volume.UUID),
+		Status:    model.TaskStatusRunning,
+		Source:    model.TaskSourceManual,
+		Action:    model.TaskActionExport,
+		Resources: "volume:" + volume.UUID,
+	}
+	if err = db.Create(task).Error; err != nil {
+		err = NewCLError(ErrDatabaseError, "failed to create task record", err)
+		return
+	}
+	if err = db.Model(volume).Updates(map[string]interface{}{"status": model.VolumeStatusExporting}).Error; err != nil {
+		err = NewCLError(ErrDatabaseError, "failed to update volume status", err)
+		return
+	}
+
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		return
+	}
+	wdsVolumeID := volume.GetOriginVolumeID()
+	command := fmt.Sprintf(
+		"/opt/cloudland/scripts/backend/export_wds_vhost.sh '%d' 'volume' '%s'",
+		task.ID, wdsVolumeID,
+	)
+	err = HyperExecute(ctx, control, command)
+	return
+}
+
 func (v *VolumeView) List(c *macaron.Context, store session.Store) {
 	memberShip := GetMemberShip(c.Req.Context())
 	permit := memberShip.CheckPermission(model.Reader)
@@ -1211,4 +1269,36 @@ func (a *VolumeAdmin) Restore(ctx context.Context, volume *model.Volume, backup 
 		return
 	}
 	return
+}
+
+func (v *VolumeView) Export(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	id := c.Params("id")
+	volumeID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	volume, err := volumeAdmin.Get(ctx, int64(volumeID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	_, err = volumeAdmin.Export(ctx, volume.UUID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect("/tasks")
 }

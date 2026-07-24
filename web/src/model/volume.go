@@ -22,6 +22,7 @@ const (
 	VolumeStatusDetaching VolumeStatus = "detaching"
 	VolumeStatusRestoring VolumeStatus = "restoring"
 	VolumeStatusBackuping VolumeStatus = "backuping"
+	VolumeStatusExporting VolumeStatus = "exporting"
 	VolumeStatusError     VolumeStatus = "error"
 	VolumeStatusPending   VolumeStatus = "pending"
 )
@@ -87,7 +88,8 @@ func (v *Volume) IsBusy() bool {
 		v.Status == VolumeStatusAttaching ||
 		v.Status == VolumeStatusDetaching ||
 		v.Status == VolumeStatusRestoring ||
-		v.Status == VolumeStatusBackuping {
+		v.Status == VolumeStatusBackuping ||
+		v.Status == VolumeStatusExporting {
 		return true
 	}
 	return false
