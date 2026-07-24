@@ -19,7 +19,7 @@ vm_name=${10}
 boot_loader=${11}
 instance_uuid=${12:-$ID}
 image_volume_id=${13}
-state=error
+vm_state=error
 vol_state=error
 
 md=$(cat)
@@ -42,11 +42,11 @@ virsh destroy $vm_ID
 # failed teardown only leaves reclaimable zombies, it never breaks the reinstall).
 confirmed=0
 for i in $(seq 1 30); do
-    state=$(virsh domstate $vm_ID 2>/dev/null)
+    dom_state=$(virsh domstate $vm_ID 2>/dev/null)
     # The trailing comma matches `-name guest=inst-<ID>,debug-threads=on` and avoids matching a
     # longer id (inst-378 vs inst-3789). If this libvirt/QEMU does not use the guest= form, pgrep
     # simply never matches and domstate alone gates the wait.
-    if { [ -z "$state" ] || [ "$state" = "shut off" ]; } && ! pgrep -f "guest=$vm_ID," >/dev/null 2>&1; then
+    if { [ -z "$dom_state" ] || [ "$dom_state" = "shut off" ]; } && ! pgrep -f "guest=$vm_ID," >/dev/null 2>&1; then
         confirmed=1
         break
     fi
@@ -246,8 +246,8 @@ sed -i "$sed_cmd" $vm_xml
 virsh define $vm_xml
 virsh autostart $vm_ID --disable
 virsh start $vm_ID
-[ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| launch_vm.sh '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
+[ $? -eq 0 ] && vm_state=running
+echo "|:-COMMAND-:| launch_vm.sh '$ID' '$vm_state' '$SCI_CLIENT_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port
 os_code=$(jq -r '.os_code' <<< $metadata)
