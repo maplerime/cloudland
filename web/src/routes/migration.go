@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -61,10 +62,31 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			return
 		}
 	}
+	// Sort instances by ID before locking so that any two concurrent batch requests
+	// acquire per-instance row locks in the same order, preventing lock-ordering deadlock.
+	sort.Slice(instances, func(i, j int) bool {
+		return instances[i].ID < instances[j].ID
+	})
 	for _, instance := range instances {
-		if instance.Status != model.InstanceStatusShutoff && instance.Status != model.InstanceStatusRunning && instance.Status != model.InstanceStatusPaused {
+		// Row-lock the instance to serialize concurrent migration-create attempts for the
+		// same instance. The instance row always exists, so it is the reliable mutex; a lock
+		// on the migration table cannot block the first-ever migration (no row to lock yet).
+		lockedInstance := &model.Instance{}
+		err = db.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", instance.ID).Take(lockedInstance).Error
+		if err != nil {
+			logger.Errorf("Failed to lock instance %d for migration, %v", instance.ID, err)
+			err = NewCLError(ErrInstanceNotFound, "Failed to lock instance for migration", err)
+			return
+		}
+		// Re-validate migratable state against the freshly-locked row (the instance from the
+		// API layer is a stale read via GetInstanceByUUID, taken without a lock). Read the
+		// status straight off lockedInstance; leave the preloaded associations on instance intact.
+		if lockedInstance.Status != model.InstanceStatusShutoff && lockedInstance.Status != model.InstanceStatusRunning && lockedInstance.Status != model.InstanceStatusPaused {
+			logger.Infof("Skip instance %d: status %s is not migratable", instance.ID, lockedInstance.Status)
 			continue
 		}
+		// Use the freshly-locked source hypervisor for the rest of the flow.
+		instance.Hyper = lockedInstance.Hyper
 		sourceHyper := &model.Hyper{Hostid: instance.Hyper}
 		err = db.Where(sourceHyper).Take(sourceHyper).Error
 		if err != nil {
