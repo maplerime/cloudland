@@ -63,8 +63,6 @@ if [ -z "$wds_address" ]; then
     echo "|:-COMMAND-:| create_volume_local '$SCI_CLIENT_ID' '$vol_ID' 'local://${vm_ID}.disk' '$vol_state' 'success'"
 else
     get_wds_token
-    # default the system-disk copy_clone threshold (GB) if the config is unset/empty
-    if [ -z "$wds_copy_clone_threshold" ]; then wds_copy_clone_threshold=1024; fi
     image=$(basename $img_name .raw)
     old_vhost_name=$(basename $(ls /var/run/wds/instance-$ID-volume-$vol_ID-*))
     vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$old_vhost_name" | jq -r '.vhosts[0].id')
@@ -79,83 +77,33 @@ else
         pool_prefix=$(get_uuid_prefix "$pool_ID")
         image=${image}-${pool_prefix}
     fi
-    # ensure a fresh vhost name distinct from the old one (needed by both branches)
-    for i in {1..10}; do
-        vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
-        [ "$vhost_name" != "$old_vhost_name" ] && break
-    done
-    if [ "$disk_size" -lt "$wds_copy_clone_threshold" ]; then
-        # ---- linked clone path (system disk < threshold): unchanged behaviour ----
-        is_copy_clone=false
-        log_debug $vol_ID "reinstall: system disk $disk_size GB < threshold $wds_copy_clone_threshold GB, using linked clone"
-        snapshot_name=${image}-${snapshot}
+    snapshot_name=${image}-${snapshot}
+    read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
+    if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
+	    snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
         read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
         if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-            snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
-            read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
-            if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-                # error handling: image snapshot could not be created
-                log_debug $vol_ID "reinstall: failed to create image snapshot $snapshot_name: $snapshot_ret"
-                echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create image snapshot, $snapshot_ret' '$is_copy_clone'"
-                exit -1
-            fi
-            wds_curl DELETE "api/v2/sync/block/snaps/$image-$(($snapshot-1))?force=false"
-        fi
-        volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
-        volume_id=$(echo $volume_ret | jq -r .id)
-        if [ -z "$volume_id" -o "$volume_id" = null ]; then
-            # error handling: linked clone volume creation failed
-            log_debug $vol_ID "reinstall: failed to create linked clone from snapshot $snapshot_name: $volume_ret"
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create boot volume based on snapshot $snapshot_name, $volume_ret!' '$is_copy_clone'"
+            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create image snapshot, $snapshot_ret'"
             exit -1
         fi
-        log_debug $vol_ID "reinstall: linked clone volume $volume_id created for boot disk"
-    else
-        # ---- copy_clone path (system disk >= threshold): independent volume from image volume ----
-        is_copy_clone=true
-        log_debug $vol_ID "reinstall: system disk $disk_size GB >= threshold $wds_copy_clone_threshold GB, using copy_clone from image volume $image_volume_id"
-        # error handling: copy_clone needs a valid source image volume id
-        if [ -z "$image_volume_id" -o "$image_volume_id" = null ]; then
-            log_debug $vol_ID "reinstall: image_volume_id is empty, cannot copy_clone boot volume"
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'image_volume_id is empty, cannot copy_clone boot volume' '$is_copy_clone'"
-            exit -1
-        fi
-        # interface D: copy_clone directly from the image volume (no snapshot); phy_pool_id = the resolved pool_ID (same pool as the source image), speed=128
-        clone_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$image_volume_id/copy_clone" "{\"name\": \"$vhost_name\", \"phy_pool_id\": \"$pool_ID\", \"speed\": 128}")
-        read -d'\n' -r task_id ret_code message < <(jq -r ".task_id, .ret_code, .message" <<<$clone_ret)
-        # error handling: copy_clone task must be accepted
-        if [ "$ret_code" != "0" -o -z "$task_id" -o "$task_id" = null ]; then
-            log_debug $vol_ID "reinstall: failed to start copy_clone from image volume $image_volume_id: $clone_ret"
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to copy_clone boot volume from image volume $image_volume_id, $clone_ret' '$is_copy_clone'"
-            exit -1
-        fi
-        log_debug $vol_ID "reinstall: copy_clone task $task_id started for boot volume, polling for completion"
-        # poll the copy_clone task (reference: async_job/clone_image.sh); 150 x 5s ~= 750s timeout
-        clone_state=error
-        for i in {1..150}; do
-            st=$(wds_curl GET "api/v2/sync/block/volumes/tasks/$task_id" | jq -r .task.state)
-            [ "$st" = "TASK_COMPLETE" ] && clone_state=done && break
-            [ "$st" = "TASK_FAILED" ] && clone_state=error && break
-            sleep 5
-        done
-        log_debug $vol_ID "reinstall: copy_clone task $task_id finished with state $clone_state"
-        # reverse-lookup the new volume id AND its size in one call (id and volume_size are siblings in the response)
-        read -d'\n' -r volume_id volume_size < <(wds_curl GET "api/v2/sync/block/volumes?name=$vhost_name" | jq -r '.volumes[0] | "\(.id) \(.volume_size)"')
-        # error handling: on failure/timeout, delete the orphan volume then report error
-        if [ "$clone_state" != "done" -o -z "$volume_id" -o "$volume_id" = null ]; then
-            log_debug $vol_ID "reinstall: copy_clone task $task_id failed or timed out, deleting orphan volume $volume_id"
-            [ -n "$volume_id" -a "$volume_id" != null ] && wds_curl DELETE "api/v2/sync/block/volumes/$volume_id?force=true"
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'copy_clone task $task_id failed or timed out for boot volume' '$is_copy_clone'"
-            exit -1
-        fi
-        [ -z "$volume_size" -o "$volume_size" = null ] && volume_size=0
-        log_debug $vol_ID "reinstall: copy_clone produced independent volume $volume_id with size $volume_size"
+        wds_curl DELETE "api/v2/sync/block/snaps/$image-$(($snapshot-1))?force=false"
+    fi
+
+    for i in {1..10}; do
+        vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
+	      [ "$vhost_name" != "$old_vhost_name" ] && break
+    done
+    volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
+    volume_id=$(echo $volume_ret | jq -r .id)
+    if [ -z "$volume_id" -o "$volume_id" = null ]; then
+        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create boot volume based on snapshot $snapshot_name, $volume_ret!'"
+        exit -1
     fi
     if [ "$fsize" -gt "$volume_size" ]; then
         expand_ret=$(wds_curl PUT "api/v2/sync/block/volumes/$volume_id/expand" "{\"size\": $fsize}")
         ret_code=$(echo $expand_ret | jq -r .ret_code)
         if [ "$ret_code" != "0" ]; then
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret' '$is_copy_clone'"
+            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to expand boot volume to size $fsize, $expand_ret'"
             exit -1
         fi
     fi
@@ -170,11 +118,11 @@ else
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
-        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!' '$is_copy_clone'"
+        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'failed to create wds vhost for boot volume, $vhost_ret, $uss_ret!'"
         exit -1
     fi
     vol_state=attached
-    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'success' '$is_copy_clone'"
+    echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' 'wds_vhost://$pool_ID/$volume_id' 'success'"
 fi
 
 [ -z "$vm_mem" ] && vm_mem='1024m'
