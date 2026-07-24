@@ -72,6 +72,15 @@ else
     log_debug $ID "source_migration.sh: VM shutdown/destroy completed"
 fi
 
+# The VM has now left this host (warm: migrated away; cold: shut off), so its
+# tap is gone. Clear the leftover per-vnic security-group rules (iptables/nft/
+# ipset) so they don't linger; on rollback the VM is re-applied cleanly.
+count=$(xmllint --xpath 'count(/domain/devices/interface)' $xml_dir/$vm_ID/${vm_ID}.xml 2>/dev/null)
+for (( i=1; i <= ${count:-0}; i++ )); do
+    vif_dev=$(xmllint --xpath "string(/domain/devices/interface[$i]/target/@dev)" $xml_dir/$vm_ID/${vm_ID}.xml 2>/dev/null)
+    [ -n "$vif_dev" ] && ./clear_sg_chain.sh "$vif_dev" "true"
+done
+
 state="source_prepared"
 log_debug $ID "source_migration.sh: Migration preparation completed, reporting state=$state"
 echo "|:-COMMAND-:| migrate_vm.sh '$migration_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
