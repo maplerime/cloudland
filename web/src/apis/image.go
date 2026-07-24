@@ -404,3 +404,34 @@ func (v *ImageAPI) getImageStorageResponse(ctx context.Context, storage *model.I
 	}
 	return
 }
+
+type ImageExportPayload struct {
+	StorageID int64 `json:"storage_id" binding:"required"`
+}
+
+// @Summary export an image
+// @Description export an image to a file on the USS node; poll /api/v1/tasks/{task_id} for status
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id      path string             true "Image UUID"
+// @Param   message body ImageExportPayload true "Export payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /images/{id}/export [post]
+func (v *ImageAPI) Export(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	payload := &ImageExportPayload{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	task, err := imageAdmin.Export(ctx, uuID, payload.StorageID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to export image", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"task_id": task.UUID})
+}

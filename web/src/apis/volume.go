@@ -392,3 +392,24 @@ func (v *VolumeAPI) getVolumeResponse(ctx context.Context, volume *model.Volume)
 	}
 	return volumeResp, nil
 }
+
+// @Summary export a volume
+// @Description export a volume to a file on the USS node; poll /api/v1/tasks/{task_id} for status
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id path string true "Volume UUID"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /volumes/{id}/export [post]
+func (v *VolumeAPI) Export(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	task, err := volumeAdmin.Export(ctx, uuID)
+	if err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to export volume", err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"task_id": task.UUID})
+}
