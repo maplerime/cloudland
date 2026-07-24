@@ -88,13 +88,8 @@ func CreateVolumeLocal(ctx context.Context, args []string) (status string, err e
 	return
 }
 
-// CreateVolumeWDSVhost handles the create_volume_wds_vhost callback emitted by
-// launch_vm.sh / reinstall_vm.sh / create_volume_wds_vhost.sh. It updates the volume
-// record (path, status, pool_id) and the is_copy_clone flag.
-// args layout: [cmd, volID, status, path, reason, is_copy_clone].
-// Returns the volume status string and an error if the volume/instance update fails.
 func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, err error) {
-	//|:-COMMAND-:| create_volume_wds_vhost.sh 5 available wds_vhost://1/2 reason false
+	//|:-COMMAND-:| create_volume_wds_vhost.sh 5 available wds_vhost://1/2 reason
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {
@@ -103,8 +98,7 @@ func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	}()
 	logger.Debug("CreateVolumeWDSVhost", args)
 	argn := len(args)
-	// args: [cmd, volID, status, path, reason, is_copy_clone]; all callers now append is_copy_clone.
-	if argn < 6 {
+	if argn < 5 {
 		err = fmt.Errorf("Wrong params")
 		logger.Error("Invalid args", err)
 		return
@@ -122,11 +116,7 @@ func CreateVolumeWDSVhost(ctx context.Context, args []string) (status string, er
 	}
 	status = args[2]
 	path := args[3]
-	// args[5] is the copy_clone flag emitted by launch_vm.sh / reinstall_vm.sh / create_volume_wds_vhost.sh.
-	// true => independent copy_clone volume; false => linked clone (data disks always false).
-	isCopyClone := args[5] == "true"
-	logger.Debug("CreateVolumeWDSVhost isCopyClone", isCopyClone)
-	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status, "is_copy_clone": isCopyClone}).Error
+	err = db.Model(&volume).Updates(map[string]interface{}{"path": path, "status": status}).Error
 	if err != nil {
 		logger.Error("Update volume status failed", err)
 		return
