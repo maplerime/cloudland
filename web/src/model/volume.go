@@ -63,21 +63,22 @@ type Volume struct {
 		WDS ISCSI: wds_iscsi://<pool-id>/<volume-id>
 		The volume driver is the name of the driver that is used to create the volume.
 	*/
-	Path       string `gorm:"type:varchar(256)"`
-	Size       int32
-	Booting    bool
-	Format     string       `gorm:"type:varchar(32)"`
-	Status     VolumeStatus `gorm:"type:varchar(32)"`
-	Target     string       `gorm:"type:varchar(32)"`
-	Href       string       `gorm:"type:varchar(256)"`
-	InstanceID int64
-	Instance   *Instance `gorm:"foreignkey:InstanceID"`
-	IopsLimit  int32
-	IopsBurst  int32
-	BpsLimit   int32
-	BpsBurst   int32
-	PoolID     string `gorm:"type:varchar(128)"`
-	Hyper      int32  `gorm:"default:-1"`
+	Path        string `gorm:"type:varchar(256)"`
+	Size        int32
+	Booting     bool
+	IsCopyClone bool         `gorm:"default:false"`
+	Format      string       `gorm:"type:varchar(32)"`
+	Status      VolumeStatus `gorm:"type:varchar(32)"`
+	Target      string       `gorm:"type:varchar(32)"`
+	Href        string       `gorm:"type:varchar(256)"`
+	InstanceID  int64
+	Instance    *Instance `gorm:"foreignkey:InstanceID"`
+	IopsLimit   int32
+	IopsBurst   int32
+	BpsLimit    int32
+	BpsBurst    int32
+	PoolID      string `gorm:"type:varchar(128)"`
+	Hyper       int32  `gorm:"default:-1"`
 }
 
 func (v *Volume) IsBusy() bool {
