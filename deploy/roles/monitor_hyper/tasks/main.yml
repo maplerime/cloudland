@@ -273,6 +273,11 @@
     enabled: yes
     state: started
   tags: [monitor]
+- name: Check if boot_reason_detector.sh exists
+  stat:
+    path: /opt/cloudland/scripts/monitor/boot_reason_detector.sh
+  register: boot_reason_detector_script
+  tags: [monitor]
 
 - name: Deploy systemd service for boot-reason-detector
   become: true
@@ -295,6 +300,7 @@
     owner: root
     group: root
     mode: '0644'
+  when: boot_reason_detector_script.stat.exists
   tags: [monitor]
 
 - name: Reload systemd and enable boot-reason-detector
@@ -308,4 +314,5 @@
         name: boot-reason-detector
         enabled: yes
         state: started
+  when: boot_reason_detector_script.stat.exists
   tags: [monitor]
