@@ -77,13 +77,40 @@ Negligible on the node's data plane, and strictly cheaper than a sniffer:
 - **Userspace CPU** scales with probe rate only; the refresh thread is one
   `ipset save` fork every `ARPREPLY_REFRESH` s.
 
+### Proxy-ARP mode (empty `ARPREPLY_PROBE_SRC`)
+
+With an empty probe source the nft rule drops its `arp saddr ip` match, so
+**every** ARP who-has on the bridge `forward` path is queued — arpreply then
+answers (and drops) any who-has for a local VM IP, and ACCEPTs the rest. This
+turns it into a general proxy-ARP / ARP-suppression agent.
+
+Efficiency changes only for **ARP**, not data:
+
+- **Non-ARP (all VM data)**: unchanged — still the single `ether type 0x0806`
+  ethertype gate; nothing extra is queued.
+- **ARP who-has**: now *all* of it takes an inline NFQUEUE round-trip
+  (kernel→userspace→verdict, ~µs–tens of µs each, dominated by the context
+  switch, not the O(1) dict lookup). Cost scales with the segment's total ARP
+  request rate, which is far higher than arphole's ~hundreds/s probe stream —
+  and arpreply is now on the **critical path of all ARP resolution** (even
+  non-owned who-has pays the detour before being accepted).
+- **Overload / floods**: `queue ... bypass` still applies — if the queue fills,
+  excess who-has is ACCEPTed (floods normally, VM answers), so ARP resolution
+  and the data plane never stall.
+- **Upside**: owned-IP who-has is answered authoritatively and dropped before
+  reaching VM taps, cutting ARP broadcast flooding toward VMs.
+
+Rule of thumb: keep the default `192.0.2.100` unless you specifically want
+node-wide ARP suppression; empty mode trades a small, ARP-rate-proportional
+CPU/latency cost for that behavior.
+
 ## Configuration
 
 All knobs are CLI flags (`--probe-src`, `--queue-num`, …) or matching env vars:
 
 | Env var               | Default     | Meaning                                        |
 | --------------------- | ----------- | ---------------------------------------------- |
-| `ARPREPLY_PROBE_SRC`  | 192.0.2.100 | Only intercept/answer probes from this ARP sender IP (must match arphole). |
+| `ARPREPLY_PROBE_SRC`  | 192.0.2.100 | Only intercept/answer who-has from this ARP sender IP (must match arphole). **Set empty to answer who-has from ANY source** — general proxy-ARP for local VM IPs (see note below). |
 | `ARPREPLY_QUEUE_NUM`  | 40          | NFQUEUE number the nft rule dispatches to.     |
 | `ARPREPLY_REFRESH`    | 15          | Seconds between ipset ownership-map rebuilds.  |
 | `ARPREPLY_LOG`        | INFO        | Log level.                                     |
@@ -106,13 +133,13 @@ Directly:
 sudo python3 arpreply.py
 ```
 
-Via the launcher (edit `start.sh` or override env vars):
+Via the launcher (edit `arpreply.sh` or override env vars):
 
 ```bash
-sudo ./start.sh
+sudo ./arpreply.sh
 ```
 
-Via systemd (`arpreply.service` points at `/opt/arpreply/start.sh`):
+Via systemd (`arpreply.service` points at `/opt/arpreply/arpreply.sh`):
 
 ```bash
 sudo cp arpreply.service /etc/systemd/system/

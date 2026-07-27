@@ -16,7 +16,7 @@ cd "$(dirname "$0")"
 
 # --- configuration (override with env vars if desired) -----------------------
 : "${ARPREPLY_LOG:=INFO}"
-: "${ARPREPLY_PROBE_SRC:=192.0.2.100}"   # match arphole's probe source IP
+: "${ARPREPLY_PROBE_SRC:=}"   # match arphole's probe source IP
 : "${ARPREPLY_QUEUE_NUM:=40}"            # NFQUEUE number the nft rule uses
 : "${ARPREPLY_REFRESH:=15}"              # ipset ownership rebuild interval (s)
 
