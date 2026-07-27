@@ -231,9 +231,11 @@ class ArpReply:
         self.probe_src = probe_src
         self.queue_num = queue_num
         self.refresh_interval = refresh_interval
-        # Requester IP is always the probe source (the nft rule guarantees it);
-        # its wire bytes are constant — precompute for the spa re-check + reply.
-        self._probe_src_b = _ip_to_bytes(probe_src)
+        # Empty probe_src => answer who-has from ANY source (general proxy-ARP
+        # for local VM IPs); otherwise only from this one sender IP (arphole's
+        # probe source). match_all drives both the nft rule and the spa check.
+        self.match_all = not probe_src
+        self._probe_src_b = None if self.match_all else _ip_to_bytes(probe_src)
         # ip -> IpEntry, rebuilt periodically. Guarded by _lock. Lookups are by
         # IP because the frame is untagged on the bridge; the stored VLAN says
         # which br<vlan> to answer on.
@@ -307,20 +309,23 @@ class ArpReply:
     def _install_nft(self) -> bool:
         """Idempotently install our queue rule. flush+re-add avoids stacking."""
         t = _NFT_TABLE
+        # Empty probe_src drops the saddr match, so ALL ARP who-has is queued.
+        saddr = "" if self.match_all else "arp saddr ip %s " % self.probe_src
         script = (
             "add table bridge {t}\n"
             "add chain bridge {t} forward "
             "{{ type filter hook forward priority -10 ; policy accept ; }}\n"
             "flush chain bridge {t} forward\n"
             "add rule bridge {t} forward ether type 0x0806 arp operation request "
-            "arp saddr ip {src} queue num {q} bypass\n"
-        ).format(t=t, src=self.probe_src, q=self.queue_num)
+            "{saddr}queue num {q} bypass\n"
+        ).format(t=t, saddr=saddr, q=self.queue_num)
         ok = _nft_load(script)
         if ok:
             logger.info(
                 "installed nft queue rule: bridge %s forward -> queue %d "
-                "(arp request saddr %s)",
-                t, self.queue_num, self.probe_src,
+                "(arp request %s)",
+                t, self.queue_num,
+                "any source" if self.match_all else "saddr %s" % self.probe_src,
             )
         return ok
 
@@ -343,10 +348,10 @@ class ArpReply:
             if len(arp) < 28 or arp[6:8] != _ARP_OP_REQUEST:
                 pkt.accept()
                 return
-            sha = arp[8:14]       # requester (arphole) MAC
-            spa = arp[14:18]      # requester IP (must be the probe source)
+            sha = arp[8:14]       # requester MAC
+            spa = arp[14:18]      # requester IP (== probe source unless match_all)
             tpa = arp[24:28]      # queried target IP (the VM IP)
-            if spa != self._probe_src_b:
+            if not self.match_all and spa != self._probe_src_b:
                 pkt.accept()
                 return
             target_ip = "%d.%d.%d.%d" % (tpa[0], tpa[1], tpa[2], tpa[3])
@@ -432,8 +437,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--probe-src",
         default=os.environ.get("ARPREPLY_PROBE_SRC", _PROBE_SRC_IP),
-        help="only intercept/answer requests whose ARP sender IP equals this "
-        "(env: ARPREPLY_PROBE_SRC, default: %s)" % _PROBE_SRC_IP,
+        help="only intercept/answer requests whose ARP sender IP equals this; "
+        "set EMPTY to answer who-has from ANY source (general proxy-ARP for "
+        "local VM IPs) (env: ARPREPLY_PROBE_SRC, default: %s)" % _PROBE_SRC_IP,
     )
     p.add_argument(
         "--queue-num",
