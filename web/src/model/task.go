@@ -42,6 +42,7 @@ const (
 	TaskActionBackup   TaskAction = "backup"
 	TaskActionSnapshot TaskAction = "snapshot"
 	TaskActionRestore  TaskAction = "restore"
+	TaskActionExport   TaskAction = "export"
 )
 
 type Task struct {

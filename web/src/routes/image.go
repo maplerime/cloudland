@@ -742,3 +742,131 @@ func (v *ImageView) Patch(c *macaron.Context, store session.Store) {
 	c.Redirect(redirectTo)
 	return
 }
+
+func (a *ImageAdmin) Export(ctx context.Context, imageUUID string, storageID int64) (task *model.Task, err error) {
+	image, err := a.GetImageByUUID(ctx, imageUUID)
+	if err != nil {
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.ValidateOwner(model.Writer, image.Owner) {
+		err = NewCLError(ErrPermissionDenied, "not authorized to export the image", nil)
+		return
+	}
+	if image.StorageType == "local" {
+		err = NewCLError(ErrExportCreationFailed, "export not supported for local storage images", nil)
+		return
+	}
+
+	db := DB()
+	storage := &model.ImageStorage{}
+	if err = db.Where("image_id = ? AND id = ?", image.ID, storageID).Take(storage).Error; err != nil {
+		err = NewCLError(ErrImageNotFound, "image storage not found", err)
+		return
+	}
+	if storage.Status != model.StorageStatusSynced {
+		err = NewCLError(ErrExportInvalidState,
+			fmt.Sprintf("image storage is not synced, current status: %s", storage.Status), nil)
+		return
+	}
+
+	ctx, db, newTransaction := StartTransaction(ctx)
+	defer func() {
+		if newTransaction {
+			EndTransaction(ctx, err)
+		}
+	}()
+
+	task = &model.Task{
+		Owner:     memberShip.OrgID,
+		Name:      fmt.Sprintf("export_image_%s", image.UUID),
+		Summary:   fmt.Sprintf("Exporting image %s (%s) from storage %d", image.Name, image.UUID, storageID),
+		Status:    model.TaskStatusRunning,
+		Source:    model.TaskSourceManual,
+		Action:    model.TaskActionExport,
+		Resources: "image:" + image.UUID,
+	}
+	if err = db.Create(task).Error; err != nil {
+		err = NewCLError(ErrDatabaseError, "failed to create task record", err)
+		return
+	}
+
+	control, err := GetWDSControl(ctx)
+	if err != nil {
+		return
+	}
+	command := fmt.Sprintf(
+		"/opt/cloudland/scripts/backend/export_wds_vhost.sh '%d' 'image' '%s'",
+		task.ID, storage.VolumeID,
+	)
+	err = HyperExecute(ctx, control, command)
+	return
+}
+
+func (v *ImageView) ExportNew(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	id := c.Params("id")
+	imageID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	image, err := imageAdmin.Get(ctx, int64(imageID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	_, storages, err := imageStorageAdmin.List(0, -1, "", image, "")
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusInternalServerError, "error")
+		return
+	}
+	c.Data["Image"] = image
+	c.Data["Storages"] = storages
+	c.Data["Link"] = fmt.Sprintf("/images/%d/export", imageID)
+	c.HTML(200, "image_export_new")
+}
+
+func (v *ImageView) Export(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	memberShip := GetMemberShip(ctx)
+	permit := memberShip.CheckPermission(model.Writer)
+	if !permit {
+		logger.Error("Not authorized for this operation")
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	id := c.Params("id")
+	imageID, err := strconv.Atoi(id)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	image, err := imageAdmin.Get(ctx, int64(imageID))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	storageID := c.QueryInt64("storage_id")
+	_, err = imageAdmin.Export(ctx, image.UUID, storageID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect("/tasks")
+}

@@ -34,6 +34,9 @@ func RunScheduler() (err error) {
 		checkAndRunTasks()
 	})
 
+	// Register export watchdog: cleans up stuck exports every 30 minutes
+	RegisterExportWatchdog(s)
+
 	// Start the scheduler (blocking — keeps the goroutine alive)
 	s.StartBlocking()
 	return

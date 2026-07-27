@@ -26,6 +26,7 @@
                                         <option value="control_node">{{.i18n.Tr "Control_Node"}}</option>
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
                                         <option value="hypervisor_resource">{{.i18n.Tr "Node_Hypervisor_Resource"}}</option>
+                                        <option value="node_reboot">{{.i18n.Tr "Node_Reboot_Detection"}}</option>
                                         <option value="packet_drop">{{.i18n.Tr "Packet_Drop"}}</option>
 										<option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
 										<option value="ipgroup_available_ip">{{.i18n.Tr "IP_Group_Available_IP"}}</option>
@@ -105,6 +106,9 @@ document.addEventListener('DOMContentLoaded', function() {
             "zone2_threshold": 1.0,
             "zone2_coefficient": 256,
             "for_duration": "5m"
+        },
+        'node_reboot': {
+            "reboot_detect_window": 3600
         },
         'packet_drop': {
             "for_duration": "1m",

@@ -236,3 +236,41 @@
 
   when: is_current_in_cland
   tags: [monitor, cloudland_exporter]
+
+- name: Deploy systemd service for boot-reason-detector
+  become: true
+  copy:
+    dest: /etc/systemd/system/boot-reason-detector.service
+    content: |
+      [Unit]
+      Description=Detect and classify the reason for the most recent host reboot
+      After=network.target
+
+      [Service]
+      Type=oneshot
+      User=root
+      ExecStart=/opt/cloudland/scripts/monitor/boot_reason_detector.sh
+      StandardOutput=journal
+      StandardError=journal
+
+      [Install]
+      WantedBy=multi-user.target
+    owner: root
+    group: root
+    mode: '0644'
+  when: is_current_in_cland
+  tags: [monitor]
+
+- name: Reload systemd and enable boot-reason-detector
+  become: true
+  block:
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+    - name: Enable and start boot-reason-detector
+      systemd:
+        name: boot-reason-detector
+        enabled: yes
+        state: started
+  when: is_current_in_cland
+  tags: [monitor]
