@@ -56,6 +56,15 @@ const (
 	ErrMemberUpdateFailed   ErrCode = 100302
 	ErrMemberDeleteFailed   ErrCode = 100303
 
+	// API Key related errors (1004xx)
+	ErrAPIKeyNotFound       ErrCode = 100400
+	ErrAPIKeyCreationFailed ErrCode = 100401
+	ErrAPIKeyUpdateFailed   ErrCode = 100402
+	ErrAPIKeyDeleteFailed   ErrCode = 100403
+	ErrAPIKeyExpired        ErrCode = 100404
+	ErrAPIKeyDisabled       ErrCode = 100405
+	ErrAPIKeyInvalid        ErrCode = 100406
+
 	// Instance related errors (111xxx)
 	ErrInstanceNotFound           ErrCode = 111001
 	ErrInstanceCreationFailed     ErrCode = 111002

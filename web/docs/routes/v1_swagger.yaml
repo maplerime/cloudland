@@ -1,5 +1,58 @@
 basePath: /api/v1
 definitions:
+  apis.APIKeyListResponse:
+    properties:
+      api_keys:
+        items:
+          $ref: '#/definitions/apis.APIKeyResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.APIKeyPatchPayload:
+    properties:
+      disabled:
+        type: boolean
+    type: object
+  apis.APIKeyPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      expires_at:
+        type: string
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.APIKeyResponse:
+    properties:
+      api_key:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      disabled:
+        type: boolean
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.AddressInfo:
     properties:
       ip_address:
@@ -2683,6 +2736,143 @@ paths:
       summary: Synchronize all VM rule mappings
       tags:
       - alarm
+  /api_keys:
+    get:
+      consumes:
+      - application/json
+      description: list API keys for the current user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list API keys
+      tags:
+      - APIKey
+    post:
+      consumes:
+      - application/json
+      description: create a new API key; the plain-text key is returned once only
+      parameters:
+      - description: API key payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.APIKeyPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create an API key
+      tags:
+      - APIKey
+  /api_keys/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete an API key
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete an API key
+      tags:
+      - APIKey
+    get:
+      consumes:
+      - application/json
+      description: get an API key by UUID
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get an API key
+      tags:
+      - APIKey
+    patch:
+      consumes:
+      - application/json
+      description: enable or disable an API key
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Patch payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.APIKeyPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update an API key
+      tags:
+      - APIKey
   /backups:
     get:
       consumes:

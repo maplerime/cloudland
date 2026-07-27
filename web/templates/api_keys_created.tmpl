@@ -1,0 +1,49 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+            {{template "_left" .}}
+            <div class="twelve wide column content">
+                <h4 class="ui top attached header">
+                    {{.i18n.Tr "API Key Created"}}
+                </h4>
+                <div class="ui attached segment">
+                    <div class="ui warning message">
+                        <div class="header">{{.i18n.Tr "Save_Your_API_Key"}}</div>
+                        <p>{{.i18n.Tr "API_Key_Shown_Once"}}</p>
+                    </div>
+                    <div class="ui form">
+                        <div class="field">
+                            <label>{{.i18n.Tr "Name"}}</label>
+                            <input type="text" readonly value="{{.APIKey.Name}}">
+                        </div>
+                        <div class="field">
+                            <label>{{.i18n.Tr "API Key"}}</label>
+                            <div class="ui action input">
+                                <input id="plain-key" type="text" readonly value="{{.PlainKey}}">
+                                <button class="ui button" onclick="copyKey()">{{.i18n.Tr "Copy"}}</button>
+                            </div>
+                        </div>
+                        {{ if .APIKey.ExpiresAt }}
+                        <div class="field">
+                            <label>{{.i18n.Tr "Expires_At"}}</label>
+                            <input type="text" readonly value="{{.APIKey.ExpiresAt}}">
+                        </div>
+                        {{ end }}
+                    </div>
+                    <div style="margin-top:1em">
+                        <a class="ui blue button" href="/api_keys">{{.i18n.Tr "Back to API Keys"}}</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script>
+function copyKey() {
+    var el = document.getElementById('plain-key');
+    el.select();
+    document.execCommand('copy');
+}
+</script>
+{{template "_footer" .}}
