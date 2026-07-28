@@ -22,7 +22,8 @@ if [ ! -d /var/log/journal ] || [ -z "$(find /var/log/journal -mindepth 1 -maxde
   exit 0
 fi
 
-BOOT_COUNT=$(journalctl --utc --list-boots --no-pager 2>/dev/null | wc -l)
+# systemd 254+ prints a header row, so count only the indexed boot lines.
+BOOT_COUNT=$(journalctl --utc --list-boots --no-pager 2>/dev/null | grep -cE '^[[:space:]]*-?[0-9]+[[:space:]]')
 if [ "$BOOT_COUNT" -lt 2 ]; then
   {
     echo '# HELP node_last_boot_reason Classification of the most recent reboot'
