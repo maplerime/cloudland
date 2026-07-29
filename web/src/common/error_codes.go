@@ -126,10 +126,10 @@ const (
 	ErrBackupInvalidState                  ErrCode = 125107
 
 	// Export related errors (126xxx)
-	ErrExportNotFound          ErrCode = 126001
-	ErrExportCreationFailed    ErrCode = 126002
-	ErrExportInvalidState      ErrCode = 126003
-	ErrExportVolumeNotAvail    ErrCode = 126004 // volume must be available (not attached) to export
+	ErrExportNotFound       ErrCode = 126001
+	ErrExportCreationFailed ErrCode = 126002
+	ErrExportInvalidState   ErrCode = 126003
+	ErrExportVolumeNotAvail ErrCode = 126004 // volume must be available (not attached) to export
 
 	// Consistency Group related errors (1252xx)
 	ErrCGNotFound                  ErrCode = 125200
@@ -252,6 +252,7 @@ const (
 	ErrSecurityRuleDeleteFailed    ErrCode = 141011
 	ErrSecurityRuleCreateFailed    ErrCode = 141012
 	ErrSecurityRuleUpdateFailed    ErrCode = 141013
+	ErrSecurityRuleExists          ErrCode = 141014
 
 	// Image related errors (151xxx)
 	ErrImageNotFound            ErrCode = 151000
