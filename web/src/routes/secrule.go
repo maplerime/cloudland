@@ -161,6 +161,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
 		return
 	}
+	protocol = strings.ToLower(protocol)
 	// Validate before opening a transaction: an unusable port range must never
 	// reach the DB, where a zero would silently become the -1 column default.
 	if err = validateRulePorts(protocol, portMin, portMax); err != nil {
