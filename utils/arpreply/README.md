@@ -59,7 +59,7 @@ double-answers.
   IP-change signal; no blind periodic rescan is needed (`ARPREPLY_REFRESH` is an
   optional backstop, default off). Steady state is two stat-loops per tick with
   no rebuild; the ~3 ms/ISO extraction is paid only for changed VMs. The map
-  unions two on-host sources:
+  unions three on-host sources:
   1. **`sgas-<vnic>` ipsets** (`hash:ip,mac`, incl. secondary IPs) — one
      `ipset save` fork; VLAN from the vnic's `br<vlan>`.
   2. **Per-VM config-drive ISOs** under `cache/meta/<vm_ID>.iso` — the assigned
@@ -71,6 +71,16 @@ double-answers.
      300 live VMs is ~0.8 s regardless of how many dead-VM ISOs linger. Each
      surviving entry is still kept only if its MAC matches a **live tap** (which
      also supplies the VLAN from that tap's bridge).
+  3. **Manual `arpreply` override ipset** (optional) — a `hash:ip,mac` set for
+     special-case IPs an operator wants answered directly. The VLAN comes from
+     the entry's **comment** (`"25"` or `"vlan=25"`), or a live tap by MAC if
+     absent; an entry with neither is skipped (logged). These entries **take
+     precedence** over sgas/ISO. Example:
+
+     ```bash
+     ipset create arpreply hash:ip,mac comment -exist
+     ipset add arpreply 10.0.25.9,52:54:00:aa:bb:cc comment "25"
+     ```
 
   The reply frame is hand-packed (no scapy) — byte-identical to the scapy
   serialization, at ~1 µs/frame.

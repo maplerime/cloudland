@@ -27,15 +27,17 @@ fail-safe against the tool being absent (distinct from the per-packet DROP
 verdict above). Because only matched probes reach the rule, VM data traffic
 never enters userspace: zero data-plane cost.
 
-Ownership (the full local-VM IP list) is unioned from two on-host sources,
-rebuilt every REFRESH_INTERVAL seconds:
+Ownership (the full local-VM IP list) is unioned from three on-host sources,
+rebuilt on VM/ISO change:
   1. the `sgas-<vnic>` anti-spoofing ipsets (ip,mac incl. secondary IPs); VLAN
-     from the vnic's `br<vlan>`, and
+     from the vnic's `br<vlan>`,
   2. the per-VM config-drive ISOs under cache/meta (assigned ip<->mac from
      network_data.json) — the ONLY on-host source for allow_spoofing VMs, which
      have no sgas set. Each ISO entry is kept only if its MAC matches a LIVE tap
      (dropping stale ISOs of deleted VMs), and the VLAN comes from that tap's
-     bridge. Reading ISOs needs `isoinfo` (from genisoimage/cdrtools).
+     bridge. Reading ISOs needs `isoinfo` (from genisoimage/cdrtools), and
+  3. an optional manual `arpreply` override ipset for special-case IPs (VLAN
+     from the entry's comment); these take precedence.
 The reply is sent untagged on `br<vlan>`; `v-<vlan>` re-tags it toward the
 trunk. NOTE: a truly-spoofed IP an allow_spoofing VM uses but was never
 assigned is unknowable here — with ipset-miss => DROP it would be blackholed.
@@ -84,6 +86,14 @@ _NFT_TABLE = "arpreply"
 
 # Prefix of the per-vnic anti-spoofing ipsets created by create_sg_chain.sh.
 _IPSET_PREFIX = "sgas-"
+
+# Optional manual override ipset (type hash:ip,mac, ideally with `comment`):
+# operators add special-case IPs here and arpreply answers for them. The VLAN
+# comes from the entry's comment ("25" or "vlan=25"); if absent it's inferred
+# from a live tap with that MAC. Entries here take precedence over sgas/ISO.
+#   ipset create arpreply hash:ip,mac comment -exist
+#   ipset add arpreply 10.0.25.9,52:54:00:aa:bb:cc comment "25"
+_OVERRIDE_SET = "arpreply"
 
 # Per-VM config-drive ISOs (build_meta.sh writes <vm_ID>.iso here, containing
 # openstack/latest/network_data.json with the assigned IP<->MAC — present even
@@ -262,6 +272,25 @@ def _meta_signature() -> frozenset[tuple[str, float]] | None:
     return frozenset(sig)
 
 
+def _comment_vlan(comment: str) -> int | None:
+    """VLAN id from an ipset comment: accepts "25" or "vlan=25". None else."""
+    c = comment.strip().strip('"').strip()
+    if c.isdigit():
+        return int(c)
+    m = re.fullmatch(r"vlan=(\d+)", c)
+    return int(m.group(1)) if m else None
+
+
+def _override_signature() -> frozenset[str]:
+    """Fingerprint of the manual `arpreply` override ipset's members, so a
+    change to it triggers an ownership rebuild (it changes neither the virsh
+    domain set nor any ISO mtime). Empty if the set doesn't exist."""
+    return frozenset(
+        ln for ln in _run(["ipset", "save", _OVERRIDE_SET]).splitlines()
+        if ln.startswith("add ")
+    )
+
+
 def _mac_tail(mac: str) -> str:
     """MAC minus its first octet (octets 2-6), lowercased. A VM's tap device
     MAC is the VM MAC with the first octet forced to 0xfe, so octets 2-6 are
@@ -341,7 +370,7 @@ def build_owner_map(
     domains: frozenset[str] | None = None,
 ) -> dict[tuple[int, str], OwnerEntry]:
     """Build the full (vlan, ip) -> (mac, mac_bytes, ip_bytes) map of local VM
-    IPs, from two sources unioned:
+    IPs, from three sources unioned:
 
       1. sgas-* ipsets (anti-spoofing ip,mac pairs, incl. secondary IPs). VLAN
          comes from the vnic's br<vlan>; a set whose vnic is gone self-filters.
@@ -350,25 +379,37 @@ def build_owner_map(
          VMs, which have no sgas set. Each ISO entry is kept only if its MAC
          matches a LIVE tap (so stale ISOs from deleted VMs are dropped), and
          the VLAN is taken from that tap's bridge.
+      3. the manual `arpreply` override ipset (see _OVERRIDE_SET) — special-case
+         IPs an operator wants answered. VLAN from the entry's comment, else a
+         live tap by MAC. These take PRECEDENCE over 1 and 2.
 
     When `domains` (running libvirt domain names) is given, ISOs whose vm_ID is
     not a running domain are skipped BEFORE extraction — so isoinfo forks track
     live VM count, not the total (possibly stale-heavy) file count. domains=None
     (virsh unavailable) falls back to scanning every ISO (live-tap filter still
-    guards correctness). sgas wins on conflict.
+    guards correctness).
     """
     owned: dict[tuple[int, str], OwnerEntry] = {}
-    # --- source 1: sgas ipsets ---
+    overrides: list[tuple[str, str, int | None]] = []  # (ip, mac, comment_vlan)
+    # --- source 1: sgas ipsets (+ collect manual arpreply overrides) ---
     vlan_cache: dict[str, int | None] = {}
     for line in _run(["ipset", "save"]).splitlines():
         parts = line.split()
         if len(parts) < 3 or parts[0] != "add":
             continue
         name = parts[1]
-        if not name.startswith(_IPSET_PREFIX):
-            continue
         m = _MEMBER_RE.match(parts[2])
         if not m:
+            continue
+        ip, mac = m.group(1), m.group(2).lower()
+        if name == _OVERRIDE_SET:
+            cv = None
+            if "comment" in parts:
+                i = parts.index("comment")
+                cv = _comment_vlan(" ".join(parts[i + 1:]))
+            overrides.append((ip, mac, cv))
+            continue
+        if not name.startswith(_IPSET_PREFIX):
             continue
         vnic = name[len(_IPSET_PREFIX):]
         if vnic not in vlan_cache:
@@ -376,7 +417,6 @@ def build_owner_map(
         vlan = vlan_cache[vnic]
         if vlan is None:
             continue
-        ip, mac = m.group(1), m.group(2).lower()
         owned[(vlan, ip)] = (mac, _mac_to_bytes(mac), _ip_to_bytes(ip))
     # --- source 2: config-drive ISOs, filtered by live taps ---
     taps = _live_taps()
@@ -406,6 +446,16 @@ def build_owner_map(
     # prune cache entries for ISOs that no longer exist
     for gone in [p for p in _iso_cache if p not in seen_paths]:
         _iso_cache.pop(gone, None)
+    # --- source 3: manual `arpreply` override set (wins over sgas/ISO) ---
+    for ip, mac, cv in overrides:
+        vlan = cv if cv is not None else taps.get(_mac_tail(mac))
+        if vlan is None:
+            logger.warning(
+                "arpreply override %s/%s skipped: no VLAN (add `comment \"<vlan>\"`)",
+                ip, mac,
+            )
+            continue
+        owned[(vlan, ip)] = (mac, _mac_to_bytes(mac), _ip_to_bytes(ip))
     return owned
 
 
@@ -494,24 +544,27 @@ class ArpReply:
           * the running-domain set (VM start/stop/add/remove), or
           * the config-drive ISO dir fingerprint — name+mtime — which changes
             on a new/removed ISO or a rebuilt one (a secondary-IP add rebuilds
-            the ISO via apply_second_ips.sh).
+            the ISO via apply_second_ips.sh), or
+          * the manual `arpreply` override ipset's members.
         virsh being unavailable, or the optional backstop interval, also force
-        a rebuild. Steady state is two cheap stat-loops per tick, no rebuild.
+        a rebuild. Steady state is a few cheap stat/fork checks per tick.
         """
-        last_doms = last_sig = None
+        last_doms = last_sig = last_osig = None
         last_full = 0.0
         first = True
         while not self._stop.is_set():
             try:
                 doms = _virsh_domains()
                 sig = _meta_signature()
+                osig = _override_signature()
                 now = time.monotonic()
                 backstop = (self.full_rebuild_interval > 0
                             and now - last_full >= self.full_rebuild_interval)
                 if (first or doms is None or doms != last_doms
-                        or sig != last_sig or backstop):
+                        or sig != last_sig or osig != last_osig or backstop):
                     self._refresh(doms)
-                    last_doms, last_sig, last_full, first = doms, sig, now, False
+                    last_doms, last_sig, last_osig = doms, sig, osig
+                    last_full, first = now, False
             except Exception:
                 logger.exception("owner map refresh failed")
             self._stop.wait(self.poll_interval)
