@@ -3,12 +3,16 @@
 cd $(dirname $0)
 source ../../cloudrc
 
-[ $# -lt 4 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <migration_type>"
+[ $# -lt 5 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <migration_type> <traffic_billing>"
 
 migrate_ID=$1
 task_ID=$2
 ID=$3
 migration_type=$4
+# Whether cloudland's shared DB already had this instance marked for traffic
+# billing before this migration started -- decided by clapi (migrate_vm.go),
+# not by this script.
+traffic_billing=$5
 vm_ID=inst-$ID
 echo $$ >$run_dir/${vm_ID}-$migrate_ID
 state="failed"
@@ -38,6 +42,11 @@ for i in {1..600}; do
         echo "Updating vm_instance_map metrics: adding VM $vm_ID to current hypervisor"
         ../generate_vm_instance_map.sh add $vm_ID
 
+        if [ "$traffic_billing" = "true" ]; then
+            echo "Updating vm_traffic_billing_map metrics: adding VM $vm_ID to current hypervisor"
+            ../generate_vm_traffic_billing_map.sh add $vm_ID
+        fi
+
         echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"
         exit 0
     fi
@@ -47,6 +56,8 @@ state="timeout"
 # Migration timeout, clean up metrics for VM
 echo "Migration timeout, cleaning up metrics for VM $vm_ID"
 ../generate_vm_instance_map.sh remove $vm_ID
+# Idempotent no-op if this VM was never marked for traffic billing
+../generate_vm_traffic_billing_map.sh remove $vm_ID
 
 virsh undefine --nvram $vm_ID
 rm -f ${cache_dir}/meta/${vm_ID}.iso

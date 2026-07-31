@@ -24,6 +24,7 @@ definitions:
         maxLength: 255
         type: string
       expires_at:
+        description: RFC-like "2006-01-02 15:04:05.000000" or empty for no expiry
         type: string
       name:
         maxLength: 64
@@ -2146,6 +2147,72 @@ definitions:
       summary:
         type: string
     type: object
+  apis.TrafficBillingCreateResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apis.TrafficBillingResponse'
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingDeleteResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apis.TrafficBillingInstanceRef'
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingErrorResponse:
+    properties:
+      code:
+        type: string
+      error:
+        type: string
+      instance_uuid:
+        type: string
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingInstanceRef:
+    properties:
+      instance_uuid:
+        type: string
+    type: object
+  apis.TrafficBillingListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/apis.TrafficBillingResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/apis.TrafficBillingMeta'
+    type: object
+  apis.TrafficBillingMeta:
+    properties:
+      current_page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  apis.TrafficBillingResponse:
+    properties:
+      created_at:
+        type: string
+      instance_uuid:
+        type: string
+      uuid:
+        type: string
+    type: object
+  apis.TrafficBillingSyncResponse:
+    properties:
+      message:
+        type: string
+      status:
+        type: string
+    type: object
   apis.UserListResponse:
     properties:
       limit:
@@ -2602,14 +2669,6 @@ definitions:
       STaskActionSnapshot: Create volume snapshot
       STaskActionStart: Start instance
       STaskActionStop: Stop instance gracefully
-    x-enum-descriptions:
-    - Stop instance gracefully
-    - Force stop instance
-    - Start instance
-    - Restart instance gracefully
-    - Force restart instance
-    - Create volume snapshot
-    - Create volume backup
     x-enum-varnames:
     - STaskActionStop
     - STaskActionHardStop
@@ -6208,6 +6267,179 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: get a task
+      tags:
+      - Compute
+  /traffic-billing:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        List the instances currently marked as traffic billing. The underlying
+        query applies no explicit ORDER BY, so ordering within a page is
+        whatever the DB returns. Admin permission required.
+
+        The same handler also serves GET /traffic-billing/{uuid}, a lookup of
+        one instance by its UUID. That variant ignores the paging and query
+        parameters below and returns the identical response shape with the one
+        matching entry in "data" plus a fixed meta of total/current_page/
+        per_page/total_pages = 1; an instance that is not marked comes back as
+        404 NOT_FOUND. It is not documented as a separate operation here
+        because one Go handler carries one annotation block.
+      parameters:
+      - default: 1
+        description: Page number, 1-based; values below 1 fall back to 1
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Entries per page, valid range 1-1000; out-of-range values fall
+          back to 20
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by instance UUID substring (SQL LIKE %query%); empty means
+          no filter
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingListResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'NOT_FOUND: only for the /{uuid} variant, instance is not marked
+            as traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB count or query failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: list traffic billing instances
+      tags:
+      - Compute
+  /traffic-billing/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: |-
+        Remove one instance's traffic-billing mark and tell its compute node
+        to stop exporting the instance's traffic metrics. An instance that was
+        never marked is rejected with NOT_FOUND rather than reported as a
+        successful no-op, so a typo'd UUID does not look like it worked.
+        Admin permission required.
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingDeleteResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'NOT_FOUND: instance is not currently marked as traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB delete or compute-node push failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: unmark an instance as traffic billing
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Mark one instance as traffic billing, then push the mapping to the
+        compute node hosting it so that node begins exporting the instance's
+        15-minute traffic metrics. Being called is the only signal: no
+        billing-type judgement happens server side. Takes no request body --
+        the instance UUID in the path is the entire input. Rejects an
+        instance that is already marked rather than silently succeeding, and
+        rejects one with no hypervisor assigned. Admin permission required.
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingCreateResponse'
+        "400":
+          description: 'INVALID_STATE: instance has no hypervisor assigned'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'INSTANCE_NOT_FOUND: no such instance'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "409":
+          description: 'ALREADY_MARKED: instance is already traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB write or compute-node push failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: mark an instance as traffic billing
+      tags:
+      - Compute
+  /traffic-billing/sync:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Push the complete set of instances that should be traffic billing from
+        the DB to every compute node at once, so each node rebuilds its local
+        traffic-billing map from that list. Use it to repair nodes that drifted
+        (missed a create/delete, or were rebuilt). Admin permission required.
+
+        Takes no request body and accepts no caller-supplied list: the DB is
+        always the source of truth, so "sync" only ever means DB-to-compute-node
+        here, never the reverse. Success means the broadcast was dispatched to
+        every node, not that every node has finished applying it.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingSyncResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB read or broadcast dispatch failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: broadcast the traffic billing list to all compute nodes
       tags:
       - Compute
   /users:

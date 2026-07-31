@@ -14,6 +14,7 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 )
 
 func init() {
@@ -347,8 +348,23 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				return
 			}
 		}
+		// Resolved here for the same reason as in migration.go's target_migration.sh
+		// dispatch: complete_migration.sh has no reliable local way to know whether
+		// this instance is marked for traffic billing.
+		//
+		// Best-effort lookup, NEVER a migration precondition -- see migration.go's
+		// matching comment for the full rationale. This is the second, independent
+		// chance to get the mark right: the add it drives on the target happens
+		// before finish_source_migration.sh removes the metric on the source, so a
+		// failure of the first lookup is repaired here.
+		trafficBilling := "false"
+		if marked, tbErr := routes.TrafficBillingIsMarked(db, instance.UUID); tbErr != nil {
+			logger.Error("Failed to query traffic billing mapping, defaulting to not-marked for this migration", tbErr)
+		} else if marked {
+			trafficBilling = "true"
+		}
 		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s'", migration.ID, taskID, instance.ID, migration.Type)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s' '%s'", migration.ID, taskID, instance.ID, migration.Type, trafficBilling)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute clear target failed", err)

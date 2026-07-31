@@ -89,6 +89,16 @@ function halfday_job()
     fi
 
     ./generate_vm_instance_map.sh full
+    # Different action name on purpose -- vm_traffic_billing_map has no "full".
+    # vm_instance_map's "full" rescans XML_DIR and truly rebuilds; the traffic
+    # billing metric is opt-in per VM, so rescanning XML_DIR there would wrongly
+    # mark every VM on this node. Its "gc" only re-validates domains already in
+    # its .prom file and can never add one back, so this call is a
+    # garbage-collection pass -- NOT a recovery mechanism for a lost .prom file.
+    # Rebuilding from the authoritative DB list is operator-triggered via clapi's
+    # BroadcastSync; see that function's comment for why there is no scheduled
+    # equivalent.
+    ./generate_vm_traffic_billing_map.sh gc
     echo "$current_halfday" > "$state_file"
 }
 

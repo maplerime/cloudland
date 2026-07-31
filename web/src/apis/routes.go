@@ -240,6 +240,12 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
 		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
 
+		authGroup.GET("/api/v1/traffic-billing", trafficBillingAPI.List)
+		authGroup.GET("/api/v1/traffic-billing/:uuid", trafficBillingAPI.List)
+		authGroup.POST("/api/v1/traffic-billing/sync", trafficBillingAPI.Sync)
+		authGroup.POST("/api/v1/traffic-billing/:uuid", trafficBillingAPI.Create)
+		authGroup.DELETE("/api/v1/traffic-billing/:uuid", trafficBillingAPI.Delete)
+
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{
 			metricsGroup.POST("/instances/cpu/his_data", monitorAPI.GetCPU)
