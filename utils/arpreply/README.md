@@ -35,31 +35,63 @@ double-answers.
   probe it locates the ARP header, reads `sha` (arphole's MAC), `spa`
   (=`192.0.2.100`) and `tpa` (the queried VM IP), then:
   - **owned** → hand-pack an `is-at` (`op=2`, `hwsrc` = VM MAC, `psrc` = VM IP)
-    **unicast to arphole**, send it untagged on `br<vlan>` over a raw socket,
-    and verdict **DROP**. The bridge already learned arphole's MAC on
-    `v-<vlan>` at ingress, so the reply egresses the uplink (re-tagged) toward
-    arphole; VM taps never see it.
-  - **not owned** → verdict **ACCEPT** (another node may own it / a VM can
-    answer for itself).
+    addressed to arphole, send it untagged **back out the interface the request
+    arrived on** (`pkt.physindev` = the `v-<vlan>` uplink), which tags it toward
+    the trunk — straight to the requester, **not flooded into the bridge/VMs** —
+    and verdict **DROP** so the VM never sees the probe. The rule is on the
+    bridge **`prerouting`** hook (fires once per frame, not once per output
+    port — see note), so the probe is dropped before flooding.
+  - **not owned** (ipset miss) → **DROP** (suppress the who-has), **unless** the
+    target IP is in the `arpreply-pass` ipset, in which case **ACCEPT** it (let
+    the router/gateway answer — see Floating IPs below).
+    ⚠️ Drop-on-miss is only safe when the rule is gated (`--vlans` / `--iface`)
+    to the `v-<vlan>` uplinks so it sees **trunk-inbound** probes only. On an
+    interface carrying VM-sourced who-has it blackholes ARP for every non-VM
+    destination not in `arpreply-pass` (other-node VMs, external hosts).
 
 - **Fail-safe**: the `bypass` flag means if this process is down **or the queue
   is full**, matched probes are ACCEPTed (flooded) and the VM answers itself.
   Stopping arpreply degrades gracefully to the pre-existing behavior.
 
-- **Ownership refresh** (every `ARPREPLY_REFRESH` s): rebuilds an `ip →
-  (vlan, mac)` map from the `sgas-<vnic>` anti-spoofing ipsets (type
-  `hash:ip,mac`) that the security-group machinery already maintains. The VLAN
-  comes from the vnic's bridge master (`br<vlan>`). A single `ipset save`
-  (one fork) is used, so hosts with many vnics rebuild cheaply. The reply frame
-  is hand-packed (no scapy) — byte-identical to the scapy serialization, at
-  ~1 µs/frame.
+- **Ownership refresh** (change-driven): a background thread checks two cheap
+  signals every `ARPREPLY_POLL` s and rebuilds the map **only when one changed**:
+  the running-domain set (`virsh list` — VM start/stop/add/remove) and a
+  fingerprint of the config-drive ISO dir (each ISO's name + **mtime**). An ISO
+  is rebuilt whenever a VM's IPs change — including a **secondary-IP add**
+  (`apply_second_ips.sh` regenerates the ISO) — so its mtime is a complete
+  IP-change signal; no blind periodic rescan is needed (`ARPREPLY_REFRESH` is an
+  optional backstop, default off). Steady state is two stat-loops per tick with
+  no rebuild; the ~3 ms/ISO extraction is paid only for changed VMs. The
+  **answered** set unions two on-host sources:
+  1. **`sgas-<vnic>` ipsets** (`hash:ip,mac`, incl. secondary IPs) — one
+     `ipset save` fork; VLAN from the vnic's `br<vlan>`.
+  2. **Per-VM config-drive ISOs** under `cache/meta/<vm_ID>.iso` — the assigned
+     `ip↔mac` from `openstack/latest/network_data.json` (via `isoinfo`, cached
+     by mtime). This is the **only on-host source for `allow_spoofing` VMs**,
+     which have no sgas set. ISOs whose `vm_ID` is **not a running `virsh`
+     domain are skipped before extraction**, so `isoinfo` forks track live-VM
+     count, not the total (often stale-heavy) file count — a full cold scan of
+     300 live VMs is ~0.8 s regardless of how many dead-VM ISOs linger. Each
+     surviving entry is still kept only if its MAC matches a **live tap** (which
+     also supplies the VLAN from that tap's bridge).
+
+  Separately, a **pass-through** set (accept-on-miss, see Floating IPs) is built
+  from the `arpreply-pass` ipset plus auto-discovered router IPs.
+
+  The reply frame is hand-packed (no scapy) — byte-identical to the scapy
+  serialization, at ~1 µs/frame.
+
+  > A truly-spoofed IP that an `allow_spoofing` VM uses but was never assigned
+  > is unknowable on the host — with ipset-miss → DROP it would be blackholed.
+  > Needs `isoinfo` (genisoimage/cdrtools); without it the ISO source is empty
+  > and only sgas is used.
 
 ## Performance impact
 
 Negligible on the node's data plane, and strictly cheaper than a sniffer:
 
 - **VM data traffic** is never queued and never enters userspace. For each
-  frame on the bridge `forward` path, our rule short-circuits on the first
+  frame on the bridge `prerouting` path, our rule short-circuits on the first
   `ether type 0x0806` test — a single ethertype comparison in the nft VM (a few
   ns). That path is already traversed for the security-group
   `table bridge cloudland`, so we add one gated rule, not a new datapath.
@@ -74,15 +106,19 @@ Negligible on the node's data plane, and strictly cheaper than a sniffer:
 - **Dropping the probe reduces load**: because the who-has never floods to the
   VM taps, each VM is spared processing it and arphole receives one is-at
   (arpreply's) instead of two (arpreply + VM).
-- **Userspace CPU** scales with probe rate only; the refresh thread is one
-  `ipset save` fork every `ARPREPLY_REFRESH` s.
+- **Userspace CPU** scales with probe rate only; the refresh thread just checks
+  two cheap signals per `ARPREPLY_POLL` (the `virsh` domain set + the ISO dir's
+  name/mtime fingerprint) and rebuilds the map only when one changed (`isoinfo`
+  then runs just for the changed VMs, mtime-cached).
 
 ### Proxy-ARP mode (empty `ARPREPLY_PROBE_SRC`)
 
 With an empty probe source the nft rule drops its `arp saddr ip` match, so
-**every** ARP who-has on the bridge `forward` path is queued — arpreply then
-answers (and drops) any who-has for a local VM IP, and ACCEPTs the rest. This
-turns it into a general proxy-ARP / ARP-suppression agent.
+**every** ARP who-has on the gated interfaces is queued — arpreply answers (and
+drops) any who-has for a local VM IP, and **drops the rest too** (ipset miss →
+DROP). This turns it into a general proxy-ARP / ARP-suppression agent, and makes
+the `--vlans` / `--iface` gate essential (see below): without it, ARP for the
+gateway and any off-node destination is blackholed.
 
 Efficiency changes only for **ARP**, not data:
 
@@ -94,15 +130,68 @@ Efficiency changes only for **ARP**, not data:
   request rate, which is far higher than arphole's ~hundreds/s probe stream —
   and arpreply is now on the **critical path of all ARP resolution** (even
   non-owned who-has pays the detour before being accepted).
-- **Overload / floods**: `queue ... bypass` still applies — if the queue fills,
-  excess who-has is ACCEPTed (floods normally, VM answers), so ARP resolution
-  and the data plane never stall.
+- **Overload / floods**: `queue ... bypass` still applies — if the queue fills
+  or arpreply is absent, excess who-has is ACCEPTed (floods normally), so ARP
+  resolution and the data plane never stall.
 - **Upside**: owned-IP who-has is answered authoritatively and dropped before
   reaching VM taps, cutting ARP broadcast flooding toward VMs.
 
 Rule of thumb: keep the default `192.0.2.100` unless you specifically want
 node-wide ARP suppression; empty mode trades a small, ARP-rate-proportional
 CPU/latency cost for that behavior.
+
+## VLAN / interface gating
+
+Restrict which who-has is intercepted so the tool only touches the VLANs you
+mean it to. This is done in the nft rule via an ingress-interface (`iifname`)
+match, because the frame is untagged at the bridge `forward` hook — the VLAN is
+identified by its `v-<vlan>` uplink name.
+
+- `--vlans 25-30` / `ARPREPLY_VLANS` — only queue who-has arriving on the
+  `v-25`…`v-30` uplinks (trunk-inbound). Empty = all VLANs.
+- `--iface v-100 …` / `ARPREPLY_IFACE` — extra ingress interface names to
+  intercept on, unioned with the `v-<vlan>` set above.
+
+A userspace check also confirms the target IP's owned VLAN is in the allowed
+set before answering. **Gating to the `v-<vlan>` uplinks is what makes the
+ipset-miss → DROP behavior safe**: only trunk-inbound probes reach userspace, so
+a dropped miss just isn't flooded to local taps (the real owner still answers
+elsewhere). Do **not** add tap interfaces (VM-sourced ARP) to `--iface` unless
+you accept that unknown destinations from those VMs will be blackholed.
+
+## Floating / gateway IPs (answered directly)
+
+Floating and gateway IPs live on devices **inside the router netns**
+(`create_floating.sh` / gateway setup), not in any VM source. arpreply handles
+them the **same way as VMs** — it answers them and drops the who-has:
+
+- **Auto-discovery (default, no config).** **Every `ARPREPLY_POLL`**, arpreply
+  scans each `router-*` netns for devices named `*-<vlan>` where `<vlan>` is a
+  covered VLAN (e.g. `te-1-28`, `link-25`, `ns-<vlan>`), reads each device's
+  **IP and real MAC**, and adds `(ip, mac, vlan)` to the **answer set**. So a
+  who-has for a gateway/floating IP is answered with the router's MAC and
+  dropped, exactly like a VM's. Safe here because cloudland uses **real MACs**
+  (no VRRP virtual MAC — `create_keepalived_conf.sh` has no `use_vmac`; floating
+  IPs are announced from the device's real MAC). *Works only for routers local
+  to this host.*
+
+- **HA / failover** is fine: a floating VIP lives only on the **master** router,
+  so only the node holding it answers; other nodes see a miss but the master
+  still answers the trunk-flooded who-has (arpreply only intercepts who-has
+  ingressing on `v-<vlan>`, never VM-sourced who-has). When the VIP moves, the
+  next 5 s scan follows it.
+
+- **`arpreply-pass` ipset** stays as a **manual pass-through fallback** (miss ⇒
+  ACCEPT, let the router answer) for IPs arpreply can't answer itself — e.g. a
+  **remote** router's range:
+
+  ```bash
+  ipset create arpreply-pass hash:net -exist
+  ipset add arpreply-pass 203.0.113.0/24     # -> pass to the router
+  ```
+
+When floating IPs are on a **dedicated VLAN**, the simplest option is still to
+just leave that VLAN out of `ARPREPLY_VLANS`.
 
 ## Configuration
 
@@ -112,18 +201,24 @@ All knobs are CLI flags (`--probe-src`, `--queue-num`, …) or matching env vars
 | --------------------- | ----------- | ---------------------------------------------- |
 | `ARPREPLY_PROBE_SRC`  | 192.0.2.100 | Only intercept/answer who-has from this ARP sender IP (must match arphole). **Set empty to answer who-has from ANY source** — general proxy-ARP for local VM IPs (see note below). |
 | `ARPREPLY_QUEUE_NUM`  | 40          | NFQUEUE number the nft rule dispatches to.     |
-| `ARPREPLY_REFRESH`    | 15          | Seconds between ipset ownership-map rebuilds.  |
+| `ARPREPLY_VLANS`      | (all)       | Only intercept who-has on these VLANs' `v-<vlan>` uplinks, e.g. `25-30`. See VLAN / interface gating. |
+| `ARPREPLY_IFACE`      | (none)      | Extra ingress interface names to intercept on, unioned with the `v-<vlan>` set. |
+| `ARPREPLY_POLL`       | 5           | Change-check interval; the map rebuilds when the running-domain set or an ISO's mtime changes. |
+| `ARPREPLY_REFRESH`    | 0           | Optional backstop full-rebuild interval; 0 = disabled (refresh is change-driven). |
 | `ARPREPLY_LOG`        | INFO        | Log level.                                     |
 
 ## Run
 
 Requires **root** (or `CAP_NET_ADMIN` for nft + NFQUEUE and `CAP_NET_RAW` for
-the raw reply send). System deps: `nftables`, and `libnetfilter-queue` for the
-python `NetfilterQueue` module.
+the raw reply send). System deps: `nftables`; `libnetfilter-queue` for the
+python `NetfilterQueue` module; `isoinfo` (genisoimage/cdrtools) to read the
+config-drive ISOs; and `virsh` (libvirt-clients) for the VM poll. On a cloudland
+compute node the last two are already present (`mkisofs`, libvirt).
 
 ```bash
-# Debian/Ubuntu build/runtime deps for NetfilterQueue:
-sudo apt install nftables libnetfilter-queue1 libnetfilter-queue-dev libnfnetlink-dev
+# Debian/Ubuntu build/runtime deps:
+sudo apt install nftables libnetfilter-queue1 libnetfilter-queue-dev \
+    libnfnetlink-dev genisoimage libvirt-clients
 pip install -r requirements.txt
 ```
 
@@ -148,9 +243,13 @@ sudo systemctl enable --now arpreply
 
 ## Notes
 
-- The reply is sent **untagged** on `br<vlan>`; the `v-<vlan>` VLAN/VXLAN
-  uplink re-tags it toward the physical trunk. The VLAN is derived from the
-  owned IP's vnic bridge, not the (untagged) queued frame.
+- The reply is sent **untagged** back out the **ingress interface**
+  (`pkt.physindev`, the `v-<vlan>` VLAN/VXLAN uplink), which tags/encapsulates it
+  toward the trunk — so it reaches the requester directly and never floods the
+  bridge or VM taps. Falls back to `br<vlan>` (owned VLAN) only if the ingress
+  device can't be resolved. This is why moving from the `forward` hook to
+  `prerouting` (which drops before the bridge learns the requester's MAC)
+  doesn't cause the reply to flood.
 - The nft `table bridge arpreply` is separate from the security-group
   `table bridge cloudland`; arpreply owns and cleans up only its own table, and
   `create_sg_chain.sh` / `clear_sg_chain.sh` are untouched.
