@@ -15,6 +15,7 @@ gateway=${6%/*}
 more_addresses=$(cat)
 naddrs=$(jq length <<< "$more_addresses")
 
+# Windows: configure the addresses live via the guest agent (netsh).
 if [ "$os_code" = "windows" ]; then
     wait_qemu_ping $ID 10
     if [ -n "$primary_ip" ]; then
@@ -29,7 +30,12 @@ if [ "$os_code" = "windows" ]; then
         virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","add","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
         let i=$i+1
     done
-elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
+fi
+
+# Rebuild the metadata ISO for both Windows and Linux when update_meta is set,
+# so the address config is persisted for the next boot. Linux additionally
+# re-runs cloud-init to apply it live.
+if [ "$update_meta" = "true" ]; then
     i=0
     while [ $i -lt $naddrs ]; do
         read -d'\n' -r address < <(jq -r ".[$i]" <<< "$more_addresses")
@@ -59,5 +65,7 @@ elif [ "$os_code" = "linux" -a "$update_meta" = "true" ]; then
     umount $tmp_mnt
     mkisofs -quiet -R -J -V config-2 -o ${cache_dir}/meta/${vm_ID}.iso $working_dir &> /dev/null
     rm -rf $working_dir
-    virsh qemu-agent-command "$vm_ID" '{"execute": "guest-exec", "arguments": {"path": "/usr/bin/cloud-init", "arg": ["clean", "--reboot"]}}'
+    if [ "$os_code" = "linux" ]; then
+        virsh qemu-agent-command "$vm_ID" '{"execute": "guest-exec", "arguments": {"path": "/usr/bin/cloud-init", "arg": ["clean", "--reboot"]}}'
+    fi
 fi
