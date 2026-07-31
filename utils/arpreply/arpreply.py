@@ -13,8 +13,11 @@ the bridge datapath. A single rule matches only arphole's who-has
 (`arp saddr ip 192.0.2.100`) and hands each such frame to this process:
 
   * If the queried IP belongs to a local VM, we emit an is-at with the VM's
-    real MAC (from the sgas-* anti-spoofing ipset), UNICAST back to arphole,
+    real MAC (from the sgas-* anti-spoofing ipset) addressed back to arphole,
     then verdict DROP — so the VM never sees the probe and never double-answers.
+    The rule sits on the bridge PREROUTING hook, which fires once per incoming
+    frame; the FORWARD hook would fire once per flooded output port and yield
+    one reply per VM tap.
   * Otherwise (ipset miss) verdict DROP too — the who-has is suppressed. This
     is only safe when the nft rule is gated (via --vlans / --iface) to the
     v-<vlan> uplinks so it sees trunk-INBOUND probes only; on an interface
@@ -27,20 +30,24 @@ fail-safe against the tool being absent (distinct from the per-packet DROP
 verdict above). Because only matched probes reach the rule, VM data traffic
 never enters userspace: zero data-plane cost.
 
-Ownership (the full local-VM IP list) is unioned from three on-host sources,
+Ownership (the local-VM IP list we ANSWER) is unioned from two on-host sources,
 rebuilt on VM/ISO change:
   1. the `sgas-<vnic>` anti-spoofing ipsets (ip,mac incl. secondary IPs); VLAN
-     from the vnic's `br<vlan>`,
+     from the vnic's `br<vlan>`, and
   2. the per-VM config-drive ISOs under cache/meta (assigned ip<->mac from
      network_data.json) — the ONLY on-host source for allow_spoofing VMs, which
      have no sgas set. Each ISO entry is kept only if its MAC matches a LIVE tap
      (dropping stale ISOs of deleted VMs), and the VLAN comes from that tap's
-     bridge. Reading ISOs needs `isoinfo` (from genisoimage/cdrtools), and
-  3. an optional manual `arpreply` override ipset for special-case IPs (VLAN
-     from the entry's comment); these take precedence.
-The reply is sent untagged on `br<vlan>`; `v-<vlan>` re-tags it toward the
-trunk. NOTE: a truly-spoofed IP an allow_spoofing VM uses but was never
-assigned is unknowable here — with ipset-miss => DROP it would be blackholed.
+     bridge. Reading ISOs needs `isoinfo` (from genisoimage/cdrtools).
+Router gateway/floating IPs on the covered VLANs are ANSWERED directly too:
+every poll arpreply scans `router-*` netns for devices named `*-<vlan>` and adds
+their (ip, real-MAC) to the answer set, so their who-has is answered + dropped
+like a VM's (cloudland uses real, not VRRP-virtual, MACs). On an ownership MISS
+the who-has is DROPped, EXCEPT for IPs in the manual `arpreply-pass` ipset, which
+are ACCEPTed (a fallback for IPs we can't answer, e.g. remote routers). The reply
+is sent untagged back out the interface the request arrived on (pkt.physindev =
+the v-<vlan> uplink), which tags it toward the trunk — straight to the requester,
+not flooded into the bridge.
 """
 
 import argparse
@@ -87,13 +94,14 @@ _NFT_TABLE = "arpreply"
 # Prefix of the per-vnic anti-spoofing ipsets created by create_sg_chain.sh.
 _IPSET_PREFIX = "sgas-"
 
-# Optional manual override ipset (type hash:ip,mac, ideally with `comment`):
-# operators add special-case IPs here and arpreply answers for them. The VLAN
-# comes from the entry's comment ("25" or "vlan=25"); if absent it's inferred
-# from a live tap with that MAC. Entries here take precedence over sgas/ISO.
-#   ipset create arpreply hash:ip,mac comment -exist
-#   ipset add arpreply 10.0.25.9,52:54:00:aa:bb:cc comment "25"
-_OVERRIDE_SET = "arpreply"
+# Manual pass-through ipset (type hash:net): target IPs matching an entry are
+# ACCEPTed on an ownership miss — NOT answered and NOT dropped, so the router
+# answers them. A fallback for IPs arpreply can't answer itself (e.g. a remote
+# router's range). Local router gateway/floating IPs are answered DIRECTLY (see
+# _scan_router_owned), not routed through this set.
+#   ipset create arpreply-pass hash:net -exist
+#   ipset add arpreply-pass 203.0.113.0/24
+_PASS_SET = "arpreply-pass"
 
 # Per-VM config-drive ISOs (build_meta.sh writes <vm_ID>.iso here, containing
 # openstack/latest/network_data.json with the assigned IP<->MAC — present even
@@ -154,6 +162,14 @@ def _mac_to_bytes(mac: str) -> bytes:
 
 def _ip_to_bytes(ip: str) -> bytes:
     return bytes(int(o) for o in ip.split("."))
+
+
+def _ifname(idx: int) -> str | None:
+    """Interface name for an ifindex, or None (0 / gone)."""
+    try:
+        return socket.if_indextoname(idx) if idx else None
+    except OSError:
+        return None
 
 
 def _pack_reply(
@@ -272,21 +288,84 @@ def _meta_signature() -> frozenset[tuple[str, float]] | None:
     return frozenset(sig)
 
 
-def _comment_vlan(comment: str) -> int | None:
-    """VLAN id from an ipset comment: accepts "25" or "vlan=25". None else."""
-    c = comment.strip().strip('"').strip()
-    if c.isdigit():
-        return int(c)
-    m = re.fullmatch(r"vlan=(\d+)", c)
-    return int(m.group(1)) if m else None
+def _parse_cidr(cidr: str) -> tuple[int, int] | None:
+    """'203.0.113.0/24' or '203.0.113.5' -> (network_int, mask_int). None on
+    garbage / non-IPv4."""
+    try:
+        if "/" in cidr:
+            ip, plen_s = cidr.split("/", 1)
+            plen = int(plen_s)
+        else:
+            ip, plen = cidr, 32
+        if not 0 <= plen <= 32:
+            return None
+        ip_int = int.from_bytes(_ip_to_bytes(ip), "big")
+    except (ValueError, TypeError):
+        return None
+    mask = (0xFFFFFFFF << (32 - plen)) & 0xFFFFFFFF
+    return (ip_int & mask, mask)
 
 
-def _override_signature() -> frozenset[str]:
-    """Fingerprint of the manual `arpreply` override ipset's members, so a
-    change to it triggers an ownership rebuild (it changes neither the virsh
-    domain set nor any ISO mtime). Empty if the set doesn't exist."""
+def build_passthrough() -> list[tuple[int, int]]:
+    """Load the arpreply-pass ipset into a list of (network_int, mask_int). A
+    target IP matching any entry is ACCEPTed on an ownership miss instead of
+    dropped, letting the router/gateway answer it (e.g. floating IPs)."""
+    nets = []
+    for line in _run(["ipset", "save", _PASS_SET]).splitlines():
+        parts = line.split()
+        if len(parts) < 3 or parts[0] != "add":
+            continue
+        nm = _parse_cidr(parts[2])
+        if nm is not None:
+            nets.append(nm)
+    return nets
+
+
+def _scan_router_owned(allowed_vlans: set[int] | None) -> dict[tuple[int, str], str]:
+    """(vlan, ip) -> mac for IPv4 addresses on `router-*` netns devices whose
+    name ends with `-<vlan>` (vlan in allowed_vlans) — the gateway / floating IPs
+    the router owns on the covered VLANs, with the device's real MAC so arpreply
+    can ANSWER them (verified: cloudland uses real, not VRRP-virtual, MACs).
+    allowed_vlans=None matches any `-<digits>` device. Only sees local routers.
+    """
+    out: dict[tuple[int, str], str] = {}
+    for nsline in _run(["ip", "netns", "list"]).splitlines():
+        toks = nsline.split()
+        ns = toks[0] if toks else ""
+        if not ns.startswith("router-"):
+            continue
+        # device -> MAC
+        macs: dict[str, str] = {}
+        for lline in _run(["ip", "netns", "exec", ns, "ip", "-o", "link", "show"]).splitlines():
+            lp = lline.split()
+            if len(lp) < 2 or "link/ether" not in lp:
+                continue
+            dev = lp[1].rstrip(":").split("@")[0]
+            mi = lp.index("link/ether")
+            if mi + 1 < len(lp):
+                macs[dev] = lp[mi + 1].lower()
+        for aline in _run(["ip", "netns", "exec", ns, "ip", "-o", "-4", "addr", "show"]).splitlines():
+            ap = aline.split()
+            if len(ap) < 4 or ap[2] != "inet":
+                continue
+            dev = ap[1]
+            suffix = dev.rsplit("-", 1)[1] if "-" in dev else ""
+            if not suffix.isdigit():
+                continue
+            vlan = int(suffix)
+            if allowed_vlans is not None and vlan not in allowed_vlans:
+                continue
+            mac = macs.get(dev)
+            if mac:
+                out[(vlan, ap[3].split("/")[0])] = mac
+    return out
+
+
+def _pass_signature() -> frozenset[str]:
+    """Change fingerprint for the manual `arpreply-pass` pass-through ipset. A
+    change triggers a rebuild that reloads _passthrough. Empty if no set."""
     return frozenset(
-        ln for ln in _run(["ipset", "save", _OVERRIDE_SET]).splitlines()
+        ln for ln in _run(["ipset", "save", _PASS_SET]).splitlines()
         if ln.startswith("add ")
     )
 
@@ -370,7 +449,7 @@ def build_owner_map(
     domains: frozenset[str] | None = None,
 ) -> dict[tuple[int, str], OwnerEntry]:
     """Build the full (vlan, ip) -> (mac, mac_bytes, ip_bytes) map of local VM
-    IPs, from three sources unioned:
+    IPs, from two sources unioned:
 
       1. sgas-* ipsets (anti-spoofing ip,mac pairs, incl. secondary IPs). VLAN
          comes from the vnic's br<vlan>; a set whose vnic is gone self-filters.
@@ -379,9 +458,6 @@ def build_owner_map(
          VMs, which have no sgas set. Each ISO entry is kept only if its MAC
          matches a LIVE tap (so stale ISOs from deleted VMs are dropped), and
          the VLAN is taken from that tap's bridge.
-      3. the manual `arpreply` override ipset (see _OVERRIDE_SET) — special-case
-         IPs an operator wants answered. VLAN from the entry's comment, else a
-         live tap by MAC. These take PRECEDENCE over 1 and 2.
 
     When `domains` (running libvirt domain names) is given, ISOs whose vm_ID is
     not a running domain are skipped BEFORE extraction — so isoinfo forks track
@@ -390,27 +466,19 @@ def build_owner_map(
     guards correctness).
     """
     owned: dict[tuple[int, str], OwnerEntry] = {}
-    overrides: list[tuple[str, str, int | None]] = []  # (ip, mac, comment_vlan)
-    # --- source 1: sgas ipsets (+ collect manual arpreply overrides) ---
+    # --- source 1: sgas ipsets ---
     vlan_cache: dict[str, int | None] = {}
     for line in _run(["ipset", "save"]).splitlines():
         parts = line.split()
         if len(parts) < 3 or parts[0] != "add":
             continue
         name = parts[1]
+        if not name.startswith(_IPSET_PREFIX):
+            continue
         m = _MEMBER_RE.match(parts[2])
         if not m:
             continue
         ip, mac = m.group(1), m.group(2).lower()
-        if name == _OVERRIDE_SET:
-            cv = None
-            if "comment" in parts:
-                i = parts.index("comment")
-                cv = _comment_vlan(" ".join(parts[i + 1:]))
-            overrides.append((ip, mac, cv))
-            continue
-        if not name.startswith(_IPSET_PREFIX):
-            continue
         vnic = name[len(_IPSET_PREFIX):]
         if vnic not in vlan_cache:
             vlan_cache[vnic] = _vnic_vlan(vnic)
@@ -446,16 +514,6 @@ def build_owner_map(
     # prune cache entries for ISOs that no longer exist
     for gone in [p for p in _iso_cache if p not in seen_paths]:
         _iso_cache.pop(gone, None)
-    # --- source 3: manual `arpreply` override set (wins over sgas/ISO) ---
-    for ip, mac, cv in overrides:
-        vlan = cv if cv is not None else taps.get(_mac_tail(mac))
-        if vlan is None:
-            logger.warning(
-                "arpreply override %s/%s skipped: no VLAN (add `comment \"<vlan>\"`)",
-                ip, mac,
-            )
-            continue
-        owned[(vlan, ip)] = (mac, _mac_to_bytes(mac), _ip_to_bytes(ip))
     return owned
 
 
@@ -519,6 +577,9 @@ class ArpReply:
         # IP because the frame is untagged on the bridge; the stored VLAN says
         # which br<vlan> to answer on.
         self._owned_by_ip: dict[str, IpEntry] = {}
+        # (network_int, mask_int) list: IPs matching any are ACCEPTed on a miss
+        # (pass to the router) instead of dropped. From the arpreply-pass ipset.
+        self._passthrough: list[tuple[int, int]] = []
         self._lock = threading.Lock()
         # br<vlan> -> raw AF_PACKET send socket. Reused; reopened on error.
         self._sockets: dict[str, socket.socket] = {}
@@ -528,15 +589,32 @@ class ArpReply:
 
     # ------------------------------------------------------------ ownership
 
-    def _refresh(self, domains: frozenset[str] | None = None) -> None:
+    def _refresh(
+        self,
+        domains: frozenset[str] | None = None,
+        router: dict[tuple[int, str], str] | None = None,
+    ) -> None:
+        if router is None:
+            router = _scan_router_owned(self.allowed_vlans)
         owned = build_owner_map(domains)
+        # Router gateway/floating IPs are ANSWERED directly (like VMs), with the
+        # router device's real MAC — so their who-has is answered + dropped.
+        for (vlan, ip), mac in router.items():
+            owned[(vlan, ip)] = (mac, _mac_to_bytes(mac), _ip_to_bytes(ip))
+        # arpreply-pass remains a manual pass-through fallback (accept-on-miss)
+        # for IPs we can't answer (e.g. remote routers).
+        passes = build_passthrough()
         by_ip = {
             ip: (vlan, mac, mac_b, ip_b)
             for (vlan, ip), (mac, mac_b, ip_b) in owned.items()
         }
         with self._lock:
             self._owned_by_ip = by_ip
-        logger.info("owner map refreshed: %d owned IP(s)", len(by_ip))
+            self._passthrough = passes
+        logger.info(
+            "owner map refreshed: %d owned IP(s) (%d router), %d pass-through net(s)",
+            len(by_ip), len(router), len(passes),
+        )
 
     def _refresh_loop(self) -> None:
         """Every poll_interval, rebuild the ownership map only when something
@@ -544,26 +622,31 @@ class ArpReply:
           * the running-domain set (VM start/stop/add/remove), or
           * the config-drive ISO dir fingerprint — name+mtime — which changes
             on a new/removed ISO or a rebuilt one (a secondary-IP add rebuilds
-            the ISO via apply_second_ips.sh), or
-          * the manual `arpreply` override ipset's members.
+            the ISO via apply_second_ips.sh),
+          * the router scan — (vlan,ip)->mac on `router-*` netns `*-<vlan>`
+            devices (gateway/floating IPs we answer directly), or
+          * the `arpreply-pass` ipset's members (manual pass-through fallback).
         virsh being unavailable, or the optional backstop interval, also force
         a rebuild. Steady state is a few cheap stat/fork checks per tick.
         """
-        last_doms = last_sig = last_osig = None
+        last_doms = last_sig = last_psig = last_rsig = None
         last_full = 0.0
         first = True
         while not self._stop.is_set():
             try:
+                router = _scan_router_owned(self.allowed_vlans)
                 doms = _virsh_domains()
                 sig = _meta_signature()
-                osig = _override_signature()
+                psig = _pass_signature()
+                rsig = frozenset(router.items())
                 now = time.monotonic()
                 backstop = (self.full_rebuild_interval > 0
                             and now - last_full >= self.full_rebuild_interval)
-                if (first or doms is None or doms != last_doms
-                        or sig != last_sig or osig != last_osig or backstop):
-                    self._refresh(doms)
-                    last_doms, last_sig, last_osig = doms, sig, osig
+                if (first or doms is None or doms != last_doms or sig != last_sig
+                        or psig != last_psig or rsig != last_rsig or backstop):
+                    self._refresh(doms, router)
+                    last_doms, last_sig, last_psig, last_rsig = \
+                        doms, sig, psig, rsig
                     last_full, first = now, False
             except Exception:
                 logger.exception("owner map refresh failed")
@@ -621,18 +704,21 @@ class ArpReply:
             )
         # Empty probe_src drops the saddr match, so ALL ARP who-has is queued.
         saddr = "" if self.match_all else "arp saddr ip %s " % self.probe_src
+        # PREROUTING (not FORWARD): the bridge FORWARD hook fires once per
+        # *output port*, so a broadcast who-has flooded to N taps would be
+        # queued N times => N replies. PREROUTING fires once per incoming frame.
         script = (
             "add table bridge {t}\n"
-            "add chain bridge {t} forward "
-            "{{ type filter hook forward priority -10 ; policy accept ; }}\n"
-            "flush chain bridge {t} forward\n"
-            "add rule bridge {t} forward {iif}ether type 0x0806 "
+            "add chain bridge {t} prerouting "
+            "{{ type filter hook prerouting priority -300 ; policy accept ; }}\n"
+            "flush chain bridge {t} prerouting\n"
+            "add rule bridge {t} prerouting {iif}ether type 0x0806 "
             "arp operation request {saddr}queue num {q} bypass\n"
         ).format(t=t, iif=iif, saddr=saddr, q=self.queue_num)
         ok = _nft_load(script)
         if ok:
             logger.info(
-                "installed nft queue rule: bridge %s forward -> queue %d "
+                "installed nft queue rule: bridge %s prerouting -> queue %d "
                 "(iif=%s, arp request %s)",
                 t, self.queue_num,
                 "{%s}" % ",".join(self.allowed_ifnames) if self.allowed_ifnames
@@ -669,13 +755,14 @@ class ArpReply:
             target_ip = "%d.%d.%d.%d" % (tpa[0], tpa[1], tpa[2], tpa[3])
             ent = self._lookup_ip(target_ip)
             if ent is None:
-                # Not a local VM IP (ipset miss) — DROP (suppress the who-has).
-                # WARNING: on any interface that carries VM-SOURCED who-has this
-                # blackholes ARP for every non-VM destination (gateway, external
-                # hosts, other-node VMs). Keep the iifname gate on the v-<vlan>
-                # uplinks so only trunk-inbound probes reach here, where the real
-                # owner still answers elsewhere and dropping is safe.
-                pkt.drop()
+                # Ownership miss. Pass-through IPs (e.g. floating IPs that share
+                # the VLAN and live in the router netns) are ACCEPTed so the
+                # router answers them; everything else is DROPped (suppressed).
+                ip_int = int.from_bytes(tpa, "big")
+                if any((ip_int & mask) == net for net, mask in self._passthrough):
+                    pkt.accept()
+                else:
+                    pkt.drop()
                 return
             vlan, mac, mac_b, _ip_b = ent
             # VLAN gate (belt-and-suspenders on top of the nft iifname match):
@@ -683,13 +770,19 @@ class ArpReply:
             if self.allowed_vlans is not None and vlan not in self.allowed_vlans:
                 pkt.accept()
                 return
+            # Reply out the interface the request arrived on. At the bridge
+            # prerouting hook that is pkt.physindev = the v-<vlan> uplink, so the
+            # reply goes straight back to the requester on the trunk (tagged by
+            # that vlan device) WITHOUT flooding the bridge/VMs. Fall back to
+            # br<vlan> only if the ingress dev can't be resolved.
+            oif = _ifname(pkt.physindev) or _ifname(pkt.indev) or "br%d" % vlan
             frame = _pack_reply(mac_b, tpa, 0, sha, spa)
-            if self._send_frame("br%d" % vlan, frame, target_ip):
+            if self._send_frame(oif, frame, target_ip):
                 pkt.drop()
                 if logger.isEnabledFor(logging.INFO):
                     logger.info(
-                        "answered+dropped who-has %s -> %s on br%d (asked by %s)",
-                        target_ip, mac, vlan,
+                        "answered+dropped who-has %s -> %s out %s (asked by %s)",
+                        target_ip, mac, oif,
                         ":".join("%02x" % b for b in sha),
                     )
             else:
@@ -720,8 +813,8 @@ class ArpReply:
             else ",".join(str(v) for v in sorted(self.allowed_vlans)),
             ",".join(self.allowed_ifnames) or "all",
         )
-        # Prime ownership before we install the rule so the first probe is
-        # answerable.
+        # Prime ownership (incl. the router IP scan) before we install the rule
+        # so the first probe is answerable.
         self._refresh(_virsh_domains())
         if not self._install_nft():
             raise RuntimeError("failed to install nft queue rule")
@@ -738,7 +831,13 @@ class ArpReply:
         nfq.bind(self.queue_num, self._on_packet)
         # Drive the queue through a select loop so SIGTERM/SIGINT (which set
         # self._stop) break us out promptly for a clean nft teardown.
+        # NB: run_socket() loops on recv() and only returns when recv raises
+        # EWOULDBLOCK, so the socket MUST be non-blocking — otherwise, once a
+        # packet arrives, run_socket blocks forever on the next recv and the
+        # _stop check never runs, making the service hang on stop (until systemd
+        # SIGKILLs it after TimeoutStopSec).
         qsock = socket.fromfd(nfq.get_fd(), socket.AF_UNIX, socket.SOCK_STREAM)
+        qsock.setblocking(False)
         try:
             while not self._stop.is_set():
                 try:
@@ -746,7 +845,10 @@ class ArpReply:
                 except InterruptedError:
                     continue
                 if ready:
-                    nfq.run_socket(qsock)
+                    try:
+                        nfq.run_socket(qsock)
+                    except BlockingIOError:
+                        pass
         finally:
             try:
                 nfq.unbind()

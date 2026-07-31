@@ -35,16 +35,19 @@ double-answers.
   probe it locates the ARP header, reads `sha` (arphole's MAC), `spa`
   (=`192.0.2.100`) and `tpa` (the queried VM IP), then:
   - **owned** → hand-pack an `is-at` (`op=2`, `hwsrc` = VM MAC, `psrc` = VM IP)
-    **unicast to arphole**, send it untagged on `br<vlan>` over a raw socket,
-    and verdict **DROP**. The bridge already learned arphole's MAC on
-    `v-<vlan>` at ingress, so the reply egresses the uplink (re-tagged) toward
-    arphole; VM taps never see it.
-  - **not owned** (ipset miss) → verdict **DROP** — the who-has is suppressed.
-    ⚠️ Only safe when the rule is gated (`--vlans` / `--iface`) to the
-    `v-<vlan>` uplinks so it sees **trunk-inbound** probes only. On an interface
-    carrying VM-sourced who-has this blackholes ARP for every non-VM
-    destination (gateway, external hosts, other-node VMs). See VLAN gating
-    below.
+    addressed to arphole, send it untagged **back out the interface the request
+    arrived on** (`pkt.physindev` = the `v-<vlan>` uplink), which tags it toward
+    the trunk — straight to the requester, **not flooded into the bridge/VMs** —
+    and verdict **DROP** so the VM never sees the probe. The rule is on the
+    bridge **`prerouting`** hook (fires once per frame, not once per output
+    port — see note), so the probe is dropped before flooding.
+  - **not owned** (ipset miss) → **DROP** (suppress the who-has), **unless** the
+    target IP is in the `arpreply-pass` ipset, in which case **ACCEPT** it (let
+    the router/gateway answer — see Floating IPs below).
+    ⚠️ Drop-on-miss is only safe when the rule is gated (`--vlans` / `--iface`)
+    to the `v-<vlan>` uplinks so it sees **trunk-inbound** probes only. On an
+    interface carrying VM-sourced who-has it blackholes ARP for every non-VM
+    destination not in `arpreply-pass` (other-node VMs, external hosts).
 
 - **Fail-safe**: the `bypass` flag means if this process is down **or the queue
   is full**, matched probes are ACCEPTed (flooded) and the VM answers itself.
@@ -58,8 +61,8 @@ double-answers.
   (`apply_second_ips.sh` regenerates the ISO) — so its mtime is a complete
   IP-change signal; no blind periodic rescan is needed (`ARPREPLY_REFRESH` is an
   optional backstop, default off). Steady state is two stat-loops per tick with
-  no rebuild; the ~3 ms/ISO extraction is paid only for changed VMs. The map
-  unions three on-host sources:
+  no rebuild; the ~3 ms/ISO extraction is paid only for changed VMs. The
+  **answered** set unions two on-host sources:
   1. **`sgas-<vnic>` ipsets** (`hash:ip,mac`, incl. secondary IPs) — one
      `ipset save` fork; VLAN from the vnic's `br<vlan>`.
   2. **Per-VM config-drive ISOs** under `cache/meta/<vm_ID>.iso` — the assigned
@@ -71,16 +74,9 @@ double-answers.
      300 live VMs is ~0.8 s regardless of how many dead-VM ISOs linger. Each
      surviving entry is still kept only if its MAC matches a **live tap** (which
      also supplies the VLAN from that tap's bridge).
-  3. **Manual `arpreply` override ipset** (optional) — a `hash:ip,mac` set for
-     special-case IPs an operator wants answered directly. The VLAN comes from
-     the entry's **comment** (`"25"` or `"vlan=25"`), or a live tap by MAC if
-     absent; an entry with neither is skipped (logged). These entries **take
-     precedence** over sgas/ISO. Example:
 
-     ```bash
-     ipset create arpreply hash:ip,mac comment -exist
-     ipset add arpreply 10.0.25.9,52:54:00:aa:bb:cc comment "25"
-     ```
+  Separately, a **pass-through** set (accept-on-miss, see Floating IPs) is built
+  from the `arpreply-pass` ipset plus auto-discovered router IPs.
 
   The reply frame is hand-packed (no scapy) — byte-identical to the scapy
   serialization, at ~1 µs/frame.
@@ -95,7 +91,7 @@ double-answers.
 Negligible on the node's data plane, and strictly cheaper than a sniffer:
 
 - **VM data traffic** is never queued and never enters userspace. For each
-  frame on the bridge `forward` path, our rule short-circuits on the first
+  frame on the bridge `prerouting` path, our rule short-circuits on the first
   `ether type 0x0806` test — a single ethertype comparison in the nft VM (a few
   ns). That path is already traversed for the security-group
   `table bridge cloudland`, so we add one gated rule, not a new datapath.
@@ -163,6 +159,40 @@ a dropped miss just isn't flooded to local taps (the real owner still answers
 elsewhere). Do **not** add tap interfaces (VM-sourced ARP) to `--iface` unless
 you accept that unknown destinations from those VMs will be blackholed.
 
+## Floating / gateway IPs (answered directly)
+
+Floating and gateway IPs live on devices **inside the router netns**
+(`create_floating.sh` / gateway setup), not in any VM source. arpreply handles
+them the **same way as VMs** — it answers them and drops the who-has:
+
+- **Auto-discovery (default, no config).** **Every `ARPREPLY_POLL`**, arpreply
+  scans each `router-*` netns for devices named `*-<vlan>` where `<vlan>` is a
+  covered VLAN (e.g. `te-1-28`, `link-25`, `ns-<vlan>`), reads each device's
+  **IP and real MAC**, and adds `(ip, mac, vlan)` to the **answer set**. So a
+  who-has for a gateway/floating IP is answered with the router's MAC and
+  dropped, exactly like a VM's. Safe here because cloudland uses **real MACs**
+  (no VRRP virtual MAC — `create_keepalived_conf.sh` has no `use_vmac`; floating
+  IPs are announced from the device's real MAC). *Works only for routers local
+  to this host.*
+
+- **HA / failover** is fine: a floating VIP lives only on the **master** router,
+  so only the node holding it answers; other nodes see a miss but the master
+  still answers the trunk-flooded who-has (arpreply only intercepts who-has
+  ingressing on `v-<vlan>`, never VM-sourced who-has). When the VIP moves, the
+  next 5 s scan follows it.
+
+- **`arpreply-pass` ipset** stays as a **manual pass-through fallback** (miss ⇒
+  ACCEPT, let the router answer) for IPs arpreply can't answer itself — e.g. a
+  **remote** router's range:
+
+  ```bash
+  ipset create arpreply-pass hash:net -exist
+  ipset add arpreply-pass 203.0.113.0/24     # -> pass to the router
+  ```
+
+When floating IPs are on a **dedicated VLAN**, the simplest option is still to
+just leave that VLAN out of `ARPREPLY_VLANS`.
+
 ## Configuration
 
 All knobs are CLI flags (`--probe-src`, `--queue-num`, …) or matching env vars:
@@ -213,9 +243,13 @@ sudo systemctl enable --now arpreply
 
 ## Notes
 
-- The reply is sent **untagged** on `br<vlan>`; the `v-<vlan>` VLAN/VXLAN
-  uplink re-tags it toward the physical trunk. The VLAN is derived from the
-  owned IP's vnic bridge, not the (untagged) queued frame.
+- The reply is sent **untagged** back out the **ingress interface**
+  (`pkt.physindev`, the `v-<vlan>` VLAN/VXLAN uplink), which tags/encapsulates it
+  toward the trunk — so it reaches the requester directly and never floods the
+  bridge or VM taps. Falls back to `br<vlan>` (owned VLAN) only if the ingress
+  device can't be resolved. This is why moving from the `forward` hook to
+  `prerouting` (which drops before the bridge learns the requester's MAC)
+  doesn't cause the reply to flood.
 - The nft `table bridge arpreply` is separate from the security-group
   `table bridge cloudland`; arpreply owns and cleans up only its own table, and
   `create_sg_chain.sh` / `clear_sg_chain.sh` are untouched.
