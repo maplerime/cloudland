@@ -13,21 +13,20 @@ Five thread roles:
     with a send timestamp, and fires PROBE_COUNT who-has via sendp() — no
     waiting.
   * Sweeper (single): every _SWEEP_INTERVAL, reclaims any (iface, IP) still in
-    _probing past PROBE_TIMEOUT — emitting an is-at with a cached locally-
-    administered unicast MAC (fe:55:xx:xx:xx:xx) preserving the VLAN tag.
+    _probing past PROBE_TIMEOUT — emitting an is-at from a single fixed locally-
+    administered unicast MAC (_RECLAIM_MAC) preserving the VLAN tag. One shared
+    MAC keeps the switch CAM table to a single entry instead of one per IP.
   * GC (single): periodic cleanup of stale dicts.
 
 Decoupling send from wait means throughput is bounded by sendp() rate (~us
 per packet), not by probe_timeout. After a probe-answered or reclaim, the
-(iface, IP) is silenced for CLAIM_COOLDOWN seconds; the reclaim MAC is cached
-per (iface, IP) so subsequent reclaims reuse it (no flapping for requesters).
+(iface, IP) is silenced for CLAIM_COOLDOWN seconds.
 """
 
 import argparse
 import logging
 import os
 import queue
-import random
 import signal
 import sys
 import threading
@@ -54,10 +53,8 @@ DESCRIPTION = (
     "PROBE_TIMEOUT."
 )
 
-# GC interval for _silent_until / _pending / _claimed_macs dicts.
+# GC interval for _silent_until / _pending dicts.
 _GC_INTERVAL = 60.0
-# Drop cached reclaim MACs that haven't been reused in this many seconds.
-_MAC_RETENTION = 3600.0
 # How often the reclaim sweeper wakes.
 _SWEEP_INTERVAL = 0.1
 # Source IP used in outgoing who-has probes. RFC 5737 TEST-NET-1 (192.0.2.0/24)
@@ -82,12 +79,12 @@ class ProbeTask(NamedTuple):
     vlan_id: int     # 0 = untagged, else 802.1Q VLAN ID
 
 
-def rand_unicast_mac() -> str:
-    """Generate a locally-administered unicast MAC (fe:55:rand:rand:rand:rand).
-
-    fe = 11111110: bit 0 = 0 (unicast), bit 1 = 1 (locally administered).
-    """
-    return "fe:55:%s" % ":".join("%02x" % random.randint(0, 0xFF) for _ in range(4))
+# Single locally-administered unicast MAC used as the source of every reclaim
+# is-at. fe = 11111110: bit 0 = 0 (unicast), bit 1 = 1 (locally administered).
+# Reusing one MAC for all reclaims (instead of a random per-IP MAC) keeps the
+# switch CAM table to a single entry instead of one per reclaimed IP. The
+# fe:55: prefix is what the reply sniffer uses to ignore our own frames.
+_RECLAIM_MAC = "fe:55:00:00:00:01"
 
 
 def parse_vlans(spec: str) -> set[int] | None:
@@ -138,7 +135,7 @@ class ArpHole:
         self.probe_timeout = probe_timeout
         # None = allow all VLANs (and untagged). 0 in set = allow untagged.
         self.allowed_vlans = allowed_vlans
-        # Guards _pending, _silent_until, _inflight, _claimed_macs, _probing.
+        # Guards _pending, _silent_until, _inflight, _probing.
         # All keyed by (iface, ip, vlan_id) so the same IP on different VLANs
         # doesn't cross-interfere.
         self._lock = threading.Lock()
@@ -150,7 +147,6 @@ class ArpHole:
         self._inflight: set[tuple[str, str, int]] = set()
         # (iface, ip, vlan) -> (mac, last_used_monotonic). Reused on subsequent
         # reclaims so requesters don't see MAC flapping.
-        self._claimed_macs: dict[tuple[str, str, int], tuple[str, float]] = {}
         # (iface, ip, vlan) -> (send_ts, ProbeTask). Set by sender BEFORE sendp,
         # cleared by reply sniffer (occupied) or sweeper (reclaim).
         self._probing: dict[tuple[str, str, int], tuple[float, ProbeTask]] = {}
@@ -202,24 +198,6 @@ class ArpHole:
             self.claim_cooldown,
         )
 
-    def _get_or_create_mac(self, iface: str, ip: str, vlan_id: int) -> str:
-        """Return cached reclaim MAC for (iface, ip, vlan), creating one on first use.
-
-        Refreshes last_used on hit so the GC retention window is measured
-        from the most recent reclaim, not the first.
-        """
-        key = (iface, ip, vlan_id)
-        now = time.monotonic()
-        with self._lock:
-            entry = self._claimed_macs.get(key)
-            if entry is None:
-                mac = rand_unicast_mac()
-                self._claimed_macs[key] = (mac, now)
-                return mac
-            mac, _ = entry
-            self._claimed_macs[key] = (mac, now)
-            return mac
-
     def _record_request(self, iface: str, ip: str, vlan_id: int, now: float) -> int:
         """Return count of requests for (iface, ip, vlan) within the rolling window."""
         key = (iface, ip, vlan_id)
@@ -237,10 +215,9 @@ class ArpHole:
         return len(timestamps)
 
     def _gc(self) -> None:
-        """Drop expired silence entries, stale pending counters, and stale MAC cache."""
+        """Drop expired silence entries and stale pending counters."""
         now = time.monotonic()
         cutoff = now - self.window
-        mac_cutoff = now - _MAC_RETENTION
         with self._lock:
             expired_silence = [
                 k for k, until in self._silent_until.items() if until <= now
@@ -261,18 +238,11 @@ class ArpHole:
                     stale_pending.append(k)
             for k in stale_pending:
                 del self._pending[k]
-            stale_macs = [
-                k for k, (_, last_used) in self._claimed_macs.items()
-                if last_used < mac_cutoff
-            ]
-            for k in stale_macs:
-                del self._claimed_macs[k]
-        if expired_silence or stale_pending or stale_macs:
+        if expired_silence or stale_pending:
             logger.debug(
-                "GC: removed %d silence, %d pending, %d mac entries",
+                "GC: removed %d silence, %d pending entries",
                 len(expired_silence),
                 len(stale_pending),
-                len(stale_macs),
             )
 
     def _gc_loop(self) -> None:
@@ -431,10 +401,10 @@ class ArpHole:
         return frame
 
     def _do_reclaim(self, iface: str, task: ProbeTask) -> None:
-        """Send reclaim is-at, cache MAC, silence. Called by sweeper."""
+        """Send reclaim is-at, silence. Called by sweeper."""
         ip = task.target_ip
         vlan_id = task.vlan_id
-        mac = self._get_or_create_mac(iface, ip, vlan_id)
+        mac = _RECLAIM_MAC
         frame = self._build_reply(iface, task, mac)
         try:
             sock = self._get_send_socket(iface)
