@@ -80,6 +80,8 @@ const (
 	ErrConsoleNotFound            ErrCode = 111013
 	ErrInvalidConsoleToken        ErrCode = 111014
 	ErrInvalidMetadata            ErrCode = 111015
+	ErrRefreshMacFailed           ErrCode = 111016
+	ErrRefreshMacNotOnInstance    ErrCode = 111017
 
 	// Flavor related errors (1119xx)
 	ErrFlavorNotFound     ErrCode = 111901
@@ -186,18 +188,18 @@ const (
 	ErrInterfaceInvalidSubnet        ErrCode = 131208
 
 	// Floating IP related errors (1312xx)
-	ErrFIPNotFound               ErrCode = 131201
-	ErrFIPCreateFailed           ErrCode = 131202
-	ErrFIPUpdateFailed           ErrCode = 131203
-	ErrDeleteNativeFIPFailed     ErrCode = 131204
-	ErrUpdatePublicIPFailed      ErrCode = 131205
-	ErrUpdateInstIDOfFIPFailed   ErrCode = 131206
-	ErrUpdateSubnetIDOfFIPFailed ErrCode = 131207
-	ErrFIPDeleteFailed           ErrCode = 131208
-	ErrFIPInUse                  ErrCode = 131209
-	ErrDummyFIPCreateFailed      ErrCode = 131210
-	ErrUpdateGroupIDFailed       ErrCode = 131211
-	ErrFIPListFailed             ErrCode = 131212
+	ErrFIPNotFound               ErrCode = 131251
+	ErrFIPCreateFailed           ErrCode = 131252
+	ErrFIPUpdateFailed           ErrCode = 131253
+	ErrDeleteNativeFIPFailed     ErrCode = 131254
+	ErrUpdatePublicIPFailed      ErrCode = 131255
+	ErrUpdateInstIDOfFIPFailed   ErrCode = 131256
+	ErrUpdateSubnetIDOfFIPFailed ErrCode = 131257
+	ErrFIPDeleteFailed           ErrCode = 131258
+	ErrFIPInUse                  ErrCode = 131259
+	ErrDummyFIPCreateFailed      ErrCode = 131260
+	ErrUpdateGroupIDFailed       ErrCode = 131261
+	ErrFIPListFailed             ErrCode = 131262
 
 	// VPC/Router related errors (1313xx)
 	ErrRouterNotFound              ErrCode = 131301

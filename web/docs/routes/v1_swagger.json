@@ -2764,6 +2764,62 @@
                 }
             }
         },
+        "/instances/{id}/refresh_mac": {
+            "post": {
+                "description": "refresh mac for addresses of an instance",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "refresh mac for addresses of an instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Refresh mac payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceRefreshMacPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/instances/{id}/reinstall": {
             "post": {
                 "description": "reinstall a instance",
@@ -6354,6 +6410,7 @@
                     "maxLength": 255
                 },
                 "expires_at": {
+                    "description": "RFC-like \"2006-01-02 15:04:05.000000\" or empty for no expiry",
                     "type": "string"
                 },
                 "name": {
@@ -7783,6 +7840,17 @@
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 1
+                }
+            }
+        },
+        "apis.InstanceRefreshMacPayload": {
+            "type": "object",
+            "properties": {
+                "floating_ip": {
+                    "$ref": "#/definitions/common.BaseReference"
+                },
+                "subnet": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },

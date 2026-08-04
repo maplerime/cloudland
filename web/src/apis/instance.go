@@ -53,6 +53,11 @@ type InstanceRescuePayload struct {
 	Password    string         `json:"password" binding:"required,min=8,max=64"`
 }
 
+type InstanceRefreshMacPayload struct {
+	FloatingIp *BaseReference `json:"floating_ip" binding:"omitempty"`
+	Subnet     *BaseReference `json:"subnet" binding:"omitempty"`
+}
+
 type InstancePayload struct {
 	Count               int                 `json:"count" binding:"omitempty,gte=1,lte=16"`
 	Hypervisor          *int                `json:"hypervisor" binding:"omitempty,gte=0,lte=65535"`
@@ -450,6 +455,38 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, nil)
 
+}
+
+// @Summary refresh mac for addresses of an instance
+// @Description refresh mac for addresses of an instance
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance ID"
+// @Param   message  body  InstanceRefreshMacPayload  true  "Refresh mac payload"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/refresh_mac [post]
+func (v *InstanceAPI) RefreshMac(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	logger.Debugf("Refresh mac for instance %s", uuID)
+	payload := &InstanceRefreshMacPayload{}
+	err := c.ShouldBindJSON(payload)
+	if err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	err = instanceAdmin.RefreshMac(ctx, uuID, payload.FloatingIp, payload.Subnet)
+	if err != nil {
+		logger.Errorf("Failed to refresh mac for instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Failed to refresh mac", err)
+		return
+	}
+	logger.Debugf("Refresh mac command dispatched for instance %s", uuID)
+	c.JSON(http.StatusOK, nil)
 }
 
 // @Summary delete a instance

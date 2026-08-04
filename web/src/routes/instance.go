@@ -1405,6 +1405,122 @@ func (a *InstanceAdmin) GetInstanceByUUID(ctx context.Context, uuID string) (ins
 	return a.Get(ctx, instance.ID)
 }
 
+// buildRefreshMacCommand renders the hypervisor command that announces the given addresses with the given MAC.
+func buildRefreshMacCommand(vlan int64, mac string, ips []string) string {
+	quoted := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		quoted = append(quoted, fmt.Sprintf("'%s'", strings.Split(ip, "/")[0]))
+	}
+	return fmt.Sprintf("/opt/cloudland/scripts/backend/send_spoof_arp.py 'br%d' '%s' %s",
+		vlan, mac, strings.Join(quoted, " "))
+}
+
+func (a *InstanceAdmin) RefreshMac(ctx context.Context, uuID string, fipRef, subnetRef *BaseReference) (err error) {
+	logger.Debugf("Refreshing mac for instance %s, fipRef %+v, subnetRef %+v", uuID, fipRef, subnetRef)
+	if fipRef == nil && subnetRef == nil {
+		logger.Error("Neither floating ip nor subnet was provided")
+		return NewCLError(ErrInvalidParameter, "Either floating_ip or subnet must be provided", nil)
+	}
+	instance, err := a.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Error("Failed to get instance", err)
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.ValidateOwner(model.Writer, instance.Owner) {
+		logger.Errorf("Not authorized to refresh mac for instance %s", uuID)
+		return NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+	}
+	var iface *model.Interface
+	for _, i := range instance.Interfaces {
+		if i.PrimaryIf {
+			iface = i
+			break
+		}
+	}
+	if iface == nil {
+		logger.Errorf("Instance %s has no primary interface", uuID)
+		return NewCLError(ErrInstanceNoPrimaryInterface, "Instance has no primary interface", nil)
+	}
+	if iface.Address == nil || iface.Address.Subnet == nil {
+		logger.Errorf("Primary interface %d has no address or subnet loaded", iface.ID)
+		return NewCLError(ErrInstanceNoPrimaryInterface, "Primary interface has no address", nil)
+	}
+	ips := []string{}
+	// Floating IP branch: announce that single public address.
+	if fipRef != nil {
+		var floatingIp *model.FloatingIp
+		floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, fipRef.ID)
+		if err != nil {
+			logger.Error("Failed to get floating ip", err)
+			return
+		}
+		if floatingIp.InstanceID != instance.ID {
+			logger.Errorf("Floating ip %s belongs to instance %d, not %d", fipRef.ID, floatingIp.InstanceID, instance.ID)
+			return NewCLError(ErrRefreshMacNotOnInstance, "Floating ip does not belong to this instance", nil)
+		}
+		ips = append(ips, floatingIp.FipAddress)
+	}
+	// Site subnet branch: announce every address in the subnet.
+	if subnetRef != nil {
+		var subnet *model.Subnet
+		subnet, err = subnetAdmin.GetSubnetByUUID(ctx, subnetRef.ID)
+		if err != nil {
+			logger.Error("Failed to get subnet", err)
+			return
+		}
+		// Ties the subnet to this instance AND to the interface whose MAC we announce with.
+		// GetSubnetByUUID skips owner validation for site subnets, so this is the only thing
+		// preventing another tenant's subnet from being announced here.
+		if subnet.Interface != iface.ID {
+			logger.Errorf("Subnet %s is bound to interface %d, not the primary interface %d of instance %d",
+				subnetRef.ID, subnet.Interface, iface.ID, instance.ID)
+			return NewCLError(ErrRefreshMacNotOnInstance, "Subnet is not bound to this instance", nil)
+		}
+		_, db := GetContextDB(ctx)
+		addresses := []*model.Address{}
+		// The gateway lives on the router/host side; claiming it with the VM's MAC would pull
+		// gateway traffic into the VM - an outage, not a refresh.
+		if err = db.Where("subnet_id = ? and address != ?", subnet.ID, subnet.Gateway).Find(&addresses).Error; err != nil {
+			logger.Error("Failed to query addresses of subnet", err)
+			return NewCLError(ErrSQLSyntaxError, "Failed to query addresses of subnet", err)
+		}
+		for _, addr := range addresses {
+			ips = append(ips, addr.Address)
+		}
+	}
+	// A floating IP can also be one of the site subnet's addresses, so drop duplicates to
+	// avoid announcing the same binding twice in one batch.
+	ips = dedupAddresses(ips)
+	if len(ips) == 0 {
+		logger.Errorf("No address to refresh for instance %s", uuID)
+		return NewCLError(ErrInvalidParameter, "No address to refresh", nil)
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := buildRefreshMacCommand(iface.Address.Subnet.Vlan, iface.MacAddr, ips)
+	if err = HyperExecute(ctx, control, command); err != nil {
+		logger.Error("Refresh mac command execution failed", err)
+		return NewCLError(ErrRefreshMacFailed, "Failed to refresh mac", err)
+	}
+	logger.Debugf("Refresh mac dispatched to hyper %d for instance %s, %d address(es)",
+		instance.Hyper, uuID, len(ips))
+	return
+}
+
+// dedupAddresses removes duplicate addresses while preserving the original order.
+func dedupAddresses(ips []string) []string {
+	seen := make(map[string]struct{}, len(ips))
+	result := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if _, ok := seen[ip]; ok {
+			continue
+		}
+		seen[ip] = struct{}{}
+		result = append(result, ip)
+	}
+	return result
+}
+
 func GetDBIndexByInstanceUUID(c *gin.Context, uuid string) (int, error) {
 	db := DB()
 

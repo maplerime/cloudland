@@ -225,6 +225,7 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.POST("/api/v1/instances/:id/resize", instanceAPI.Resize)
 		authGroup.POST("/api/v1/instances/:id/rescue", instanceAPI.Rescue)
 		authGroup.POST("/api/v1/instances/:id/end_rescue", instanceAPI.EndRescue)
+		authGroup.POST("/api/v1/instances/:id/refresh_mac", instanceAPI.RefreshMac)
 
 		authGroup.GET("/api/v1/instances/:id/interfaces", interfaceAPI.List)
 		authGroup.POST("/api/v1/instances/:id/interfaces", interfaceAPI.Create)
