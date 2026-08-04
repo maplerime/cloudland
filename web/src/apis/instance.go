@@ -467,7 +467,7 @@ func (v *InstanceAPI) Resize(c *gin.Context) {
 // @Success 200 {object} map[string]string
 // @Failure 400 {object} common.APIError "Bad request"
 // @Failure 401 {object} common.APIError "Not authorized"
-// @Router /instances/{id}/refresh_mac [post]
+// @Router /instances/{id}/refresh-mac [post]
 func (v *InstanceAPI) RefreshMac(c *gin.Context) {
 	ctx := c.Request.Context()
 	uuID := c.Param("id")
