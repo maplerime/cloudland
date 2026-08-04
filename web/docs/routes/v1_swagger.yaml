@@ -4429,7 +4429,7 @@ paths:
       summary: patch a interface
       tags:
       - Network
-  /instances/{id}/refresh_mac:
+  /instances/{id}/refresh-mac:
     post:
       consumes:
       - application/json

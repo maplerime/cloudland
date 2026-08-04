@@ -2771,7 +2771,7 @@ const docTemplatev1 = `{
                 }
             }
         },
-        "/instances/{id}/refresh_mac": {
+        "/instances/{id}/refresh-mac": {
             "post": {
                 "description": "refresh mac for addresses of an instance",
                 "consumes": [
