@@ -77,6 +77,9 @@
         <a {{ if eq .Link "/migrations" }} class="active item" {{ else }} class="item" {{ end }} href="/migrations">
             {{.i18n.Tr "Migrations"}}
         </a>
+        <a {{ if eq .Link "/traffic-billing" }} class="active item" {{ else }} class="item" {{ end }} href="/traffic-billing">
+            {{.i18n.Tr "Traffic_Billing"}}
+        </a>
 
 		{{/* Add new link for Node Alarm Rules */}}
 		<a {{ if eq .Link "/alarms/node" }} class="active item" {{ else }} class="item" {{ end }} href="/alarms/node">

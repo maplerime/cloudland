@@ -314,6 +314,10 @@ const (
 	ErrDictionaryCreateFailed    ErrCode = 199802
 	ErrDictionaryUpdateFailed    ErrCode = 199803
 	ErrDictionaryDeleteFailed    ErrCode = 199804
+
+	// traffic billing mapping related errors (1999xx)
+	ErrTrafficBillingAlreadyMarked ErrCode = 199901
+	ErrTrafficBillingNotFound      ErrCode = 199902
 )
 
 type CLError struct {

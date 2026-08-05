@@ -1320,6 +1320,14 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Failed to cleanup ip whitelist entries", cleanupErr)
 	}
 
+	// Cleanup traffic billing mapping DB record for this instance. clear_vm.sh
+	// (dispatched below) already removes the compute node's local metric file;
+	// without this, a deleted instance's shared-DB mark would linger as an
+	// orphaned row forever (no other flow ever revisits a deleted instance_uuid).
+	if cleanupErr := trafficBillingAdmin.DeleteByInstanceUUID(ctx, instance.UUID); cleanupErr != nil {
+		logger.Error("Failed to cleanup traffic billing mapping", cleanupErr)
+	}
+
 	// Build imagePrefix for async snapshot cleanup (same rule as Create)
 	imagePrefix := ""
 	if instance.Image != nil {

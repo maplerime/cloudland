@@ -15,6 +15,9 @@ vm_xml=$(virsh dumpxml $vm_ID)
 # Call generate_vm_instance_map.sh to remove mapping before VM deletion
 ./generate_vm_instance_map.sh remove $vm_ID
 
+# Remove traffic billing mark too (idempotent no-op if this VM was never marked)
+./generate_vm_traffic_billing_map.sh remove $vm_ID
+
 virsh undefine --nvram $vm_ID
 cmd="virsh destroy $vm_ID"
 result=$(eval "$cmd")

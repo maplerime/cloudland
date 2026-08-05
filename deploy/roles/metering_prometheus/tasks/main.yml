@@ -26,7 +26,7 @@
             max_backoff: 5s
           write_relabel_configs:
             - source_labels: [__name__]
-              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|vm_instance_map|cloud_snapshot_snap_size_bytes|cloud_snapshot_data_size_bytes'
+              regex: 'libvirt_domain_info_vstate|domain_north_south_.*|libvirt_domain_info_virtual_cpus|libvirt_domain_info_maximum_memory_bytes|libvirt_domain_block_stats_capacity_bytes|vm_instance_map|cloud_snapshot_snap_size_bytes|cloud_snapshot_data_size_bytes|vm_traffic_billing_map'
               action: keep
   when: metering_server_url is defined
 

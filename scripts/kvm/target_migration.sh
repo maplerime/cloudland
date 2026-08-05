@@ -3,7 +3,7 @@
 cd $(dirname $0)
 source ../cloudrc
 
-[ $# -lt 12 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type> <boot_loader> <pool_ID> <instance_uuid>"
+[ $# -lt 13 ] && die "$0 <migrate_ID> <task_ID> <vm_ID> <name> <cpu> <memory> <disk_size> <source_hyper> <migration_type> <boot_loader> <pool_ID> <instance_uuid> <traffic_billing>"
 
 migrate_ID=$1
 task_ID=$2
@@ -18,6 +18,10 @@ migration_type=$9
 boot_loader=${10}
 pool_ID=${11}
 instance_uuid=${12:-$ID}
+# Whether cloudland's shared DB already had this instance marked for traffic
+# billing before this migration started -- decided by clapi (migration.go),
+# not by this script, since the target node has no way to know on its own.
+traffic_billing=${13:-false}
 state="failed"
 
 if [ -z "$wds_address" ]; then
@@ -152,6 +156,11 @@ fi
 if [ "$state" != "failed" ]; then
     echo "Updating vm_instance_map metrics: adding VM $vm_ID to target hypervisor"
     ./generate_vm_instance_map.sh add $vm_ID
+
+    if [ "$traffic_billing" = "true" ]; then
+        echo "Updating vm_traffic_billing_map metrics: adding VM $vm_ID to target hypervisor"
+        ./generate_vm_traffic_billing_map.sh add $vm_ID
+    fi
 fi
 
 echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' ''"

@@ -5412,6 +5412,214 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/traffic-billing": {
+            "get": {
+                "description": "List the instances currently marked as traffic billing. The underlying\nquery applies no explicit ORDER BY, so ordering within a page is\nwhatever the DB returns. Admin permission required.\n\nThe same handler also serves GET /traffic-billing/{uuid}, a lookup of\none instance by its UUID. That variant ignores the paging and query\nparameters below and returns the identical response shape with the one\nmatching entry in \"data\" plus a fixed meta of total/current_page/\nper_page/total_pages = 1; an instance that is not marked comes back as\n404 NOT_FOUND. It is not documented as a separate operation here\nbecause one Go handler carries one annotation block.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "list traffic billing instances",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number, 1-based; values below 1 fall back to 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Entries per page, valid range 1-1000; out-of-range values fall back to 20",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by instance UUID substring (SQL LIKE %query%); empty means no filter",
+                        "name": "query",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND: only for the /{uuid} variant, instance is not marked as traffic billing",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB count or query failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/traffic-billing/sync": {
+            "post": {
+                "description": "Push the complete set of instances that should be traffic billing from\nthe DB to every compute node at once, so each node rebuilds its local\ntraffic-billing map from that list. Use it to repair nodes that drifted\n(missed a create/delete, or were rebuilt). Admin permission required.\n\nTakes no request body and accepts no caller-supplied list: the DB is\nalways the source of truth, so \"sync\" only ever means DB-to-compute-node\nhere, never the reverse. Success means the broadcast was dispatched to\nevery node, not that every node has finished applying it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "broadcast the traffic billing list to all compute nodes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingSyncResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB read or broadcast dispatch failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/traffic-billing/{uuid}": {
+            "post": {
+                "description": "Mark one instance as traffic billing, then push the mapping to the\ncompute node hosting it so that node begins exporting the instance's\n15-minute traffic metrics. Being called is the only signal: no\nbilling-type judgement happens server side. Takes no request body --\nthe instance UUID in the path is the entire input. Rejects an\ninstance that is already marked rather than silently succeeding, and\nrejects one with no hypervisor assigned. Admin permission required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "mark an instance as traffic billing",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "INVALID_STATE: instance has no hypervisor assigned",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "INSTANCE_NOT_FOUND: no such instance",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "ALREADY_MARKED: instance is already traffic billing",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB write or compute-node push failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove one instance's traffic-billing mark and tell its compute node\nto stop exporting the instance's traffic metrics. An instance that was\nnever marked is rejected with NOT_FOUND rather than reported as a\nsuccessful no-op, so a typo'd UUID does not look like it worked.\nAdmin permission required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "unmark an instance as traffic billing",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingDeleteResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND: instance is not currently marked as traffic billing",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB delete or compute-node push failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "list users",
@@ -6361,6 +6569,7 @@ const docTemplatev1 = `{
                     "maxLength": 255
                 },
                 "expires_at": {
+                    "description": "RFC-like \"2006-01-02 15:04:05.000000\" or empty for no expiry",
                     "type": "string"
                 },
                 "name": {
@@ -9467,6 +9676,109 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "apis.TrafficBillingCreateResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/apis.TrafficBillingResponse"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingDeleteResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/apis.TrafficBillingInstanceRef"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "instance_uuid": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingInstanceRef": {
+            "type": "object",
+            "properties": {
+                "instance_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TrafficBillingResponse"
+                    }
+                },
+                "meta": {
+                    "$ref": "#/definitions/apis.TrafficBillingMeta"
+                }
+            }
+        },
+        "apis.TrafficBillingMeta": {
+            "type": "object",
+            "properties": {
+                "current_page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.TrafficBillingResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "instance_uuid": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingSyncResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.UserListResponse": {
             "type": "object",
             "properties": {
@@ -10126,15 +10438,6 @@ const docTemplatev1 = `{
                 "STaskActionStart": "Start instance",
                 "STaskActionStop": "Stop instance gracefully"
             },
-            "x-enum-descriptions": [
-                "Stop instance gracefully",
-                "Force stop instance",
-                "Start instance",
-                "Restart instance gracefully",
-                "Force restart instance",
-                "Create volume snapshot",
-                "Create volume backup"
-            ],
             "x-enum-varnames": [
                 "STaskActionStop",
                 "STaskActionHardStop",
