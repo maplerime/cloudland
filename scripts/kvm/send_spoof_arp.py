@@ -31,21 +31,27 @@ def send_spoofed_arp(iface, src_ips, src_mac):
         sendp(pkts, iface=iface, verbose=False)
         print(f"Sent {len(pkts)} spoofed gratuitous ARP(s) ({src_mac}) via interface {iface}")
     except Exception as e:
+        # Exit non-zero so the caller (cloudlet backHandler -> WEXITSTATUS) reports
+        # an error message instead of silently treating a failed send as success.
         print(f"Error sending gratuitous ARP packet: {e}")
+        sys.exit(1)
+
+
+def usage():
+    print("Usage: send_spoof_arp.py <interface> <source_mac> <source_ip> [source_ip ...]")
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: send_spoof_arp.py <interface> <source_mac> <source_ip> [source_ip ...]")
-        print("   or: send_spoof_arp.py <interface> <source_ip> <source_mac>  (legacy, single ip)")
+        usage()
         sys.exit(1)
     iface = sys.argv[1]
-    # Legacy 3-arg form: <interface> <source_ip> <source_mac>
-    if len(sys.argv) == 4 and ":" in sys.argv[3] and ":" not in sys.argv[2]:
-        src_ips = [sys.argv[2]]
-        src_mac = sys.argv[3]
-    else:
-        # New form: <interface> <source_mac> <source_ip> [source_ip ...]
-        src_mac = sys.argv[2]
-        src_ips = sys.argv[3:]
+    src_mac = sys.argv[2]
+    src_ips = sys.argv[3:]
+    # Fail loudly on the old <interface> <source_ip> <source_mac> ordering instead of
+    # silently sending garbage: a MAC always contains ':', an IPv4 address never does.
+    if ":" not in src_mac:
+        print(f"Error: '{src_mac}' is not a MAC address; argument order is <interface> <mac> <ip>...")
+        usage()
+        sys.exit(1)
     send_spoofed_arp(iface, src_ips, src_mac)

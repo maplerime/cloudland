@@ -24,6 +24,7 @@ definitions:
         maxLength: 255
         type: string
       expires_at:
+        description: RFC-like "2006-01-02 15:04:05.000000" or empty for no expiry
         type: string
       name:
         maxLength: 64
@@ -1003,6 +1004,13 @@ definitions:
     - image
     - primary_interface
     - zone
+    type: object
+  apis.InstanceRefreshMacPayload:
+    properties:
+      floating_ip:
+        $ref: '#/definitions/common.BaseReference'
+      subnet:
+        $ref: '#/definitions/common.BaseReference'
     type: object
   apis.InstanceReinstallPayload:
     properties:
@@ -4421,6 +4429,43 @@ paths:
       summary: patch a interface
       tags:
       - Network
+  /instances/{id}/refresh-mac:
+    post:
+      consumes:
+      - application/json
+      description: refresh mac for addresses of an instance
+      parameters:
+      - description: Instance ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Refresh mac payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceRefreshMacPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: refresh mac for addresses of an instance
+      tags:
+      - Compute
   /instances/{id}/reinstall:
     post:
       consumes:
