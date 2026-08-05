@@ -62,7 +62,7 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		if err != nil {
 			logger.Error("Invalid instance ID", err)
 			if gorm.IsRecordNotFoundError(err) {
-				instance.Hostname = "unknown"
+				instance.Hostname = fmt.Sprintf("unknown-%d", instance.ID)
 				instance.Status = model.InstanceStatus(status)
 				instance.Hyper = hyperID
 				err = db.Create(instance).Error
