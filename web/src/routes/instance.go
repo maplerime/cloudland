@@ -1469,6 +1469,10 @@ func (a *InstanceAdmin) RefreshMac(ctx context.Context, uuID string, fipRef, sub
 			logger.Error("Failed to get subnet", err)
 			return
 		}
+		if subnet.Type != string(Site) {
+			logger.Errorf("Subnet %s is of type %s, not site", subnetRef.ID, subnet.Type)
+			return NewCLError(ErrSubnetShouldBeSite, "Only site subnets can be refreshed", nil)
+		}
 		// Ties the subnet to this instance AND to the interface whose MAC we announce with.
 		// GetSubnetByUUID skips owner validation for site subnets, so this is the only thing
 		// preventing another tenant's subnet from being announced here.
