@@ -23,6 +23,14 @@ function emit()
     rules="${rules}-I ${chain} 1 $*"$'\n'
 }
 
+# Valid TCP/UDP port is 1-65535. Returns 0 if in range, 1 otherwise.
+function valid_port()
+{
+    local p=$1
+    [[ "$p" =~ ^[0-9]+$ ]] || return 1
+    [ "$p" -gt 0 -a "$p" -lt 65536 ]
+}
+
 function allow_ipv4()
 {
     chain=$1
@@ -32,7 +40,16 @@ function allow_ipv4()
     max=$5
     if [ -z "$min" -a -z "$max" ]; then
         emit "$chain" "-p $proto $args -m conntrack --ctstate NEW -j RETURN"
-    elif [ "$max" -eq "$min" ]; then
+        return
+    fi
+    # A specific port (range) is given - both bounds must be valid, otherwise
+    # skip this rule entirely (a bad port would make iptables-restore reject
+    # the whole batch).
+    if ! valid_port "$min" || ! valid_port "$max"; then
+        logger -t apply_sg_rule "skipping $proto rule with out-of-range port(s) min=$min max=$max for $vnic"
+        return
+    fi
+    if [ "$max" -eq "$min" ]; then
         emit "$chain" "-p $proto -m $proto -m conntrack --ctstate NEW --dport $max $args -j RETURN"
     elif [ "$max" -gt "$min" ]; then
         emit "$chain" "-p $proto -m $proto -m conntrack --ctstate NEW --dport $min:$max $args -j RETURN"
