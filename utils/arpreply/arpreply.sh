@@ -16,11 +16,15 @@ cd "$(dirname "$0")"
 
 # --- configuration (override with env vars if desired) -----------------------
 : "${ARPREPLY_LOG:=INFO}"
-: "${ARPREPLY_PROBE_SRC:=192.0.2.100}"   # match arphole's probe source IP
+: "${ARPREPLY_PROBE_SRC:=}"   # arphole's probe source; EMPTY = any source (proxy-ARP)
 : "${ARPREPLY_QUEUE_NUM:=40}"            # NFQUEUE number the nft rule uses
-: "${ARPREPLY_REFRESH:=15}"              # ipset ownership rebuild interval (s)
+: "${ARPREPLY_VLANS:=25-30}"                  # only intercept these VLANs' v-<vlan> uplinks, e.g. "25-30"; empty = all
+: "${ARPREPLY_IFACE:=bond0}"                  # extra ingress interface names to intercept on (space/comma list)
+: "${ARPREPLY_POLL:=5}"                  # change-check interval (s): rebuild on VM add/remove or ISO mtime change
+: "${ARPREPLY_REFRESH:=0}"              # optional backstop full-rebuild interval; 0 = disabled (change-driven)
 
-export ARPREPLY_LOG ARPREPLY_PROBE_SRC ARPREPLY_QUEUE_NUM ARPREPLY_REFRESH
+export ARPREPLY_LOG ARPREPLY_PROBE_SRC ARPREPLY_QUEUE_NUM
+export ARPREPLY_VLANS ARPREPLY_IFACE ARPREPLY_POLL ARPREPLY_REFRESH
 
 # --- python interpreter ------------------------------------------------------
 if [[ -x "./.venv/bin/python" ]]; then
@@ -41,5 +45,5 @@ if [[ $EUID -ne 0 ]]; then
     fi
 fi
 
-echo "arpreply: probe-src=$ARPREPLY_PROBE_SRC queue=$ARPREPLY_QUEUE_NUM refresh=${ARPREPLY_REFRESH}s"
+echo "arpreply: probe-src=${ARPREPLY_PROBE_SRC:-<any>} queue=$ARPREPLY_QUEUE_NUM vlans=${ARPREPLY_VLANS:-all} poll=${ARPREPLY_POLL}s backstop=${ARPREPLY_REFRESH}s"
 exec "$PY" ./arpreply.py "$@"

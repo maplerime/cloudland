@@ -1,0 +1,36 @@
+groups:
+- name: node-reboot-detection
+  rules:
+  - alert: NodeRebootAbnormal
+    expr: |
+      (node_last_boot_reason{reason!~"clean_shutdown|no_reboot_yet"} == 1)
+      and on(instance) (time() - node_boot_time_seconds{node_type=~"compute|management"} < {{ reboot_detect_window | default(3600) }})
+    for: 0s
+    labels:
+      severity: critical
+      alert_type: "node-reboot-abnormal"
+    annotations:
+      summary: "{{ $labels.node_type }} 节点 {{ $labels.instance }} 发生异常重启"
+      description: "节点 {{ $labels.instance }} 重启前未检测到正常关机流程，疑似原因：{{ $labels.reason }}"
+
+  - alert: NodeRebootCommand
+    expr: |
+      (time() - node_boot_time_seconds{node_type=~"compute|management"} < {{ reboot_detect_window | default(3600) }})
+      and on(instance) (node_last_boot_reason{reason="clean_shutdown"} == 1)
+    for: 0s
+    labels:
+      severity: info
+      alert_type: "node-reboot-command"
+    annotations:
+      summary: "{{ $labels.node_type }} 节点 {{ $labels.instance }} 发生正常重启"
+      description: "节点 {{ $labels.instance }} 是在正常关机流程之后重启的，非硬件/内核异常"
+
+  - alert: NodeRebootDetectionBroken
+    expr: node_reboot_detection_error{node_type=~"compute|management"} == 1
+    for: 5m
+    labels:
+      severity: warning
+      alert_type: "node-reboot-detection-broken"
+    annotations:
+      summary: "{{ $labels.node_type }} 节点 {{ $labels.instance }} 重启原因检测功能异常"
+      description: "节点 {{ $labels.instance }} 上的重启原因检测脚本无法正常工作，错误：{{ $labels.error }}（可能是 journald 未持久化，或缺少上次开机日志），需要人工介入处理"

@@ -19,7 +19,7 @@ vm_name=${10}
 boot_loader=${11}
 instance_uuid=${12:-$ID}
 image_volume_id=${13}
-state=error
+vm_state=error
 vol_state=error
 
 md=$(cat)
@@ -35,6 +35,24 @@ if [ $? -ne 0 ]; then
     echo "Warning: Failed to undefine domain $vm_ID, continuing anyway..."
 fi
 virsh destroy $vm_ID
+# virsh destroy returns before QEMU has fully exited; the WDS vhost-user connection is held by the
+# QEMU process and is only released once that process is gone. Unbinding too early makes WDS fail
+# with "Device or resource busy (-16)". Wait until the domain is really stopped AND the QEMU
+# process is gone before tearing down any vhost. Best-effort: on timeout we continue anyway (a
+# failed teardown only leaves reclaimable zombies, it never breaks the reinstall).
+confirmed=0
+for i in $(seq 1 30); do
+    dom_state=$(virsh domstate $vm_ID 2>/dev/null)
+    # The trailing comma matches `-name guest=inst-<ID>,debug-threads=on` and avoids matching a
+    # longer id (inst-378 vs inst-3789). If this libvirt/QEMU does not use the guest= form, pgrep
+    # simply never matches and domstate alone gates the wait.
+    if { [ -z "$dom_state" ] || [ "$dom_state" = "shut off" ]; } && ! pgrep -f "guest=$vm_ID," >/dev/null 2>&1; then
+        confirmed=1
+        break
+    fi
+    sleep 1
+done
+[ "$confirmed" -ne 1 ] && log_debug $vm_ID "domain not confirmed stopped after 30s, proceeding best-effort"
 let fsize=$disk_size*1024*1024*1024
 
 # rebuild metadata
@@ -64,12 +82,36 @@ if [ -z "$wds_address" ]; then
 else
     get_wds_token
     image=$(basename $img_name .raw)
-    old_vhost_name=$(basename $(ls /var/run/wds/instance-$ID-volume-$vol_ID-*))
-    vhost_id=$(wds_curl GET "api/v2/sync/block/vhost?name=$old_vhost_name" | jq -r '.vhosts[0].id')
     uss_id=$(get_uss_gateway)
-    delete_vhost $vol_ID $vhost_id $uss_id
-    # delete old volume
-    wds_curl DELETE "api/v2/sync/block/volumes/$old_volume_id?force=true"
+    # Identify the boot vhost the VM is CURRENTLY using from the dumped domain XML ($vm_xml, written
+    # above by `virsh dumpxml`). This is authoritative and single-valued, unlike the old
+    # `basename $(ls /var/run/wds/...)` which returns an empty/garbage name once stale sockets pile
+    # up. Used only for the XML socket swap near the end of this script.
+    old_vhost_name=$(grep -oE "instance-$ID-volume-$vol_ID-[0-9]+" "$vm_xml" | head -n1)
+    # Tear down EVERY stale boot-disk vhost of this instance AND delete its clone volume, one
+    # socket at a time (best-effort, synchronous). The socket name == vhost name == clone volume
+    # name, so the volume can be looked up by that name. A proper per-socket loop, unlike the old
+    # single `basename $(ls ...)` which broke once >1 socket accumulated. Runs before the new vhost
+    # is created, so it never touches the new one. (The DB-derived $old_volume_id, arg 6, is no
+    # longer used: the socket on the host is authoritative and cannot go stale like the DB path.)
+    for sock in /var/run/wds/instance-$ID-volume-$vol_ID-*; do
+        [ -S "$sock" ] || continue
+        vn=$(basename "$sock")
+        # 1) Unbind + delete the vhost first; a still-bound vhost blocks volume deletion.
+        vhid=$(wds_curl GET "api/v2/sync/block/vhost?name=$vn" | jq -r '.vhosts[0].id')
+        if [ -n "$vhid" ] && [ "$vhid" != null ]; then
+            log_debug $vol_ID "reinstall: deleting old vhost $vn ($vhid)"
+            delete_vhost "$vol_ID" "$vhid" "$uss_id"
+        fi
+        # 2) Delete the clone volume of the SAME name. Exact-name match is mandatory: the WDS name
+        #    filter may be a substring/prefix match, so querying "...-333" can also return
+        #    "...-3333"; select(.name==$vn) keeps only the exact one.
+        vid=$(wds_curl GET "api/v2/sync/block/volumes?name=$vn" | jq -r --arg n "$vn" '.volumes[] | select(.name==$n) | .id' | head -n1)
+        if [ -n "$vid" ] && [ "$vid" != null ]; then
+            del=$(wds_curl DELETE "api/v2/sync/block/volumes/$vid?force=true")
+            log_debug $vol_ID "reinstall: deleting old volume $vn ($vid) ret=$(echo "$del" | jq -r '.ret_code // empty')"
+        fi
+    done
     if [ -z "$pool_ID" ]; then
         pool_ID=$wds_pool_id
     fi
@@ -192,7 +234,10 @@ fi
 
 # Update basic parameters (memory, CPU, instance UUID, and vhost name for WDS)
 sed_cmd="s#>.*</memory>#>$vm_mem</memory>#g; s#>.*</currentMemory>#>$vm_mem</currentMemory>#g; s#>.*</vcpu>#>$vm_cpu</vcpu>#g; s#\(<topology[^>]*\)cores='[0-9]*'#\1cores='$vm_cpu'#g"
-if [ -n "$wds_address" ]; then
+# Only rewrite the boot-disk socket when the old vhost name was positively identified. An empty
+# $old_vhost_name would make this `s##...#g`, which GNU sed treats as "reuse the last regex" and can
+# corrupt the XML. If unknown, leave the XML untouched (worst case: no swap, never corruption).
+if [ -n "$wds_address" ] && [ -n "$old_vhost_name" ]; then
   sed_cmd="$sed_cmd; s#$old_vhost_name#$vhost_name#g"
 fi
 # Add replacement for instance UUID in metadata
@@ -201,8 +246,8 @@ sed -i "$sed_cmd" $vm_xml
 virsh define $vm_xml
 virsh autostart $vm_ID --disable
 virsh start $vm_ID
-[ $? -eq 0 ] && state=running
-echo "|:-COMMAND-:| launch_vm.sh '$ID' '$state' '$SCI_CLIENT_ID' 'sync'"
+[ $? -eq 0 ] && vm_state=running
+echo "|:-COMMAND-:| launch_vm.sh '$ID' '$vm_state' '$SCI_CLIENT_ID' 'sync'"
 
 # check if the vm is windows and whether to change the rdp port
 os_code=$(jq -r '.os_code' <<< $metadata)

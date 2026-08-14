@@ -14,6 +14,7 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 )
 
 func init() {
@@ -142,25 +143,47 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 		if err != nil {
 			logger.Error("Failed to update migration", err)
 		}
+		// Also mark the current task failed so it is not left stuck at in_progress.
+		err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{
+			"status":  "failed",
+			"message": reason}).Error
+		if err != nil {
+			logger.Error("Failed to update task", err)
+		}
 		return
 	}
 
-	// Use defer to handle status updates, ensuring both migration and task status
-	// are set to "failed" if any error occurs during the function execution.
+	// Use defer to handle terminal status updates. On a business error we force BOTH the
+	// task and the migration to a terminal "failed" state — never leave the migration at the
+	// incoming intermediate status (e.g. target_prepared), which would stay stuck. The task
+	// update and migration update use separate error vars so a failed task update is logged,
+	// not silently masked. err is finally set to the migration-write result so a successful
+	// status write commits the transaction (matching the original commit-on-success behavior).
 	defer func() {
-		if status != "failed" {
-			taskStatus = "completed"
-		}
-		migration.Status = status
+		taskMessage := message
 		if err != nil {
 			taskStatus = "failed"
-			err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus, "message": err.Error()}).Error
-		} else {
-			err = db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{"status": taskStatus, "message": message}).Error
+			taskMessage = err.Error()
+		} else if status != "failed" {
+			taskStatus = "completed"
 		}
-		err = db.Model(migration).Update(map[string]interface{}{"status": status}).Error
+		// On error, persist a terminal migration status rather than the intermediate one.
+		finalMigStatus := status
 		if err != nil {
-			logger.Error("Failed to update migration", err)
+			finalMigStatus = "failed"
+		}
+		migration.Status = finalMigStatus
+		// Use a separate variable so a failed task update is logged rather than masked by
+		// the migration update that follows (the masking bug #32 flagged).
+		taskErr := db.Model(&model.Task{}).Where("id = ?", taskID).Update(map[string]interface{}{
+			"status":  taskStatus,
+			"message": taskMessage}).Error
+		if taskErr != nil {
+			logger.Errorf("Failed to update task %d status to %s, %v", taskID, taskStatus, taskErr)
+		}
+		err = db.Model(migration).Update(map[string]interface{}{"status": finalMigStatus}).Error
+		if err != nil {
+			logger.Errorf("Failed to update migration %d status to %s, %v", migration.ID, finalMigStatus, err)
 		}
 	}()
 
@@ -325,8 +348,23 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				return
 			}
 		}
+		// Resolved here for the same reason as in migration.go's target_migration.sh
+		// dispatch: complete_migration.sh has no reliable local way to know whether
+		// this instance is marked for traffic billing.
+		//
+		// Best-effort lookup, NEVER a migration precondition -- see migration.go's
+		// matching comment for the full rationale. This is the second, independent
+		// chance to get the mark right: the add it drives on the target happens
+		// before finish_source_migration.sh removes the metric on the source, so a
+		// failure of the first lookup is repaired here.
+		trafficBilling := "false"
+		if marked, tbErr := routes.TrafficBillingIsMarked(db, instance.UUID); tbErr != nil {
+			logger.Error("Failed to query traffic billing mapping, defaulting to not-marked for this migration", tbErr)
+		} else if marked {
+			trafficBilling = "true"
+		}
 		control := fmt.Sprintf("inter=%d", migration.TargetHyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s'", migration.ID, taskID, instance.ID, migration.Type)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/complete_migration.sh '%d' '%d' '%d' '%s' '%s'", migration.ID, taskID, instance.ID, migration.Type, trafficBilling)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute clear target failed", err)

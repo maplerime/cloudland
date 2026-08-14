@@ -1,5 +1,59 @@
 basePath: /api/v1
 definitions:
+  apis.APIKeyListResponse:
+    properties:
+      api_keys:
+        items:
+          $ref: '#/definitions/apis.APIKeyResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.APIKeyPatchPayload:
+    properties:
+      disabled:
+        type: boolean
+    type: object
+  apis.APIKeyPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      expires_at:
+        description: RFC-like "2006-01-02 15:04:05.000000" or empty for no expiry
+        type: string
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.APIKeyResponse:
+    properties:
+      api_key:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      disabled:
+        type: boolean
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.AddressInfo:
     properties:
       ip_address:
@@ -673,6 +727,13 @@ definitions:
         type: integer
       zone_name:
         type: string
+    type: object
+  apis.ImageExportPayload:
+    properties:
+      storage_id:
+        type: integer
+    required:
+    - storage_id
     type: object
   apis.ImageListResponse:
     properties:
@@ -2086,6 +2147,72 @@ definitions:
       summary:
         type: string
     type: object
+  apis.TrafficBillingCreateResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apis.TrafficBillingResponse'
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingDeleteResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apis.TrafficBillingInstanceRef'
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingErrorResponse:
+    properties:
+      code:
+        type: string
+      error:
+        type: string
+      instance_uuid:
+        type: string
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingInstanceRef:
+    properties:
+      instance_uuid:
+        type: string
+    type: object
+  apis.TrafficBillingListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/apis.TrafficBillingResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/apis.TrafficBillingMeta'
+    type: object
+  apis.TrafficBillingMeta:
+    properties:
+      current_page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  apis.TrafficBillingResponse:
+    properties:
+      created_at:
+        type: string
+      instance_uuid:
+        type: string
+      uuid:
+        type: string
+    type: object
+  apis.TrafficBillingSyncResponse:
+    properties:
+      message:
+        type: string
+      status:
+        type: string
+    type: object
   apis.UserListResponse:
     properties:
       limit:
@@ -2668,6 +2795,143 @@ paths:
       summary: Synchronize all VM rule mappings
       tags:
       - alarm
+  /api_keys:
+    get:
+      consumes:
+      - application/json
+      description: list API keys for the current user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list API keys
+      tags:
+      - APIKey
+    post:
+      consumes:
+      - application/json
+      description: create a new API key; the plain-text key is returned once only
+      parameters:
+      - description: API key payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.APIKeyPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create an API key
+      tags:
+      - APIKey
+  /api_keys/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete an API key
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete an API key
+      tags:
+      - APIKey
+    get:
+      consumes:
+      - application/json
+      description: get an API key by UUID
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get an API key
+      tags:
+      - APIKey
+    patch:
+      consumes:
+      - application/json
+      description: enable or disable an API key
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Patch payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.APIKeyPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update an API key
+      tags:
+      - APIKey
   /backups:
     get:
       consumes:
@@ -3844,6 +4108,44 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
+      tags:
+      - Compute
+  /images/{id}/export:
+    post:
+      consumes:
+      - application/json
+      description: export an image to a file on the USS node; poll /api/v1/tasks/{task_id}
+        for status
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Export payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ImageExportPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: export an image
       tags:
       - Compute
   /images/{id}/storages:
@@ -5967,6 +6269,179 @@ paths:
       summary: get a task
       tags:
       - Compute
+  /traffic-billing:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        List the instances currently marked as traffic billing. The underlying
+        query applies no explicit ORDER BY, so ordering within a page is
+        whatever the DB returns. Admin permission required.
+
+        The same handler also serves GET /traffic-billing/{uuid}, a lookup of
+        one instance by its UUID. That variant ignores the paging and query
+        parameters below and returns the identical response shape with the one
+        matching entry in "data" plus a fixed meta of total/current_page/
+        per_page/total_pages = 1; an instance that is not marked comes back as
+        404 NOT_FOUND. It is not documented as a separate operation here
+        because one Go handler carries one annotation block.
+      parameters:
+      - default: 1
+        description: Page number, 1-based; values below 1 fall back to 1
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Entries per page, valid range 1-1000; out-of-range values fall
+          back to 20
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by instance UUID substring (SQL LIKE %query%); empty means
+          no filter
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingListResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'NOT_FOUND: only for the /{uuid} variant, instance is not marked
+            as traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB count or query failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: list traffic billing instances
+      tags:
+      - Compute
+  /traffic-billing/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: |-
+        Remove one instance's traffic-billing mark and tell its compute node
+        to stop exporting the instance's traffic metrics. An instance that was
+        never marked is rejected with NOT_FOUND rather than reported as a
+        successful no-op, so a typo'd UUID does not look like it worked.
+        Admin permission required.
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingDeleteResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'NOT_FOUND: instance is not currently marked as traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB delete or compute-node push failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: unmark an instance as traffic billing
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Mark one instance as traffic billing, then push the mapping to the
+        compute node hosting it so that node begins exporting the instance's
+        15-minute traffic metrics. Being called is the only signal: no
+        billing-type judgement happens server side. Takes no request body --
+        the instance UUID in the path is the entire input. Rejects an
+        instance that is already marked rather than silently succeeding, and
+        rejects one with no hypervisor assigned. Admin permission required.
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingCreateResponse'
+        "400":
+          description: 'INVALID_STATE: instance has no hypervisor assigned'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'INSTANCE_NOT_FOUND: no such instance'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "409":
+          description: 'ALREADY_MARKED: instance is already traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB write or compute-node push failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: mark an instance as traffic billing
+      tags:
+      - Compute
+  /traffic-billing/sync:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Push the complete set of instances that should be traffic billing from
+        the DB to every compute node at once, so each node rebuilds its local
+        traffic-billing map from that list. Use it to repair nodes that drifted
+        (missed a create/delete, or were rebuilt). Admin permission required.
+
+        Takes no request body and accepts no caller-supplied list: the DB is
+        always the source of truth, so "sync" only ever means DB-to-compute-node
+        here, never the reverse. Success means the broadcast was dispatched to
+        every node, not that every node has finished applying it.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingSyncResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB read or broadcast dispatch failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: broadcast the traffic billing list to all compute nodes
+      tags:
+      - Compute
   /users:
     get:
       consumes:
@@ -6234,6 +6709,38 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/export:
+    post:
+      consumes:
+      - application/json
+      description: export a volume to a file on the USS node; poll /api/v1/tasks/{task_id}
+        for status
+      parameters:
+      - description: Volume UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: export a volume
       tags:
       - Compute
   /volumes/{id}/qos:

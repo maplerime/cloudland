@@ -30,6 +30,11 @@ done
 echo "Updating vm_instance_map metrics: removing VM $vm_ID from source hypervisor"
 ./generate_vm_instance_map.sh remove $vm_ID
 
+# Update vm_traffic_billing_map metrics - remove VM from source hypervisor
+# (idempotent no-op if this VM was never marked for traffic billing)
+echo "Updating vm_traffic_billing_map metrics: removing VM $vm_ID from source hypervisor"
+./generate_vm_traffic_billing_map.sh remove $vm_ID
+
 rm -f ${cache_dir}/meta/${vm_ID}.iso
 rm -rf $xml_dir/$vm_ID
 

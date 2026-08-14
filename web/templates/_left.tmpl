@@ -10,6 +10,9 @@
         <a {{ if eq .Link "/keys" }} class="active item" {{ else }} class="item" {{ end }} href="/keys">
             {{.i18n.Tr "Keys"}}
         </a>
+        <a {{ if eq .Link "/api_keys" }} class="active item" {{ else }} class="item" {{ end }} href="/api_keys">
+            {{.i18n.Tr "API_Keys"}}
+        </a>
         <a {{ if eq .Link "/dictionaries" }} class="active item" {{ else }} class="item" {{ end }} href="/dictionaries">
             {{.i18n.Tr "Dictionaries"}}
         </a>
@@ -73,6 +76,9 @@
         </a>
         <a {{ if eq .Link "/migrations" }} class="active item" {{ else }} class="item" {{ end }} href="/migrations">
             {{.i18n.Tr "Migrations"}}
+        </a>
+        <a {{ if eq .Link "/traffic-billing" }} class="active item" {{ else }} class="item" {{ end }} href="/traffic-billing">
+            {{.i18n.Tr "Traffic_Billing"}}
         </a>
 
 		{{/* Add new link for Node Alarm Rules */}}

@@ -10,7 +10,12 @@
         {{ .i18n.Tr "Error" }}
     </div>
 	<div class="ui divider"></div>
-    <p> {{ .i18n.Tr .ErrorMsg }} </p>
+    <!-- ErrorMsg carries dynamic text (time layouts, IPs, file names, wrapped
+             error details). i18n.Tr addresses locale entries as "section.key" and
+             splits its argument at the first '.', returning only the part after the
+             dot when the lookup misses, which truncated such messages. Render it
+             verbatim, like 400/401/403/500.tmpl already do. -->
+    <p> {{ .ErrorMsg }} </p>
 </div>
 </div>
             </div>

@@ -153,6 +153,12 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/keys/:id", keyAPI.Delete)
 		authGroup.PATCH("/api/v1/keys/:id", keyAPI.Patch)
 
+		authGroup.GET("/api/v1/api_keys", apiKeyAPI.List)
+		authGroup.POST("/api/v1/api_keys", apiKeyAPI.Create)
+		authGroup.GET("/api/v1/api_keys/:id", apiKeyAPI.Get)
+		authGroup.PATCH("/api/v1/api_keys/:id", apiKeyAPI.Patch)
+		authGroup.DELETE("/api/v1/api_keys/:id", apiKeyAPI.Delete)
+
 		authGroup.GET("/api/v1/flavors", flavorAPI.List)
 		authGroup.POST("/api/v1/flavors", flavorAPI.Create)
 		authGroup.GET("/api/v1/flavors/:name", flavorAPI.Get)
@@ -164,6 +170,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/images/:id", imageAPI.Delete)
 		authGroup.PATCH("/api/v1/images/:id", imageAPI.Patch)
 		authGroup.GET("/api/v1/images/:id/storages", imageAPI.ListStorages)
+		authGroup.POST("/api/v1/images/:id/export", imageAPI.Export)
 
 		authGroup.GET("/api/v1/volumes", volumeAPI.List)
 		authGroup.POST("/api/v1/volumes", volumeAPI.Create)
@@ -172,6 +179,7 @@ func Register() (r *gin.Engine) {
 		authGroup.PATCH("/api/v1/volumes/:id", volumeAPI.Patch)
 		authGroup.POST("/api/v1/volumes/:id/resize", volumeAPI.Resize)
 		authGroup.PUT("/api/v1/volumes/:id/qos", volumeAPI.UpdateQos)
+		authGroup.POST("/api/v1/volumes/:id/export", volumeAPI.Export)
 
 		authGroup.GET("/api/v1/backups", volBackupAPI.List)
 		authGroup.POST("/api/v1/backups", volBackupAPI.Create)
@@ -179,7 +187,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/backups/:id", volBackupAPI.Delete)
 		authGroup.POST("/api/v1/backups/:id/restore", volBackupAPI.Restore)
 
-		authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
+authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.POST("/api/v1/consistency_groups", consistencyGroupAPI.Create)
 		authGroup.GET("/api/v1/consistency_groups/:id", consistencyGroupAPI.Get)
 		authGroup.PATCH("/api/v1/consistency_groups/:id", consistencyGroupAPI.Patch)
@@ -231,6 +239,12 @@ func Register() (r *gin.Engine) {
 		authGroup.POST("/api/v1/ip-whitelist", ipWhitelistAPI.Create)
 		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
 		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
+
+		authGroup.GET("/api/v1/traffic-billing", trafficBillingAPI.List)
+		authGroup.GET("/api/v1/traffic-billing/:uuid", trafficBillingAPI.List)
+		authGroup.POST("/api/v1/traffic-billing/sync", trafficBillingAPI.Sync)
+		authGroup.POST("/api/v1/traffic-billing/:uuid", trafficBillingAPI.Create)
+		authGroup.DELETE("/api/v1/traffic-billing/:uuid", trafficBillingAPI.Delete)
 
 		metricsGroup := authGroup.(*gin.RouterGroup).Group("/api/v1/metrics")
 		{

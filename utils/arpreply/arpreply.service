@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-ExecStart=/opt/arpreply/start.sh
+ExecStart=/opt/arpreply/arpreply.sh
 # Best-effort teardown of our nft table on stop/crash. The `queue ... bypass`
 # flag already makes a lingering rule fail-safe, so this is just cleanup.
 ExecStopPost=-/usr/sbin/nft delete table bridge arpreply

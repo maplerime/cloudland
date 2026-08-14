@@ -133,12 +133,39 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 	return
 }
 
+func validateRulePorts(protocol string, portMin, portMax int32) error {
+	// Ports are only meaningful for tcp/udp, skip every other protocol.
+	if protocol != "tcp" && protocol != "udp" {
+		return nil
+	}
+	if portMin < 1 || portMin > 65535 {
+		return NewCLError(ErrSecurityRuleInvalid,
+			fmt.Sprintf("port_min must be between 1 and 65535 for %s rules, got %d", protocol, portMin), nil)
+	}
+	if portMax < 1 || portMax > 65535 {
+		return NewCLError(ErrSecurityRuleInvalid,
+			fmt.Sprintf("port_max must be between 1 and 65535 for %s rules, got %d", protocol, portMax), nil)
+	}
+	if portMin > portMax {
+		return NewCLError(ErrSecurityRuleInvalid,
+			fmt.Sprintf("port_min (%d) must not be greater than port_max (%d)", portMin, portMax), nil)
+	}
+	return nil
+}
+
 func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, protocol string, portMin, portMax int32, secgroup *model.SecurityGroup) (secrule *model.SecurityRule, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.ValidateOwner(model.Writer, secgroup.Owner)
 	if !permit {
 		logger.Error("Not authorized for this operation")
 		err = NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+		return
+	}
+	protocol = strings.ToLower(protocol)
+	// Validate before opening a transaction: an unusable port range must never
+	// reach the DB, where a zero would silently become the -1 column default.
+	if err = validateRulePorts(protocol, portMin, portMax); err != nil {
+		logger.Errorf("Invalid port range for %s rule, min: %d, max: %d, %+v", protocol, portMin, portMax, err)
 		return
 	}
 	ctx, db, newTransaction := StartTransaction(ctx)
@@ -149,7 +176,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 	}()
 	_, err = secruleAdmin.GetRule(ctx, remoteIp, direction, protocol, portMin, portMax, secgroup)
 	if err == nil {
-		logger.Errorf("Existing rule %s %s %s %d %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
+		logger.Errorf("Existing rule %s %s %s %d %d for security group %d", remoteIp, direction, protocol, portMin, portMax, secgroup.ID)
 		return
 	}
 	if protocol == "icmp" {
