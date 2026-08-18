@@ -30,10 +30,13 @@ fail-safe against the tool being absent (distinct from the per-packet DROP
 verdict above). Because only matched probes reach the rule, VM data traffic
 never enters userspace: zero data-plane cost.
 
-Ownership (the local-VM IP list we ANSWER) is unioned from two on-host sources,
-rebuilt on VM/ISO change:
+Ownership (the local-VM IP list we ANSWER) is unioned from on-host sources,
+rebuilt on VM/ISO change (earlier sources win on a (vlan,ip) tie):
   1. the `sgas-<vnic>` anti-spoofing ipsets (ip,mac incl. secondary IPs); VLAN
-     from the vnic's `br<vlan>`, and
+     from the vnic's `br<vlan>`,
+  1b. legacy per-IP anti-spoof iptables rules in `secgroup-as-<vnic>` chains
+     (`-s <ip>/32 -m mac --mac-source <mac> -j RETURN`) on nodes not yet
+     migrated to the ipset form; same vnic->vlan resolution, and
   2. the per-VM config-drive ISOs under cache/meta (assigned ip<->mac from
      network_data.json) — the ONLY on-host source for allow_spoofing VMs, which
      have no sgas set. Each ISO entry is kept only if its MAC matches a LIVE tap
@@ -94,6 +97,12 @@ _NFT_TABLE = "arpreply"
 # Prefix of the per-vnic anti-spoofing ipsets created by create_sg_chain.sh.
 _IPSET_PREFIX = "sgas-"
 
+# Prefix of the per-vnic anti-spoofing iptables chain. On nodes not yet
+# reapplied to the ipset form, this chain still holds the LEGACY per-IP rules:
+#   -A secgroup-as-<vnic> -s <ip>/32 -m mac --mac-source <mac> -j RETURN
+# We read those (ip,mac) pairs too, so such VMs are answered like ipset ones.
+_AS_CHAIN_PREFIX = "secgroup-as-"
+
 # Manual pass-through ipset (type hash:net): target IPs matching an entry are
 # ACCEPTed on an ownership miss — NOT answered and NOT dropped, so the router
 # answers them. A fallback for IPs arpreply can't answer itself (e.g. a remote
@@ -111,6 +120,8 @@ _META_NETDATA = "/openstack/latest/network_data.json"
 
 # ipset member line, e.g. "192.168.1.5,52:54:00:aa:bb:cc".
 _MEMBER_RE = re.compile(r"^(\d{1,3}(?:\.\d{1,3}){3}),\s*([0-9A-Fa-f:]{17})")
+# A bare MAC address, e.g. "52:54:00:aa:bb:cc".
+_MAC_RE = re.compile(r"^[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5}$")
 
 # Fixed ARP-reply prefix: htype=Ethernet(1), ptype=IPv4(0x0800), hlen=6,
 # plen=4, oper=reply(2). Everything after this is address bytes.
@@ -445,14 +456,51 @@ def _iso_entries(path: str) -> list[tuple[str, str]]:
     return entries
 
 
+def _antispoof_rule_entries() -> list[tuple[str, str, str]]:
+    """Legacy per-IP anti-spoof RETURN rules in `secgroup-as-<vnic>` chains —
+    the pre-ipset form still present on nodes not reapplied to `sgas-*`:
+
+        -A secgroup-as-<vnic> -s <ip>/32 -m mac --mac-source <mac> -j RETURN
+
+    Returns [(vnic, ip, mac), ...] for each such host rule (only /32 sources
+    with a --mac-source and a RETURN target; DROP fall-throughs are ignored).
+    `iptables -S` prints numeric addresses in a fixed token order.
+    """
+    out: list[tuple[str, str, str]] = []
+    for line in _run(["iptables", "-S"]).splitlines():
+        parts = line.split()
+        if len(parts) < 2 or parts[0] != "-A":
+            continue
+        chain = parts[1]
+        if not chain.startswith(_AS_CHAIN_PREFIX):
+            continue
+        if "RETURN" not in parts or "-s" not in parts or "--mac-source" not in parts:
+            continue
+        try:
+            src = parts[parts.index("-s") + 1]
+            mac = parts[parts.index("--mac-source") + 1].lower()
+        except (ValueError, IndexError):
+            continue
+        ip, _, plen = src.partition("/")
+        if plen not in ("", "32"):            # host anti-spoof rules only
+            continue
+        if not _MAC_RE.match(mac):
+            continue
+        out.append((chain[len(_AS_CHAIN_PREFIX):], ip, mac))
+    return out
+
+
 def build_owner_map(
     domains: frozenset[str] | None = None,
 ) -> dict[tuple[int, str], OwnerEntry]:
     """Build the full (vlan, ip) -> (mac, mac_bytes, ip_bytes) map of local VM
-    IPs, from two sources unioned:
+    IPs, from three sources unioned (earlier sources win on a (vlan,ip) tie):
 
       1. sgas-* ipsets (anti-spoofing ip,mac pairs, incl. secondary IPs). VLAN
          comes from the vnic's br<vlan>; a set whose vnic is gone self-filters.
+      1b. legacy per-IP anti-spoof iptables rules in secgroup-as-<vnic> chains
+         (-s <ip>/32 -m mac --mac-source <mac> -j RETURN) — the pre-ipset form
+         on nodes not yet reapplied. Same vnic->vlan resolution and self-filter.
       2. per-VM config-drive ISOs under cache/meta (assigned ip<->mac from
          network_data.json) — this is the ONLY on-host source for allow_spoofing
          VMs, which have no sgas set. Each ISO entry is kept only if its MAC
@@ -486,6 +534,17 @@ def build_owner_map(
         if vlan is None:
             continue
         owned[(vlan, ip)] = (mac, _mac_to_bytes(mac), _ip_to_bytes(ip))
+    # --- source 1b: legacy per-IP anti-spoof iptables RETURN rules ---
+    # (secgroup-as-<vnic> chains on nodes not migrated to sgas-* ipsets)
+    for vnic, ip, mac in _antispoof_rule_entries():
+        if vnic not in vlan_cache:
+            vlan_cache[vnic] = _vnic_vlan(vnic)
+        vlan = vlan_cache[vnic]
+        if vlan is None:
+            continue
+        key = (vlan, ip)
+        if key not in owned:                 # sgas ipset takes precedence
+            owned[key] = (mac, _mac_to_bytes(mac), _ip_to_bytes(ip))
     # --- source 2: config-drive ISOs, filtered by live taps ---
     taps = _live_taps()
     try:
