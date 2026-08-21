@@ -182,6 +182,16 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 					task1.Summary = "No qualified target"
 					task1.Status = "not_doing"
 					migration.Status = "not_doing"
+					// Persist the task terminal state too. Updating only the migration row
+					// leaves the Prepare_Target phase task stuck at "in_progress" in the DB,
+					// matching the per-task update done on the failure paths in rpcs/migrate_vm.go.
+					tErr := db.Model(&model.Task{}).Where("id = ?", task1.ID).Updates(map[string]interface{}{
+						"status":  task1.Status,
+						"summary": task1.Summary,
+					}).Error
+					if tErr != nil {
+						logger.Errorf("Failed to update task %d status to not_doing, %v", task1.ID, tErr)
+					}
 					mErr := db.Model(&model.Migration{}).Where("id = ?", migration.ID).Updates(map[string]interface{}{
 						"status": migration.Status,
 					}).Error
