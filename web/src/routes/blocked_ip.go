@@ -1,0 +1,824 @@
+/*
+Copyright <holder> All Rights Reserved.
+
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package routes
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+	"time"
+)
+
+var blockedIPAdmin = &BlockedIPAdmin{}
+
+const (
+	// Blocking lasts an hour, so a day of history is what an operator actually
+	// scans; the ceiling is the Prometheus retention (720h).
+	BlockedIPHistoryWindow = 24 * time.Hour
+	blockedIPMaxWindow     = 720 * time.Hour
+
+	// How long block_ip.sh keeps an entry in the blacklist. The exporter reads
+	// the block_src/block_dst info sets, which only live 300s, so the metric
+	// marks when a block *started* rather than how long it lasts -- the duration
+	// is this constant. Direction comes for free, since only those sets carry it.
+	blockedIPBlockingTimeout = 3600
+
+	// A block that started up to blockedIPBlockingTimeout ago may still be in
+	// force, so the current view looks that far back; the margin covers the
+	// delay between the block and its first sample.
+	blockedIPCurrentWindow = blockedIPBlockingTimeout + 300
+	blockedIPCurrentStep   = 30
+
+	// 300s separates two blocks of the same IP while keeping the number of
+	// points per series bounded. It is the ceiling of the history grid, not a
+	// fixed value -- see blockedIPStep.
+	blockedIPHistoryStep = 300
+
+	// Every window is cut into at least this many points, so that a block that
+	// only lives 300s cannot fall between two of them.
+	blockedIPMinPoints = 10
+
+	// A powered off VM stops producing traffic metrics, so an address blocked
+	// while its VM was down resolves to nothing inside the displayed window --
+	// and a VM that is down is exactly what attracts a dst block, since nothing
+	// answers the SYNs. Whatever the first pass misses is therefore looked up
+	// again over the whole retention period, coarsely: 720 points per series is
+	// enough to find out which VM last held the address.
+	blockedIPOwnerLookback = blockedIPMaxWindow
+	blockedIPOwnerStep     = 3600
+
+	// A rejection reason is a diagnostic, not a payload; read enough of it to be
+	// useful and no more.
+	blockedIPErrorBodyLimit = 4096
+
+	// Decoding one Prometheus point into [][]interface{} costs about 100 bytes of
+	// heap (measured), so ten million points is roughly a gigabyte. The ceiling is
+	// what one query may spend, derived from what this process can hold rather
+	// than from how much traffic we have seen: attacks are bursty and a botnet
+	// rotating addresses decides the cardinality, so any figure extrapolated from
+	// past volume fails exactly when it is needed. Past this the window is
+	// narrowed rather than the process risked.
+	blockedIPMaxPoints = 10000000
+
+	// Points scale linearly with the window at a fixed step, so the first
+	// narrowing already lands within budget. The second pass exists only because
+	// a shorter window can match fewer series and thus leave room unused.
+	blockedIPFitAttempts = 2
+
+	// Each narrowing pass aims a little under budget, so a denser recent stretch
+	// does not immediately put it back over and burn another of the few attempts.
+	blockedIPFitMargin = 0.9
+
+	// The floor a window is never narrowed past. Even a node saturated to its
+	// conntrack limit can only hold ~174 addresses over the detection threshold
+	// at once, so five minutes stays far inside the budget on any fleet size.
+	blockedIPMinFitWindow = 5 * time.Minute
+
+	blockedIPMetric        = "ipset_blocked_ips"
+	blockedIPTrafficMetric = "domain_north_south_inbound_bytes_total"
+	blockedIPMapMetric     = "vm_instance_map"
+)
+
+// BlockedIPAdmin answers "which IPs is this region currently dropping".
+//
+// Nothing is stored locally and nothing is fetched from the compute nodes on
+// demand: each node exports its ipset as node_exporter textfile metrics and
+// Prometheus scrapes them, so both the current state and the history are PromQL
+// queries. Ownership is resolved from metrics as well.
+type BlockedIPAdmin struct{}
+
+// BlockedIP is one blocking of an IP on one compute node.
+type BlockedIP struct {
+	IP           string
+	BlockType    string
+	Direction    string
+	Hostname     string
+	InstanceUUID string
+	Domain       string
+	Source       string // metric | none
+	OwnerState   string // "" when found in the queried window, offline when only found further back
+	BlockedAt    time.Time
+	ExpiresAt    time.Time
+}
+
+// BlockedIPWindow records what a request was asked for and what it could
+// actually afford to answer with.
+//
+// Every range query the request makes narrows on its own, so this accumulates
+// the narrowest of them: Start ends up as the latest start any single query was
+// pushed to. Rows outside that are simply absent -- an episode whose ownership
+// query got narrowed past it, for instance, reports NA rather than an instance.
+type BlockedIPWindow struct {
+	Requested time.Time // the start originally asked for
+	Start     time.Time // narrowest start actually served across every query
+	End       time.Time
+	Points    int64 // points behind the window as asked for, which is what overflowed
+	Truncated bool  // at least one query was narrowed
+}
+
+// narrowedTo records one query having been pushed to a later start. Keeping the
+// latest means the reported window never claims more coverage than the request
+// actually achieved.
+func (w *BlockedIPWindow) narrowedTo(start time.Time, points int64) {
+	if w == nil {
+		return
+	}
+	if points > w.Points {
+		w.Points = points
+	}
+	if start.After(w.Start) {
+		w.Start = start
+		w.Truncated = true
+	}
+}
+
+// BlockedIPFilter narrows the PromQL selector; every field is optional.
+type BlockedIPFilter struct {
+	IP        string
+	Hostname  string
+	BlockType string
+}
+
+// BlockedIPOwner is what an ownership lookup yields; every field is empty when
+// the IP belongs to no instance, which is normal for external attackers.
+type BlockedIPOwner struct {
+	InstanceUUID string
+	Domain       string
+	Source       string // always "metric"; lets the caller tell a hit from a miss
+	State        string // "" when found in the displayed window, offline when only found further back
+}
+
+type blockedIPEpisode struct {
+	IP        string
+	Hostname  string
+	BlockType string
+	FirstSeen int64
+	LastSeen  int64
+}
+
+type blockedIPPromResponse struct {
+	Status    string `json:"status"`
+	ErrorType string `json:"errorType"`
+	Error     string `json:"error"`
+	Data      struct {
+		Result []struct {
+			Metric map[string]string `json:"metric"`
+			Value  []interface{}     `json:"value"`  // instant queries
+			Values [][]interface{}   `json:"values"` // range queries
+		} `json:"result"`
+	} `json:"data"`
+}
+
+// ListCurrent returns the IPs being dropped right now across the region.
+//
+// The window is fixed and mechanically bounded, so unlike the history it is not
+// probed: an address only enters the set after passing the detection threshold,
+// and conntrack cannot hold enough connections for more than a few hundred
+// addresses per node to do that at once. Narrowing this window would also be
+// the wrong answer -- it would hide blocks that are still in force.
+func (a *BlockedIPAdmin) ListCurrent(filter *BlockedIPFilter) (blocked []*BlockedIP, window *BlockedIPWindow, err error) {
+	now := time.Now().UTC()
+	start := now.Add(-blockedIPCurrentWindow * time.Second)
+	window = &BlockedIPWindow{Requested: start, Start: start, End: now}
+	episodes, err := a.queryEpisodes(filter, start, now, blockedIPCurrentStep, window)
+	if err != nil {
+		return
+	}
+	// The metric only marks the beginning of a block, so what is still in force
+	// is decided by the derived expiry, not by the series being present.
+	live := make([]*blockedIPEpisode, 0, len(episodes))
+	for _, episode := range episodes {
+		if episode.FirstSeen+blockedIPBlockingTimeout > now.Unix() {
+			live = append(live, episode)
+		}
+	}
+	if err = blockedIPEmptyAfterNarrowing(window, len(live), false); err != nil {
+		return
+	}
+	return a.resolve(live, start, now, window), window, nil
+}
+
+// ListHistory returns blockings that started inside [start, end]. Blocks still
+// in force are included on purpose, so results overlap with ListCurrent: "which
+// IPs were blocked recently" should not have a hole where the current ones are.
+func (a *BlockedIPAdmin) ListHistory(filter *BlockedIPFilter, start, end time.Time) (blocked []*BlockedIP, window *BlockedIPWindow, err error) {
+	// Anything older than the retention window has no data anyway.
+	if earliest := end.Add(-blockedIPMaxWindow); start.Before(earliest) {
+		start = earliest
+	}
+	window = &BlockedIPWindow{Requested: start, Start: start, End: end}
+	episodes, err := a.queryEpisodes(filter, start, end, blockedIPStep(end.Sub(start)), window)
+	if err != nil {
+		return
+	}
+	if err = blockedIPEmptyAfterNarrowing(window, len(episodes), true); err != nil {
+		return
+	}
+	return a.resolve(episodes, start, end, window), window, nil
+}
+
+// BlockedIPBudgetError says the range asked for holds more than one query may
+// move, and that narrowing it to what fits left nothing behind.
+//
+// Given a distinct type because the two callers must answer differently: an API
+// client can act on the numbers, so it gets a 400 rather than a 500, and the web
+// page must keep its form on screen -- telling an operator to narrow the range
+// from an error page that has no date pickers on it is a dead end.
+type BlockedIPBudgetError struct {
+	Points    int64
+	Budget    int64
+	CanNarrow bool
+}
+
+func (e *BlockedIPBudgetError) Error() string {
+	advice := "filter by ip, hostname or block_type"
+	if e.CanNarrow {
+		advice = "narrow the range to when the blockings happened, or " + advice
+	}
+	return fmt.Sprintf("the requested range holds %d data points, over the %d this query may move, and the most recent part of it that fits holds no blocking at all; %s",
+		e.Points, e.Budget, advice)
+}
+
+// blockedIPEmptyAfterNarrowing turns the one bad narrowing outcome into a plain
+// refusal.
+//
+// Landing on a slice that holds nothing is not a partial answer, it is no answer
+// with a warning attached -- and it happens whenever the blockings sit further
+// back than the slice the budget affords, which is exactly the shape of "a big
+// attack yesterday, quiet today".
+func blockedIPEmptyAfterNarrowing(window *BlockedIPWindow, episodes int, canNarrow bool) error {
+	if window == nil || !window.Truncated || episodes > 0 || window.Points <= blockedIPMaxPoints {
+		return nil
+	}
+	return &BlockedIPBudgetError{Points: window.Points, Budget: blockedIPMaxPoints, CanNarrow: canNarrow}
+}
+
+// blockedIPFit is what the probe concluded about one query: where to actually
+// start, how much data the window as asked for holds, and how much the narrowed
+// one holds. Requested is the number that matters to a caller -- it is what
+// overflowed. Served says whether narrowing found anything at all.
+type blockedIPFit struct {
+	Start     time.Time
+	Requested int64
+	Served    int64
+}
+
+// blockedIPFitQuery narrows a query's own window until the data behind it fits
+// what this process may hold, and says where it landed.
+//
+// The probe asks the index, not the samples: /api/v1/series says how many series
+// a selector matches over a window, and a range query returns at most one point
+// per series per step. Every query this file makes is a bare selector, so it can
+// be handed over as match[] with no per-query special casing.
+//
+// Counting stored samples instead -- the first thing tried -- measures the wrong
+// quantity: it overstates the returned points by step/scrape_interval, which is
+// 120x for the ownership hops at their hourly step, and it made the guard reject
+// windows a hundred times smaller than the process could actually hold.
+//
+// Narrowing moves start forward rather than dropping rows: what an operator
+// wants is the most recent data, still correctly ordered and counted. The loss
+// is always reported -- a caller handed a tenth of the answer with no hint is
+// worse off than one handed an error.
+func blockedIPFitQuery(query string, start, end time.Time, step int64) (*blockedIPFit, error) {
+	fit := &blockedIPFit{Start: start}
+	for attempt := 0; ; attempt++ {
+		points, err := blockedIPProbePoints(query, fit.Start, end, step)
+		if err != nil {
+			return nil, err
+		}
+		fit.Served = points
+		if attempt == 0 {
+			// The count for the window as asked for. Kept because it is the only
+			// figure that explains the narrowing; every later probe reports the
+			// already-shrunk window and is within budget by construction.
+			fit.Requested = points
+		}
+		if points <= blockedIPMaxPoints {
+			return fit, nil
+		}
+		span := end.Sub(fit.Start)
+		if span <= blockedIPMinFitWindow || attempt >= blockedIPFitAttempts-1 {
+			// Out of attempts, or already at the floor: serve the floor. Served
+			// then describes the window measured last rather than the floor.
+			fit.Start = end.Add(-blockedIPMinFitWindow)
+			return fit, nil
+		}
+		// Scale by how far over budget we are, with a margin so a denser recent
+		// stretch does not immediately overshoot again.
+		scaled := time.Duration(float64(span) * float64(blockedIPMaxPoints) / float64(points) * blockedIPFitMargin)
+		if scaled < blockedIPMinFitWindow {
+			scaled = blockedIPMinFitWindow
+		}
+		if scaled >= span {
+			return fit, nil
+		}
+		fit.Start = end.Add(-scaled)
+	}
+}
+
+// blockedIPProbePoints is the upper bound on what a range query would return:
+// one point per matching series per step. A selector matching nothing gives an
+// empty list rather than an error, which is zero points, not a failure.
+func blockedIPProbePoints(selector string, start, end time.Time, step int64) (int64, error) {
+	series, err := blockedIPSeries(selector, start, end)
+	if err != nil {
+		return 0, err
+	}
+	if len(series) == 0 {
+		return 0, nil
+	}
+	span := int64(end.Sub(start).Seconds())
+	if span < 1 {
+		span = 1
+	}
+	if step < 1 {
+		step = 1
+	}
+	return int64(len(series)) * (span/step + 1), nil
+}
+
+// blockedIPStep picks the sample grid for a window.
+//
+// A fixed 300s grid silently loses short windows: the metric only exists while
+// the address sits in the 300s info set, so a window of a couple of minutes can
+// have its single grid point land before the block ever appeared and come back
+// empty while the current view still lists it. Cutting the window into at least
+// blockedIPMinPoints points removes that hole. The floor is the exporter's own
+// interval, below which there is nothing more to see; the ceiling keeps long
+// windows at the same cost as before.
+func blockedIPStep(window time.Duration) int64 {
+	step := int64(window.Seconds()) / blockedIPMinPoints
+	if step < blockedIPCurrentStep {
+		return blockedIPCurrentStep
+	}
+	if step > blockedIPHistoryStep {
+		return blockedIPHistoryStep
+	}
+	return step
+}
+
+// queryEpisodes runs the range query and groups every series into blockings.
+// The metric is only present for the first few minutes of a block, so a gap
+// wider than two steps means a separate blocking rather than a pause.
+func (a *BlockedIPAdmin) queryEpisodes(filter *BlockedIPFilter, start, end time.Time, step int64, window *BlockedIPWindow) (episodes []*blockedIPEpisode, err error) {
+	resp, err := blockedIPQueryRange(blockedIPMetric+blockedIPSelector(filter), start, end, step, window)
+	if err != nil {
+		return
+	}
+	gap := step * 2
+	for _, series := range resp.Data.Result {
+		ip := series.Metric["ip"]
+		if ip == "" {
+			continue
+		}
+		var current *blockedIPEpisode
+		for _, sample := range series.Values {
+			ts, okTs := blockedIPSampleTime(sample)
+			if !okTs {
+				continue
+			}
+			if current != nil && ts-current.LastSeen > gap {
+				episodes = append(episodes, current)
+				current = nil
+			}
+			if current == nil {
+				current = &blockedIPEpisode{
+					IP:        ip,
+					Hostname:  series.Metric["hostname"],
+					BlockType: series.Metric["block_type"],
+					FirstSeen: ts,
+				}
+			}
+			current.LastSeen = ts
+		}
+		if current != nil {
+			episodes = append(episodes, current)
+		}
+	}
+	// Newest first, then grouped by node: the two halves of one incident (the
+	// attacker and its target) are blocked on the same node at the same moment,
+	// so this ordering puts them on adjacent rows without having to guess which
+	// rows belong together.
+	sort.Slice(episodes, func(i, j int) bool {
+		if episodes[i].FirstSeen != episodes[j].FirstSeen {
+			return episodes[i].FirstSeen > episodes[j].FirstSeen
+		}
+		if episodes[i].Hostname != episodes[j].Hostname {
+			return episodes[i].Hostname < episodes[j].Hostname
+		}
+		return episodes[i].IP < episodes[j].IP
+	})
+	return
+}
+
+// resolve turns the raw episodes into the exported form, attaching ownership.
+func (a *BlockedIPAdmin) resolve(episodes []*blockedIPEpisode, start, end time.Time, window *BlockedIPWindow) (blocked []*BlockedIP) {
+	owners := a.resolveOwners(episodes, start, end, window)
+	blocked = make([]*BlockedIP, 0, len(episodes))
+	for _, episode := range episodes {
+		entry := &BlockedIP{
+			IP:        episode.IP,
+			BlockType: blockedIPType(episode.BlockType),
+			Hostname:  episode.Hostname,
+			Source:    "none",
+		}
+		if owner, found := owners[episode.IP]; found {
+			entry.InstanceUUID = owner.InstanceUUID
+			entry.Domain = owner.Domain
+			entry.Source = owner.Source
+			entry.OwnerState = owner.State
+		}
+		entry.Direction = blockedIPDirection(episode.BlockType, entry.InstanceUUID != "")
+		entry.BlockedAt = time.Unix(episode.FirstSeen, 0).UTC()
+		entry.ExpiresAt = entry.BlockedAt.Add(blockedIPBlockingTimeout * time.Second)
+		blocked = append(blocked, entry)
+	}
+	return
+}
+
+// resolveOwners maps blocked IPs back to instances, entirely from metrics.
+//
+// Every VM NIC produces domain_north_south_* while its VM runs, so a VM of ours
+// is found here; an address that is not ours cannot be, and querying the DB for
+// it would be pointless since it is in none of our tables. A miss is therefore
+// the answer rather than a reason to look elsewhere: it means no VM of ours
+// holds the address, which is exactly what the caller shows.
+//
+// The lookup runs twice. The displayed window answers for running VMs and gives
+// the mapping that was true at the time, which keeps historical rows correct
+// after a VM is deleted or an address reused. Whatever it misses is looked up
+// again over the retention period, because a VM that was powered off during the
+// block has no metrics inside the window at all -- and being powered off is
+// what let the unanswered SYNs pile up in the first place. Resolving those the
+// same way in both views also stops the same block from reading differently
+// depending on how far back the operator happened to look.
+func (a *BlockedIPAdmin) resolveOwners(episodes []*blockedIPEpisode, start, end time.Time, window *BlockedIPWindow) map[string]*BlockedIPOwner {
+	owners := map[string]*BlockedIPOwner{}
+	ips := make([]string, 0, len(episodes))
+	seen := map[string]bool{}
+	for _, episode := range episodes {
+		if !seen[episode.IP] {
+			seen[episode.IP] = true
+			ips = append(ips, episode.IP)
+		}
+	}
+	if len(ips) == 0 {
+		return owners
+	}
+	a.lookupOwners(&blockedIPOwnerLookup{ips: ips, start: start, end: end,
+		step: blockedIPHistoryStep, owners: owners, window: window})
+
+	missing := make([]string, 0, len(ips))
+	for _, ip := range ips {
+		if _, found := owners[ip]; !found {
+			missing = append(missing, ip)
+		}
+	}
+	if len(missing) > 0 {
+		a.lookupOwners(&blockedIPOwnerLookup{ips: missing, start: end.Add(-blockedIPOwnerLookback), end: end,
+			step: blockedIPOwnerStep, state: "offline", owners: owners, window: window})
+	}
+	return owners
+}
+
+// blockedIPOwnerLookup is one ownership pass: which addresses, over what window,
+// at what resolution, tagged with what state, writing into which map.
+//
+// Bundled rather than passed as six parameters, and the bundling is what makes
+// the accumulator explicit: owners is both where results land and the record of
+// what an earlier pass already answered, so the passes are ordered on purpose.
+type blockedIPOwnerLookup struct {
+	ips    []string
+	start  time.Time
+	end    time.Time
+	step   int64
+	state  string
+	owners map[string]*BlockedIPOwner
+	window *BlockedIPWindow
+}
+
+// lookupOwners runs the two metric hops over one window and records what it
+// finds, leaving anything already resolved alone.
+func (a *BlockedIPAdmin) lookupOwners(l *blockedIPOwnerLookup) {
+	// (1) IP -> domain, from the only metrics carrying vm_ip.
+	resp, err := blockedIPQueryRange(blockedIPTrafficMetric+"{vm_ip=~\""+blockedIPAlternation(l.ips)+"\"}", l.start, l.end, l.step, l.window)
+	if err != nil {
+		logger.Errorf("Failed to query vm_ip mapping: %v", err)
+		return
+	}
+	// An address can have belonged to more than one VM inside a long window, so
+	// keep the domain seen most recently rather than an arbitrary one. That is
+	// exactly right for the second pass, whose question is which VM last held
+	// the address.
+	//
+	// For the first pass it is exact only while the address did not change hands
+	// inside the displayed window: strictly, a blocking should be attributed to
+	// the VM holding the address at the moment it started, not at the end of the
+	// window. Measured on production, no address changed hands within 24h (the
+	// default history window), while 6 of 32 did within 720h -- so a month-long
+	// history query can credit a blocking to the VM that took the address over
+	// afterwards. The samples carry their own timestamps, so fixing this needs
+	// no extra query, only matching each episode against the interval its
+	// series covers.
+	ipDomain := map[string]string{}
+	newest := map[string]int64{}
+	for _, series := range resp.Data.Result {
+		vmIP, domain := series.Metric["vm_ip"], series.Metric["domain"]
+		if vmIP == "" || domain == "" || len(series.Values) == 0 {
+			continue
+		}
+		ts, ok := blockedIPSampleTime(series.Values[len(series.Values)-1])
+		if !ok {
+			continue
+		}
+		if last, found := newest[vmIP]; found && last >= ts {
+			continue
+		}
+		newest[vmIP] = ts
+		ipDomain[vmIP] = domain
+	}
+	if len(ipDomain) == 0 {
+		return
+	}
+
+	// (2) domain -> instance_id
+	domains := make([]string, 0, len(ipDomain))
+	for _, domain := range ipDomain {
+		domains = append(domains, domain)
+	}
+	domainInstance := map[string]string{}
+	mapQuery := blockedIPMapMetric + "{domain=~\"" + blockedIPAlternation(domains) + "\"}"
+	// Labels are the whole answer here -- the mapping is carried by domain and
+	// instance_id and the values were never read -- so this hop asks the index
+	// instead of pulling a time series it would throw away. Over 720h that is
+	// 776 bytes against 9868, and with no points to decode it needs no budget.
+	if series, err := blockedIPSeries(mapQuery, l.start, l.end); err == nil {
+		for _, labels := range series {
+			if domain, id := labels["domain"], labels["instance_id"]; domain != "" && id != "" {
+				domainInstance[domain] = id
+			}
+		}
+	} else {
+		logger.Errorf("Failed to query vm_instance_map: %v", err)
+	}
+	for ip, domain := range ipDomain {
+		if _, found := l.owners[ip]; found {
+			continue
+		}
+		// A domain without instance_id still beats nothing: the operator can
+		// locate the VM by it, and it is itself evidence of a mapping gap.
+		l.owners[ip] = &BlockedIPOwner{
+			InstanceUUID: domainInstance[domain],
+			Domain:       domain,
+			Source:       "metric",
+			State:        l.state,
+		}
+	}
+}
+
+// blockedIPQueryRange runs a PromQL range query against the Prometheus already
+// configured for the alarm subsystem (monitor.host / monitor.port).
+// Every range query passes through here, so this is where the size guard lives:
+// one budget, one place, applied to the blocking metric and to both ownership
+// hops alike. window may be nil for a caller that does not report narrowing.
+func blockedIPQueryRange(query string, start, end time.Time, step int64, window *BlockedIPWindow) (result *blockedIPPromResponse, err error) {
+	fit, err := blockedIPFitQuery(query, start, end, step)
+	if err != nil {
+		return nil, err
+	}
+	if fit.Start.After(start) {
+		logger.Warningf("Narrowed a blocked-ip query from %s to %s: %d points exceeds the %d budget, query: %s",
+			start.Format(time.RFC3339), fit.Start.Format(time.RFC3339), fit.Requested, blockedIPMaxPoints, query)
+		window.narrowedTo(fit.Start, fit.Requested)
+	} else {
+		window.narrowedTo(time.Time{}, fit.Requested)
+	}
+	params := url.Values{}
+	params.Set("query", query)
+	params.Set("start", strconv.FormatInt(fit.Start.Unix(), 10))
+	params.Set("end", strconv.FormatInt(end.Unix(), 10))
+	params.Set("step", strconv.FormatInt(step, 10))
+	return blockedIPQuery("query_range", params, query)
+}
+
+// blockedIPSeriesResponse is what /api/v1/series answers: label sets and nothing
+// else, so its size is set by cardinality alone and never by window length.
+type blockedIPSeriesResponse struct {
+	Status    string              `json:"status"`
+	ErrorType string              `json:"errorType"`
+	Error     string              `json:"error"`
+	Data      []map[string]string `json:"data"`
+}
+
+// blockedIPSeries asks the index which series a selector matches over a window.
+// It reads no samples, which serves two callers: sizing a range query before
+// running it, and the domain -> instance_id hop, which only ever wanted labels.
+func blockedIPSeries(selector string, start, end time.Time) ([]map[string]string, error) {
+	params := url.Values{}
+	params.Set("match[]", selector)
+	params.Set("start", strconv.FormatInt(start.Unix(), 10))
+	params.Set("end", strconv.FormatInt(end.Unix(), 10))
+	resp, err := blockedIPGet("series", params, selector)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	result := &blockedIPSeriesResponse{}
+	if err = json.NewDecoder(resp.Body).Decode(result); err != nil {
+		logger.Errorf("Failed to decode prometheus series response, %v", err)
+		return nil, err
+	}
+	if result.Status == "error" {
+		err = fmt.Errorf("prometheus reported an error: %s: %s", result.ErrorType, result.Error)
+		logger.Errorf("Prometheus reported an error: %v, selector: %s", err, selector)
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+func blockedIPQuery(path string, params url.Values, query string) (result *blockedIPPromResponse, err error) {
+	resp, err := blockedIPGet(path, params, query)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	result = &blockedIPPromResponse{}
+	if err = json.NewDecoder(resp.Body).Decode(result); err != nil {
+		logger.Errorf("Failed to decode prometheus response, %v", err)
+		return nil, err
+	}
+	// A 200 carrying status "error" is not documented behaviour, but treating it
+	// as success would hand the caller an empty result set that looks like "no
+	// blocks" rather than "the query never ran".
+	if result.Status == "error" {
+		err = fmt.Errorf("prometheus reported an error: %s", blockedIPFailureText(result))
+		logger.Errorf("Prometheus reported an error: %v, query: %s", err, query)
+		return nil, err
+	}
+	return
+}
+
+// blockedIPGet issues one Prometheus API call and hands back a response already
+// known to carry a 200. Both the PromQL endpoints and the series endpoint go
+// through it, so a rejection reads the same whichever one was asked.
+func blockedIPGet(path string, params url.Values, query string) (*http.Response, error) {
+	host := alarmPrometheusIP
+	if host == "" {
+		host = "localhost"
+	}
+	port := alarmPrometheusPort
+	if port == 0 {
+		port = 9090
+	}
+	endpoint := fmt.Sprintf("http://%s:%d/api/v1/%s?%s", host, port, path, params.Encode())
+
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(endpoint)
+	if err != nil {
+		logger.Errorf("Prometheus query failed, %s, %v", query, err)
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		// Prometheus answers a rejected query with a structured reason: the
+		// sample limit tripped, the expression failed to parse, the evaluation
+		// timed out. Dropping it made every one of those an indistinguishable
+		// 500, so the reason travels with the error while the query itself --
+		// which can run to thousands of characters once the address alternation
+		// is built -- stays in the log.
+		err = fmt.Errorf("prometheus rejected the query: %s", blockedIPPromFailure(resp))
+		logger.Errorf("Prometheus query rejected: %v, query: %s", err, query)
+		resp.Body.Close()
+		return nil, err
+	}
+	return resp, nil
+}
+
+// blockedIPPromFailure renders a non-200 answer as something an operator can act
+// on, falling back to the raw body when it is not the documented JSON shape.
+func blockedIPPromFailure(resp *http.Response) string {
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, blockedIPErrorBodyLimit))
+	failure := &blockedIPPromResponse{}
+	if json.Unmarshal(body, failure) == nil && failure.Error != "" {
+		return fmt.Sprintf("HTTP %d, %s", resp.StatusCode, blockedIPFailureText(failure))
+	}
+	if text := strings.TrimSpace(string(body)); text != "" {
+		return fmt.Sprintf("HTTP %d, %s", resp.StatusCode, text)
+	}
+	return fmt.Sprintf("HTTP %d with no reason given", resp.StatusCode)
+}
+
+func blockedIPFailureText(failure *blockedIPPromResponse) string {
+	if failure.ErrorType != "" {
+		return fmt.Sprintf("%s: %s", failure.ErrorType, failure.Error)
+	}
+	if failure.Error != "" {
+		return failure.Error
+	}
+	return "no reason given"
+}
+
+func blockedIPType(blockType string) string {
+	if blockType == "" {
+		return "unknown"
+	}
+	return blockType
+}
+
+// blockedIPDirection states two facts an operator can act on: which side of the
+// flood this address was on, and whether it is one of ours.
+//
+// check_halfopen_connections.sh always puts the SYN source in block_src and the
+// SYN destination in block_dst, so one incident yields two rows -- the attacker
+// and its target. Both inbound and outbound attacks therefore appear twice,
+// once under each address:
+//
+//	src + ours    our VM is flooding   -> outbound attack
+//	dst + foreign the address it hits  -> outbound attack, other half
+//	src + foreign someone floods us    -> inbound attack
+//	dst + ours    the VM being hit     -> inbound attack, other half
+//
+// A dst that is not ours is normally just that target, not a data problem: our
+// own VM attacking outward is exactly how a foreign address ends up in
+// block_dst. It can still hide a genuine mapping hole (a floating IP never
+// reaches vm_ip), but the metrics alone cannot tell the two apart, so this
+// reports the common case rather than asserting the rare one.
+func blockedIPDirection(blockType string, resolved bool) string {
+	switch {
+	case blockType != "src" && blockType != "dst":
+		return "unknown"
+	case blockType == "dst" && resolved:
+		return "vm_under_attack"
+	case blockType == "dst":
+		return "outbound_target"
+	case resolved:
+		return "vm_compromised"
+	default:
+		return "external_attacker"
+	}
+}
+
+func blockedIPSelector(filter *BlockedIPFilter) string {
+	if filter == nil {
+		return ""
+	}
+	matchers := []string{}
+	if filter.IP != "" {
+		matchers = append(matchers, "ip=\""+blockedIPEscapeLabel(filter.IP)+"\"")
+	}
+	if filter.Hostname != "" {
+		matchers = append(matchers, "hostname=\""+blockedIPEscapeLabel(filter.Hostname)+"\"")
+	}
+	if filter.BlockType != "" {
+		matchers = append(matchers, "block_type=\""+blockedIPEscapeLabel(filter.BlockType)+"\"")
+	}
+	if len(matchers) == 0 {
+		return ""
+	}
+	return "{" + strings.Join(matchers, ",") + "}"
+}
+
+func blockedIPSampleTime(sample []interface{}) (int64, bool) {
+	if len(sample) < 2 {
+		return 0, false
+	}
+	ts, ok := sample[0].(float64)
+	if !ok {
+		return 0, false
+	}
+	return int64(ts), true
+}
+
+var blockedIPLabelUnsafe = regexp.MustCompile(`[^0-9a-zA-Z.:_/-]`)
+
+// blockedIPEscapeLabel drops anything that could break out of a label matcher.
+// Every value matched on is an IP, a hostname or src/dst.
+func blockedIPEscapeLabel(value string) string {
+	return blockedIPLabelUnsafe.ReplaceAllString(value, "")
+}
+
+// blockedIPAlternation builds a regex alternation, escaping the dots in IPs so
+// they cannot act as wildcards.
+//
+// The result is embedded in a double-quoted PromQL string, which processes
+// escape sequences of its own before the regex ever sees them: a lone backslash
+// from QuoteMeta makes PromQL reject the whole query as an unknown escape
+// sequence, so each one is doubled to survive that pass.
+func blockedIPAlternation(values []string) string {
+	escaped := make([]string, 0, len(values))
+	for _, value := range values {
+		quoted := regexp.QuoteMeta(blockedIPEscapeLabel(value))
+		escaped = append(escaped, strings.ReplaceAll(quoted, `\`, `\\`))
+	}
+	return strings.Join(escaped, "|")
+}

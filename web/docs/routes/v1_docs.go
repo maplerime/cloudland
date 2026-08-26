@@ -4063,6 +4063,180 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/metrics/blocked-ips": {
+            "get": {
+                "description": "Returns every IP the region is dropping right now, resolved to the\ninstance owning it when the address is ours. Data comes from the\nipset exported by each compute node as Prometheus metrics, so an\naddress appears within about 90 seconds of being blocked.\n\nThe window here is fixed and bounded by the detection thresholds, so it\nis not normally large enough to be narrowed; if it ever is, truncated\nsays so and the only remedy is a filter. Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "List currently blocked IPs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Exact address to filter by",
+                        "name": "ip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Compute node to filter by",
+                        "name": "hostname",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "src",
+                            "dst",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Filter by blocked side",
+                        "name": "block_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 1000; anything larger is clamped to 10000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BlockedIPListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid offset or limit, or the window holds more than one query may carry and no part of it that fits holds any blocking",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Prometheus unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/blocked-ips/history": {
+            "get": {
+                "description": "Returns blockings that started inside [start, end], including the ones\nstill in force, so results overlap with the current list on purpose.\nOwnership is resolved as of the time of the block, which stays correct\nafter a VM is deleted or an address reused. An address with no traffic\nmetrics anywhere in the window is looked up again over the whole\nretention period, so a VM that was powered off while it was blocked\nstill resolves -- owner_state says when that happened. The window\nitself cannot reach past the 30 day Prometheus retention.\n\nBefore any data is moved the window is measured, and if it holds more\nthan one query may carry it is narrowed to the most recent slice that\nfits: truncated then says so and window_start reports what was served.\nAdmin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "List historical IP blockings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Window start, RFC3339 or 2006-01-02T15:04 (default: 24h before end)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Window end, same formats (default: now)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minutes behind UTC, as JavaScript getTimezoneOffset() reports it; needed only when start/end carry no zone",
+                        "name": "timezone_offset_minutes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact address to filter by",
+                        "name": "ip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Compute node to filter by",
+                        "name": "hostname",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "src",
+                            "dst",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Filter by blocked side",
+                        "name": "block_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 1000; anything larger is clamped to 10000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BlockedIPListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid time range, offset or limit, or the range holds more than one query may carry and the most recent part of it that fits holds no blocking",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Prometheus unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/migrations": {
             "get": {
                 "description": "list migrations",
@@ -6810,6 +6984,108 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.BlockedIPListResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "description": "The page itself, newest blocking first.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.BlockedIPResponse"
+                    }
+                },
+                "limit": {
+                    "description": "Number of entries in this page.",
+                    "type": "integer"
+                },
+                "measured_samples": {
+                    "description": "Raw samples behind the window as requested, present only when truncated is\nset. This is the figure that overflowed, so comparing it against how much\nof the range was actually served says how much further to narrow, or how\nmuch a filter would have to cut.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "description": "Offset actually applied, clamped to the result size.",
+                    "type": "integer"
+                },
+                "requested_start": {
+                    "description": "The start originally asked for, present only when truncated is set.",
+                    "type": "string"
+                },
+                "total": {
+                    "description": "Number of blockings matching the query, before paging.\n\nThese are blocking episodes rather than samples, and how finely they\nseparate depends on the window: two blocks of one address merge into one\nepisode when they sit closer together than twice the sample step, and that\nstep grows with the window. The same data therefore yields fewer episodes\nover a month than over an hour, so this is not an absolute count of times\nan address was blocked.",
+                    "type": "integer"
+                },
+                "truncated": {
+                    "description": "Set when the requested window held more data than one query may move, so\nwindow_start was moved forward to the most recent slice that fits. The\nrows returned are complete and correctly counted for the window reported\nhere -- they are simply not the whole window that was asked for. Narrow\nthe range or add a filter to see the rest.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "window_end": {
+                    "description": "End of the window actually queried, UTC.",
+                    "type": "string",
+                    "example": "2026-08-27 07:12:31.000000"
+                },
+                "window_start": {
+                    "description": "Start of the window actually queried, UTC. Equal to what was requested\nunless truncated is set.",
+                    "type": "string",
+                    "example": "2026-08-26 07:12:31.000000"
+                }
+            }
+        },
+        "apis.BlockedIPResponse": {
+            "type": "object",
+            "properties": {
+                "block_type": {
+                    "description": "Which side of the half-open connection was blocked: src for the SYN\nsource, dst for its destination. unknown is defensive only -- the exporter\nalways labels the set it read, so it does not occur in practice.",
+                    "type": "string",
+                    "example": "src"
+                },
+                "blocked_at": {
+                    "description": "When the block started. Never earlier than the real block, only later: the\ncollection delay adds up to 60s and the sample grid up to one step. The\ncurrent list is on a fixed 30s grid; the history grid scales with the\nwindow, 30s on a narrow one up to 300s on a month, so the wider the window\nthe coarser this is. Not a to-the-second timestamp.",
+                    "type": "string",
+                    "example": "2026-08-26 07:12:31.000000"
+                },
+                "direction": {
+                    "description": "Which side of the flood this address was on, derived from block_type plus\nwhether it resolved to one of our instances. One incident always yields\ntwo rows, the attacker and its target. One of: vm_compromised (our VM is\nflooding outward), outbound_target (the foreign address our VM is\nflooding), external_attacker (a foreign address flooding us),\nvm_under_attack (our VM being flooded), unknown.",
+                    "type": "string",
+                    "example": "external_attacker"
+                },
+                "domain": {
+                    "description": "libvirt domain owning the address. May be set while instance_id is NA,\nwhich itself indicates a missing instance mapping.",
+                    "type": "string",
+                    "example": "inst-40172"
+                },
+                "expires_at": {
+                    "description": "Derived as blocked_at plus the one hour ipset timeout.",
+                    "type": "string",
+                    "example": "2026-08-26 08:12:31.000000"
+                },
+                "hostname": {
+                    "description": "Compute node that installed the block.",
+                    "type": "string",
+                    "example": "sv6-cland-compute-0"
+                },
+                "instance_id": {
+                    "description": "Instance UUID owning the address, or NA when it is not ours.",
+                    "type": "string",
+                    "example": "NA"
+                },
+                "ip": {
+                    "description": "The blocked address.",
+                    "type": "string",
+                    "example": "137.184.24.227"
+                },
+                "owner_state": {
+                    "description": "How the owner was found, not what state the VM is in. Empty means the\naddress had traffic metrics inside the requested window; offline means it\nhad none and was resolved by looking further back, which happens when the\nVM was down for the whole window -- being down is itself what lets the\nunanswered SYNs pile up. A window wide enough to overlap the VM still\nrunning reports empty even though it was down when blocked.",
+                    "type": "string",
+                    "example": ""
+                },
+                "source": {
+                    "description": "Which lookup answered: metric, or none for an external address.",
+                    "type": "string",
+                    "example": "none"
                 }
             }
         },
@@ -10438,6 +10714,15 @@ const docTemplatev1 = `{
                 "STaskActionStart": "Start instance",
                 "STaskActionStop": "Stop instance gracefully"
             },
+            "x-enum-descriptions": [
+                "Stop instance gracefully",
+                "Force stop instance",
+                "Start instance",
+                "Restart instance gracefully",
+                "Force restart instance",
+                "Create volume snapshot",
+                "Create volume backup"
+            ],
             "x-enum-varnames": [
                 "STaskActionStop",
                 "STaskActionHardStop",

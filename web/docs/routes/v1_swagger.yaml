@@ -190,6 +190,126 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.BlockedIPListResponse:
+    properties:
+      entries:
+        description: The page itself, newest blocking first.
+        items:
+          $ref: '#/definitions/apis.BlockedIPResponse'
+        type: array
+      limit:
+        description: Number of entries in this page.
+        type: integer
+      measured_samples:
+        description: |-
+          Raw samples behind the window as requested, present only when truncated is
+          set. This is the figure that overflowed, so comparing it against how much
+          of the range was actually served says how much further to narrow, or how
+          much a filter would have to cut.
+        type: integer
+      offset:
+        description: Offset actually applied, clamped to the result size.
+        type: integer
+      requested_start:
+        description: The start originally asked for, present only when truncated is
+          set.
+        type: string
+      total:
+        description: |-
+          Number of blockings matching the query, before paging.
+
+          These are blocking episodes rather than samples, and how finely they
+          separate depends on the window: two blocks of one address merge into one
+          episode when they sit closer together than twice the sample step, and that
+          step grows with the window. The same data therefore yields fewer episodes
+          over a month than over an hour, so this is not an absolute count of times
+          an address was blocked.
+        type: integer
+      truncated:
+        description: |-
+          Set when the requested window held more data than one query may move, so
+          window_start was moved forward to the most recent slice that fits. The
+          rows returned are complete and correctly counted for the window reported
+          here -- they are simply not the whole window that was asked for. Narrow
+          the range or add a filter to see the rest.
+        example: false
+        type: boolean
+      window_end:
+        description: End of the window actually queried, UTC.
+        example: "2026-08-27 07:12:31.000000"
+        type: string
+      window_start:
+        description: |-
+          Start of the window actually queried, UTC. Equal to what was requested
+          unless truncated is set.
+        example: "2026-08-26 07:12:31.000000"
+        type: string
+    type: object
+  apis.BlockedIPResponse:
+    properties:
+      block_type:
+        description: |-
+          Which side of the half-open connection was blocked: src for the SYN
+          source, dst for its destination. unknown is defensive only -- the exporter
+          always labels the set it read, so it does not occur in practice.
+        example: src
+        type: string
+      blocked_at:
+        description: |-
+          When the block started. Never earlier than the real block, only later: the
+          collection delay adds up to 60s and the sample grid up to one step. The
+          current list is on a fixed 30s grid; the history grid scales with the
+          window, 30s on a narrow one up to 300s on a month, so the wider the window
+          the coarser this is. Not a to-the-second timestamp.
+        example: "2026-08-26 07:12:31.000000"
+        type: string
+      direction:
+        description: |-
+          Which side of the flood this address was on, derived from block_type plus
+          whether it resolved to one of our instances. One incident always yields
+          two rows, the attacker and its target. One of: vm_compromised (our VM is
+          flooding outward), outbound_target (the foreign address our VM is
+          flooding), external_attacker (a foreign address flooding us),
+          vm_under_attack (our VM being flooded), unknown.
+        example: external_attacker
+        type: string
+      domain:
+        description: |-
+          libvirt domain owning the address. May be set while instance_id is NA,
+          which itself indicates a missing instance mapping.
+        example: inst-40172
+        type: string
+      expires_at:
+        description: Derived as blocked_at plus the one hour ipset timeout.
+        example: "2026-08-26 08:12:31.000000"
+        type: string
+      hostname:
+        description: Compute node that installed the block.
+        example: sv6-cland-compute-0
+        type: string
+      instance_id:
+        description: Instance UUID owning the address, or NA when it is not ours.
+        example: NA
+        type: string
+      ip:
+        description: The blocked address.
+        example: 137.184.24.227
+        type: string
+      owner_state:
+        description: |-
+          How the owner was found, not what state the VM is in. Empty means the
+          address had traffic metrics inside the requested window; offline means it
+          had none and was resolved by looking further back, which happens when the
+          VM was down for the whole window -- being down is itself what lets the
+          unanswered SYNs pile up. A window wide enough to overlap the VM still
+          running reports empty even though it was down when blocked.
+        example: ""
+        type: string
+      source:
+        description: 'Which lookup answered: metric, or none for an external address.'
+        example: none
+        type: string
+    type: object
   apis.CLTaskListResponse:
     properties:
       limit:
@@ -2669,6 +2789,14 @@ definitions:
       STaskActionSnapshot: Create volume snapshot
       STaskActionStart: Start instance
       STaskActionStop: Stop instance gracefully
+    x-enum-descriptions:
+    - Stop instance gracefully
+    - Force stop instance
+    - Start instance
+    - Restart instance gracefully
+    - Force restart instance
+    - Create volume snapshot
+    - Create volume backup
     x-enum-varnames:
     - STaskActionStop
     - STaskActionHardStop
@@ -5357,6 +5485,148 @@ paths:
       summary: login to get the access token
       tags:
       - Authorization
+  /metrics/blocked-ips:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Returns every IP the region is dropping right now, resolved to the
+        instance owning it when the address is ours. Data comes from the
+        ipset exported by each compute node as Prometheus metrics, so an
+        address appears within about 90 seconds of being blocked.
+
+        The window here is fixed and bounded by the detection thresholds, so it
+        is not normally large enough to be narrowed; if it ever is, truncated
+        says so and the only remedy is a filter. Admin only.
+      parameters:
+      - description: Exact address to filter by
+        in: query
+        name: ip
+        type: string
+      - description: Compute node to filter by
+        in: query
+        name: hostname
+        type: string
+      - description: Filter by blocked side
+        enum:
+        - src
+        - dst
+        - unknown
+        in: query
+        name: block_type
+        type: string
+      - description: Rows to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      - description: Page size (default 1000; anything larger is clamped to 10000)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BlockedIPListResponse'
+        "400":
+          description: Invalid offset or limit, or the window holds more than one
+            query may carry and no part of it that fits holds any blocking
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Prometheus unreachable
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: List currently blocked IPs
+      tags:
+      - Network
+  /metrics/blocked-ips/history:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Returns blockings that started inside [start, end], including the ones
+        still in force, so results overlap with the current list on purpose.
+        Ownership is resolved as of the time of the block, which stays correct
+        after a VM is deleted or an address reused. An address with no traffic
+        metrics anywhere in the window is looked up again over the whole
+        retention period, so a VM that was powered off while it was blocked
+        still resolves -- owner_state says when that happened. The window
+        itself cannot reach past the 30 day Prometheus retention.
+
+        Before any data is moved the window is measured, and if it holds more
+        than one query may carry it is narrowed to the most recent slice that
+        fits: truncated then says so and window_start reports what was served.
+        Admin only.
+      parameters:
+      - description: 'Window start, RFC3339 or 2006-01-02T15:04 (default: 24h before
+          end)'
+        in: query
+        name: start
+        type: string
+      - description: 'Window end, same formats (default: now)'
+        in: query
+        name: end
+        type: string
+      - description: Minutes behind UTC, as JavaScript getTimezoneOffset() reports
+          it; needed only when start/end carry no zone
+        in: query
+        name: timezone_offset_minutes
+        type: integer
+      - description: Exact address to filter by
+        in: query
+        name: ip
+        type: string
+      - description: Compute node to filter by
+        in: query
+        name: hostname
+        type: string
+      - description: Filter by blocked side
+        enum:
+        - src
+        - dst
+        - unknown
+        in: query
+        name: block_type
+        type: string
+      - description: Rows to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      - description: Page size (default 1000; anything larger is clamped to 10000)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BlockedIPListResponse'
+        "400":
+          description: Invalid time range, offset or limit, or the range holds more
+            than one query may carry and the most recent part of it that fits holds
+            no blocking
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Prometheus unreachable
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: List historical IP blockings
+      tags:
+      - Network
   /migrations:
     get:
       consumes:

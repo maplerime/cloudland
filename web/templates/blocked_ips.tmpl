@@ -1,0 +1,174 @@
+{{template "_head" .}}
+    <div class="admin user">
+        <div class="ui container">
+            <div class="ui grid">
+                {{template "_left" .}}
+                <div class="twelve wide column content">
+                    <h4 class="ui top attached header">
+                        {{.i18n.Tr "Blocked_IP_Manage_Panel"}} ({{.i18n.Tr "Total"}}: {{.Total}}{{ if .WindowStart }} &middot; {{.i18n.Tr "Query_Range"}} <span data-utc="{{.WindowStart.Format "2006-01-02T15:04:05Z07:00"}}">{{.WindowStart.Format "2006-01-02 15:04:05"}}</span> ~ <span data-utc="{{.WindowEnd.Format "2006-01-02T15:04:05Z07:00"}}">{{.WindowEnd.Format "2006-01-02 15:04:05"}} UTC</span> <span class="local-zone"></span>{{ end }})                        <div class="ui right">
+                            {{template "_column_selector" .}}
+                        </div>
+                    </h4>
+                    {{ if .BudgetExceeded }}
+                    <div class="ui attached negative message">
+                        ⚠ {{.i18n.Tr "Budget_Exceeded"}}
+                        {{.i18n.Tr "Measured_Samples"}}: {{.BudgetSamples}}
+                        &middot; {{.i18n.Tr "Query_Budget"}}: {{.BudgetLimit}}
+                    </div>
+                    {{ end }}
+                    {{ if and .WindowTruncated (not .BudgetExceeded) }}
+                    <div class="ui attached warning message">
+                        ⚠ {{.i18n.Tr "Window_Truncated"}}
+                        {{.i18n.Tr "Served_From"}}: <span data-utc="{{.WindowServed.Format "2006-01-02T15:04:05Z07:00"}}">{{.WindowServed.Format "2006-01-02 15:04:05"}} UTC</span>
+                        &middot; {{.i18n.Tr "Measured_Samples"}}: {{.WindowSamples}}
+                    </div>
+                    {{ end }}
+                    <div class="ui attached tabular menu">
+                        <a class="item {{ if eq .Tab "current" }}active{{ end }}" href="/blocked-ips">{{.i18n.Tr "Current_Blocked"}}</a>
+                        <a class="item {{ if eq .Tab "history" }}active{{ end }}" href="/blocked-ips/history">{{.i18n.Tr "Blocked_History"}}</a>
+                    </div>
+                    <div class="ui attached segment">
+                        <form class="ui form" method="get">
+                            <input type="hidden" id="timezone_offset_minutes" name="timezone_offset_minutes">
+                            <input type="hidden" id="client_timezone" name="client_timezone">
+                            <div class="three fields">
+                                <div class="field">
+                                    <label for="ip">{{.i18n.Tr "Blocked_IP_Address"}}</label>
+                                    <input id="ip" name="ip" value="{{ .IP }}" placeholder="1.2.3.4">
+                                </div>
+                                <div class="field">
+                                    <label for="hostname">{{.i18n.Tr "Compute_Node"}}</label>
+                                    <input id="hostname" name="hostname" value="{{ .Hostname }}">
+                                </div>
+                                {{ if eq .Tab "history" }}
+                                <div class="field">
+                                    <label for="start">{{.i18n.Tr "Start"}}</label>
+                                    <input id="start" name="start" type="datetime-local" data-utc-value="{{ .StartUTC }}">
+                                </div>
+                                <div class="field">
+                                    <label for="end">{{.i18n.Tr "End"}}</label>
+                                    <input id="end" name="end" type="datetime-local" data-utc-value="{{ .EndUTC }}">
+                                </div>
+                                {{ end }}
+                            </div>
+                            <button class="ui blue tiny button">{{.i18n.Tr "Search"}}</button>
+                            <a class="ui tiny button" href="{{ if eq .Tab "history" }}/blocked-ips/history{{ else }}/blocked-ips{{ end }}">{{.i18n.Tr "Reset"}}</a>
+                        </form>
+                    </div>
+                    <div class="ui unstackable attached table segment">
+                        <table class="ui unstackable very basic striped table">
+                            <thead>
+                                <tr>
+                                    <th data-column="Hostname">{{.i18n.Tr "Compute_Node"}}</th>
+                                    <th data-column="IP">{{.i18n.Tr "Blocked_IP_Address"}}</th>
+                                    <th data-column="Direction">{{.i18n.Tr "Direction"}}</th>
+                                    <th data-column="InstanceUUID">{{.i18n.Tr "Owner_Instance"}}</th>
+                                    <th data-column="BlockedAt">{{.i18n.Tr "BlockedAt"}}</th>
+                                    <th data-column="ExpiresAt">{{.i18n.Tr "ExpiresAt"}}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{ range .BlockedIPs }}
+                                <tr>
+                                    <td data-column="Hostname">{{.Hostname}}</td>
+                                    <td data-column="IP">{{.IP}}</td>
+                                    <td data-column="Direction">{{$.i18n.Tr .Direction}}</td>
+                                    <td data-column="InstanceUUID">{{ if .InstanceUUID }}{{.InstanceUUID}}{{ if eq .OwnerState "offline" }} ⚠{{$.i18n.Tr "Not_Running"}}{{ end }}{{ else if .Domain }}⚠ {{$.i18n.Tr "Mapping_Gap"}} ({{.Domain}}){{ else }}NA{{ end }}</td>
+                                    <td data-column="BlockedAt" data-utc="{{.BlockedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.BlockedAt.Format "2006-01-02 15:04:05"}} UTC</td>
+                                    <td data-column="ExpiresAt" data-utc="{{.ExpiresAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.ExpiresAt.Format "2006-01-02 15:04:05"}} UTC</td>
+                                </tr>
+                                {{ end }}
+                            </tbody>
+                        </table>
+                    </div>
+                    {{template "_pagination" .}}
+                </div>
+            </div>
+        </div>
+    </div>
+<script>
+// Every timestamp leaves the server as UTC and is rendered in local time here:
+// the server cannot know the browser zone on a first load, and the API keeps
+// answering in UTC regardless. Without JS the markup still reads correctly --
+// it just says UTC.
+(function () {
+    function pad(value) {
+        return String(value).padStart(2, '0');
+    }
+    var nodes = document.querySelectorAll('[data-utc]');
+    for (var i = 0; i < nodes.length; i++) {
+        var dt = new Date(nodes[i].getAttribute('data-utc'));
+        if (isNaN(dt.getTime())) {
+            continue;
+        }
+        nodes[i].textContent = dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' +
+            pad(dt.getDate()) + ' ' + pad(dt.getHours()) + ':' + pad(dt.getMinutes()) +
+            ':' + pad(dt.getSeconds());
+    }
+    // Name the zone once, so a screenshot is not ambiguous about whose clock it is.
+    var minutesEast = -new Date().getTimezoneOffset();
+    var sign = minutesEast < 0 ? '-' : '+';
+    var abs = Math.abs(minutesEast);
+    var label = 'UTC' + sign + Math.floor(abs / 60) + (abs % 60 ? ':' + pad(abs % 60) : '');
+    var zones = document.querySelectorAll('.local-zone');
+    for (var j = 0; j < zones.length; j++) {
+        zones[j].textContent = label;
+    }
+})();
+
+// datetime-local submits a local time with no zone. Report the browser offset so
+// the server can turn the picked range back into UTC, the same way the
+// scheduled task form does.
+(function () {
+    var offset = document.getElementById('timezone_offset_minutes');
+    var zone = document.getElementById('client_timezone');
+    if (offset) {
+        offset.value = new Date().getTimezoneOffset();
+    }
+    if (zone && window.Intl) {
+        zone.value = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+    var start = document.getElementById('start');
+    var end = document.getElementById('end');
+    if (!start || !end) {
+        return;
+    }
+    // The server always answers with the window it actually queried, so the
+    // fields show the default day instead of sitting empty -- and after a manual
+    // pick they show that same instant back. Conversion mirrors
+    // scheduled_tasks_patch.tmpl:130-146.
+    function fillFromUTC(input) {
+        var utc = input.getAttribute('data-utc-value');
+        if (!utc) {
+            return;
+        }
+        var dt = new Date(utc);
+        if (isNaN(dt.getTime())) {
+            return;
+        }
+        var pad = function (value) { return String(value).padStart(2, '0'); };
+        input.value = dt.getFullYear() + '-' + pad(dt.getMonth() + 1) + '-' +
+            pad(dt.getDate()) + 'T' + pad(dt.getHours()) + ':' + pad(dt.getMinutes());
+    }
+    fillFromUTC(start);
+    fillFromUTC(end);
+    // Keep the two bounds from crossing: each one caps the other, so the picker
+    // greys out the impossible half and the browser refuses to submit a
+    // backwards range before it ever reaches the server.
+    //
+    // Deliberately no cap at the current time. Pinning one at load would freeze
+    // it there and make the minute you are living in unselectable, and a future
+    // end costs nothing: Prometheus has no samples past now, and now is already
+    // the default.
+    function syncBounds() {
+        start.max = end.value;
+        end.min = start.value;
+    }
+    ['input', 'change'].forEach(function (event) {
+        start.addEventListener(event, syncBounds);
+        end.addEventListener(event, syncBounds);
+    });
+    syncBounds();
+})();
+</script>
+{{template "_footer" .}}

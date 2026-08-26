@@ -1,5 +1,59 @@
 basePath: /api/v1/rules
 definitions:
+  apis.APIKeyListResponse:
+    properties:
+      api_keys:
+        items:
+          $ref: '#/definitions/apis.APIKeyResponse'
+        type: array
+      limit:
+        type: integer
+      offset:
+        type: integer
+      total:
+        type: integer
+    type: object
+  apis.APIKeyPatchPayload:
+    properties:
+      disabled:
+        type: boolean
+    type: object
+  apis.APIKeyPayload:
+    properties:
+      description:
+        maxLength: 255
+        type: string
+      expires_at:
+        description: RFC-like "2006-01-02 15:04:05.000000" or empty for no expiry
+        type: string
+      name:
+        maxLength: 64
+        minLength: 2
+        type: string
+    required:
+    - name
+    type: object
+  apis.APIKeyResponse:
+    properties:
+      api_key:
+        type: string
+      created_at:
+        type: string
+      description:
+        type: string
+      disabled:
+        type: boolean
+      expires_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      owner:
+        type: string
+      updated_at:
+        type: string
+    type: object
   apis.AddressInfo:
     properties:
       ip_address:
@@ -134,6 +188,126 @@ definitions:
       status:
         type: string
       updated_at:
+        type: string
+    type: object
+  apis.BlockedIPListResponse:
+    properties:
+      entries:
+        description: The page itself, newest blocking first.
+        items:
+          $ref: '#/definitions/apis.BlockedIPResponse'
+        type: array
+      limit:
+        description: Number of entries in this page.
+        type: integer
+      measured_samples:
+        description: |-
+          Raw samples behind the window as requested, present only when truncated is
+          set. This is the figure that overflowed, so comparing it against how much
+          of the range was actually served says how much further to narrow, or how
+          much a filter would have to cut.
+        type: integer
+      offset:
+        description: Offset actually applied, clamped to the result size.
+        type: integer
+      requested_start:
+        description: The start originally asked for, present only when truncated is
+          set.
+        type: string
+      total:
+        description: |-
+          Number of blockings matching the query, before paging.
+
+          These are blocking episodes rather than samples, and how finely they
+          separate depends on the window: two blocks of one address merge into one
+          episode when they sit closer together than twice the sample step, and that
+          step grows with the window. The same data therefore yields fewer episodes
+          over a month than over an hour, so this is not an absolute count of times
+          an address was blocked.
+        type: integer
+      truncated:
+        description: |-
+          Set when the requested window held more data than one query may move, so
+          window_start was moved forward to the most recent slice that fits. The
+          rows returned are complete and correctly counted for the window reported
+          here -- they are simply not the whole window that was asked for. Narrow
+          the range or add a filter to see the rest.
+        example: false
+        type: boolean
+      window_end:
+        description: End of the window actually queried, UTC.
+        example: "2026-08-27 07:12:31.000000"
+        type: string
+      window_start:
+        description: |-
+          Start of the window actually queried, UTC. Equal to what was requested
+          unless truncated is set.
+        example: "2026-08-26 07:12:31.000000"
+        type: string
+    type: object
+  apis.BlockedIPResponse:
+    properties:
+      block_type:
+        description: |-
+          Which side of the half-open connection was blocked: src for the SYN
+          source, dst for its destination. unknown is defensive only -- the exporter
+          always labels the set it read, so it does not occur in practice.
+        example: src
+        type: string
+      blocked_at:
+        description: |-
+          When the block started. Never earlier than the real block, only later: the
+          collection delay adds up to 60s and the sample grid up to one step. The
+          current list is on a fixed 30s grid; the history grid scales with the
+          window, 30s on a narrow one up to 300s on a month, so the wider the window
+          the coarser this is. Not a to-the-second timestamp.
+        example: "2026-08-26 07:12:31.000000"
+        type: string
+      direction:
+        description: |-
+          Which side of the flood this address was on, derived from block_type plus
+          whether it resolved to one of our instances. One incident always yields
+          two rows, the attacker and its target. One of: vm_compromised (our VM is
+          flooding outward), outbound_target (the foreign address our VM is
+          flooding), external_attacker (a foreign address flooding us),
+          vm_under_attack (our VM being flooded), unknown.
+        example: external_attacker
+        type: string
+      domain:
+        description: |-
+          libvirt domain owning the address. May be set while instance_id is NA,
+          which itself indicates a missing instance mapping.
+        example: inst-40172
+        type: string
+      expires_at:
+        description: Derived as blocked_at plus the one hour ipset timeout.
+        example: "2026-08-26 08:12:31.000000"
+        type: string
+      hostname:
+        description: Compute node that installed the block.
+        example: sv6-cland-compute-0
+        type: string
+      instance_id:
+        description: Instance UUID owning the address, or NA when it is not ours.
+        example: NA
+        type: string
+      ip:
+        description: The blocked address.
+        example: 137.184.24.227
+        type: string
+      owner_state:
+        description: |-
+          How the owner was found, not what state the VM is in. Empty means the
+          address had traffic metrics inside the requested window; offline means it
+          had none and was resolved by looking further back, which happens when the
+          VM was down for the whole window -- being down is itself what lets the
+          unanswered SYNs pile up. A window wide enough to overlap the VM still
+          running reports empty even though it was down when blocked.
+        example: ""
+        type: string
+      source:
+        description: 'Which lookup answered: metric, or none for an external address.'
+        example: none
         type: string
     type: object
   apis.CLTaskListResponse:
@@ -673,6 +847,13 @@ definitions:
         type: integer
       zone_name:
         type: string
+    type: object
+  apis.ImageExportPayload:
+    properties:
+      storage_id:
+        type: integer
+    required:
+    - storage_id
     type: object
   apis.ImageListResponse:
     properties:
@@ -2086,6 +2267,72 @@ definitions:
       summary:
         type: string
     type: object
+  apis.TrafficBillingCreateResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apis.TrafficBillingResponse'
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingDeleteResponse:
+    properties:
+      data:
+        $ref: '#/definitions/apis.TrafficBillingInstanceRef'
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingErrorResponse:
+    properties:
+      code:
+        type: string
+      error:
+        type: string
+      instance_uuid:
+        type: string
+      status:
+        type: string
+    type: object
+  apis.TrafficBillingInstanceRef:
+    properties:
+      instance_uuid:
+        type: string
+    type: object
+  apis.TrafficBillingListResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/apis.TrafficBillingResponse'
+        type: array
+      meta:
+        $ref: '#/definitions/apis.TrafficBillingMeta'
+    type: object
+  apis.TrafficBillingMeta:
+    properties:
+      current_page:
+        type: integer
+      per_page:
+        type: integer
+      total:
+        type: integer
+      total_pages:
+        type: integer
+    type: object
+  apis.TrafficBillingResponse:
+    properties:
+      created_at:
+        type: string
+      instance_uuid:
+        type: string
+      uuid:
+        type: string
+    type: object
+  apis.TrafficBillingSyncResponse:
+    properties:
+      message:
+        type: string
+      status:
+        type: string
+    type: object
   apis.UserListResponse:
     properties:
       limit:
@@ -2574,6 +2821,14 @@ definitions:
       STaskActionSnapshot: Create volume snapshot
       STaskActionStart: Start instance
       STaskActionStop: Stop instance gracefully
+    x-enum-descriptions:
+    - Stop instance gracefully
+    - Force stop instance
+    - Start instance
+    - Restart instance gracefully
+    - Force restart instance
+    - Create volume snapshot
+    - Create volume backup
     x-enum-varnames:
     - STaskActionStop
     - STaskActionHardStop
@@ -2743,6 +2998,143 @@ paths:
       summary: Handle rule file operations
       tags:
       - rules
+  /api_keys:
+    get:
+      consumes:
+      - application/json
+      description: list API keys for the current user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyListResponse'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: list API keys
+      tags:
+      - APIKey
+    post:
+      consumes:
+      - application/json
+      description: create a new API key; the plain-text key is returned once only
+      parameters:
+      - description: API key payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.APIKeyPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: create an API key
+      tags:
+      - APIKey
+  /api_keys/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: delete an API key
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: delete an API key
+      tags:
+      - APIKey
+    get:
+      consumes:
+      - application/json
+      description: get an API key by UUID
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: get an API key
+      tags:
+      - APIKey
+    patch:
+      consumes:
+      - application/json
+      description: enable or disable an API key
+      parameters:
+      - description: API Key UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Patch payload
+        in: body
+        name: payload
+        required: true
+        schema:
+          $ref: '#/definitions/apis.APIKeyPatchPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.APIKeyResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update an API key
+      tags:
+      - APIKey
   /backups:
     get:
       consumes:
@@ -3919,6 +4311,44 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a image
+      tags:
+      - Compute
+  /images/{id}/export:
+    post:
+      consumes:
+      - application/json
+      description: export an image to a file on the USS node; poll /api/v1/tasks/{task_id}
+        for status
+      parameters:
+      - description: Image UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Export payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.ImageExportPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: export an image
       tags:
       - Compute
   /images/{id}/storages:
@@ -5130,6 +5560,148 @@ paths:
       summary: login to get the access token
       tags:
       - Authorization
+  /metrics/blocked-ips:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Returns every IP the region is dropping right now, resolved to the
+        instance owning it when the address is ours. Data comes from the
+        ipset exported by each compute node as Prometheus metrics, so an
+        address appears within about 90 seconds of being blocked.
+
+        The window here is fixed and bounded by the detection thresholds, so it
+        is not normally large enough to be narrowed; if it ever is, truncated
+        says so and the only remedy is a filter. Admin only.
+      parameters:
+      - description: Exact address to filter by
+        in: query
+        name: ip
+        type: string
+      - description: Compute node to filter by
+        in: query
+        name: hostname
+        type: string
+      - description: Filter by blocked side
+        enum:
+        - src
+        - dst
+        - unknown
+        in: query
+        name: block_type
+        type: string
+      - description: Rows to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      - description: Page size (default 1000; anything larger is clamped to 10000)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BlockedIPListResponse'
+        "400":
+          description: Invalid offset or limit, or the window holds more than one
+            query may carry and no part of it that fits holds any blocking
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Prometheus unreachable
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: List currently blocked IPs
+      tags:
+      - Network
+  /metrics/blocked-ips/history:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Returns blockings that started inside [start, end], including the ones
+        still in force, so results overlap with the current list on purpose.
+        Ownership is resolved as of the time of the block, which stays correct
+        after a VM is deleted or an address reused. An address with no traffic
+        metrics anywhere in the window is looked up again over the whole
+        retention period, so a VM that was powered off while it was blocked
+        still resolves -- owner_state says when that happened. The window
+        itself cannot reach past the 30 day Prometheus retention.
+
+        Before any data is moved the window is measured, and if it holds more
+        than one query may carry it is narrowed to the most recent slice that
+        fits: truncated then says so and window_start reports what was served.
+        Admin only.
+      parameters:
+      - description: 'Window start, RFC3339 or 2006-01-02T15:04 (default: 24h before
+          end)'
+        in: query
+        name: start
+        type: string
+      - description: 'Window end, same formats (default: now)'
+        in: query
+        name: end
+        type: string
+      - description: Minutes behind UTC, as JavaScript getTimezoneOffset() reports
+          it; needed only when start/end carry no zone
+        in: query
+        name: timezone_offset_minutes
+        type: integer
+      - description: Exact address to filter by
+        in: query
+        name: ip
+        type: string
+      - description: Compute node to filter by
+        in: query
+        name: hostname
+        type: string
+      - description: Filter by blocked side
+        enum:
+        - src
+        - dst
+        - unknown
+        in: query
+        name: block_type
+        type: string
+      - description: Rows to skip (default 0)
+        in: query
+        name: offset
+        type: integer
+      - description: Page size (default 1000; anything larger is clamped to 10000)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.BlockedIPListResponse'
+        "400":
+          description: Invalid time range, offset or limit, or the range holds more
+            than one query may carry and the most recent part of it that fits holds
+            no blocking
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Prometheus unreachable
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: List historical IP blockings
+      tags:
+      - Network
   /migrations:
     get:
       consumes:
@@ -6042,6 +6614,179 @@ paths:
       summary: get a task
       tags:
       - Compute
+  /traffic-billing:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        List the instances currently marked as traffic billing. The underlying
+        query applies no explicit ORDER BY, so ordering within a page is
+        whatever the DB returns. Admin permission required.
+
+        The same handler also serves GET /traffic-billing/{uuid}, a lookup of
+        one instance by its UUID. That variant ignores the paging and query
+        parameters below and returns the identical response shape with the one
+        matching entry in "data" plus a fixed meta of total/current_page/
+        per_page/total_pages = 1; an instance that is not marked comes back as
+        404 NOT_FOUND. It is not documented as a separate operation here
+        because one Go handler carries one annotation block.
+      parameters:
+      - default: 1
+        description: Page number, 1-based; values below 1 fall back to 1
+        in: query
+        name: page
+        type: integer
+      - default: 20
+        description: Entries per page, valid range 1-1000; out-of-range values fall
+          back to 20
+        in: query
+        name: page_size
+        type: integer
+      - description: Filter by instance UUID substring (SQL LIKE %query%); empty means
+          no filter
+        in: query
+        name: query
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingListResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'NOT_FOUND: only for the /{uuid} variant, instance is not marked
+            as traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB count or query failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: list traffic billing instances
+      tags:
+      - Compute
+  /traffic-billing/{uuid}:
+    delete:
+      consumes:
+      - application/json
+      description: |-
+        Remove one instance's traffic-billing mark and tell its compute node
+        to stop exporting the instance's traffic metrics. An instance that was
+        never marked is rejected with NOT_FOUND rather than reported as a
+        successful no-op, so a typo'd UUID does not look like it worked.
+        Admin permission required.
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingDeleteResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'NOT_FOUND: instance is not currently marked as traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB delete or compute-node push failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: unmark an instance as traffic billing
+      tags:
+      - Compute
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Mark one instance as traffic billing, then push the mapping to the
+        compute node hosting it so that node begins exporting the instance's
+        15-minute traffic metrics. Being called is the only signal: no
+        billing-type judgement happens server side. Takes no request body --
+        the instance UUID in the path is the entire input. Rejects an
+        instance that is already marked rather than silently succeeding, and
+        rejects one with no hypervisor assigned. Admin permission required.
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: uuid
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingCreateResponse'
+        "400":
+          description: 'INVALID_STATE: instance has no hypervisor assigned'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "404":
+          description: 'INSTANCE_NOT_FOUND: no such instance'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "409":
+          description: 'ALREADY_MARKED: instance is already traffic billing'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB write or compute-node push failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: mark an instance as traffic billing
+      tags:
+      - Compute
+  /traffic-billing/sync:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Push the complete set of instances that should be traffic billing from
+        the DB to every compute node at once, so each node rebuilds its local
+        traffic-billing map from that list. Use it to repair nodes that drifted
+        (missed a create/delete, or were rebuilt). Admin permission required.
+
+        Takes no request body and accepts no caller-supplied list: the DB is
+        always the source of truth, so "sync" only ever means DB-to-compute-node
+        here, never the reverse. Success means the broadcast was dispatched to
+        every node, not that every node has finished applying it.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingSyncResponse'
+        "403":
+          description: 'PERMISSION_DENIED: admin permission required'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+        "500":
+          description: 'INTERNAL_ERROR: DB read or broadcast dispatch failed'
+          schema:
+            $ref: '#/definitions/apis.TrafficBillingErrorResponse'
+      summary: broadcast the traffic billing list to all compute nodes
+      tags:
+      - Compute
   /users:
     get:
       consumes:
@@ -6309,6 +7054,38 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: patch a volume
+      tags:
+      - Compute
+  /volumes/{id}/export:
+    post:
+      consumes:
+      - application/json
+      description: export a volume to a file on the USS node; poll /api/v1/tasks/{task_id}
+        for status
+      parameters:
+      - description: Volume UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: export a volume
       tags:
       - Compute
   /volumes/{id}/qos:
