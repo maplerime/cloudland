@@ -112,7 +112,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 		}
 		fdbJson, _ := json.Marshal(spreadRules)
 		control := "toall=" + hyperList
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF\n", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Add_fwrule execution failed", err)
@@ -122,7 +122,7 @@ func sendFdbRules(ctx context.Context, instance *model.Instance, vrrpInstance *m
 	if len(localRules) > 0 {
 		fdbJson, _ := json.Marshal(localRules)
 		control := fmt.Sprintf("inter=%d", hyperNode)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/add_fwrule.sh <<EOF\n%s\nEOF\n", fdbJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Add_fwrule execution failed", err)
@@ -299,7 +299,7 @@ func syncNicInfo(ctx context.Context, instance *model.Instance) (err error) {
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' <<EOF\n%s\nEOF\n", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Execute floating ip failed", err)
