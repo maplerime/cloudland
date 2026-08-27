@@ -150,6 +150,7 @@
   vars:
     network_device: "{{ netdev.stdout_lines[0] }}"
     vxlan_device: "{{ network_device }}"
+    vnc_device_compute: "{{ network_device }}"
   template:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
@@ -380,4 +381,4 @@
   when:
     - ansible_distribution == "Ubuntu"
     - ansible_distribution_version is version('26.04', '>=')
-  tags: [cland_sudoers_localdisk]
+  tags: [cland_sudoers_2604]
