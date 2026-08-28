@@ -40,9 +40,9 @@ type BlockedIPResponse struct {
 	// Which side of the flood this address was on, derived from block_type plus
 	// whether it resolved to one of our instances. One incident always yields
 	// two rows, the attacker and its target. One of: vm_compromised (our VM is
-	// flooding outward), outbound_target (the foreign address our VM is
-	// flooding), external_attacker (a foreign address flooding us),
-	// vm_under_attack (our VM being flooded), unknown.
+	// flooding outward), target_under_attack (an address being flooded that we
+	// cannot attribute), external_attacker (an address flooding us that is no
+	// running VM of ours), vm_under_attack (our VM being flooded), unknown.
 	Direction string `json:"direction" example:"external_attacker"`
 	// Compute node that installed the block.
 	Hostname string `json:"hostname" example:"sv6-cland-compute-0"`
