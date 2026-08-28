@@ -240,6 +240,7 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
 		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
 
+
 		authGroup.GET("/api/v1/traffic-billing", trafficBillingAPI.List)
 		authGroup.GET("/api/v1/traffic-billing/:uuid", trafficBillingAPI.List)
 		authGroup.POST("/api/v1/traffic-billing/sync", trafficBillingAPI.Sync)
@@ -254,6 +255,9 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 			metricsGroup.POST("/instances/network/his_data", monitorAPI.GetNetwork)
 			metricsGroup.POST("/instances/traffic/his_data", monitorAPI.GetTraffic)
 			metricsGroup.POST("/instances/volume/his_data", monitorAPI.GetVolume)
+
+			metricsGroup.GET("/blocked-ips", blockedIPAPI.List)
+			metricsGroup.GET("/blocked-ips/history", blockedIPAPI.History)
 
 			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
 			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules)

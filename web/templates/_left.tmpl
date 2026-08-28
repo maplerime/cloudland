@@ -80,6 +80,10 @@
         <a {{ if eq .Link "/traffic-billing" }} class="active item" {{ else }} class="item" {{ end }} href="/traffic-billing">
             {{.i18n.Tr "Traffic_Billing"}}
         </a>
+        {{/* Admin only: the list spans every tenant plus external attack sources */}}
+        <a {{ if or (eq .Link "/blocked-ips") (HasPrefix .Link "/blocked-ips/") }} class="active item" {{ else }} class="item" {{ end }} href="/blocked-ips">
+            {{.i18n.Tr "Blocked_IP_Manage_Panel"}}
+        </a>
 
 		{{/* Add new link for Node Alarm Rules */}}
 		<a {{ if eq .Link "/alarms/node" }} class="active item" {{ else }} class="item" {{ end }} href="/alarms/node">

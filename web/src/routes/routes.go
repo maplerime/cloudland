@@ -86,15 +86,15 @@ func New() (m *macaron.Macaron) {
 	adminInit()
 	m.Use(macaron.Renderer(
 		macaron.RenderOptions{
-				Funcs: []template.FuncMap{
-					template.FuncMap{
-						"GetString": viper.GetString,
-						"Title":     func(v interface{}) string { return strings.Title(fmt.Sprint(v)) },
-						"HasPrefix": strings.HasPrefix,
-					},
+			Funcs: []template.FuncMap{
+				template.FuncMap{
+					"GetString": viper.GetString,
+					"Title":     func(v interface{}) string { return strings.Title(fmt.Sprint(v)) },
+					"HasPrefix": strings.HasPrefix,
 				},
 			},
-		))
+		},
+	))
 	m.Use(LinkHandler)
 	m.Use(SysVersion)
 	m.Get("/", Index)
@@ -289,6 +289,8 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/ip-whitelists/:uuid", ipWhitelistView.Delete)
 	m.Post("/ip-whitelists/:uuid/delete", ipWhitelistView.Delete)
 	m.Post("/ip-whitelists/refresh", ipWhitelistView.Refresh)
+	m.Get("/blocked-ips", blockedIPView.List)
+	m.Get("/blocked-ips/history", blockedIPView.History)
 	m.Get("/traffic-billing", trafficBillingView.List)
 	m.Get("/traffic-billing/new", trafficBillingView.New)
 	m.Post("/traffic-billing/new", trafficBillingView.Create)
