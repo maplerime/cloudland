@@ -81,7 +81,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface1.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF\n", routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr, vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute MASTER keepalived conf failed", err)
@@ -90,7 +90,7 @@ func CreateVrrpConf(ctx context.Context, loadBalancer *model.LoadBalancer) (err 
 	}
 	if vrrpIface2.Hyper >= 0 {
 		control := fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF", routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF\n", routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr, vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Execute BACKUP create keepalived conf failed", err)

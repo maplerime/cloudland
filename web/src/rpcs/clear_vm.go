@@ -110,7 +110,7 @@ func deleteInterfaces(ctx context.Context, instance *model.Instance, vrrpInstanc
 			spreadRules := []*FdbRule{{Instance: iface.Name, Vni: iface.Address.Subnet.Vlan, InnerIP: iface.Address.Address, InnerMac: iface.MacAddr, OuterIP: hyper.HostIP, Gateway: iface.Address.Subnet.Gateway, Router: iface.Address.Subnet.RouterID}}
 			fdbJson, _ := json.Marshal(spreadRules)
 			control := "toall=" + hyperList
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF", fdbJson)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/del_fwrule.sh <<EOF\n%s\nEOF\n", fdbJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Execute deleting fdb rules failed", err)

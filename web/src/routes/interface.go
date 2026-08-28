@@ -602,7 +602,7 @@ func (a *InterfaceAdmin) Update(ctx context.Context, instance *model.Instance, i
 			osCode := GetImageOSCode(ctx, instance)
 			if osCode == "windows" {
 				control := fmt.Sprintf("inter=%d", instance.Hyper)
-				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+				command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, iface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
 				err = HyperExecute(ctx, control, command)
 				if err != nil {
 					logger.Error("clear_second_ips command execution failed", err)

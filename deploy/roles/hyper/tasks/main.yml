@@ -31,9 +31,20 @@
   ignore_errors: yes
   tags: [be_pkg]
 
-- name: install pyparsing
+- name: Install stable Python packages
   apt:
-    name: python3-pyparsing
+    name:
+      - python3-pyparsing
+      - python3-scapy
+    state: present
+  when:
+    - ansible_facts.distribution == "Ubuntu"
+    - ansible_facts.distribution_version is version('26.04', '>=')
+  tags: [be_pkg]
+
+- name: Install optional package python3-netfilterqueue
+  apt:
+    name: python3-netfilterqueue
     state: present
   ignore_errors: yes
   when:
@@ -41,8 +52,12 @@
     - ansible_facts.distribution_version is version('26.04', '>=')
   tags: [be_pkg]
 
-- pip:
-    name: pyparsing
+- name: install pyparsing netfilterqueue and scapy using pip3
+  pip:
+    name:
+      - pyparsing
+      - netfilterqueue
+      - scapy
     executable: pip3
   ignore_errors: yes
   when:
@@ -135,6 +150,7 @@
   vars:
     network_device: "{{ netdev.stdout_lines[0] }}"
     vxlan_device: "{{ network_device }}"
+    vnc_device_compute: "{{ network_device }}"
   template:
     src: "{{ item.src }}"
     dest: "{{ item.dest }}"
@@ -350,3 +366,19 @@
     value: "16777216"
     reload: yes
   tags: [sysctl]
+
+- name: Add env_keep to /etc/sudoers.d/cland on Ubuntu 26.04+
+  become: true
+  lineinfile:
+    path: /etc/sudoers.d/cland
+    line: 'Defaults env_keep += "PATH LD_LIBRARY_PATH SCI_CLIENT_ID ZONE_NAME"'
+    state: present
+    create: yes
+    owner: root
+    group: root
+    mode: '0440'
+    validate: 'visudo -cf %s'
+  when:
+    - ansible_distribution == "Ubuntu"
+    - ansible_distribution_version is version('26.04', '>=')
+  tags: [cland_sudoers_2604]
