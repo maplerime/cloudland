@@ -439,7 +439,15 @@ func (a *BlockedIPAdmin) resolve(episodes []*blockedIPEpisode, start, end time.T
 			entry.Source = owner.Source
 			entry.OwnerState = owner.State
 		}
-		entry.Direction = blockedIPDirection(episode.BlockType, entry.InstanceUUID != "")
+		// Ownership decides the direction, and the first hop already settles it:
+		// only a running VM of ours emits domain_north_south_*, so a domain means
+		// the address is ours. The second hop merely supplies the UUID. Testing
+		// the UUID instead conflated "we cannot name it" with "it is not ours" --
+		// on staging 98 running VMs have no vm_instance_map entry because they
+		// predate that metric, covering 100 of our addresses that would have read
+		// as foreign forever, every one of them mislabelled the moment it was
+		// blocked.
+		entry.Direction = blockedIPDirection(episode.BlockType, entry.Domain != "")
 		entry.BlockedAt = time.Unix(episode.FirstSeen, 0).UTC()
 		entry.ExpiresAt = entry.BlockedAt.Add(blockedIPBlockingTimeout * time.Second)
 		blocked = append(blocked, entry)
@@ -735,33 +743,44 @@ func blockedIPType(blockType string) string {
 	return blockType
 }
 
-// blockedIPDirection states two facts an operator can act on: which side of the
-// flood this address was on, and whether it is one of ours.
+// blockedIPDirection states what the metrics support and no more: which side of
+// the flood this address was on, and whether it is one of ours.
 //
-// check_halfopen_connections.sh always puts the SYN source in block_src and the
-// SYN destination in block_dst, so one incident yields two rows -- the attacker
-// and its target. Both inbound and outbound attacks therefore appear twice,
-// once under each address:
+// check_halfopen_connections.sh puts the SYN source in block_src and the SYN
+// destination in block_dst, so the side is always known. Ownership is a separate
+// question from identity: whether the address is ours is answered by the first
+// hop, while which instance holds it needs the second. An address with a domain
+// but no UUID is still ours, and the caller passes ours accordingly.
 //
-//	src + ours    our VM is flooding   -> outbound attack
-//	dst + foreign the address it hits  -> outbound attack, other half
-//	src + foreign someone floods us    -> inbound attack
-//	dst + ours    the VM being hit     -> inbound attack, other half
+//	src + ours     our VM is flooding outward
+//	src + unknown  an address flooding us that is no running VM of ours
+//	dst + ours     our VM being flooded
+//	dst + unknown  an address being flooded that we cannot attribute
 //
-// A dst that is not ours is normally just that target, not a data problem: our
-// own VM attacking outward is exactly how a foreign address ends up in
-// block_dst. It can still hide a genuine mapping hole (a floating IP never
-// reaches vm_ip), but the metrics alone cannot tell the two apart, so this
-// reports the common case rather than asserting the rare one.
-func blockedIPDirection(blockType string, resolved bool) string {
+// The last line used to claim more -- "the foreign address our VM is flooding".
+// Staging disproved it. On 2026-08-03 12:53:20, 104.233.207.163, .165 and .173
+// were flooded in the same second by the same fourteen external sources; only
+// .163 had a vm_ip series, so it read "our VM under attack" while the other two
+// read "target of our attack", the opposite conclusion from identical evidence.
+// black_list.log names every source in those incidents and not one is ours.
+//
+// The thresholds say the same thing. They are dst, src = dst*3/5 and
+// src_dst = src/2 (report_rc.sh:186-196), so a VM of ours flooding hard enough
+// to trip the dst threshold trips the lower src one first and appears as
+// src + ours. A blocked dst with no such row beside it is a victim, not
+// something we hit. Blocking a dst says the address was flooded and nothing
+// about who flooded it, so neither does this function: better no direction than
+// one pointing the wrong way, which sends an operator to isolate their own VM
+// when they should be shielding it.
+func blockedIPDirection(blockType string, ours bool) string {
 	switch {
 	case blockType != "src" && blockType != "dst":
 		return "unknown"
-	case blockType == "dst" && resolved:
+	case blockType == "dst" && ours:
 		return "vm_under_attack"
 	case blockType == "dst":
-		return "outbound_target"
-	case resolved:
+		return "target_under_attack"
+	case ours:
 		return "vm_compromised"
 	default:
 		return "external_attacker"
