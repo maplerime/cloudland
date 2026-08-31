@@ -38,7 +38,12 @@
                                 </div>
                                 <div class="field">
                                     <label for="hostname">{{.i18n.Tr "Compute_Node"}}</label>
-                                    <input id="hostname" name="hostname" value="{{ .Hostname }}">
+                                    <select id="hostname" name="hostname" class="ui selection dropdown">
+                                        <option value="">{{.i18n.Tr "All_Compute_Nodes"}}</option>
+                                        {{ range .Hostnames }}
+                                        <option value="{{ . }}" {{ if eq $.Hostname . }}selected{{ end }}>{{ . }}</option>
+                                        {{ end }}
+                                    </select>
                                 </div>
                                 {{ if eq .Tab "history" }}
                                 <div class="field">

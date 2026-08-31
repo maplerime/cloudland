@@ -146,7 +146,17 @@ func (v *BlockedIPView) render(c *macaron.Context, tab string, blocked []*Blocke
 	c.Data["BlockedIPs"] = blocked[offset:last]
 	c.Data["Tab"] = tab
 	c.Data["IP"] = c.QueryTrim("ip")
-	c.Data["Hostname"] = c.QueryTrim("hostname")
+	hostname := c.QueryTrim("hostname")
+	c.Data["Hostname"] = hostname
+	// The compute node filter is a dropdown over what the metric actually
+	// carries, so a value picked from it always matches. Failing to reach
+	// Prometheus for the option list costs the filter and not the page --
+	// everything above it has already been resolved by the time we get here.
+	hostnames, err := blockedIPAdmin.ListHostnames()
+	if err != nil {
+		logger.Warningf("Failed to list blocked ip compute nodes: %v", err)
+	}
+	c.Data["Hostnames"] = blockedIPHostnameOptions(hostnames, hostname)
 	// datetime-local renders whatever it is handed, so the resolved window goes
 	// out as UTC and the browser turns it into local time -- the same handoff
 	// scheduled_tasks_patch.tmpl uses. Feeding back the resolved window rather
@@ -196,6 +206,23 @@ func (v *BlockedIPView) render(c *macaron.Context, tab string, blocked []*Blocke
 		`["Hostname", "IP", "Direction", "InstanceUUID", "BlockedAt", "ExpiresAt"]`,
 		[]string{"Hostname", "IP", "Direction", "InstanceUUID", "BlockedAt", "ExpiresAt"})
 	c.HTML(http.StatusOK, "blocked_ips")
+}
+
+// blockedIPHostnameOptions keeps the node being filtered on in the dropdown even
+// when the metric no longer carries it, so the control cannot disagree with the
+// filter actually applied: a node whose blockings have aged out of retention
+// would otherwise leave the select reading "all nodes" while the query behind it
+// still narrowed to that one.
+func blockedIPHostnameOptions(hostnames []string, selected string) []string {
+	if selected == "" {
+		return hostnames
+	}
+	for _, hostname := range hostnames {
+		if hostname == selected {
+			return hostnames
+		}
+	}
+	return append(hostnames, selected)
 }
 
 // blockedIPExtraQuery carries the filters through the pagination links, which

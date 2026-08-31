@@ -227,6 +227,55 @@ func (a *BlockedIPAdmin) ListHistory(filter *BlockedIPFilter, start, end time.Ti
 	return a.resolve(episodes, start, end, window), window, nil
 }
 
+// ListHostnames names every compute node the blocking metric has carried a
+// label for, so the filter can be a dropdown instead of a field the operator has
+// to spell correctly -- the filter matches the label exactly, so a single typo
+// reads as "nothing is blocked" rather than as a mistake.
+//
+// The names come from the label index rather than from the hyper table because
+// only the index is guaranteed to match what the filter compares against:
+// export_blocked_ips.sh writes the label from `hostname -f` on the node itself,
+// which need not be the hostname the database holds, and an option that can
+// never match is worse than no option at all.
+//
+// The lookup spans the whole retention rather than the window on screen. It
+// reads no samples, so the span costs nothing, and a node whose blockings are
+// older than the current range is exactly the one an operator is about to widen
+// the range to find.
+func (a *BlockedIPAdmin) ListHostnames() (hostnames []string, err error) {
+	end := time.Now().UTC()
+	params := url.Values{}
+	params.Set("match[]", blockedIPMetric)
+	params.Set("start", strconv.FormatInt(end.Add(-blockedIPMaxWindow).Unix(), 10))
+	params.Set("end", strconv.FormatInt(end.Unix(), 10))
+	resp, err := blockedIPGet("label/hostname/values", params, blockedIPMetric)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	result := &blockedIPLabelValuesResponse{}
+	if err = json.NewDecoder(resp.Body).Decode(result); err != nil {
+		logger.Errorf("Failed to decode prometheus label values response, %v", err)
+		return nil, err
+	}
+	if result.Status == "error" {
+		err = fmt.Errorf("prometheus reported an error: %s: %s", result.ErrorType, result.Error)
+		logger.Errorf("Prometheus reported an error: %v, label: hostname", err)
+		return nil, err
+	}
+	return result.Data, nil
+}
+
+// blockedIPLabelValuesResponse is what /api/v1/label/<name>/values answers: the
+// distinct values a label takes, without the series carrying them, so its size
+// is set by the number of compute nodes and by nothing else.
+type blockedIPLabelValuesResponse struct {
+	Status    string   `json:"status"`
+	ErrorType string   `json:"errorType"`
+	Error     string   `json:"error"`
+	Data      []string `json:"data"`
+}
+
 // BlockedIPBudgetError says the range asked for holds more than one query may
 // move, and that narrowing it to what fits left nothing behind.
 //
