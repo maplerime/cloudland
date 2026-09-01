@@ -4237,6 +4237,41 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/metrics/ip-instance-map": {
+            "get": {
+                "description": "Returns every address the region owns -- floating and classic alike --\ntogether with the instance holding it. Built for monitoring exporters\nthat need to attribute an arbitrary address back to an instance.\n\nAn empty instance_id means the address is ours but holds no VM right\nnow, which is the normal state of a reserved address, a detached\nfloating IP and a load balancer VIP. That is the case traffic metrics\ncannot express, since a VM only emits them while it runs.\n\nThe result is not paged: it is a lookup table meant to be consumed\nwhole. Two queries back it and no work is done per row, so the cost\ndoes not grow with how often it is scraped. Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "List IP to instance mappings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.IPInstanceMapListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to query the mapping",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/migrations": {
             "get": {
                 "description": "list migrations",
@@ -7048,14 +7083,9 @@ const docTemplatev1 = `{
                     "example": "2026-08-26 07:12:31.000000"
                 },
                 "direction": {
-                    "description": "Which side of the flood this address was on, derived from block_type plus\nwhether it resolved to one of our instances. One incident always yields\ntwo rows, the attacker and its target. One of: vm_compromised (our VM is\nflooding outward), outbound_target (the foreign address our VM is\nflooding), external_attacker (a foreign address flooding us),\nvm_under_attack (our VM being flooded), unknown.",
+                    "description": "Which side of the flood this address was on, derived from block_type plus\nwhether it resolved to one of our instances. One incident always yields\ntwo rows, the attacker and its target. One of: vm_compromised (our VM is\nflooding outward), target_under_attack (an address being flooded that we\ncannot attribute), external_attacker (an address flooding us that is no\nrunning VM of ours), vm_under_attack (our VM being flooded), unknown.",
                     "type": "string",
                     "example": "external_attacker"
-                },
-                "domain": {
-                    "description": "libvirt domain owning the address. May be set while instance_id is NA,\nwhich itself indicates a missing instance mapping.",
-                    "type": "string",
-                    "example": "inst-40172"
                 },
                 "expires_at": {
                     "description": "Derived as blocked_at plus the one hour ipset timeout.",
@@ -7068,7 +7098,7 @@ const docTemplatev1 = `{
                     "example": "sv6-cland-compute-0"
                 },
                 "instance_id": {
-                    "description": "Instance UUID owning the address, or NA when it is not ours.",
+                    "description": "Instance UUID owning the address, or NA when no instance holds it. NA\nbeside ours=true is normal rather than a gap: a reserved address, a\ndetached floating IP and a load balancer VIP are all ours and hold no VM.",
                     "type": "string",
                     "example": "NA"
                 },
@@ -7077,8 +7107,18 @@ const docTemplatev1 = `{
                     "type": "string",
                     "example": "137.184.24.227"
                 },
+                "lb_id": {
+                    "description": "Load balancer holding the address, non-empty only where instance_id is NA.\nThe only thing on such a row that points anywhere: there is no VM behind\nthe address, and this names the load balancer that is behind it instead.",
+                    "type": "string",
+                    "example": ""
+                },
+                "ours": {
+                    "description": "Whether the address belongs to this region at all, which is what decides\ndirection. Independent of instance_id for the reason above.",
+                    "type": "boolean",
+                    "example": false
+                },
                 "owner_state": {
-                    "description": "How the owner was found, not what state the VM is in. Empty means the\naddress had traffic metrics inside the requested window; offline means it\nhad none and was resolved by looking further back, which happens when the\nVM was down for the whole window -- being down is itself what lets the\nunanswered SYNs pile up. A window wide enough to overlap the VM still\nrunning reports empty even though it was down when blocked.",
+                    "description": "How far the mapping could be trusted. One of:\n\n  \"\"             resolved cleanly, or cleanly found not to be ours\n  conflict       the address maps to more than one instance, so instance_id\n                 names one candidate among several and must not be acted on\n  unavailable    the mapping was not being published across the window, so\n                 neither the hit nor the miss means anything and direction\n                 is reported as unknown",
                     "type": "string",
                     "example": ""
                 },
@@ -7882,6 +7922,57 @@ const docTemplatev1 = `{
                 },
                 "zone_name": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.IPInstanceMapListResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "description": "Every address we own. Not paged: this is a lookup table meant to be\nconsumed whole, and paging it would only invite a torn read across pages.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.IPInstanceMappingResponse"
+                    }
+                },
+                "total": {
+                    "description": "Number of mappings returned.",
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.IPInstanceMappingResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "description": "Which kind of address this is. One of: floating, classic.",
+                    "type": "string",
+                    "example": "floating"
+                },
+                "instance_id": {
+                    "description": "UUID of the instance holding the address. Empty is meaningful rather than\nmissing: the address is ours but holds no VM, which is the normal state of\na reserved address, a detached floating IP and a load balancer VIP.",
+                    "type": "string",
+                    "example": "0376dec9-1891-492f-aa00-1e67afe23a7a"
+                },
+                "ip": {
+                    "description": "The address itself, without any mask.",
+                    "type": "string",
+                    "example": "107.148.235.43"
+                },
+                "lb_id": {
+                    "description": "Load balancer holding the address, non-empty only for type loadbalancer.\nThose rows have no instance_id, so without this there would be nothing at\nall naming what holds them.\n\nAlways present, empty when it does not apply. Every row carries the same\nsix keys on purpose: a consumer maps them straight onto a fixed label set\nwithout having to test which fields exist.",
+                    "type": "string",
+                    "example": ""
+                },
+                "status": {
+                    "description": "Whether this row's mapping can be trusted. One of:\n\n  ok        the address maps to exactly one instance, or to none at all\n  conflict  the address was found mapping to more than one instance\n\nA conflict row still names an instance, but that instance is one of\nseveral candidates and must not be acted on. The address itself is still\nknown to belong to this region, which is why the row is reported rather\nthan dropped. The instances involved are named in the server log.\n\nDeliberately a closed set of short values: consumers turn it into a label,\nand a free-form message there would make the metric's cardinality depend\non how much had gone wrong.",
+                    "type": "string",
+                    "example": "ok"
+                },
+                "type": {
+                    "description": "Subtype, for floating addresses only; empty for classic. One of: native,\nreserved, floating, site, loadbalancer.",
+                    "type": "string",
+                    "example": "floating"
                 }
             }
         },

@@ -46,19 +46,27 @@ type BlockedIPResponse struct {
 	Direction string `json:"direction" example:"external_attacker"`
 	// Compute node that installed the block.
 	Hostname string `json:"hostname" example:"sv6-cland-compute-0"`
-	// Instance UUID owning the address, or NA when it is not ours.
+	// Instance UUID owning the address, or NA when no instance holds it. NA
+	// beside ours=true is normal rather than a gap: a reserved address, a
+	// detached floating IP and a load balancer VIP are all ours and hold no VM.
 	InstanceID string `json:"instance_id" example:"NA"`
-	// libvirt domain owning the address. May be set while instance_id is NA,
-	// which itself indicates a missing instance mapping.
-	Domain string `json:"domain" example:"inst-40172"`
+	// Load balancer holding the address, non-empty only where instance_id is NA.
+	// The only thing on such a row that points anywhere: there is no VM behind
+	// the address, and this names the load balancer that is behind it instead.
+	LbID string `json:"lb_id" example:""`
+	// Whether the address belongs to this region at all, which is what decides
+	// direction. Independent of instance_id for the reason above.
+	Ours bool `json:"ours" example:"false"`
 	// Which lookup answered: metric, or none for an external address.
 	Source string `json:"source" example:"none"`
-	// How the owner was found, not what state the VM is in. Empty means the
-	// address had traffic metrics inside the requested window; offline means it
-	// had none and was resolved by looking further back, which happens when the
-	// VM was down for the whole window -- being down is itself what lets the
-	// unanswered SYNs pile up. A window wide enough to overlap the VM still
-	// running reports empty even though it was down when blocked.
+	// How far the mapping could be trusted. One of:
+	//
+	//   ""             resolved cleanly, or cleanly found not to be ours
+	//   conflict       the address maps to more than one instance, so instance_id
+	//                  names one candidate among several and must not be acted on
+	//   unavailable    the mapping was not being published across the window, so
+	//                  neither the hit nor the miss means anything and direction
+	//                  is reported as unknown
 	OwnerState string `json:"owner_state" example:""`
 	// When the block started. Never earlier than the real block, only later: the
 	// collection delay adds up to 60s and the sample grid up to one step. The
@@ -309,7 +317,8 @@ func blockedIPListResponse(blocked []*routes.BlockedIP, window *routes.BlockedIP
 			Direction:  entry.Direction,
 			Hostname:   entry.Hostname,
 			InstanceID: instanceID,
-			Domain:     entry.Domain,
+			LbID:       entry.LbID,
+			Ours:       entry.Ours,
 			Source:     entry.Source,
 			OwnerState: entry.OwnerState,
 			BlockedAt:  entry.BlockedAt.Format(TimeStringForMat),

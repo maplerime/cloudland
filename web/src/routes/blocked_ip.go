@@ -48,15 +48,6 @@ const (
 	// only lives 300s cannot fall between two of them.
 	blockedIPMinPoints = 10
 
-	// A powered off VM stops producing traffic metrics, so an address blocked
-	// while its VM was down resolves to nothing inside the displayed window --
-	// and a VM that is down is exactly what attracts a dst block, since nothing
-	// answers the SYNs. Whatever the first pass misses is therefore looked up
-	// again over the whole retention period, coarsely: 720 points per series is
-	// enough to find out which VM last held the address.
-	blockedIPOwnerLookback = blockedIPMaxWindow
-	blockedIPOwnerStep     = 3600
-
 	// A rejection reason is a diagnostic, not a payload; read enough of it to be
 	// useful and no more.
 	blockedIPErrorBodyLimit = 4096
@@ -84,9 +75,26 @@ const (
 	// at once, so five minutes stays far inside the budget on any fleet size.
 	blockedIPMinFitWindow = 5 * time.Minute
 
-	blockedIPMetric        = "ipset_blocked_ips"
-	blockedIPTrafficMetric = "domain_north_south_inbound_bytes_total"
-	blockedIPMapMetric     = "vm_instance_map"
+	blockedIPMetric = "ipset_blocked_ips"
+
+	// Ownership comes from the control plane's own view of which address it
+	// owns, published by petacloud-exporter. The traffic metric this used to
+	// walk (domain_north_south_inbound_bytes_total -> domain -> vm_instance_map)
+	// only exists while a VM is running, so a reserved address, a detached
+	// floating IP, a load balancer VIP and a powered off VM all resolved to
+	// nothing there and then read as somebody else's address -- the opposite of
+	// the truth. This metric carries the pair directly and does not care whether
+	// anything is running.
+	blockedIPInstanceMapMetric = "cloudland_ip_instance_map"
+
+	// Whether that mapping was actually being published. Without it a failed
+	// scrape is indistinguishable from "this address is not ours", which is the
+	// same mistake one level up.
+	blockedIPMapHealthMetric = "cloudland_ip_instance_map_scrape_success"
+
+	// Set by the API on every candidate of an address it could not resolve to a
+	// single instance.
+	blockedIPMapStatusConflict = "conflict"
 )
 
 // BlockedIPAdmin answers "which IPs is this region currently dropping".
@@ -104,11 +112,24 @@ type BlockedIP struct {
 	Direction    string
 	Hostname     string
 	InstanceUUID string
-	Domain       string
-	Source       string // metric | none
-	OwnerState   string // "" when found in the queried window, offline when only found further back
-	BlockedAt    time.Time
-	ExpiresAt    time.Time
+	// Load balancer holding the address, set only where InstanceUUID is empty.
+	// Carried through to the page because it is the only actionable fact on
+	// such a row: there is no VM to look for, and this names what to look at
+	// instead.
+	LbID string
+	// Whether the address belongs to this region at all. Separate from
+	// InstanceUUID because an address can be ours while holding no VM -- a
+	// reserved address or a load balancer VIP -- and that still decides the
+	// direction.
+	Ours   bool
+	Source string // metric | none
+	// "" when the mapping answered cleanly. conflict when the address maps to
+	// more than one instance, so the instance beside it must not be acted on.
+	// unavailable when the mapping was not being published across the window, so
+	// a miss says nothing either way.
+	OwnerState string
+	BlockedAt  time.Time
+	ExpiresAt  time.Time
 }
 
 // BlockedIPWindow records what a request was asked for and what it could
@@ -153,9 +174,25 @@ type BlockedIPFilter struct {
 // the IP belongs to no instance, which is normal for external attackers.
 type BlockedIPOwner struct {
 	InstanceUUID string
-	Domain       string
-	Source       string // always "metric"; lets the caller tell a hit from a miss
-	State        string // "" when found in the displayed window, offline when only found further back
+	// Load balancer holding the address. Only ever set where InstanceUUID is
+	// empty, and the one thing that makes such an address ours: a VIP serves
+	// real traffic, so it can both receive a flood and originate connections to
+	// its backends.
+	LbID   string
+	Source string // always "metric"; lets the caller tell a hit from a miss
+	State  string // "" resolved cleanly, conflict when several instances claim the address
+}
+
+// Ours reports whether the address belongs to this region in a sense worth
+// acting on.
+//
+// An address in the pool that holds neither an instance nor a load balancer is
+// deliberately not ours here. Nothing is behind it to send a packet, so traffic
+// appearing to come from it is forged, and nothing can be isolated or repaired
+// when traffic is aimed at it. Calling it ours would put a row on the page that
+// names no owner and affords no action.
+func (o *BlockedIPOwner) Ours() bool {
+	return o.InstanceUUID != "" || o.LbID != ""
 }
 
 type blockedIPEpisode struct {
@@ -473,7 +510,20 @@ func (a *BlockedIPAdmin) queryEpisodes(filter *BlockedIPFilter, start, end time.
 
 // resolve turns the raw episodes into the exported form, attaching ownership.
 func (a *BlockedIPAdmin) resolve(episodes []*blockedIPEpisode, start, end time.Time, window *BlockedIPWindow) (blocked []*BlockedIP) {
-	owners := a.resolveOwners(episodes, start, end, window)
+	owners := a.resolveOwners(episodes, start, end)
+	// Only consulted for rows that found no owner, and then only once per
+	// five minute bucket: a row that named an instance has its answer already,
+	// and blockings arrive in bursts that share a moment.
+	healthAt := map[int64]bool{}
+	healthyAt := func(at time.Time) bool {
+		bucket := at.Truncate(blockedIPOwnerProbeWindow).Unix()
+		if healthy, done := healthAt[bucket]; done {
+			return healthy
+		}
+		healthy := blockedIPMapHealthyAt(at)
+		healthAt[bucket] = healthy
+		return healthy
+	}
 	blocked = make([]*BlockedIP, 0, len(episodes))
 	for _, episode := range episodes {
 		entry := &BlockedIP{
@@ -482,21 +532,30 @@ func (a *BlockedIPAdmin) resolve(episodes []*blockedIPEpisode, start, end time.T
 			Hostname:  episode.Hostname,
 			Source:    "none",
 		}
-		if owner, found := owners[episode.IP]; found {
+		if owner, found := owners[episode]; found {
 			entry.InstanceUUID = owner.InstanceUUID
-			entry.Domain = owner.Domain
+			entry.LbID = owner.LbID
+			entry.Ours = owner.Ours()
 			entry.Source = owner.Source
 			entry.OwnerState = owner.State
+		} else if !healthyAt(time.Unix(episode.FirstSeen, 0).UTC()) {
+			// A miss only means "not ours" while the mapping was actually being
+			// published at the time of this blocking. When it was not, saying so
+			// is the whole answer: an unavailable mapping would otherwise turn
+			// every address in the region into an external attacker, silently
+			// and all at once.
+			entry.OwnerState = blockedIPOwnerStateUnavailable
 		}
-		// Ownership decides the direction, and the first hop already settles it:
-		// only a running VM of ours emits domain_north_south_*, so a domain means
-		// the address is ours. The second hop merely supplies the UUID. Testing
-		// the UUID instead conflated "we cannot name it" with "it is not ours" --
-		// on staging 98 running VMs have no vm_instance_map entry because they
-		// predate that metric, covering 100 of our addresses that would have read
-		// as foreign forever, every one of them mislabelled the moment it was
-		// blocked.
-		entry.Direction = blockedIPDirection(episode.BlockType, entry.Domain != "")
+		// Ownership decides the direction, and membership of the mapping settles
+		// it on its own. Testing the UUID instead would conflate "we cannot name
+		// the instance" with "it is not ours", which is exactly what a reserved
+		// address, a detached floating IP and a load balancer VIP all look like:
+		// ours, holding no VM. Direction is left unknown when the mapping could
+		// not be consulted, since every branch of it would be a guess.
+		entry.Direction = blockedIPDirection(episode.BlockType, entry.Ours)
+		if entry.OwnerState == blockedIPOwnerStateUnavailable {
+			entry.Direction = "unknown"
+		}
 		entry.BlockedAt = time.Unix(episode.FirstSeen, 0).UTC()
 		entry.ExpiresAt = entry.BlockedAt.Add(blockedIPBlockingTimeout * time.Second)
 		blocked = append(blocked, entry)
@@ -504,24 +563,45 @@ func (a *BlockedIPAdmin) resolve(episodes []*blockedIPEpisode, start, end time.T
 	return
 }
 
-// resolveOwners maps blocked IPs back to instances, entirely from metrics.
+// Owner states beyond a clean resolution.
+const (
+	// The address maps to more than one instance, so the pair no longer
+	// identifies anything and the instance shown must not be acted on.
+	blockedIPOwnerStateConflict = "conflict"
+	// The mapping was not being published across the window, so neither a hit
+	// nor a miss means anything.
+	blockedIPOwnerStateUnavailable = "unavailable"
+)
+
+// How far either side of a blocking to look when deciding which instance held
+// an address at that moment. Wide enough to span a scrape interval so a probe
+// cannot land between two samples and see nothing, narrow enough that a handover
+// hours or days away falls outside it.
+const blockedIPOwnerProbeWindow = 5 * time.Minute
+
+// Ceiling on disambiguation probes per request. Ambiguity needs an address of
+// ours that changed hands inside the window, which is rare -- an attack's
+// thousands of foreign addresses are not in the mapping at all and never reach
+// here. The cap exists so that anomalous data cannot turn one page render into
+// thousands of queries; whatever it cuts off is reported as unresolved rather
+// than guessed at.
+const blockedIPOwnerProbeLimit = 50
+
+// resolveOwners maps each blocking back to the instance that held the address
+// when it happened.
 //
-// Every VM NIC produces domain_north_south_* while its VM runs, so a VM of ours
-// is found here; an address that is not ours cannot be, and querying the DB for
-// it would be pointless since it is in none of our tables. A miss is therefore
-// the answer rather than a reason to look elsewhere: it means no VM of ours
-// holds the address, which is exactly what the caller shows.
+// Keyed by episode rather than by address, because an address can change hands
+// between two blockings of it and each one deserves the answer that was true at
+// its own moment.
 //
-// The lookup runs twice. The displayed window answers for running VMs and gives
-// the mapping that was true at the time, which keeps historical rows correct
-// after a VM is deleted or an address reused. Whatever it misses is looked up
-// again over the retention period, because a VM that was powered off during the
-// block has no metrics inside the window at all -- and being powered off is
-// what let the unanswered SYNs pile up in the first place. Resolving those the
-// same way in both views also stops the same block from reading differently
-// depending on how far back the operator happened to look.
-func (a *BlockedIPAdmin) resolveOwners(episodes []*blockedIPEpisode, start, end time.Time, window *BlockedIPWindow) map[string]*BlockedIPOwner {
-	owners := map[string]*BlockedIPOwner{}
+// One broad lookup answers everything unambiguous. Only an address whose broad
+// window holds more than one distinct instance_id -- including the empty one,
+// since "held no VM" is a state the address can move in and out of -- needs a
+// second, narrow lookup around the blocking itself. Both read the label index
+// and no samples, so neither is subject to the size guard and a long history
+// window costs no more than a short one.
+func (a *BlockedIPAdmin) resolveOwners(episodes []*blockedIPEpisode, start, end time.Time) map[*blockedIPEpisode]*BlockedIPOwner {
+	owners := map[*blockedIPEpisode]*BlockedIPOwner{}
 	ips := make([]string, 0, len(episodes))
 	seen := map[string]bool{}
 	for _, episode := range episodes {
@@ -533,115 +613,160 @@ func (a *BlockedIPAdmin) resolveOwners(episodes []*blockedIPEpisode, start, end 
 	if len(ips) == 0 {
 		return owners
 	}
-	a.lookupOwners(&blockedIPOwnerLookup{ips: ips, start: start, end: end,
-		step: blockedIPHistoryStep, owners: owners, window: window})
-
-	missing := make([]string, 0, len(ips))
-	for _, ip := range ips {
-		if _, found := owners[ip]; !found {
-			missing = append(missing, ip)
+	selector := blockedIPInstanceMapMetric + "{ip=~\"" + blockedIPAlternation(ips) + "\"}"
+	series, err := blockedIPSeries(selector, start, end)
+	if err != nil {
+		// Deliberately not fatal. The blockings themselves are already known and
+		// worth showing; what is lost is the name beside them, and the health
+		// probe reports the loss so no row claims to be external on the strength
+		// of a query that never ran.
+		logger.Errorf("Failed to query ip instance map: %v", err)
+		return owners
+	}
+	broad := map[string][]map[string]string{}
+	for _, labels := range series {
+		if ip := labels["ip"]; ip != "" {
+			broad[ip] = append(broad[ip], labels)
 		}
 	}
-	if len(missing) > 0 {
-		a.lookupOwners(&blockedIPOwnerLookup{ips: missing, start: end.Add(-blockedIPOwnerLookback), end: end,
-			step: blockedIPOwnerStep, state: "offline", owners: owners, window: window})
+
+	// A probe answers for every blocking of the same address that falls inside
+	// the same window, so blockings in a burst share one query.
+	probed := map[string]*BlockedIPOwner{}
+	probes := 0
+	for _, episode := range episodes {
+		candidates, found := broad[episode.IP]
+		if !found {
+			continue
+		}
+		if owner := blockedIPOwnerOf(candidates); owner != nil {
+			owners[episode] = owner
+			continue
+		}
+		// Several distinct instances across the window. Which one held the
+		// address when this blocking started is a question only a narrower
+		// window can answer.
+		at := time.Unix(episode.FirstSeen, 0).UTC()
+		bucket := fmt.Sprintf("%s@%d", episode.IP, at.Truncate(blockedIPOwnerProbeWindow).Unix())
+		if owner, done := probed[bucket]; done {
+			owners[episode] = owner
+			continue
+		}
+		if probes >= blockedIPOwnerProbeLimit {
+			logger.Errorf("Reached the %d probe ceiling while disambiguating ip instance mappings; %s is reported unresolved rather than attributed by guess",
+				blockedIPOwnerProbeLimit, episode.IP)
+			owner := &BlockedIPOwner{Source: "metric", State: blockedIPOwnerStateConflict}
+			probed[bucket] = owner
+			owners[episode] = owner
+			continue
+		}
+		probes++
+		owner := a.probeOwner(episode.IP, at)
+		probed[bucket] = owner
+		owners[episode] = owner
 	}
 	return owners
 }
 
-// blockedIPOwnerLookup is one ownership pass: which addresses, over what window,
-// at what resolution, tagged with what state, writing into which map.
+// blockedIPOwnerOf answers from the broad window alone, or nil when it cannot.
 //
-// Bundled rather than passed as six parameters, and the bundling is what makes
-// the accumulator explicit: owners is both where results land and the record of
-// what an earlier pass already answered, so the passes are ordered on purpose.
-type blockedIPOwnerLookup struct {
-	ips    []string
-	start  time.Time
-	end    time.Time
-	step   int64
-	state  string
-	owners map[string]*BlockedIPOwner
-	window *BlockedIPWindow
+// nil means the address carried more than one distinct instance_id across the
+// window, which is either a handover or a genuine conflict; the two look
+// identical here and only a narrower window tells them apart. A conflict the API
+// itself flagged needs no such distinction -- it was already found at one
+// instant -- so it is answered immediately.
+func blockedIPOwnerOf(candidates []map[string]string) *BlockedIPOwner {
+	distinct := map[string]bool{}
+	instanceID := ""
+	lbID := ""
+	for _, labels := range candidates {
+		if labels["status"] == blockedIPMapStatusConflict {
+			return &BlockedIPOwner{InstanceUUID: labels["instance_id"], LbID: labels["lb_id"], Source: "metric", State: blockedIPOwnerStateConflict}
+		}
+		distinct[labels["instance_id"]] = true
+		if labels["instance_id"] != "" {
+			instanceID = labels["instance_id"]
+		}
+		if labels["lb_id"] != "" {
+			lbID = labels["lb_id"]
+		}
+	}
+	if len(distinct) > 1 {
+		return nil
+	}
+	return &BlockedIPOwner{InstanceUUID: instanceID, LbID: lbID, Source: "metric"}
 }
 
-// lookupOwners runs the two metric hops over one window and records what it
-// finds, leaving anything already resolved alone.
-func (a *BlockedIPAdmin) lookupOwners(l *blockedIPOwnerLookup) {
-	// (1) IP -> domain, from the only metrics carrying vm_ip.
-	resp, err := blockedIPQueryRange(blockedIPTrafficMetric+"{vm_ip=~\""+blockedIPAlternation(l.ips)+"\"}", l.start, l.end, l.step, l.window)
+// probeOwner asks which instance held the address around one moment.
+//
+// An empty answer is not treated as "not ours": the broad window already
+// established that the address is one of ours, and a gap in the mapping at this
+// particular instant says only that the instance cannot be named. Letting it
+// read as foreign would undo the whole point of consulting the mapping.
+func (a *BlockedIPAdmin) probeOwner(ip string, at time.Time) *BlockedIPOwner {
+	selector := blockedIPInstanceMapMetric + "{ip=\"" + blockedIPEscapeLabel(ip) + "\"}"
+	series, err := blockedIPSeries(selector, at.Add(-blockedIPOwnerProbeWindow), at.Add(blockedIPOwnerProbeWindow))
 	if err != nil {
-		logger.Errorf("Failed to query vm_ip mapping: %v", err)
-		return
+		logger.Errorf("Failed to probe ip instance mapping for %s at %s: %v", ip, at.Format(time.RFC3339), err)
+		return &BlockedIPOwner{Source: "metric", State: blockedIPOwnerStateConflict}
 	}
-	// An address can have belonged to more than one VM inside a long window, so
-	// keep the domain seen most recently rather than an arbitrary one. That is
-	// exactly right for the second pass, whose question is which VM last held
-	// the address.
-	//
-	// For the first pass it is exact only while the address did not change hands
-	// inside the displayed window: strictly, a blocking should be attributed to
-	// the VM holding the address at the moment it started, not at the end of the
-	// window. Measured on production, no address changed hands within 24h (the
-	// default history window), while 6 of 32 did within 720h -- so a month-long
-	// history query can credit a blocking to the VM that took the address over
-	// afterwards. The samples carry their own timestamps, so fixing this needs
-	// no extra query, only matching each episode against the interval its
-	// series covers.
-	ipDomain := map[string]string{}
-	newest := map[string]int64{}
-	for _, series := range resp.Data.Result {
-		vmIP, domain := series.Metric["vm_ip"], series.Metric["domain"]
-		if vmIP == "" || domain == "" || len(series.Values) == 0 {
-			continue
-		}
-		ts, ok := blockedIPSampleTime(series.Values[len(series.Values)-1])
-		if !ok {
-			continue
-		}
-		if last, found := newest[vmIP]; found && last >= ts {
-			continue
-		}
-		newest[vmIP] = ts
-		ipDomain[vmIP] = domain
+	if owner := blockedIPOwnerOf(series); owner != nil {
+		return owner
 	}
-	if len(ipDomain) == 0 {
-		return
-	}
+	// Still more than one instance five minutes either side of the blocking.
+	// That is no longer a handover -- they overlapped -- so the pair genuinely
+	// does not identify anything here.
+	logger.Errorf("Address %s maps to more than one instance around %s; reported as a conflict rather than attributed to one of them",
+		ip, at.Format(time.RFC3339))
+	return &BlockedIPOwner{Source: "metric", State: blockedIPOwnerStateConflict}
+}
 
-	// (2) domain -> instance_id
-	domains := make([]string, 0, len(ipDomain))
-	for _, domain := range ipDomain {
-		domains = append(domains, domain)
+// blockedIPMapHealthyAt reports whether the mapping was being published at one
+// particular moment.
+//
+// Asked per blocking rather than once per window, and as an instant query rather
+// than an aggregate over the range. min_over_time was wrong for this: it takes
+// the minimum of the samples that exist, and a gap produces no sample at all, so
+// an outage is masked by whatever healthy samples share the window. Over the
+// history tab's window that is up to 720 hours of masking -- a mapping that was
+// down for the entire span an address existed would still be called healthy, and
+// the address then reads as foreign.
+//
+// An empty result is the answer that matters most. Prometheus marks a target's
+// series stale the moment a scrape fails, so an exporter that stopped, or one
+// that was never deployed, produces nothing here rather than a zero -- and
+// calling that healthy would label every address in the region an external
+// attacker at once.
+func blockedIPMapHealthyAt(at time.Time) bool {
+	params := url.Values{}
+	params.Set("query", blockedIPMapHealthMetric)
+	params.Set("time", strconv.FormatInt(at.Unix(), 10))
+	resp, err := blockedIPQuery("query", params, blockedIPMapHealthMetric)
+	if err != nil {
+		logger.Errorf("Failed to probe ip instance map health at %s: %v", at.Format(time.RFC3339), err)
+		return false
 	}
-	domainInstance := map[string]string{}
-	mapQuery := blockedIPMapMetric + "{domain=~\"" + blockedIPAlternation(domains) + "\"}"
-	// Labels are the whole answer here -- the mapping is carried by domain and
-	// instance_id and the values were never read -- so this hop asks the index
-	// instead of pulling a time series it would throw away. Over 720h that is
-	// 776 bytes against 9868, and with no points to decode it needs no budget.
-	if series, err := blockedIPSeries(mapQuery, l.start, l.end); err == nil {
-		for _, labels := range series {
-			if domain, id := labels["domain"], labels["instance_id"]; domain != "" && id != "" {
-				domainInstance[domain] = id
-			}
-		}
-	} else {
-		logger.Errorf("Failed to query vm_instance_map: %v", err)
+	if len(resp.Data.Result) == 0 {
+		logger.Warningf("No %s sample at %s; an ownership miss at that moment cannot be read as an external address",
+			blockedIPMapHealthMetric, at.Format(time.RFC3339))
+		return false
 	}
-	for ip, domain := range ipDomain {
-		if _, found := l.owners[ip]; found {
-			continue
+	// Several regions may report into one Prometheus, and a mapping that was
+	// down anywhere cannot be relied on here.
+	for _, series := range resp.Data.Result {
+		if len(series.Value) < 2 {
+			return false
 		}
-		// A domain without instance_id still beats nothing: the operator can
-		// locate the VM by it, and it is itself evidence of a mapping gap.
-		l.owners[ip] = &BlockedIPOwner{
-			InstanceUUID: domainInstance[domain],
-			Domain:       domain,
-			Source:       "metric",
-			State:        l.state,
+		text, ok := series.Value[1].(string)
+		if !ok {
+			return false
+		}
+		value, err := strconv.ParseFloat(text, 64)
+		if err != nil || value < 1 {
+			return false
 		}
 	}
+	return true
 }
 
 // blockedIPQueryRange runs a PromQL range query against the Prometheus already
