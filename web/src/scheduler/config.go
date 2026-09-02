@@ -120,6 +120,9 @@ type PlacementRequest struct {
 	OwnerID        int64   // owner org ID (for affinity/anti-affinity)
 	Policy         string  // "affinity" | "anti-affinity" | ""
 	ExcludeHypers  []int32 // hypers to exclude from candidates (e.g. migration source)
+	// SourceOS is the source hyper's OS for a live migration. When set, SelectHost
+	// drops targets older than it. Empty = no OS constraint (launch, cold migration).
+	SourceOS string
 }
 
 func defaultConfig() *PlacementConfig {
