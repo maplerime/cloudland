@@ -704,9 +704,6 @@
         - /etc/prometheus/rules_enabled/*.yml
 
       alerting:
-        alert_relabel_configs:
-          - target_label: region
-            replacement: '{{ domain_name }}'
         alertmanagers:
           - static_configs:
             - targets: ['localhost:9093']
@@ -718,6 +715,28 @@
     dest: /etc/prometheus/prometheus.yml
     owner: prometheus
     group: prometheus
+
+# region 标签仅供 ECC 识别机房用，与 ECC 开关同步启停；
+# 关闭时 state=absent 自动清除，避免无谓的告警指纹变化
+- name: Define ECC region label block (no indent, keep original text)
+  set_fact:
+    ecc_region_label_block: |
+      alert_relabel_configs:
+        - target_label: region
+          replacement: '{{ domain_name | default('') }}'
+  tags: [monitor]
+
+# Insert after "alerting:" and indent the entire block by 2 spaces (including the first line)
+- name: Add ECC region label to Prometheus alerting config
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    state: "{{ 'present' if ecc_webhook_enabled | bool else 'absent' }}"
+    insertafter: '^alerting:\s*$'
+    marker: "  # {mark} ANSIBLE MANAGED BLOCK - ECC Region Label"
+    block: "{{ ecc_region_label_block | indent(2, true) }}"
+  tags: [monitor]
 
 - name: Create alert rules directory structure
   delegate_to: "{{ prometheus_server_ip }}"
