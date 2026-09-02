@@ -78,7 +78,7 @@
                                     <td data-column="Hostname">{{.Hostname}}</td>
                                     <td data-column="IP">{{.IP}}</td>
                                     <td data-column="Direction">{{$.i18n.Tr .Direction}}</td>
-                                    <td data-column="InstanceUUID">{{ if .InstanceUUID }}{{.InstanceUUID}}{{ if eq .OwnerState "offline" }} ⚠{{$.i18n.Tr "Not_Running"}}{{ end }}{{ else if .Domain }}⚠ {{$.i18n.Tr "Mapping_Gap"}} ({{.Domain}}){{ else }}NA{{ end }}</td>
+                                    <td data-column="InstanceUUID">{{ if eq .OwnerState "unavailable" }}⚠ {{$.i18n.Tr "Mapping_Unavailable"}}{{ else if eq .OwnerState "conflict" }}⚠ {{$.i18n.Tr "Mapping_Conflict"}}{{ if .InstanceUUID }} ({{.InstanceUUID}}){{ end }}{{ else if .InstanceUUID }}{{.InstanceUUID}}{{ else if .LbID }}{{$.i18n.Tr "Ours_LoadBalancer"}} ({{.LbID}}){{ else if .Ours }}{{$.i18n.Tr "Ours_No_Instance"}}{{ else }}NA{{ end }}</td>
                                     <td data-column="BlockedAt" data-utc="{{.BlockedAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.BlockedAt.Format "2006-01-02 15:04:05"}} UTC</td>
                                     <td data-column="ExpiresAt" data-utc="{{.ExpiresAt.Format "2006-01-02T15:04:05Z07:00"}}">{{.ExpiresAt.Format "2006-01-02 15:04:05"}} UTC</td>
                                 </tr>

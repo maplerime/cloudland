@@ -258,6 +258,7 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 
 			metricsGroup.GET("/blocked-ips", blockedIPAPI.List)
 			metricsGroup.GET("/blocked-ips/history", blockedIPAPI.History)
+			metricsGroup.GET("/ip-instance-map", ipInstanceMapAPI.List)
 
 			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)
 			metricsGroup.GET("/alarm/cpu/rules", alarmAPI.GetCPURules)
