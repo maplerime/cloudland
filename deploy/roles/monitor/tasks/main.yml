@@ -69,6 +69,14 @@
           - files: ['/etc/prometheus/lists/cloudland_exporters.json']
             refresh_interval: 30s
 
+- name: Set ECC webhook flag
+  set_fact:
+    ecc_webhook_enabled: >-
+      {{
+        (ecc_webhook_url is defined)
+        and ((ecc_webhook_url | trim) != '')
+      }}
+
 - name: Validate Alertmanager variables
   fail:
     msg: "Must define {{ item }} for task"
@@ -610,6 +618,43 @@
         force: yes
       tags: [monitor]
 
+    - name: Define ECC forward route block (no indent, keep original text)
+      set_fact:
+        ecc_route_block: |
+          # === ECC 全量转发：所有告警复制一份到 ECC 中心（PET-1868）===
+          # 智能带宽 / 智能 CPU 调整(resource_adjustment)是自动化动作指令，不是故障告警，排除
+          # continue: true 保证后续所有既有路由照常匹配，现有通知流程不受影响
+          - matchers:
+              - 'alert_type != "resource_adjustment"'
+            group_by: ['...']
+            group_wait: 10s
+            group_interval: 1m
+            repeat_interval: 3h
+            receiver: 'ecc-webhook'
+            continue: true
+
+    # Insert after "  routes:" and indent the entire block by 4 spaces (including the first line)
+    - name: Add ECC forward route to Alertmanager
+      blockinfile:
+        path: /etc/alertmanager/alertmanager.yml
+        state: "{{ 'present' if ecc_webhook_enabled | bool else 'absent' }}"
+        insertafter: '^\s{2}routes:\s*$'
+        marker: "    # {mark} ANSIBLE MANAGED BLOCK - ECC Forward Route"
+        block: "{{ ecc_route_block | indent(4, true) }}"
+
+    - name: Add ECC webhook receiver to Alertmanager receivers list
+      blockinfile:
+        path: /etc/alertmanager/alertmanager.yml
+        state: "{{ 'present' if ecc_webhook_enabled | bool else 'absent' }}"
+        insertafter: "^receivers:"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - ECC Webhook Receiver"
+        block: |
+          - name: 'ecc-webhook'
+            webhook_configs:
+            - url: '{{ ecc_webhook_url | default('') }}'
+              send_resolved: true
+              max_alerts: 0
+
     - name: Run Alertmanager container
       docker_container:
         name: alertmanager
@@ -659,6 +704,9 @@
         - /etc/prometheus/rules_enabled/*.yml
 
       alerting:
+        alert_relabel_configs:
+          - target_label: region
+            replacement: '{{ domain_name }}'
         alertmanagers:
           - static_configs:
             - targets: ['localhost:9093']

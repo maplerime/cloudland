@@ -25,6 +25,8 @@ slack_resource_webhook_url: "https://hooks.slack.com/services/RESOURCE_WEBHOOK/"
 slack_security_channel: "alert-security-notification"
 slack_security_webhook_url: "https://hooks.slack.com/services/SECURITY_WEBHOOK/"
 alert_webhook_url: "localhost:443"
+# ECC 告警中心 webhook 完整地址（含 token）。留空则不启用 ECC 转发。
+ecc_webhook_url: ""
 metering_server_vip: "localhost"
 metering_server_port: "8480"
 metering_server_url: "http://{{ metering_server_vip }}:{{ metering_server_port }}/insert/0/prometheus/api/v1/write"
