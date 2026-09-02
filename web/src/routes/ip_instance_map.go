@@ -80,6 +80,16 @@ func (a *IPInstanceMapAdmin) List(ctx context.Context) (mappings []*IPInstanceMa
 	// An address reaches an interface as either its primary or one of its
 	// secondary addresses, and both are the VM's to answer for: an allowed
 	// address pair is just as attackable as the address the NIC booted with.
+	//
+	// The two are separate branches rather than one `n.id IN (a.interface,
+	// a.second_interface)`. That form is an OR across two columns, which
+	// Postgres cannot answer from the interfaces primary key: measured on
+	// staging it became a nested loop of 155858 addresses against 319
+	// interfaces, 49.7 million comparisons to yield 359 rows, in 3.5 seconds.
+	// As equality joins each side is a primary key lookup, and the `> 0` guards
+	// keep the unattached address pool -- 97.5% of that table, since every IP of
+	// every subnet gets a row at subnet creation -- out of the join entirely.
+	// Same 359 rows, 219ms.
 	query := `
 		SELECT COALESCE(NULLIF(f.ip_address, ''), split_part(f.fip_address, '/', 1)) AS ip,
 		       COALESCE(i.uuid, '') AS instance_id,
@@ -96,9 +106,19 @@ func (a *IPInstanceMapAdmin) List(ctx context.Context) (mappings []*IPInstanceMa
 		       '',
 		       0
 		FROM addresses a
-		JOIN interfaces n ON n.deleted_at IS NULL AND n.id IN (a.interface, a.second_interface)
+		JOIN interfaces n ON n.id = a.interface AND n.deleted_at IS NULL
 		JOIN instances i ON i.id = n.instance AND i.deleted_at IS NULL
-		WHERE a.deleted_at IS NULL`
+		WHERE a.deleted_at IS NULL AND a.interface > 0
+		UNION ALL
+		SELECT split_part(a.address, '/', 1),
+		       COALESCE(i.uuid, ''),
+		       'classic',
+		       '',
+		       0
+		FROM addresses a
+		JOIN interfaces n ON n.id = a.second_interface AND n.deleted_at IS NULL
+		JOIN instances i ON i.id = n.instance AND i.deleted_at IS NULL
+		WHERE a.deleted_at IS NULL AND a.second_interface > 0`
 	rows, err := db.Raw(query).Rows()
 	if err != nil {
 		logger.Errorf("Failed to query ip instance mappings, %v", err)
