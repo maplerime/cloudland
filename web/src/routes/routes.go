@@ -95,6 +95,7 @@ func New() (m *macaron.Macaron) {
 			},
 		},
 	))
+	m.Use(TraceMiddleware())
 	m.Use(LinkHandler)
 	m.Use(SysVersion)
 	m.Get("/", Index)

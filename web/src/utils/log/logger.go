@@ -15,6 +15,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -200,6 +201,71 @@ func MustGetLogger(module string) *logging.Logger {
 	defer lock.Unlock()
 	modules[module] = GetModuleLevel(module)
 	return l
+}
+
+// --- Trace ID support ---
+
+type traceIDKeyType struct{}
+
+var traceIDKey = traceIDKeyType{}
+
+// SetTraceID stores a trace ID in ctx for propagation through the call stack.
+func SetTraceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, traceIDKey, id)
+}
+
+// GetTraceID retrieves the trace ID from ctx, or "" if not set.
+func GetTraceID(ctx context.Context) string {
+	if v, ok := ctx.Value(traceIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// ContextLogger wraps *logging.Logger and prepends [traceID] to every log line.
+type ContextLogger struct {
+	*logging.Logger
+	traceID string
+}
+
+// GetContextLogger returns a ContextLogger that includes the trace_id from ctx.
+func GetContextLogger(ctx context.Context, module string) *ContextLogger {
+	return &ContextLogger{
+		Logger:  MustGetLogger(module),
+		traceID: GetTraceID(ctx),
+	}
+}
+
+func (l *ContextLogger) Infof(format string, args ...interface{}) {
+	l.Logger.Infof("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Debugf(format string, args ...interface{}) {
+	l.Logger.Debugf("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Errorf(format string, args ...interface{}) {
+	l.Logger.Errorf("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Warningf(format string, args ...interface{}) {
+	l.Logger.Warningf("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Info(args ...interface{}) {
+	l.Logger.Info(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
+}
+
+func (l *ContextLogger) Debug(args ...interface{}) {
+	l.Logger.Debug(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
+}
+
+func (l *ContextLogger) Error(args ...interface{}) {
+	l.Logger.Error(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
+}
+
+func (l *ContextLogger) Warning(args ...interface{}) {
+	l.Logger.Warning(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
 }
 
 // InitLogLevelFromSpec initializes the logging based on the supplied spec. It is
