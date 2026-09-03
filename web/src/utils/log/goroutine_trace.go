@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 // goroutineTraces maps goroutine ID → trace ID.
@@ -36,6 +38,11 @@ func CurrentTraceID() string {
 		return v.(string)
 	}
 	return ""
+}
+
+// NewTraceID generates a short trace ID: "TRC-" + 8 random hex chars.
+func NewTraceID() string {
+	return "TRC-" + uuid.New().String()[:8]
 }
 
 // goid returns the current goroutine ID by parsing the runtime stack header.

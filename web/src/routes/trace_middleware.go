@@ -9,7 +9,6 @@ package routes
 import (
 	rlog "web/src/utils/log"
 
-	"github.com/google/uuid"
 	"gopkg.in/macaron.v1"
 )
 
@@ -18,9 +17,12 @@ import (
 // echoes it back via X-Trace-ID response header.
 func TraceMiddleware() macaron.Handler {
 	return func(c *macaron.Context) {
-		traceID := c.Req.Header.Get("X-Request-ID")
+		traceID := c.Req.Header.Get("X-Trace-ID")
 		if traceID == "" {
-			traceID = uuid.New().String()
+			traceID = c.Req.Header.Get("X-Request-ID")
+		}
+		if traceID == "" {
+			traceID = rlog.NewTraceID()
 		}
 		c.Resp.Header().Set("X-Trace-ID", traceID)
 		rlog.SetGoroutineTrace(traceID)
