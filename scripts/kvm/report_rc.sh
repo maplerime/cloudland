@@ -328,7 +328,8 @@ function calc_resource()
     echo "$resource_list" >/opt/cloudland/run/old_resource_list
     [ "$resource_list" = "$old_resource_list" ] && return
     cpu_model=$(lscpu | grep 'Model name:' | cut -d: -f2 | xargs)
-    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$load_1m' '$load_5m' '$load_15m' '$cpu_idle'"
+    os_info=$(grep '^PRETTY_NAME=' /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
+    echo "|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_ratio' '$mem_over_ratio' '$disk_over_ratio' '$cpu_model' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$load_1m' '$load_5m' '$load_15m' '$cpu_idle' '$os_info'"
 }
 
 calc_resource

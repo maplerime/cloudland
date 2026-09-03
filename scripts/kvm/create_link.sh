@@ -14,6 +14,7 @@ cat /proc/net/dev | grep -q "\<$vm_br\>:"
 nmcli connection add con-name $vm_br type bridge ifname $vm_br ipv4.method static ipv4.addresses 169.254.169.254/32
 nmcli connection modify $vm_br bridge.stp no
 nmcli connection modify $vm_br bridge.forward-delay 0
+nmcli connection modify $vm_br ipv4.dad-timeout 0
 nmcli connection up $vm_br
 apply_bridge -I $vm_br
 cat /proc/net/dev | grep -q "\<v-$vlan\>:"

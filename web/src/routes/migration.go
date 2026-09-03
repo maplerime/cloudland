@@ -22,6 +22,7 @@ import (
 	"web/src/scheduler"
 
 	"github.com/go-macaron/session"
+	"github.com/jinzhu/gorm"
 	macaron "gopkg.in/macaron.v1"
 )
 
@@ -32,6 +33,29 @@ var (
 
 type MigrationAdmin struct{}
 type MigrationView struct{}
+
+// markMigrationNotDoing sets both the migration and its Prepare_Target task to
+// "not_doing" before dispatch. Shared by all pre-dispatch rejections (no qualified
+// scheduler target, OS-incompatible live-migration target). A task-update failure
+// is logged; a migration-update failure is returned so the caller can roll back.
+func markMigrationNotDoing(db *gorm.DB, migration *model.Migration, task *model.Task, summary string) error {
+	task.Summary = summary
+	task.Status = "not_doing"
+	migration.Status = "not_doing"
+	if tErr := db.Model(&model.Task{}).Where("id = ?", task.ID).Updates(map[string]interface{}{
+		"status":  task.Status,
+		"summary": task.Summary,
+	}).Error; tErr != nil {
+		logger.Errorf("Failed to update task %d status to not_doing, %v", task.ID, tErr)
+	}
+	if mErr := db.Model(&model.Migration{}).Where("id = ?", migration.ID).Updates(map[string]interface{}{
+		"status": migration.Status,
+	}).Error; mErr != nil {
+		logger.Error("Failed to update save migration, %v", mErr)
+		return NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
+	}
+	return nil
+}
 
 func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*model.Instance, force bool, tgtHyper int32) (migrations []*model.Migration, err error) {
 	logger.Debugf("Start migrating instances to %d, migration type %t", tgtHyper, force)
@@ -48,8 +72,9 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			EndTransaction(ctx, err)
 		}
 	}()
+	var targetHyper *model.Hyper
 	if tgtHyper > -1 {
-		targetHyper := &model.Hyper{}
+		targetHyper = &model.Hyper{}
 		err = db.Where("hostid = ?", tgtHyper).Take(targetHyper).Error
 		if err != nil {
 			logger.Error("Failed to query hyper", err)
@@ -127,6 +152,18 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 			err = NewCLError(ErrMigrationCreateFailed, "DB create migration failed", err)
 			return
 		}
+		// Explicitly targeted live migration: reject an OS downgrade (e.g. 26.04 ->
+		// 22.04). The placement path below enforces the same rule via the scheduler.
+		if tgtHyper != -1 && migrationType == "warm" && targetHyper != nil &&
+			!scheduler.OSMigrationAllowed(sourceHyper.OS, targetHyper.OS) {
+			logger.Warningf("Live migration of instance %d rejected: target hyper %d OS %q is older than source OS %q; task %d marked not_doing",
+				instance.ID, tgtHyper, targetHyper.OS, sourceHyper.OS, migration.ID)
+			if mErr := markMigrationNotDoing(db, migration, task1, "Target OS older than source, live migration not allowed"); mErr != nil {
+				err = mErr
+				return
+			}
+			continue
+		}
 		var metadata string
 		metadata, err = instanceAdmin.GetMetadata(ctx, instance, "")
 		if err != nil {
@@ -150,6 +187,12 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 		if tgtHyper == -1 {
 			// Try placement scheduler first, fallback to GetHyperGroup (SCI select=)
 			reqHugepageSizeKB := scheduler.ResolveRequestHugepageSizeKB(instance.ZoneID)
+			// For a live migration, pass the source OS so the scheduler skips
+			// older-OS targets and picks a compatible one. Empty for cold migration.
+			sourceOS := ""
+			if migrationType == "warm" {
+				sourceOS = sourceHyper.OS
+			}
 			selectedHyperID, schedErr := scheduler.SelectHost(ctx, &scheduler.PlacementRequest{
 				VCPUs:          instance.Cpu,
 				MemMB:          int64(instance.Memory),
@@ -157,6 +200,7 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				ZoneID:         instance.ZoneID,
 				ExcludeHypers:  []int32{instance.Hyper},
 				HugepageSizeKB: reqHugepageSizeKB,
+				SourceOS:       sourceOS,
 			})
 			if schedErr != nil {
 				markTaskFail := true
@@ -179,27 +223,11 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 						instance.ID, migration.ID, schedErr)
 				}
 				if markTaskFail {
-					task1.Summary = "No qualified target"
-					task1.Status = "not_doing"
-					migration.Status = "not_doing"
-					// Persist the task terminal state too. Updating only the migration row
-					// leaves the Prepare_Target phase task stuck at "in_progress" in the DB,
-					// matching the per-task update done on the failure paths in rpcs/migrate_vm.go.
-					tErr := db.Model(&model.Task{}).Where("id = ?", task1.ID).Updates(map[string]interface{}{
-						"status":  task1.Status,
-						"summary": task1.Summary,
-					}).Error
-					if tErr != nil {
-						logger.Errorf("Failed to update task %d status to not_doing, %v", task1.ID, tErr)
-					}
-					mErr := db.Model(&model.Migration{}).Where("id = ?", migration.ID).Updates(map[string]interface{}{
-						"status": migration.Status,
-					}).Error
-					if mErr != nil {
-						logger.Error("Failed to update save migration, %v", mErr)
-						err = NewCLError(ErrMigrationUpdateFailed, "Failed to update migration", mErr)
+					if mErr := markMigrationNotDoing(db, migration, task1, "No qualified target"); mErr != nil {
+						err = mErr
 						return
 					}
+					// Clear any GetHyperGroup error so the not_doing state commits.
 					err = nil
 					continue
 				}
