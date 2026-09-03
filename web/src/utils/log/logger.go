@@ -30,9 +30,12 @@ import (
 )
 
 const (
-	pkgLogID      = "utils/log"
-	defaultFormat = "%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfile} %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}"
-	defaultLevel  = logging.INFO
+	pkgLogID = "utils/log"
+	// tracePlaceholder is injected into every log line by the format string and
+	// replaced at write time with "[traceID] " (or "" when no trace is active).
+	tracePlaceholder = "\x00TRACE\x00"
+	defaultFormat    = "%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfile} %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} " + tracePlaceholder + "%{message}"
+	defaultLevel     = logging.INFO
 )
 
 var (
@@ -117,10 +120,26 @@ func SetFormat(formatSpec string) logging.Formatter {
 	return logging.MustStringFormatter(formatSpec)
 }
 
+// traceWriter wraps an io.Writer and replaces the tracePlaceholder in every
+// log line with "[traceID] " for the active goroutine, or "" if none is set.
+type traceWriter struct {
+	inner io.Writer
+}
+
+func (w *traceWriter) Write(p []byte) (n int, err error) {
+	replacement := ""
+	if id := CurrentTraceID(); id != "" {
+		replacement = "[" + id + "] "
+	}
+	out := strings.Replace(string(p), tracePlaceholder, replacement, 1)
+	_, err = w.inner.Write([]byte(out))
+	return len(p), err
+}
+
 // InitBackend sets up the logging backend based on
 // the provided logging formatter and I/O writer.
 func initBackend(formatter logging.Formatter, output io.Writer) {
-	backend := logging.NewLogBackend(output, "", 0)
+	backend := logging.NewLogBackend(&traceWriter{inner: output}, "", 0)
 	backendFormatter := logging.NewBackendFormatter(backend, formatter)
 	logging.SetBackend(backendFormatter).SetLevel(defaultLevel, "")
 }

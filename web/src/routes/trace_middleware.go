@@ -22,9 +22,9 @@ func TraceMiddleware() macaron.Handler {
 		if traceID == "" {
 			traceID = uuid.New().String()
 		}
-		ctx := rlog.SetTraceID(c.Req.Context(), traceID)
-		c.Req.Request = c.Req.WithContext(ctx)
 		c.Resp.Header().Set("X-Trace-ID", traceID)
+		rlog.SetGoroutineTrace(traceID)
+		defer rlog.ClearGoroutineTrace()
 		c.Next()
 	}
 }

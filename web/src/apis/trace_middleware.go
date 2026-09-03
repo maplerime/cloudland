@@ -22,9 +22,9 @@ func TraceMiddleware() gin.HandlerFunc {
 		if traceID == "" {
 			traceID = uuid.New().String()
 		}
-		ctx := rlog.SetTraceID(c.Request.Context(), traceID)
-		c.Request = c.Request.WithContext(ctx)
 		c.Header("X-Trace-ID", traceID)
+		rlog.SetGoroutineTrace(traceID)
+		defer rlog.ClearGoroutineTrace()
 		c.Next()
 	}
 }
