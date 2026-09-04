@@ -44,6 +44,7 @@ func Run() (err error) {
 // @BasePath /api/v1
 func Register() (r *gin.Engine) {
 	r = gin.Default()
+	r.Use(TraceMiddleware())
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)

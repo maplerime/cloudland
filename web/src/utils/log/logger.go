@@ -15,6 +15,7 @@
 package log
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -29,9 +30,12 @@ import (
 )
 
 const (
-	pkgLogID      = "utils/log"
-	defaultFormat = "%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfile} %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}"
-	defaultLevel  = logging.INFO
+	pkgLogID = "utils/log"
+	// tracePlaceholder is injected into every log line by the format string and
+	// replaced at write time with "[traceID] " (or "" when no trace is active).
+	tracePlaceholder = "\x00TRACE\x00"
+	defaultFormat    = "%{color}%{time:2006-01-02 15:04:05.000 MST} [%{module}] %{shortfile} %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} " + tracePlaceholder + "%{message}"
+	defaultLevel     = logging.INFO
 )
 
 var (
@@ -116,10 +120,26 @@ func SetFormat(formatSpec string) logging.Formatter {
 	return logging.MustStringFormatter(formatSpec)
 }
 
+// traceWriter wraps an io.Writer and replaces the tracePlaceholder in every
+// log line with "[traceID] " for the active goroutine, or "" if none is set.
+type traceWriter struct {
+	inner io.Writer
+}
+
+func (w *traceWriter) Write(p []byte) (n int, err error) {
+	replacement := ""
+	if id := CurrentTraceID(); id != "" {
+		replacement = "[" + id + "] "
+	}
+	out := strings.Replace(string(p), tracePlaceholder, replacement, 1)
+	_, err = w.inner.Write([]byte(out))
+	return len(p), err
+}
+
 // InitBackend sets up the logging backend based on
 // the provided logging formatter and I/O writer.
 func initBackend(formatter logging.Formatter, output io.Writer) {
-	backend := logging.NewLogBackend(output, "", 0)
+	backend := logging.NewLogBackend(&traceWriter{inner: output}, "", 0)
 	backendFormatter := logging.NewBackendFormatter(backend, formatter)
 	logging.SetBackend(backendFormatter).SetLevel(defaultLevel, "")
 }
@@ -200,6 +220,71 @@ func MustGetLogger(module string) *logging.Logger {
 	defer lock.Unlock()
 	modules[module] = GetModuleLevel(module)
 	return l
+}
+
+// --- Trace ID support ---
+
+type traceIDKeyType struct{}
+
+var traceIDKey = traceIDKeyType{}
+
+// SetTraceID stores a trace ID in ctx for propagation through the call stack.
+func SetTraceID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, traceIDKey, id)
+}
+
+// GetTraceID retrieves the trace ID from ctx, or "" if not set.
+func GetTraceID(ctx context.Context) string {
+	if v, ok := ctx.Value(traceIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// ContextLogger wraps *logging.Logger and prepends [traceID] to every log line.
+type ContextLogger struct {
+	*logging.Logger
+	traceID string
+}
+
+// GetContextLogger returns a ContextLogger that includes the trace_id from ctx.
+func GetContextLogger(ctx context.Context, module string) *ContextLogger {
+	return &ContextLogger{
+		Logger:  MustGetLogger(module),
+		traceID: GetTraceID(ctx),
+	}
+}
+
+func (l *ContextLogger) Infof(format string, args ...interface{}) {
+	l.Logger.Infof("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Debugf(format string, args ...interface{}) {
+	l.Logger.Debugf("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Errorf(format string, args ...interface{}) {
+	l.Logger.Errorf("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Warningf(format string, args ...interface{}) {
+	l.Logger.Warningf("[%s] "+format, append([]interface{}{l.traceID}, args...)...)
+}
+
+func (l *ContextLogger) Info(args ...interface{}) {
+	l.Logger.Info(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
+}
+
+func (l *ContextLogger) Debug(args ...interface{}) {
+	l.Logger.Debug(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
+}
+
+func (l *ContextLogger) Error(args ...interface{}) {
+	l.Logger.Error(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
+}
+
+func (l *ContextLogger) Warning(args ...interface{}) {
+	l.Logger.Warning(append([]interface{}{"[" + l.traceID + "]"}, args...)...)
 }
 
 // InitLogLevelFromSpec initializes the logging based on the supplied spec. It is
