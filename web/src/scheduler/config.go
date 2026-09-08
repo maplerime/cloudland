@@ -32,6 +32,10 @@ type ZonePlacementConfig struct {
 		CPULoad *struct {
 			IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
 		} `mapstructure:"cpu_load"`
+
+		Reserve *struct {
+			Count *int `mapstructure:"count"`
+		} `mapstructure:"reserve"`
 	} `mapstructure:"filters"`
 
 	// Overrides global overcommit section (field-level merge)
@@ -49,6 +53,8 @@ type ZonePlacementConfig struct {
 		RAMMultiplier               *float64 `mapstructure:"ram_multiplier"`
 		CPULoadMultiplier           *float64 `mapstructure:"cpu_load_multiplier"`
 		SpreadMultiplier            *float64 `mapstructure:"spread_multiplier"`
+		PackVCPUThreshold           *int32   `mapstructure:"pack_vcpu_threshold"`
+		SpreadVCPUThreshold         *int32   `mapstructure:"spread_vcpu_threshold"`
 	} `mapstructure:"weighers"`
 }
 
@@ -84,6 +90,12 @@ type PlacementConfig struct {
 		CPULoad struct {
 			IdleThresholdPct float64 `mapstructure:"idle_threshold_pct"`
 		} `mapstructure:"cpu_load"`
+
+		Reserve struct {
+			// Number of top-resource nodes to reserve per zone for large orders.
+			// 0 disables reservation. Default 2.
+			Count int `mapstructure:"count"`
+		} `mapstructure:"reserve"`
 	} `mapstructure:"filters"`
 
 	// Overcommit fallback parameters.
@@ -102,6 +114,9 @@ type PlacementConfig struct {
 		RAMMultiplier               float64 `mapstructure:"ram_multiplier"`
 		CPULoadMultiplier           float64 `mapstructure:"cpu_load_multiplier"`
 		SpreadMultiplier            float64 `mapstructure:"spread_multiplier"`
+		// Tiered pack/spread thresholds (VCPUs). 0 disables tiered logic.
+		PackVCPUThreshold   int32 `mapstructure:"pack_vcpu_threshold"`
+		SpreadVCPUThreshold int32 `mapstructure:"spread_vcpu_threshold"`
 	} `mapstructure:"weighers"`
 
 	// Per-zone override configs: key = zone ID string (e.g. "1").
@@ -130,13 +145,14 @@ func defaultConfig() *PlacementConfig {
 		Enabled: false,
 		Log2DB:  true,
 		// "zone" filter removed: DB query already scopes hosts to the requested zone.
-		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity"},
+		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity", "reserve"},
 		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},
 		FallbackFilter:        "overcommit",
 		HostReportIntervalSec: 60,
 	}
 	cfg.Filters.CPULoad.IdleThresholdPct = 15.0
 	cfg.Filters.Hugepage.PageSizeKB = 2048
+	cfg.Filters.Reserve.Count = 2
 	cfg.Overcommit.Enabled = true
 	cfg.Overcommit.VCPUDeltaRatioPct = 10.0
 	cfg.Overcommit.CPUIdleFallbackPct = 5.0
@@ -145,6 +161,8 @@ func defaultConfig() *PlacementConfig {
 	cfg.Weighers.RAMMultiplier = 1.0
 	cfg.Weighers.CPULoadMultiplier = 1.0
 	cfg.Weighers.SpreadMultiplier = -1.0
+	cfg.Weighers.PackVCPUThreshold = 8
+	cfg.Weighers.SpreadVCPUThreshold = 16
 	return cfg
 }
 

@@ -47,10 +47,13 @@ host_report_interval_sec = 60
 #   resource       检查 vCPU / 内存 / 磁盘是否充足
 #   cpu_load       检查 CPU 空闲率是否高于 idle_threshold_pct
 #   affinity       按 Owner 的亲和/反亲和策略过滤（需 VM 创建时传入 Policy）
+#   reserve        从已通过所有硬约束的候选节点中，排除空闲资源最多的 N 台（大订单缓冲节点）；
+#                  若排除后候选为空（本单只有大节点才能承载），则回退到全部候选正常调度。
+#                  ★ 必须放在所有硬约束过滤器之后，否则排除的节点未经资源校验。
 #
 # 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此添加 "zone"。
 # 调整顺序会影响性能：将淘汰率高的过滤器放前面可减少后续计算量。
-filter_chain = ["compute_alive", "resource", "cpu_load", "affinity"]
+filter_chain = ["compute_alive", "resource", "cpu_load", "affinity", "reserve"]
 
 # weigher_chain —— 评分器链（软性排序，对候选节点综合评分）
 #
@@ -93,6 +96,29 @@ page_size_kb = 2048
 #   - 调低（如 5.0）： 接受更高负载的节点，可用节点更多，但 VM 性能可能受影响
 # 例：设为 15.0，则 CPU 使用率超过 85% 的节点不参与调度
 idle_threshold_pct = 15.0
+
+[placement.filters.reserve]
+# reserve 是否生效由 filter_chain 是否包含 reserve 决定。
+#
+# count —— 每个 zone 预留的"大订单缓冲节点"数量
+#
+# 背景：打散策略（默认）会把小订单均匀铺满所有节点，久而久之每台节点的剩余空间
+# 都磨成差不多大小的"碎渣"，再来大订单（如 32 核）时，总量够但每台都装不下。
+# 解法：始终保留 N 台空闲资源最多的节点不参与普通调度，专门留给大订单备用。
+#
+# 调度逻辑（在已通过所有硬约束过滤器的候选节点中执行）：
+#   1. 按 vCPU 剩余量降序，标记 top-N 为"预留节点"
+#   2. 从候选中排除预留节点，在剩余节点中调度
+#   3. 若排除后无候选（说明只有预留节点才能容纳本单），则允许使用预留节点
+#
+# 举例（count=2，zone 有 5 台节点）：
+#   小订单（4核）：5 台均通过 resource 过滤，排除最大两台 → 从剩余 3 台调度 ✓
+#   大订单（32核）：只有最大 2 台通过 resource 过滤 → 排除这 2 台后为空 → 回退使用这 2 台 ✓
+#
+# count = 0  禁用预留（等同于不加 reserve 过滤器）
+# count = 2  默认值，适合大多数生产 zone
+# count = 1  zone 节点数较少时可降为 1
+count = 2
 
 [placement.overcommit]
 
@@ -191,34 +217,41 @@ ram_multiplier = 1.0
 #   A 的贡献比 B 多 1.0 分（完全归一化时）
 cpu_load_multiplier = 1.0
 
-# spread_multiplier —— 打散 / 堆叠策略系数
+# spread_multiplier —— 打散/打包策略的权重系数
 #
-# SpreadWeigher 的 raw score = 节点当前已有 VM 数量（InstanceCount）。
-# VM 数越多，raw score 越高。
+# SpreadWeigher 的原始分 = 节点当前已有 VM 数量（InstanceCount），方向由
+# pack_vcpu_threshold 动态决定（见下方说明），系数符号不再决定方向，只控制权重大小。
+# 代码取绝对值使用，因此正负均可，效果等价。
 #
-# ★ 关键：通过系数符号控制策略方向：
+# 举例（设为 1.0，2 台候选节点 A=0 VM，B=10 VM）：
+#   打散模式（默认）：A 优先（VM少的节点得高分）
+#   打包模式（小订单）：B 优先（VM多的节点得高分）
 #
-#   负值（默认 -1.0）= 打散优先：
-#     VM 少的节点 raw score 低 → 归一化后反而获得更高的加权分
-#     效果：VM 均匀分散到各节点，避免单节点过载
-#     适用：独享型 zone、在线业务、希望资源隔离
+# 绝对值越大，该维度对最终选择影响越大，其他维度（ram / cpu_load）越难扳回。
+# 建议范围 1.0 ~ 3.0
+spread_multiplier = 1.0
+
+# pack_vcpu_threshold —— 打包策略的 vCPU 阈值（核数）
 #
-#   正值 = 堆叠优先：
-#     VM 多的节点 raw score 高 → 获得更高加权分
-#     效果：VM 尽量堆叠到少数节点，让更多节点保持空闲
-#     适用：共享型 zone、离线批处理、希望整节点空出以便维护
+# 背景：小订单持续以打散方式调度，会把每台节点剩余空间均匀磨成碎片，
+# 导致大订单（如 32 核）"总量够但每台都装不下"。
 #
-# 举例：
-#   spread_multiplier = -2.0（强力打散）
-#     节点 A 有 0 个 VM，节点 B 有 10 个 VM
-#     A raw=0, B raw=10；归一化后 A=1.0, B=0.0
-#     A 在此维度比 B 多 2.0 分 → 强烈倾向选 A
+# 解决思路：小订单改用"打包"策略，主动选已有更多 VM 的节点（让节点快速填满），
+# 把"干净"节点留给大订单，使节点自然分化为"填满的"和"大块空闲的"两类。
 #
-#   spread_multiplier = 2.0（堆叠优先）
-#     同样情形下 B 比 A 多 2.0 分 → 倾向选已有 VM 的节点 B
+# 逻辑：
+#   req.VCPUs ≤ pack_vcpu_threshold → 打包（选 VM 最多的节点，填满已有负载的节点）
+#   req.VCPUs > pack_vcpu_threshold → 打散（默认，选 VM 最少的节点）
 #
-# 绝对值越大，该策略越强势，其他维度难以扳回；建议范围 ±1.0 ~ ±3.0
-spread_multiplier = -1.0
+# 设为 0 禁用打包策略，所有订单统一使用打散（兼容旧行为）。
+# 建议值：等于当前在售规格中的小规格上限（如最大小规格为 8 核则设 8）。
+pack_vcpu_threshold = 8
+
+# spread_vcpu_threshold —— 大规格订单的 vCPU 参考阈值（核数，仅文档用途）
+#
+# 大订单（req.VCPUs ≥ 此值）使用打散策略；这是默认行为（pack 范围之外均打散），
+# 此参数不参与代码判断，仅作为运维参考，说明"多少核以上视为大订单"的界定。
+spread_vcpu_threshold = 16
 
 ##############################################################################
 # per-zone 覆盖配置
@@ -234,6 +267,7 @@ spread_multiplier = -1.0
 
 # zone ID=0 —— 共享型，资源超配，倾向堆叠以提高利用率
 [placement.zone.0]
+# 共享型无需预留大订单缓冲节点（资源超配、弹性大），去掉 reserve
 filter_chain = ["compute_alive", "resource", "cpu_load"]
 fallback_filter = "overcommit"
 
@@ -243,13 +277,18 @@ vcpu_delta_ratio_pct = 20.0
 cpu_idle_fallback_pct = 3.0
 
 [placement.zone.0.weighers]
-# 共享型倾向堆叠（提高节点利用率），超配惩罚较轻
-spread_multiplier            = 2.0
+# 共享型：所有订单均打包（节点利用率优先），禁用按规格分层
+spread_multiplier             = 1.0
 overcommit_penalty_multiplier = 1.0
+pack_vcpu_threshold           = 999  # 任何规格都走打包
+spread_vcpu_threshold         = 999  # 参考值，与 pack_vcpu_threshold 保持一致
 
-# zone ID=1 —— 独享型，资源独占，禁用超配，打散部署
+[placement.zone.0.filters.reserve]
+count = 0  # 共享型不预留
+
+# zone ID=1 —— 独享型，资源独占，禁用超配，分层打散/打包 + 大订单节点预留
 [placement.zone.1]
-filter_chain = ["compute_alive", "resource", "affinity"]
+filter_chain = ["compute_alive", "resource", "affinity", "reserve"]
 fallback_filter = "overcommit"
 
 [placement.zone.1.overcommit]
@@ -257,9 +296,14 @@ fallback_filter = "overcommit"
 enabled = false
 
 [placement.zone.1.weighers]
-# 独享型打散部署，超配惩罚权重保持高位
-spread_multiplier            = -2.0
+# 独享型：小订单（≤8核）打包，大订单（>8核）打散；权重加大以压倒其他维度
+spread_multiplier             = 2.0
 overcommit_penalty_multiplier = 3.0
+pack_vcpu_threshold           = 8
+spread_vcpu_threshold         = 16  # 参考值
+
+[placement.zone.1.filters.reserve]
+count = 2  # 始终保留 2 台空闲最多的节点给大订单备用
 
 # zone ID=2 —— prestaging zone1
 [placement.zone.2]
