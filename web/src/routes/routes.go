@@ -298,6 +298,7 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/traffic-billing/:uuid", trafficBillingView.Delete)
 	m.Post("/traffic-billing/:uuid/delete", trafficBillingView.Delete)
 	m.Post("/traffic-billing/refresh", trafficBillingView.Refresh)
+	m.Post("/traffic-billing/nic-meta-sync", trafficBillingView.SyncNicMeta)
 	m.Get("/backups", backupView.List)
 	m.Get("/backups/new", backupView.New)
 	m.Post("/backups/new", backupView.Create)

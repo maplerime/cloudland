@@ -232,6 +232,7 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.GET("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Get)
 		authGroup.DELETE("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Delete)
 		authGroup.PATCH("/api/v1/instances/:id/interfaces/:interface_id", interfaceAPI.Patch)
+		authGroup.POST("/api/v1/nic-meta/sync", interfaceAPI.SyncNicMeta)
 
 		authGroup.GET("/api/v1/tasks", taskAPI.List)
 		authGroup.GET("/api/v1/tasks/:id", taskAPI.Get)

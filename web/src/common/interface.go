@@ -69,6 +69,18 @@ type VlanInfo struct {
 	MacAddr       string          `json:"mac_address"`
 	SecRules      []*SecurityData `json:"security"`
 	MoreAddresses []string        `json:"more_addresses"`
+	// Whether this nic is the instance's way out, and so whether its counters
+	// are north-south traffic at all. It is the same fact as the 0.0.0.0/0 route
+	// GetInstanceNetworks puts on the primary interface -- one source, so the
+	// metadata a node gets at boot and the mark the metering script reads cannot
+	// disagree.
+	//
+	// A multi-nic instance is why this has to travel: its private nic's counters
+	// are pure east-west, and until the nic could be told apart they were summed
+	// into the instance's billed total. Set it on every VlanInfo that is built;
+	// an unset bool marshals as false, which reads as "not the way out" and
+	// silently stops billing the nic.
+	NorthSouth bool `json:"north_south"`
 }
 
 func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *model.Interface) (vlanInfo *VlanInfo, err error) {
@@ -103,6 +115,7 @@ func GetInterfaceInfo(ctx context.Context, instance *model.Instance, iface *mode
 		MacAddr:       iface.MacAddr,
 		SecRules:      securityData,
 		MoreAddresses: moreAddresses,
+		NorthSouth:    iface.PrimaryIf,
 	}
 	return
 }
@@ -126,6 +139,126 @@ func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.
 		return
 	}
 	return
+}
+
+// NicMetaSyncResult is what one sync run dispatched.
+type NicMetaSyncResult struct {
+	Instances int `json:"instances"`
+	Nics      int `json:"nics"`
+	Nodes     int `json:"nodes"`
+}
+
+// SyncAllNicMeta rewrites the per-nic meta file on the compute node for every
+// multi-nic instance, so the metering script can tell which nic is the
+// instance's way out. An instance created before NorthSouth existed has no mark
+// on disk and nothing on its node ever adds one: a nic is only written when it
+// is attached, which for a running instance already happened.
+//
+// Only multi-nic instances are dispatched. A single-nic instance's only
+// interface is necessarily its default route, so its mark can only be true --
+// which is what generate_north_south_metrics.sh already assumes when the key is
+// absent. The other several thousand instances would be commands that rewrite a
+// file to the value already being assumed.
+//
+// One query, no per-row work: the constraint IPInstanceMapAdmin.List documents,
+// and it applies to anything an operator can point at the whole fleet. Building
+// the payload through GetInterfaceInfo would fetch security groups and instance
+// networks for every interface, none of which meta_only reads.
+//
+// Operator-triggered only, like TrafficBillingAdmin.BroadcastSync. What leaves a
+// mark stale is an instance created by an older clapi or a rebuilt node; neither
+// happens on a cadence worth a ticker.
+func SyncAllNicMeta(ctx context.Context) (result *NicMetaSyncResult, err error) {
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Admin) {
+		logger.Error("Not authorized for this operation")
+		return nil, NewCLError(ErrPermissionDenied, "Not authorized for this operation", nil)
+	}
+	ctx, db := GetContextDB(ctx)
+	// a.interface > 0 keeps the unallocated address pool out of the join. It is
+	// the bulk of that table and belongs to no interface.
+	query := `
+		SELECT i.id, COALESCE(i.hostname, ''), i.hyper, COALESCE(n.name, ''),
+		       COALESCE(n.mac_addr, ''), n.primary_if,
+		       COALESCE(a.address, ''), s.vlan, s.router_id
+		FROM instances i
+		JOIN interfaces n ON n.instance = i.id AND n.deleted_at IS NULL
+		JOIN addresses a ON a.interface = n.id AND a.interface > 0 AND a.deleted_at IS NULL
+		JOIN subnets s ON s.id = a.subnet_id AND s.deleted_at IS NULL
+		WHERE i.deleted_at IS NULL AND i.hyper >= 0
+		  AND i.id IN (
+		      SELECT n2.instance FROM interfaces n2
+		      WHERE n2.deleted_at IS NULL AND n2.instance > 0
+		      GROUP BY n2.instance HAVING count(*) > 1
+		  )
+		ORDER BY i.id, n.id`
+	rows, err := db.Raw(query).Rows()
+	if err != nil {
+		logger.Errorf("Failed to query nic meta, %v", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query nic meta", err)
+	}
+	defer rows.Close()
+	type instanceNics struct {
+		hostname string
+		hyper    int32
+		vlans    []*VlanInfo
+	}
+	// Collected in full before anything is dispatched: HyperExecute must not run
+	// while this cursor is open.
+	order := []int64{}
+	byInstance := map[int64]*instanceNics{}
+	for rows.Next() {
+		var instID, vlan, routerID int64
+		var hostname, name, macAddr, address string
+		var hyper int32
+		var primaryIf bool
+		if err = rows.Scan(&instID, &hostname, &hyper, &name, &macAddr, &primaryIf, &address, &vlan, &routerID); err != nil {
+			logger.Errorf("Failed to scan nic meta, %v", err)
+			return nil, NewCLError(ErrSQLSyntaxError, "Failed to scan nic meta", err)
+		}
+		nics, ok := byInstance[instID]
+		if !ok {
+			nics = &instanceNics{hostname: hostname, hyper: hyper}
+			byInstance[instID] = nics
+			order = append(order, instID)
+		}
+		// Only the four fields meta_only writes. Anything else in VlanInfo would
+		// be a value this path has not read and cannot vouch for.
+		nics.vlans = append(nics.vlans, &VlanInfo{
+			Device:     name,
+			Vlan:       vlan,
+			Router:     routerID,
+			IpAddr:     address,
+			MacAddr:    macAddr,
+			NorthSouth: primaryIf,
+		})
+	}
+	if err = rows.Err(); err != nil {
+		logger.Errorf("Failed to read nic meta, %v", err)
+		return nil, NewCLError(ErrSQLSyntaxError, "Failed to read nic meta", err)
+	}
+	result = &NicMetaSyncResult{}
+	nodes := map[int32]struct{}{}
+	for _, instID := range order {
+		nics := byInstance[instID]
+		jsonData, err := json.Marshal(nics.vlans)
+		if err != nil {
+			logger.Errorf("Failed to marshal nic meta of instance %d, %v", instID, err)
+			return nil, err
+		}
+		// os_code is empty on purpose: meta_only exits before anything reads it.
+		control := fmt.Sprintf("inter=%d", nics.hyper)
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '' 'false' 'true'<<EOF\n%s\nEOF\n", instID, nics.hostname, jsonData)
+		if err = HyperExecute(ctx, control, command); err != nil {
+			logger.Errorf("Nic meta sync failed for instance %d on hyper %d, %v", instID, nics.hyper, err)
+			return nil, err
+		}
+		nodes[nics.hyper] = struct{}{}
+		result.Instances++
+		result.Nics += len(nics.vlans)
+	}
+	result.Nodes = len(nodes)
+	return result, nil
 }
 
 func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, ipaddr, addrType string) (address *model.Address, err error) {

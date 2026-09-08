@@ -10,6 +10,7 @@
                             {{template "_column_selector" .}}
                             <a class="ui green tiny button" href="traffic-billing/new">{{.i18n.Tr "Create"}}</a>
                             <button class="ui blue tiny button" id="refresh-billing-btn" onclick="refreshTrafficBilling(event)">{{.i18n.Tr "Refresh"}}</button>
+                            <button class="ui teal tiny button" id="sync-nic-meta-btn" onclick="syncNicMeta(event)" title="Push each nic's north-south mark to the compute nodes, so a multi-nic instance's private nic stops being billed as north-south traffic. Run after upgrading clapi.">Sync NIC Meta</button>
                         </div>
                     </h4>
                     <div class="ui attached segment">
@@ -81,6 +82,34 @@ function refreshTrafficBilling(e) {
     }).catch(function(err) {
         btn.classList.remove('loading', 'disabled');
         alert('Refresh failed: ' + err);
+    });
+}
+
+// Only multi-nic instances are dispatched -- a single-nic instance's only
+// interface is necessarily its default route, which is what the metering script
+// already assumes when the mark is absent -- so the counts reported back are
+// deliberately far smaller than the instance total.
+function syncNicMeta(e) {
+    e.preventDefault();
+    var btn = document.getElementById('sync-nic-meta-btn');
+    btn.classList.add('loading', 'disabled');
+    fetch('traffic-billing/nic-meta-sync', {
+        method: 'POST',
+        credentials: 'same-origin'
+    }).then(function(r) {
+        return r.json();
+    }).then(function(data) {
+        btn.classList.remove('loading', 'disabled');
+        if (data.error) {
+            alert('Sync NIC meta failed: ' + data.error);
+        } else {
+            alert('NIC meta sync dispatched to ' + data.nodes + ' node(s): '
+                + data.nics + ' nic(s) on ' + data.instances + ' multi-nic instance(s).\n'
+                + 'Each node rewrites its own files; the metrics follow on the next 5-minute collection.');
+        }
+    }).catch(function(err) {
+        btn.classList.remove('loading', 'disabled');
+        alert('Sync NIC meta failed: ' + err);
     });
 }
 </script>

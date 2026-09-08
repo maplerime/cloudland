@@ -715,3 +715,57 @@ func (v *InterfaceAPI) List(c *gin.Context) {
 	logger.Debugf("List secrules successfully for SG %s, %+v", uuID, interfaceListResp)
 	c.JSON(http.StatusOK, interfaceListResp)
 }
+
+// NicMetaSyncResponse reports what the sync dispatched, not what the nodes have
+// finished doing: each node applies its own rewrite asynchronously.
+type NicMetaSyncResponse struct {
+	Status    string `json:"status"`
+	Instances int    `json:"instances"`
+	Nics      int    `json:"nics"`
+	Nodes     int    `json:"nodes"`
+}
+
+// SyncNicMeta takes no input. The DB is the source of truth for which nic is an
+// instance's way out, and this only ever pushes that outward -- there is no form
+// of this call that accepts a caller-supplied list to reconcile the DB against.
+// @Summary push the per-nic north-south mark to the compute nodes
+// @Description Rewrite the per-nic meta file on the compute node of every multi-nic
+// @Description instance, so the metering script can tell which nic is the instance's
+// @Description way out and keep the other one's east-west bytes out of billing.
+// @Description Admin permission required.
+// @Description
+// @Description Only multi-nic instances are dispatched: a single-nic instance's only
+// @Description interface is necessarily its default route, which is what the metering
+// @Description script already assumes when the mark is absent. Use this after upgrading
+// @Description clapi, so instances created before the mark existed get one.
+// @Description
+// @Description Success means every command was dispatched, not that every node has
+// @Description applied it; a node applies its rewrite on its own.
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Success 200 {object} NicMetaSyncResponse
+// @Failure 403 {object} APIError "PERMISSION_DENIED: admin permission required"
+// @Failure 500 {object} APIError "DB read or command dispatch failed"
+// @Router /nic-meta/sync [post]
+func (v *InterfaceAPI) SyncNicMeta(c *gin.Context) {
+	ctx := c.Request.Context()
+	result, err := SyncAllNicMeta(ctx)
+	if err != nil {
+		status := http.StatusInternalServerError
+		var clErr *CLError
+		if errors.As(err, &clErr) && clErr.Code == ErrPermissionDenied {
+			status = http.StatusForbidden
+		}
+		logger.Errorf("Failed to sync nic meta, %+v", err)
+		ErrorResponse(c, status, "Failed to sync nic meta", err)
+		return
+	}
+	logger.Debugf("Nic meta sync dispatched, %+v", result)
+	c.JSON(http.StatusOK, &NicMetaSyncResponse{
+		Status:    "success",
+		Instances: result.Instances,
+		Nics:      result.Nics,
+		Nodes:     result.Nodes,
+	})
+}

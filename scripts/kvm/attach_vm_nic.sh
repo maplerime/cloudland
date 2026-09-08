@@ -3,18 +3,33 @@
 cd `dirname $0`
 source ../cloudrc
 
-[ $# -lt 4 ] && echo "$0 <vm_ID> <vm_name> <os_code> <update_meta>" && exit -1
+[ $# -lt 4 ] && echo "$0 <vm_ID> <vm_name> <os_code> <update_meta> [meta_only]" && exit -1
 
 ID=$1
 vm_ID=inst-$ID
 vm_name=$2
 os_code=$3
 update_meta=$4
+# meta_only=true: only rewrite $async_job_dir/$nic_name and exit, touching neither
+# the device, the security groups nor the gateway. This is how clapi's nic-meta
+# sync backfills north_south onto instances that were created before the mark
+# existed -- replaying the whole attach path fleet-wide would rebuild every
+# security group chain for nothing.
+meta_only=$5
 
 vlan_info=$(cat)
-read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing < <(jq -r ".vlan, .ip_address, .mac_address, .gateway, .router, .inbound, .outbound, .allow_spoofing" <<<$vlan_info)
+read -d'\n' -r vlan ip mac gateway router inbound outbound allow_spoofing north_south < <(jq -r ".vlan, .ip_address, .mac_address, .gateway, .router, .inbound, .outbound, .allow_spoofing, .north_south" <<<$vlan_info)
+# Whether this nic carries north-south traffic, i.e. whether it is the instance's
+# default route. Absent (json from an older clapi) means yes: the metering script
+# defaults the same way, and defaulting to "no" would silently stop billing the
+# nic instead of merely mis-attributing it.
+case "$north_south" in true|false) ;; *) north_south=true ;; esac
 nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
+if [ "$meta_only" = "true" ]; then
+    echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router north_south=$north_south" > "$async_job_dir/$nic_name"
+    exit 0
+fi
 ./create_link.sh $vlan
 brctl setageing $vm_br 120
 virsh domiflist $vm_ID | grep $mac
@@ -26,7 +41,7 @@ if [ $? -ne 0 ]; then
     sed -i "s/VM_MAC/$mac/g; s/VM_BRIDGE/$vm_br/g; s/VM_VTEP/$nic_name/g; s/QUEUE_NUM/$queue_num/g" $interface_xml
     virsh attach-device $vm_ID $interface_xml --live --persistent
     [ $? -ne 0 ] && virsh attach-device $vm_ID $interface_xml --config
-    echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
+    echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router north_south=$north_south" >> "$async_job_dir/$nic_name"
 fi
 udevadm settle
 async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"

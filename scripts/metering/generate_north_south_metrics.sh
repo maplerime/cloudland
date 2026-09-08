@@ -40,7 +40,7 @@ grep '^libvirt_domain_interface_meta{' "$METRICS_CACHE" | while read -r line; do
     [ -f "$meta_file" ] || continue
 
     # Default values
-    vm_ip=""; floating_ip=""; vm_br=""; router=""
+    vm_ip=""; floating_ip=""; vm_br=""; router=""; north_south=""
 
     # Parse key-value pairs from the meta file
     for kv in $(cat "$meta_file"); do
@@ -54,6 +54,7 @@ grep '^libvirt_domain_interface_meta{' "$METRICS_CACHE" | while read -r line; do
             floating_ip) floating_ip="$val" ;;
             vm_br) vm_br="$val" ;;
             router) router="$val" ;;
+            north_south) north_south="$val" ;;
         esac
     done
 
@@ -62,6 +63,23 @@ grep '^libvirt_domain_interface_meta{' "$METRICS_CACHE" | while read -r line; do
 
     # If router is empty, treat it as "0"
     [ -z "$router" ] && router="0"
+
+    # Which metric family this nic reports under. north_south is written by
+    # attach_vm_nic.sh from the interface's default-route mark; a nic that is not
+    # the instance's default route carries no north-south traffic, so on a
+    # multi-nic instance its counters must not land in the billing series --
+    # otherwise the private nic's east-west bytes get summed into the instance
+    # total by aggregate_traffic_15m_billing.sh / aggregate_traffic_1d.sh.
+    #
+    # Only an explicit "false" moves a nic to domain_east_west_*: an absent key
+    # (meta file written before the mark existed) stays on north-south, because
+    # the failure that under-bills is worse than the one that over-bills.
+    #
+    # domain_east_west_* is deliberately not in the metering remote_write keep
+    # list, so it stops at this node and the region Prometheus and never reaches
+    # the billing pipeline. It exists to be looked at, not yet to be processed.
+    metric_prefix="domain_north_south"
+    [ "$north_south" = "false" ] && metric_prefix="domain_east_west"
 
     # Use different processing strategies based on router value
     if [ "$router" = "0" ]; then
@@ -93,8 +111,8 @@ grep '^libvirt_domain_interface_meta{' "$METRICS_CACHE" | while read -r line; do
     fi
 
     # Output Prometheus metrics
-    echo "domain_north_south_inbound_bytes_total{domain=\"$domain\",source_bridge=\"$source_bridge\",target_device=\"$target_device\",vm_ip=\"$vm_ip\",floating_ip=\"$floating_ip\",vm_br=\"$vm_br\",router=\"$router\"} $inbound" >> "$OUTPUT"
-    echo "domain_north_south_outbound_bytes_total{domain=\"$domain\",source_bridge=\"$source_bridge\",target_device=\"$target_device\",vm_ip=\"$vm_ip\",floating_ip=\"$floating_ip\",vm_br=\"$vm_br\",router=\"$router\"} $outbound" >> "$OUTPUT"
+    echo "${metric_prefix}_inbound_bytes_total{domain=\"$domain\",source_bridge=\"$source_bridge\",target_device=\"$target_device\",vm_ip=\"$vm_ip\",floating_ip=\"$floating_ip\",vm_br=\"$vm_br\",router=\"$router\"} $inbound" >> "$OUTPUT"
+    echo "${metric_prefix}_outbound_bytes_total{domain=\"$domain\",source_bridge=\"$source_bridge\",target_device=\"$target_device\",vm_ip=\"$vm_ip\",floating_ip=\"$floating_ip\",vm_br=\"$vm_br\",router=\"$router\"} $outbound" >> "$OUTPUT"
 done
 
 # fix owner, ensure node exporter can read

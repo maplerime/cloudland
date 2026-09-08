@@ -1005,6 +1005,9 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		IpAddr:        iface.Address.Address,
 		MacAddr:       iface.MacAddr,
 		SecRules:      securityData,
+		// eth0 is the primary interface, the one GetInstanceNetworks gives the
+		// default route to, so it is the nic that carries north-south traffic.
+		NorthSouth: true,
 	})
 	for i, ifaceInfo := range secondaryIfaces {
 		var subnet *model.Subnet
@@ -1039,6 +1042,12 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 			IpAddr:        iface.Address.Address,
 			MacAddr:       iface.MacAddr,
 			SecRules:      securityData,
+			// A secondary interface gets no default route, so whatever crosses
+			// it stays inside the cloud and is not billable north-south traffic.
+			// Spelled out rather than left to the zero value: this is the field's
+			// whole point, and the value that stops a nic being billed should be
+			// written where it is decided.
+			NorthSouth: false,
 		})
 	}
 	var moreAddresses []string
@@ -1128,6 +1137,7 @@ func (a *InstanceAdmin) GetMetadata(ctx context.Context, instance *model.Instanc
 			IpAddr:        iface.Address.Address,
 			MacAddr:       iface.MacAddr,
 			MoreAddresses: moreAddresses,
+			NorthSouth:    iface.PrimaryIf,
 		})
 	}
 	instData := &InstanceData{

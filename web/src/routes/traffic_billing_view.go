@@ -9,6 +9,12 @@ package routes
 import (
 	"net/http"
 
+	// Imported qualified rather than dot-imported like most of this package:
+	// common declares a logger of its own, and a dot import would shadow this
+	// package's logger for the whole file, quietly relabelling the log lines the
+	// handlers below already write.
+	"web/src/common"
+
 	"github.com/go-macaron/session"
 	macaron "gopkg.in/macaron.v1"
 )
@@ -108,4 +114,34 @@ func (v *TrafficBillingView) Refresh(c *macaron.Context, store session.Store) {
 		return
 	}
 	c.JSON(200, map[string]interface{}{"message": "refresh broadcast to all compute nodes"})
+}
+
+// SyncNicMeta pushes the per-nic north-south mark from the DB out to the compute
+// nodes, through the same common.SyncAllNicMeta the REST API's
+// POST /api/v1/nic-meta/sync calls.
+//
+// It lives on this page because that mark is what decides whether a nic's bytes
+// are billable at all: on a multi-nic instance the private nic carries only
+// east-west traffic, and without the mark its counters were summed into the
+// instance's billed total. An instance created before the mark existed has none
+// on disk, and nothing on its node adds one on its own -- a nic's meta file is
+// written when the nic is attached, which for a running instance already
+// happened. So this is the button to press after upgrading clapi.
+//
+// Authorization is enforced inside common.SyncAllNicMeta, not here -- same
+// arrangement as the rest of this file.
+func (v *TrafficBillingView) SyncNicMeta(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	result, err := common.SyncAllNicMeta(ctx)
+	if err != nil {
+		logger.Errorf("Failed to sync nic meta: %v", err)
+		c.JSON(500, map[string]interface{}{"error": err.Error()})
+		return
+	}
+	c.JSON(200, map[string]interface{}{
+		"message":   "nic meta sync dispatched",
+		"instances": result.Instances,
+		"nics":      result.Nics,
+		"nodes":     result.Nodes,
+	})
 }
