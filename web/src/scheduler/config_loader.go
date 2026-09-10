@@ -346,9 +346,6 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 		if z.PackVCPUThreshold != nil {
 			merged.Weighers.PackVCPUThreshold = *z.PackVCPUThreshold
 		}
-		if z.SpreadVCPUThreshold != nil {
-			merged.Weighers.SpreadVCPUThreshold = *z.SpreadVCPUThreshold
-		}
 	}
 	return &merged
 }

@@ -176,9 +176,8 @@ func TestMergeZoneConfig_WeigherMultiplierOverride(t *testing.T) {
 			CPULoadMultiplier           *float64 `mapstructure:"cpu_load_multiplier"`
 			SpreadMultiplier            *float64 `mapstructure:"spread_multiplier"`
 			PackVCPUThreshold           *int32   `mapstructure:"pack_vcpu_threshold"`
-			SpreadVCPUThreshold         *int32   `mapstructure:"spread_vcpu_threshold"`
 		}{
-			SpreadMultiplier: ptrFloat(2.0), // positive = stack (edge zone)
+			SpreadMultiplier: ptrFloat(2.0),
 		},
 	}
 	merged := mergeZoneConfig(global, zone)

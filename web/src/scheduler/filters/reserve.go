@@ -19,9 +19,10 @@ func init() {
 	})
 }
 
-// ReserveFilter keeps the top-N nodes (by free vCPU) available for large orders.
-// It excludes those nodes from the candidate pool unless no other nodes pass.
-// This prevents small orders from consuming the nodes best suited for large orders.
+// ReserveFilter excludes the top-N nodes (by free vCPU) from the candidate pool,
+// regardless of request size. If excluding them leaves no candidates the filter
+// falls back to the full input set. This keeps the most-idle nodes available for
+// requests that only those nodes can satisfy.
 type ReserveFilter struct {
 	count int
 }

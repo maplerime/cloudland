@@ -47,8 +47,8 @@ host_report_interval_sec = 60
 #   resource       检查 vCPU / 内存 / 磁盘是否充足
 #   cpu_load       检查 CPU 空闲率是否高于 idle_threshold_pct
 #   affinity       按 Owner 的亲和/反亲和策略过滤（需 VM 创建时传入 Policy）
-#   reserve        从已通过所有硬约束的候选节点中，排除空闲资源最多的 N 台（大订单缓冲节点）；
-#                  若排除后候选为空（本单只有大节点才能承载），则回退到全部候选正常调度。
+#   reserve        从已通过所有硬约束的候选节点中，排除 vCPU 空闲最多的 top-N 台；
+#                  若排除后候选为空，则回退到全部候选（对所有规格统一生效）。
 #                  ★ 必须放在所有硬约束过滤器之后，否则排除的节点未经资源校验。
 #
 # 注意：zone 过滤在 DB 查询层完成（WHERE zone_id=?），无需在此添加 "zone"。
@@ -100,22 +100,21 @@ idle_threshold_pct = 15.0
 [placement.filters.reserve]
 # reserve 是否生效由 filter_chain 是否包含 reserve 决定。
 #
-# count —— 每个 zone 预留的"大订单缓冲节点"数量
+# count —— 每个 zone 从候选池中排除的 top-N 节点数（按 vCPU 剩余量降序）
 #
-# 背景：打散策略（默认）会把小订单均匀铺满所有节点，久而久之每台节点的剩余空间
-# 都磨成差不多大小的"碎渣"，再来大订单（如 32 核）时，总量够但每台都装不下。
-# 解法：始终保留 N 台空闲资源最多的节点不参与普通调度，专门留给大订单备用。
+# 调度逻辑（在已通过所有硬约束过滤器的候选节点中执行，对所有规格统一生效）：
+#   1. 按 vCPU 剩余量降序，标记 top-N 为"排除节点"
+#   2. 从候选中排除这 N 台，在剩余节点中调度
+#   3. 若排除后候选为空（说明只有这 N 台能容纳本单），则回退使用全部候选
 #
-# 调度逻辑（在已通过所有硬约束过滤器的候选节点中执行）：
-#   1. 按 vCPU 剩余量降序，标记 top-N 为"预留节点"
-#   2. 从候选中排除预留节点，在剩余节点中调度
-#   3. 若排除后无候选（说明只有预留节点才能容纳本单），则允许使用预留节点
+# 效果：vCPU 最空闲的节点只有在"没有别的节点装得下"时才会被使用，
+# 从而把最大空间留给对资源要求最高的请求。
 #
-# 举例（count=2，zone 有 5 台节点）：
-#   小订单（4核）：5 台均通过 resource 过滤，排除最大两台 → 从剩余 3 台调度 ✓
-#   大订单（32核）：只有最大 2 台通过 resource 过滤 → 排除这 2 台后为空 → 回退使用这 2 台 ✓
+# 举例（count=2，zone 有 5 台节点，vCPU 空闲 A=40、B=30、C=20、D=10、E=5）：
+#   4核请求 → 5 台均通过 resource → 排除 A、B → 从 C/D/E 中调度 ✓
+#   32核请求 → 只有 A、B 通过 resource → 排除后为空 → 回退使用 A/B ✓
 #
-# count = 0  禁用预留（等同于不加 reserve 过滤器）
+# count = 0  禁用（等同于不加 reserve 过滤器）
 # count = 2  默认值，适合大多数生产 zone
 # count = 1  zone 节点数较少时可降为 1
 count = 2
@@ -247,11 +246,6 @@ spread_multiplier = 1.0
 # 建议值：等于当前在售规格中的小规格上限（如最大小规格为 8 核则设 8）。
 pack_vcpu_threshold = 8
 
-# spread_vcpu_threshold —— 大规格订单的 vCPU 参考阈值（核数，仅文档用途）
-#
-# 大订单（req.VCPUs ≥ 此值）使用打散策略；这是默认行为（pack 范围之外均打散），
-# 此参数不参与代码判断，仅作为运维参考，说明"多少核以上视为大订单"的界定。
-spread_vcpu_threshold = 16
 
 ##############################################################################
 # per-zone 覆盖配置
@@ -281,7 +275,6 @@ cpu_idle_fallback_pct = 3.0
 spread_multiplier             = 1.0
 overcommit_penalty_multiplier = 1.0
 pack_vcpu_threshold           = 999  # 任何规格都走打包
-spread_vcpu_threshold         = 999  # 参考值，与 pack_vcpu_threshold 保持一致
 
 [placement.zone.0.filters.reserve]
 count = 0  # 共享型不预留
@@ -300,7 +293,6 @@ enabled = false
 spread_multiplier             = 2.0
 overcommit_penalty_multiplier = 3.0
 pack_vcpu_threshold           = 8
-spread_vcpu_threshold         = 16  # 参考值
 
 [placement.zone.1.filters.reserve]
 count = 2  # 始终保留 2 台空闲最多的节点给大订单备用

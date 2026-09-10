@@ -52,9 +52,8 @@ type ZonePlacementConfig struct {
 		HugepageMultiplier          *float64 `mapstructure:"hugepage_multiplier"`
 		RAMMultiplier               *float64 `mapstructure:"ram_multiplier"`
 		CPULoadMultiplier           *float64 `mapstructure:"cpu_load_multiplier"`
-		SpreadMultiplier            *float64 `mapstructure:"spread_multiplier"`
-		PackVCPUThreshold           *int32   `mapstructure:"pack_vcpu_threshold"`
-		SpreadVCPUThreshold         *int32   `mapstructure:"spread_vcpu_threshold"`
+		SpreadMultiplier  *float64 `mapstructure:"spread_multiplier"`
+		PackVCPUThreshold *int32   `mapstructure:"pack_vcpu_threshold"`
 	} `mapstructure:"weighers"`
 }
 
@@ -92,8 +91,10 @@ type PlacementConfig struct {
 		} `mapstructure:"cpu_load"`
 
 		Reserve struct {
-			// Number of top-resource nodes to reserve per zone for large orders.
-			// 0 disables reservation. Default 2.
+			// Number of top-vCPU-free nodes to exclude from the candidate pool per zone.
+			// Applies to all request sizes uniformly: if non-reserved candidates can
+			// satisfy the request they are used; otherwise the reserved nodes are the
+			// fallback. 0 disables this behaviour. Default 2.
 			Count int `mapstructure:"count"`
 		} `mapstructure:"reserve"`
 	} `mapstructure:"filters"`
@@ -114,9 +115,8 @@ type PlacementConfig struct {
 		RAMMultiplier               float64 `mapstructure:"ram_multiplier"`
 		CPULoadMultiplier           float64 `mapstructure:"cpu_load_multiplier"`
 		SpreadMultiplier            float64 `mapstructure:"spread_multiplier"`
-		// Tiered pack/spread thresholds (VCPUs). 0 disables tiered logic.
-		PackVCPUThreshold   int32 `mapstructure:"pack_vcpu_threshold"`
-		SpreadVCPUThreshold int32 `mapstructure:"spread_vcpu_threshold"`
+		// PackVCPUThreshold: VCPUs <= this → pack strategy; 0 disables tiered logic.
+		PackVCPUThreshold int32 `mapstructure:"pack_vcpu_threshold"`
 	} `mapstructure:"weighers"`
 
 	// Per-zone override configs: key = zone ID string (e.g. "1").
@@ -162,7 +162,6 @@ func defaultConfig() *PlacementConfig {
 	cfg.Weighers.CPULoadMultiplier = 1.0
 	cfg.Weighers.SpreadMultiplier = -1.0
 	cfg.Weighers.PackVCPUThreshold = 8
-	cfg.Weighers.SpreadVCPUThreshold = 16
 	return cfg
 }
 
