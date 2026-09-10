@@ -107,6 +107,109 @@ func (v *PlacementAPI) Available(c *gin.Context) {
 	})
 }
 
+// GetConfig returns the current placement config as JSON.
+// Supports optional ?zone_id=<id> query parameter to get the effective merged
+// config for a specific zone (per-zone overrides merged onto global).
+// @Summary      Get placement configuration
+// @Description  Returns global config, or effective merged config for a specific zone
+// @Tags         Placement
+// @Produce      json
+// @Param        zone_id  query int false "Zone ID (0 or omit = global config)"
+// @Success      200 {object} map[string]interface{}
+// @Failure      403 {object} common.APIError
+// @Router       /placement/config [get]
+func (v *PlacementAPI) GetConfig(c *gin.Context) {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Admin) {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized for this operation", nil)
+		return
+	}
+
+	zoneID, _ := strconv.ParseInt(c.Query("zone_id"), 10, 64)
+
+	var cfg *scheduler.PlacementConfig
+	if zoneID > 0 {
+		cfg = scheduler.ResolveZoneConfig(zoneID)
+	} else {
+		cfg, _ = scheduler.GetCurrentConfig()
+	}
+
+	_, loadedAt := scheduler.GetCurrentConfig()
+	c.JSON(http.StatusOK, gin.H{
+		"zone_id":            zoneID,
+		"config":             cfg,
+		"loaded_at":          loadedAt,
+		"available_filters":  scheduler.GetRegisteredFilters(),
+		"available_weighers": scheduler.GetRegisteredWeighers(),
+	})
+}
+
+// GetDecisions returns recent placement decisions.
+// @Summary      Get recent placement decisions
+// @Description  Returns the most recent placement scheduling decisions (max 100)
+// @Tags         Placement
+// @Produce      json
+// @Param        limit  query int false "Number of decisions to return (default 20, max 100)"
+// @Success      200 {object} map[string]interface{}
+// @Failure      403 {object} common.APIError
+// @Router       /placement/decisions [get]
+func (v *PlacementAPI) GetDecisions(c *gin.Context) {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Admin) {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized for this operation", nil)
+		return
+	}
+	_ = ctx
+
+	n, _ := strconv.Atoi(c.Query("limit"))
+	if n <= 0 || n > 100 {
+		n = 20
+	}
+	decisions := scheduler.GetRecentDecisions(n)
+	c.JSON(http.StatusOK, gin.H{
+		"decisions": decisions,
+		"count":     len(decisions),
+	})
+}
+
+// Reload re-reads placement.toml and rebuilds the scheduler chains without restarting.
+// @Summary      Reload placement configuration
+// @Description  Hot-reloads placement.toml and invalidates the host state cache
+// @Tags         Placement
+// @Produce      json
+// @Success      200 {object} map[string]interface{}
+// @Failure      403 {object} common.APIError
+// @Failure      500 {object} common.APIError
+// @Router       /placement/reload [post]
+func (v *PlacementAPI) Reload(c *gin.Context) {
+	ctx := c.Request.Context()
+	memberShip := GetMemberShip(ctx)
+	if !memberShip.CheckPermission(model.Admin) {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized for this operation", nil)
+		return
+	}
+	_ = ctx
+
+	result, err := scheduler.ReloadConfig()
+	if err != nil {
+		ErrorResponse(c, http.StatusInternalServerError, "Config reload failed", err)
+		return
+	}
+
+	scheduler.InvalidateHostStateCache()
+
+	logger.Infof("placement config reloaded via API by user %s, filters=%v, weighers=%v",
+		memberShip.UserName, result.FilterChain, result.WeigherChain)
+	c.JSON(http.StatusOK, gin.H{
+		"loaded_at":     result.LoadedAt,
+		"config_path":   result.ConfigPath,
+		"filter_chain":  result.FilterChain,
+		"weigher_chain": result.WeigherChain,
+	})
+}
+
 // Validate checks whether a specific hyper can host a VM with the given spec.
 // @Summary      Validate hyper resource availability
 // @Description  Checks if the specified hyper passes the filter chain for the given VM spec

@@ -175,8 +175,9 @@ func TestMergeZoneConfig_WeigherMultiplierOverride(t *testing.T) {
 			RAMMultiplier               *float64 `mapstructure:"ram_multiplier"`
 			CPULoadMultiplier           *float64 `mapstructure:"cpu_load_multiplier"`
 			SpreadMultiplier            *float64 `mapstructure:"spread_multiplier"`
+			PackVCPUThreshold           *int32   `mapstructure:"pack_vcpu_threshold"`
 		}{
-			SpreadMultiplier: ptrFloat(2.0), // positive = stack (edge zone)
+			SpreadMultiplier: ptrFloat(2.0),
 		},
 	}
 	merged := mergeZoneConfig(global, zone)
@@ -200,6 +201,9 @@ func TestMergeZoneConfig_CPULoadThresholdOverride(t *testing.T) {
 			CPULoad *struct {
 				IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
 			} `mapstructure:"cpu_load"`
+			Reserve *struct {
+				Count *int `mapstructure:"count"`
+			} `mapstructure:"reserve"`
 		}{
 			CPULoad: &struct {
 				IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
