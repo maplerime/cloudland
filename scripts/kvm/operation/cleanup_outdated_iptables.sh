@@ -41,4 +41,15 @@ for i in {1..10}; do
     [ "$ln" = 1 ] && break
     [ -n "$ln" ] && iptables -D INPUT $ln
 done
+
+# Ensure the default reject rule is always the very last line of FORWARD.
+# Only act when the last line is not already this rule: remove every existing
+# copy, then append it once so it ends up at the tail.
+last=$(iptables -S FORWARD | tail -1)
+if [ "$last" != "-A FORWARD -j REJECT --reject-with icmp-host-prohibited" ]; then
+    while iptables -C FORWARD -j REJECT --reject-with icmp-host-prohibited 2>/dev/null; do
+        iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+    done
+    iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
+fi
 flock -u 200
