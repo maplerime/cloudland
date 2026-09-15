@@ -24,6 +24,14 @@ instance_uuid=${12:-$ID}
 traffic_billing=${13:-false}
 state="failed"
 
+blacklisted=""
+
+# Undo the source-hyper fence when target prep fails, so the source is no longer fenced.
+# No-op unless the blacklist was actually applied.
+cleanup_blacklist() {
+    [ -n "$blacklisted" ] && ./async_job/clear_hyper_vhost.sh $ID $source_hyper <<< "$volumes" >/dev/null 2>&1
+}
+
 if [ -z "$wds_address" ]; then
     state="not_supported"
     echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'migration is only supported with shared storage'"
@@ -44,8 +52,10 @@ vm_meta=$cache_dir/meta/$vm_ID.iso
 get_wds_token
 volumes=$(jq -r .volumes <<< $metadata)
 if [ "$migration_type" = "cold" ]; then
+    blacklisted="yes"
     ./blacklist_hyper_vhost.sh $ID $source_hyper <<< $volumes
     if [ $? -ne 0 ]; then
+        cleanup_blacklist
         echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to put vhost into blacklist'"
         exit 1
     fi
@@ -66,6 +76,7 @@ while [ $i -lt $nvolume ]; do
     uss_ret=$(wds_curl PUT "api/v2/sync/block/vhost/bind_uss" "{\"vhost_id\": \"$vhost_id\", \"uss_gw_id\": \"$uss_id\", \"lun_id\": \"$volume_id\", \"is_snapshot\": false}")
     ret_code=$(echo $uss_ret | jq -r .ret_code)
     if [ "$ret_code" != "0" ]; then
+        cleanup_blacklist
         echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to bind uss for vhost'"
 	exit 1
     fi
@@ -149,6 +160,9 @@ if [ "$migration_type" = "cold" ]; then
         virsh undefine --nvram $vm_ID
         rm -f ${cache_dir}/meta/${vm_ID}.iso
         rm -rf $xml_dir/$vm_ID
+        cleanup_blacklist
+        echo "|:-COMMAND-:| migrate_vm.sh '$migrate_ID' '$task_ID' '$ID' '$SCI_CLIENT_ID' '$state' 'failed to start vm on target'"
+        exit 1
     fi
 fi
 

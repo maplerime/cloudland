@@ -47,6 +47,9 @@ type HostState struct {
 	// Spread/affinity data
 	InstanceCount int // number of VMs on this hyper (for SpreadWeigher)
 
+	// Operating system (Hyper.OS); used by the live-migration OS guard in SelectHost.
+	OS string
+
 	// Metadata
 	LastReportAt time.Time
 
@@ -169,6 +172,7 @@ func loadHostStates(ctx context.Context, zoneID int64) ([]*HostState, error) {
 			LoadAvg5m:       r.LoadAvg5m,
 			CpuIdlePct:      r.CpuIdlePct,
 			InstanceCount:   instCountMap[h.Hostid],
+			OS:              h.OS,
 			LastReportAt:    r.UpdatedAt,
 		}
 		if h.Zone != nil {

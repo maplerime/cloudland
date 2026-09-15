@@ -119,7 +119,7 @@ func ApplyInterface(ctx context.Context, instance *model.Instance, iface *model.
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), updateMeta, jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/sync_nic_info.sh '%d' '%s' '%s' '%t'<<EOF\n%s\nEOF\n", instance.ID, instance.Hostname, GetImageOSCode(ctx, instance), updateMeta, jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Update vm nic command execution failed", err)

@@ -65,7 +65,7 @@ func execSourceMigrate(ctx context.Context, instance *model.Instance, migration 
 	}
 	if sourceHyper.Status != 10 {
 		control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-		command := fmt.Sprintf("%s '%d' '%d' '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migrationType, volumesJson)
+		command := fmt.Sprintf("%s '%d' '%d' '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF\n", migrationScript, migration.ID, taskID, instance.ID, instance.RouterID, targetHyper.Hostname, migrationType, volumesJson)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {
 			logger.Error("Source migration command execution failed", err)
@@ -341,7 +341,7 @@ func MigrateVM(ctx context.Context, args []string) (status string, err error) {
 				return
 			}
 			control := fmt.Sprintf("inter=%d", migration.SourceHyper)
-			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, primaryIface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
+			command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_second_ips.sh '%d' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, primaryIface.MacAddr, GetImageOSCode(ctx, instance), oldAddrsJson)
 			err = HyperExecute(ctx, control, command)
 			if err != nil {
 				logger.Error("Execute clear second ips failed", err)

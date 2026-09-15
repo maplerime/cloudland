@@ -310,7 +310,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			// Fallback to hyper group selection
 			control = "select=" + hyperGroup + " " + rcNeeded
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -369,7 +369,7 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/rescue_vm.sh '%d' '%s.%s' '%s' '%d' '%d' '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, instance.Hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, rescueImage.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed", err)
@@ -840,7 +840,7 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 
 	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)
@@ -1342,7 +1342,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	if instance.Hyper == -1 {
 		control = "toall="
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Delete vm command execution failed ", err)

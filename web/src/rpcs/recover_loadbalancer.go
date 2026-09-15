@@ -169,7 +169,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			logger.Infof("LB %d - Successfully set VRRP IP for MASTER on hyper %d", loadBalancer.ID, hyperID)
 			logger.Infof("LB %d - Creating MASTER keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface1.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF",
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'MASTER'<<EOF\n%s\nEOF\n",
 				routerID, vrrpID, vrrpVlan, vrrpIface1.Address.Address, vrrpIface1.MacAddr,
 				vrrpIface2.Address.Address, vrrpIface2.MacAddr, jsonData)
 			err = HyperExecute(ctx, control, command)
@@ -194,7 +194,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 			logger.Infof("LB %d - Successfully set VRRP IP for BACKUP on hyper %d", loadBalancer.ID, hyperID)
 			logger.Infof("LB %d - Creating BACKUP keepalived config on hyper %d", loadBalancer.ID, hyperID)
 			control = fmt.Sprintf("inter=%d", vrrpIface2.Hyper)
-			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF",
+			command = fmt.Sprintf("/opt/cloudland/scripts/backend/create_keepalived_conf.sh '%d' '%d' '%d' '%s' '%s' '%s' '%s' 'BACKUP'<<EOF\n%s\nEOF\n",
 				routerID, vrrpID, vrrpVlan, vrrpIface2.Address.Address, vrrpIface2.MacAddr,
 				vrrpIface1.Address.Address, vrrpIface1.MacAddr, jsonData)
 			err = HyperExecute(ctx, control, command)
@@ -247,7 +247,7 @@ func RecoverLoadbalancer(ctx context.Context, args []string) (status string, err
 		// Execute haproxy config creation on the hypervisor
 		logger.Infof("LB %d - Executing haproxy config creation on hyper %d", loadBalancer.ID, hyperID)
 		control := fmt.Sprintf("inter=%d", hyperID)
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF",
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF\n",
 			loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, haproxyJsonData)
 		err = HyperExecute(ctx, control, command)
 		if err != nil {

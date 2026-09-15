@@ -71,7 +71,7 @@ func (a *BackendAdmin) CreateHaproxyConf(ctx context.Context, updatedlistener *m
 		return
 	}
 	control := "toall=" + hyperGroup
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF", loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, jsonData)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/create_haproxy_conf.sh '%d' '%d' '%d'<<EOF\n%s\nEOF\n", loadBalancer.RouterID, loadBalancer.ID, loadBalancer.VrrpInstance.ID, jsonData)
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("create haproxy conf execution failed", err)

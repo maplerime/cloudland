@@ -244,6 +244,213 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/api_keys": {
+            "get": {
+                "description": "list API keys for the current user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APIKey"
+                ],
+                "summary": "list API keys",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.APIKeyListResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "create a new API key; the plain-text key is returned once only",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APIKey"
+                ],
+                "summary": "create an API key",
+                "parameters": [
+                    {
+                        "description": "API key payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.APIKeyPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api_keys/{id}": {
+            "get": {
+                "description": "get an API key by UUID",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APIKey"
+                ],
+                "summary": "get an API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "delete an API key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APIKey"
+                ],
+                "summary": "delete an API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "description": "enable or disable an API key",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "APIKey"
+                ],
+                "summary": "update an API key",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "API Key UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Patch payload",
+                        "name": "payload",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.APIKeyPatchPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.APIKeyResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/backups": {
             "get": {
                 "description": "list volume backups/snapshots by volume UUID and backup type",
@@ -2009,6 +2216,62 @@ const docTemplatealarm_v1 = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.ImageResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/images/{id}/export": {
+            "post": {
+                "description": "export an image to a file on the USS node; poll /api/v1/tasks/{task_id} for status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "export an image",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Image UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Export payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.ImageExportPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "400": {
@@ -3861,6 +4124,215 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/metrics/blocked-ips": {
+            "get": {
+                "description": "Returns every IP the region is dropping right now, resolved to the\ninstance owning it when the address is ours. Data comes from the\nipset exported by each compute node as Prometheus metrics, so an\naddress appears within about 90 seconds of being blocked.\n\nThe window here is fixed and bounded by the detection thresholds, so it\nis not normally large enough to be narrowed; if it ever is, truncated\nsays so and the only remedy is a filter. Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "List currently blocked IPs",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Exact address to filter by",
+                        "name": "ip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Compute node to filter by",
+                        "name": "hostname",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "src",
+                            "dst",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Filter by blocked side",
+                        "name": "block_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 1000; anything larger is clamped to 10000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BlockedIPListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid offset or limit, or the window holds more than one query may carry and no part of it that fits holds any blocking",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Prometheus unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/blocked-ips/history": {
+            "get": {
+                "description": "Returns blockings that started inside [start, end], including the ones\nstill in force, so results overlap with the current list on purpose.\nOwnership is resolved as of the time of the block, which stays correct\nafter a VM is deleted or an address reused. An address with no traffic\nmetrics anywhere in the window is looked up again over the whole\nretention period, so a VM that was powered off while it was blocked\nstill resolves -- owner_state says when that happened. The window\nitself cannot reach past the 30 day Prometheus retention.\n\nBefore any data is moved the window is measured, and if it holds more\nthan one query may carry it is narrowed to the most recent slice that\nfits: truncated then says so and window_start reports what was served.\nAdmin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "List historical IP blockings",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Window start, RFC3339 or 2006-01-02T15:04 (default: 24h before end)",
+                        "name": "start",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Window end, same formats (default: now)",
+                        "name": "end",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Minutes behind UTC, as JavaScript getTimezoneOffset() reports it; needed only when start/end carry no zone",
+                        "name": "timezone_offset_minutes",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exact address to filter by",
+                        "name": "ip",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Compute node to filter by",
+                        "name": "hostname",
+                        "in": "query"
+                    },
+                    {
+                        "enum": [
+                            "src",
+                            "dst",
+                            "unknown"
+                        ],
+                        "type": "string",
+                        "description": "Filter by blocked side",
+                        "name": "block_type",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Rows to skip (default 0)",
+                        "name": "offset",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 1000; anything larger is clamped to 10000)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.BlockedIPListResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid time range, offset or limit, or the range holds more than one query may carry and the most recent part of it that fits holds no blocking",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Prometheus unreachable",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/metrics/ip-instance-map": {
+            "get": {
+                "description": "Returns every address the region owns -- floating and classic alike --\ntogether with the instance holding it. Built for monitoring exporters\nthat need to attribute an arbitrary address back to an instance.\n\nAn empty instance_id means the address is ours but holds no VM right\nnow, which is the normal state of a reserved address, a detached\nfloating IP and a load balancer VIP. That is the case traffic metrics\ncannot express, since a VM only emits them while it runs.\n\nThe result is not paged: it is a lookup table meant to be consumed\nwhole. Two queries back it and no work is done per row, so the cost\ndoes not grow with how often it is scraped. Admin only.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "List IP to instance mappings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.IPInstanceMapListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Failed to query the mapping",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/migrations": {
             "get": {
                 "description": "list migrations",
@@ -5210,6 +5682,214 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "/traffic-billing": {
+            "get": {
+                "description": "List the instances currently marked as traffic billing. The underlying\nquery applies no explicit ORDER BY, so ordering within a page is\nwhatever the DB returns. Admin permission required.\n\nThe same handler also serves GET /traffic-billing/{uuid}, a lookup of\none instance by its UUID. That variant ignores the paging and query\nparameters below and returns the identical response shape with the one\nmatching entry in \"data\" plus a fixed meta of total/current_page/\nper_page/total_pages = 1; an instance that is not marked comes back as\n404 NOT_FOUND. It is not documented as a separate operation here\nbecause one Go handler carries one annotation block.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "list traffic billing instances",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "default": 1,
+                        "description": "Page number, 1-based; values below 1 fall back to 1",
+                        "name": "page",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "default": 20,
+                        "description": "Entries per page, valid range 1-1000; out-of-range values fall back to 20",
+                        "name": "page_size",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by instance UUID substring (SQL LIKE %query%); empty means no filter",
+                        "name": "query",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingListResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND: only for the /{uuid} variant, instance is not marked as traffic billing",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB count or query failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/traffic-billing/sync": {
+            "post": {
+                "description": "Push the complete set of instances that should be traffic billing from\nthe DB to every compute node at once, so each node rebuilds its local\ntraffic-billing map from that list. Use it to repair nodes that drifted\n(missed a create/delete, or were rebuilt). Admin permission required.\n\nTakes no request body and accepts no caller-supplied list: the DB is\nalways the source of truth, so \"sync\" only ever means DB-to-compute-node\nhere, never the reverse. Success means the broadcast was dispatched to\nevery node, not that every node has finished applying it.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "broadcast the traffic billing list to all compute nodes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingSyncResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB read or broadcast dispatch failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/traffic-billing/{uuid}": {
+            "post": {
+                "description": "Mark one instance as traffic billing, then push the mapping to the\ncompute node hosting it so that node begins exporting the instance's\n15-minute traffic metrics. Being called is the only signal: no\nbilling-type judgement happens server side. Takes no request body --\nthe instance UUID in the path is the entire input. Rejects an\ninstance that is already marked rather than silently succeeding, and\nrejects one with no hypervisor assigned. Admin permission required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "mark an instance as traffic billing",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingCreateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "INVALID_STATE: instance has no hypervisor assigned",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "INSTANCE_NOT_FOUND: no such instance",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "409": {
+                        "description": "ALREADY_MARKED: instance is already traffic billing",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB write or compute-node push failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Remove one instance's traffic-billing mark and tell its compute node\nto stop exporting the instance's traffic metrics. An instance that was\nnever marked is rejected with NOT_FOUND rather than reported as a\nsuccessful no-op, so a typo'd UUID does not look like it worked.\nAdmin permission required.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "unmark an instance as traffic billing",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "uuid",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingDeleteResponse"
+                        }
+                    },
+                    "403": {
+                        "description": "PERMISSION_DENIED: admin permission required",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "NOT_FOUND: instance is not currently marked as traffic billing",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "INTERNAL_ERROR: DB delete or compute-node push failed",
+                        "schema": {
+                            "$ref": "#/definitions/apis.TrafficBillingErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/users": {
             "get": {
                 "description": "list users",
@@ -5601,6 +6281,53 @@ const docTemplatealarm_v1 = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apis.VolumeResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/volumes/{id}/export": {
+            "post": {
+                "description": "export a volume to a file on the USS node; poll /api/v1/tasks/{task_id} for status",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "export a volume",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Volume UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     },
                     "400": {
@@ -6073,6 +6800,87 @@ const docTemplatealarm_v1 = `{
         }
     },
     "definitions": {
+        "apis.APIKeyListResponse": {
+            "type": "object",
+            "properties": {
+                "api_keys": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.APIKeyResponse"
+                    }
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "offset": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.APIKeyPatchPayload": {
+            "type": "object",
+            "properties": {
+                "disabled": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "apis.APIKeyPayload": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "maxLength": 255
+                },
+                "expires_at": {
+                    "description": "RFC-like \"2006-01-02 15:04:05.000000\" or empty for no expiry",
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 64,
+                    "minLength": 2
+                }
+            }
+        },
+        "apis.APIKeyResponse": {
+            "type": "object",
+            "properties": {
+                "api_key": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "disabled": {
+                    "type": "boolean"
+                },
+                "expires_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "owner": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.AddressInfo": {
             "type": "object",
             "properties": {
@@ -6272,6 +7080,113 @@ const docTemplatealarm_v1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.BlockedIPListResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "description": "The page itself, newest blocking first.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.BlockedIPResponse"
+                    }
+                },
+                "limit": {
+                    "description": "Number of entries in this page.",
+                    "type": "integer"
+                },
+                "measured_samples": {
+                    "description": "Raw samples behind the window as requested, present only when truncated is\nset. This is the figure that overflowed, so comparing it against how much\nof the range was actually served says how much further to narrow, or how\nmuch a filter would have to cut.",
+                    "type": "integer"
+                },
+                "offset": {
+                    "description": "Offset actually applied, clamped to the result size.",
+                    "type": "integer"
+                },
+                "requested_start": {
+                    "description": "The start originally asked for, present only when truncated is set.",
+                    "type": "string"
+                },
+                "total": {
+                    "description": "Number of blockings matching the query, before paging.\n\nThese are blocking episodes rather than samples, and how finely they\nseparate depends on the window: two blocks of one address merge into one\nepisode when they sit closer together than twice the sample step, and that\nstep grows with the window. The same data therefore yields fewer episodes\nover a month than over an hour, so this is not an absolute count of times\nan address was blocked.",
+                    "type": "integer"
+                },
+                "truncated": {
+                    "description": "Set when the requested window held more data than one query may move, so\nwindow_start was moved forward to the most recent slice that fits. The\nrows returned are complete and correctly counted for the window reported\nhere -- they are simply not the whole window that was asked for. Narrow\nthe range or add a filter to see the rest.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "window_end": {
+                    "description": "End of the window actually queried, UTC.",
+                    "type": "string",
+                    "example": "2026-08-27 07:12:31.000000"
+                },
+                "window_start": {
+                    "description": "Start of the window actually queried, UTC. Equal to what was requested\nunless truncated is set.",
+                    "type": "string",
+                    "example": "2026-08-26 07:12:31.000000"
+                }
+            }
+        },
+        "apis.BlockedIPResponse": {
+            "type": "object",
+            "properties": {
+                "block_type": {
+                    "description": "Which side of the half-open connection was blocked: src for the SYN\nsource, dst for its destination. unknown is defensive only -- the exporter\nalways labels the set it read, so it does not occur in practice.",
+                    "type": "string",
+                    "example": "src"
+                },
+                "blocked_at": {
+                    "description": "When the block started. Never earlier than the real block, only later: the\ncollection delay adds up to 60s and the sample grid up to one step. The\ncurrent list is on a fixed 30s grid; the history grid scales with the\nwindow, 30s on a narrow one up to 300s on a month, so the wider the window\nthe coarser this is. Not a to-the-second timestamp.",
+                    "type": "string",
+                    "example": "2026-08-26 07:12:31.000000"
+                },
+                "direction": {
+                    "description": "Which side of the flood this address was on, derived from block_type plus\nwhether it resolved to one of our instances. One incident always yields\ntwo rows, the attacker and its target. One of: vm_compromised (our VM is\nflooding outward), target_under_attack (an address being flooded that we\ncannot attribute), external_attacker (an address flooding us that is no\nrunning VM of ours), vm_under_attack (our VM being flooded), unknown.",
+                    "type": "string",
+                    "example": "external_attacker"
+                },
+                "expires_at": {
+                    "description": "Derived as blocked_at plus the one hour ipset timeout.",
+                    "type": "string",
+                    "example": "2026-08-26 08:12:31.000000"
+                },
+                "hostname": {
+                    "description": "Compute node that installed the block.",
+                    "type": "string",
+                    "example": "sv6-cland-compute-0"
+                },
+                "instance_id": {
+                    "description": "Instance UUID owning the address, or NA when no instance holds it. NA\nbeside ours=true is normal rather than a gap: a reserved address, a\ndetached floating IP and a load balancer VIP are all ours and hold no VM.",
+                    "type": "string",
+                    "example": "NA"
+                },
+                "ip": {
+                    "description": "The blocked address.",
+                    "type": "string",
+                    "example": "137.184.24.227"
+                },
+                "lb_id": {
+                    "description": "Load balancer holding the address, non-empty only where instance_id is NA.\nThe only thing on such a row that points anywhere: there is no VM behind\nthe address, and this names the load balancer that is behind it instead.",
+                    "type": "string",
+                    "example": ""
+                },
+                "ours": {
+                    "description": "Whether the address belongs to this region at all, which is what decides\ndirection. Independent of instance_id for the reason above.",
+                    "type": "boolean",
+                    "example": false
+                },
+                "owner_state": {
+                    "description": "How far the mapping could be trusted. One of:\n\n  \"\"             resolved cleanly, or cleanly found not to be ours\n  conflict       the address maps to more than one instance, so instance_id\n                 names one candidate among several and must not be acted on\n  unavailable    the mapping was not being published across the window, so\n                 neither the hit nor the miss means anything and direction\n                 is reported as unknown",
+                    "type": "string",
+                    "example": ""
+                },
+                "source": {
+                    "description": "Which lookup answered: metric, or none for an external address.",
+                    "type": "string",
+                    "example": "none"
                 }
             }
         },
@@ -7068,6 +7983,68 @@ const docTemplatealarm_v1 = `{
                 },
                 "zone_name": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.IPInstanceMapListResponse": {
+            "type": "object",
+            "properties": {
+                "entries": {
+                    "description": "Every address we own. Not paged: this is a lookup table meant to be\nconsumed whole, and paging it would only invite a torn read across pages.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.IPInstanceMappingResponse"
+                    }
+                },
+                "total": {
+                    "description": "Number of mappings returned.",
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.IPInstanceMappingResponse": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "description": "Which kind of address this is. One of: floating, classic.",
+                    "type": "string",
+                    "example": "floating"
+                },
+                "instance_id": {
+                    "description": "UUID of the instance holding the address. Empty is meaningful rather than\nmissing: the address is ours but holds no VM, which is the normal state of\na reserved address, a detached floating IP and a load balancer VIP.",
+                    "type": "string",
+                    "example": "0376dec9-1891-492f-aa00-1e67afe23a7a"
+                },
+                "ip": {
+                    "description": "The address itself, without any mask.",
+                    "type": "string",
+                    "example": "107.148.235.43"
+                },
+                "lb_id": {
+                    "description": "Load balancer holding the address, non-empty only for type loadbalancer.\nThose rows have no instance_id, so without this there would be nothing at\nall naming what holds them.\n\nAlways present, empty when it does not apply. Every row carries the same\nsix keys on purpose: a consumer maps them straight onto a fixed label set\nwithout having to test which fields exist.",
+                    "type": "string",
+                    "example": ""
+                },
+                "status": {
+                    "description": "Whether this row's mapping can be trusted. One of:\n\n  ok        the address maps to exactly one instance, or to none at all\n  conflict  the address was found mapping to more than one instance\n\nA conflict row still names an instance, but that instance is one of\nseveral candidates and must not be acted on. The address itself is still\nknown to belong to this region, which is why the row is reported rather\nthan dropped. The instances involved are named in the server log.\n\nDeliberately a closed set of short values: consumers turn it into a label,\nand a free-form message there would make the metric's cardinality depend\non how much had gone wrong.",
+                    "type": "string",
+                    "example": "ok"
+                },
+                "type": {
+                    "description": "Subtype, for floating addresses only; empty for classic. One of: native,\nreserved, floating, site, loadbalancer.",
+                    "type": "string",
+                    "example": "floating"
+                }
+            }
+        },
+        "apis.ImageExportPayload": {
+            "type": "object",
+            "required": [
+                "storage_id"
+            ],
+            "properties": {
+                "storage_id": {
+                    "type": "integer"
                 }
             }
         },
@@ -9127,6 +10104,109 @@ const docTemplatealarm_v1 = `{
                 }
             }
         },
+        "apis.TrafficBillingCreateResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/apis.TrafficBillingResponse"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingDeleteResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "$ref": "#/definitions/apis.TrafficBillingInstanceRef"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingErrorResponse": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                },
+                "instance_uuid": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingInstanceRef": {
+            "type": "object",
+            "properties": {
+                "instance_uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingListResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/apis.TrafficBillingResponse"
+                    }
+                },
+                "meta": {
+                    "$ref": "#/definitions/apis.TrafficBillingMeta"
+                }
+            }
+        },
+        "apis.TrafficBillingMeta": {
+            "type": "object",
+            "properties": {
+                "current_page": {
+                    "type": "integer"
+                },
+                "per_page": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                },
+                "total_pages": {
+                    "type": "integer"
+                }
+            }
+        },
+        "apis.TrafficBillingResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "instance_uuid": {
+                    "type": "string"
+                },
+                "uuid": {
+                    "type": "string"
+                }
+            }
+        },
+        "apis.TrafficBillingSyncResponse": {
+            "type": "object",
+            "properties": {
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
         "apis.UserListResponse": {
             "type": "object",
             "properties": {
@@ -9812,6 +10892,15 @@ const docTemplatealarm_v1 = `{
                 "STaskActionStart": "Start instance",
                 "STaskActionStop": "Stop instance gracefully"
             },
+            "x-enum-descriptions": [
+                "Stop instance gracefully",
+                "Force stop instance",
+                "Start instance",
+                "Restart instance gracefully",
+                "Force restart instance",
+                "Create volume snapshot",
+                "Create volume backup"
+            ],
             "x-enum-varnames": [
                 "STaskActionStop",
                 "STaskActionHardStop",

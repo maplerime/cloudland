@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
+	"strconv"
 	"time"
 
 	. "web/src/common"
@@ -20,6 +22,58 @@ import (
 )
 
 var logger = rlog.MustGetLogger("scheduler")
+
+// osVersionRe extracts the first "<major>.<minor>" version token from an OS string.
+var osVersionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
+
+// parseOSVersion turns an OS string's first "<major>.<minor>" token into a
+// comparable int (major*100 + minor), e.g. "Ubuntu 22.04.3 LTS" -> 2204.
+// ok=false when no version token is found.
+func parseOSVersion(os string) (int, bool) {
+	m := osVersionRe.FindStringSubmatch(os)
+	if m == nil {
+		return 0, false
+	}
+	major, err1 := strconv.Atoi(m[1])
+	minor, err2 := strconv.Atoi(m[2])
+	if err1 != nil || err2 != nil {
+		return 0, false
+	}
+	return major*100 + minor, true
+}
+
+// OSMigrationAllowed reports whether a live migration from sourceOS to targetOS is
+// allowed: target must be the same or newer (22.04 -> 26.04 ok, 26.04 -> 22.04 not).
+// An unparseable OS on either side is allowed (best-effort, never block on unknown).
+func OSMigrationAllowed(sourceOS, targetOS string) bool {
+	srcVer, srcOK := parseOSVersion(sourceOS)
+	if !srcOK {
+		return true
+	}
+	dstVer, dstOK := parseOSVersion(targetOS)
+	if !dstOK {
+		return true
+	}
+	return dstVer >= srcVer
+}
+
+// filterOSCompatible keeps only hosts whose OS is not older than sourceOS
+// (see OSMigrationAllowed). An unparseable source OS keeps all hosts.
+func filterOSCompatible(hosts []*HostState, sourceOS string) []*HostState {
+	if _, ok := parseOSVersion(sourceOS); !ok {
+		return hosts
+	}
+	var result []*HostState
+	for _, h := range hosts {
+		if OSMigrationAllowed(sourceOS, h.OS) {
+			result = append(result, h)
+			continue
+		}
+		logger.Debugf("os_compat: hyper %d OS %q is older than source OS %q, eliminated",
+			h.HyperID, h.OS, sourceOS)
+	}
+	return result
+}
 
 var (
 	ErrNoValidHost       = errors.New("no valid host found")
@@ -110,6 +164,30 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 
 	// Filter out excluded hypers (e.g. migration source)
 	hosts = excludeHypers(hosts, req.ExcludeHypers)
+
+	// Live-migration OS guard: drop targets older than the source so a compatible
+	// host is picked from the rest; if none remain the call fails (caller marks the
+	// task not_doing). Always applied (independent of the configurable filter chain).
+	if req.SourceOS != "" {
+		before := len(hosts)
+		hosts = filterOSCompatible(hosts, req.SourceOS)
+		dlog.FilterSteps = append(dlog.FilterSteps, FilterStep{
+			Name:        "os_compat",
+			InputCount:  before,
+			OutputCount: len(hosts),
+			Eliminated:  before - len(hosts),
+		})
+		if before != len(hosts) {
+			logger.Infof("os_compat: eliminated %d host(s) older than source OS %q (zoneID=%d)",
+				before-len(hosts), req.SourceOS, req.ZoneID)
+		}
+		if len(hosts) == 0 {
+			reason := fmt.Sprintf("no target host with OS newer than or equal to source OS %q (live migration cannot downgrade OS)", req.SourceOS)
+			dlog.RejectReason = reason
+			logger.Warningf("SelectHost failed: %s, zone_id=%d", reason, req.ZoneID)
+			return -1, NewCLError(ErrPlacementNoValidHost, reason, ErrNoValidHost)
+		}
+	}
 
 	// 4. Phase 1: Filter chain (order and members from resolved zone/global config)
 	logger.Debugf("Starting filter chain with %d filter(s) for zoneID=%d", len(filters), req.ZoneID)

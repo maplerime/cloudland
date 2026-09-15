@@ -20,7 +20,7 @@ func init() {
 }
 
 func HyperStatus(ctx context.Context, args []string) (status string, err error) {
-	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model'"
+	//"|:-COMMAND-:| hyper_status.sh '$SCI_CLIENT_ID' '$HOSTNAME' '$cpu' '$total_cpu' '$memory' '$total_memory' '$disk' '$total_disk' '$state' '$vtep_ip' '$ZONE_NAME' '$cpu_over_rate' '$mem_over_rate' '$disk_over_rate' '$cpu_model' '$hp_2m_free' '$hp_1g_free' '$hp_size_kb' '$load_1m' '$load_5m' '$load_15m' '$cpu_idle' '$os_info'"
 	logger.Debugf("HyperStatus updates %+v", args)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -117,16 +117,24 @@ func HyperStatus(ctx context.Context, args []string) (status string, err error) 
 	}
 	cpuModel := args[15]
 	// end PET-769
+	osInfo := ""
+	if argn >= 24 {
+		osInfo = args[23]
+	}
 	// PET-1218 fix hyper status
 	logger.Debugf("Updating hypervisor %s status to %d", hyperName, hyperStatus)
-	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Updates(map[string]interface{}{
+	updates := map[string]interface{}{
 		"hostname":  hyperName,
 		"status":    hyperStatus,
 		"cpu_model": cpuModel,
 		"virt_type": "kvm-x86_64",
 		"zone":      zone,
 		"host_ip":   hostIP,
-	}).Error
+	}
+	if osInfo != "" {
+		updates["os"] = osInfo
+	}
+	err = db.Model(&model.Hyper{}).Where("hostid = ?", hyperID).Updates(updates).Error
 	if err != nil {
 		logger.Error("Failed to update hyper", err)
 		return
