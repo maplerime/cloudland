@@ -93,6 +93,34 @@ def get_deleted_volumes(db_params, vol_type="all", start_after_id=0):
         conn.close()
 
 
+def get_instance_owners(db_params, instance_ids):
+    """Look up the owning user/org for a set of instances.
+
+    Args:
+        db_params: Database connection parameters.
+        instance_ids: List of instance IDs (the numeric part of 'inst-<ID>').
+
+    Returns:
+        List of dicts with id, hostname, user_id, username, org_id, org_name.
+    """
+    sql = """
+        SELECT i.id, i.hostname, i.creater AS user_id, u.username,
+               i.owner AS org_id, o.name AS org_name
+        FROM instances i
+        LEFT JOIN users u ON u.id = i.creater
+        LEFT JOIN organizations o ON o.id = i.owner
+        WHERE i.id = ANY(%s)
+    """
+    conn = _connect(db_params)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, (list(instance_ids),))
+            columns = [desc[0] for desc in cur.description]
+            return [dict(zip(columns, row)) for row in cur.fetchall()]
+    finally:
+        conn.close()
+
+
 def get_image_volume_ids(db_params):
     """Get all WDS volume IDs from image_storages table.
 
