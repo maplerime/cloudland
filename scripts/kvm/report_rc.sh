@@ -88,7 +88,7 @@ function halfday_job()
         [[ "$last_halfday" == "$current_halfday" ]] && return
     fi
 
-    ./generate_vm_instance_map.sh full
+    sudo $base_dir/generate_vm_instance_map.sh full
     # Different action name on purpose -- vm_traffic_billing_map has no "full".
     # vm_instance_map's "full" rescans XML_DIR and truly rebuilds; the traffic
     # billing metric is opt-in per VM, so rescanning XML_DIR there would wrongly
@@ -98,7 +98,7 @@ function halfday_job()
     # Rebuilding from the authoritative DB list is operator-triggered via clapi's
     # BroadcastSync; see that function's comment for why there is no scheduled
     # equivalent.
-    ./generate_vm_traffic_billing_map.sh gc
+    sudo $base_dir/generate_vm_traffic_billing_map.sh gc
     echo "$current_halfday" > "$state_file"
 }
 
