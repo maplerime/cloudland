@@ -61,10 +61,10 @@ func (w *SpreadWeigher) Score(req *scheduler.PlacementRequest, h *scheduler.Host
 // triggered — used only to make logs and decision records readable, never for scoring.
 func (w *SpreadWeigher) Explain(req *scheduler.PlacementRequest) string {
 	if w.packThreshold <= 0 {
-		return "打包已禁用(pack_vcpu_threshold=0)，统一打散：选空闲vCPU最多的节点"
+		return "pack disabled (pack_vcpu_threshold=0), always spread: prefer the host with the most free vCPU"
 	}
 	if w.isPack(req) {
-		return fmt.Sprintf("打包(best-fit)：请求%d核 ≤ 阈值%d核，选空闲vCPU最少但能容纳的节点", req.VCPUs, w.packThreshold)
+		return fmt.Sprintf("pack (best-fit): request %d vCPUs <= threshold %d, prefer the host with the least free vCPU that still fits", req.VCPUs, w.packThreshold)
 	}
-	return fmt.Sprintf("打散(worst-fit)：请求%d核 > 阈值%d核，选空闲vCPU最多的节点", req.VCPUs, w.packThreshold)
+	return fmt.Sprintf("spread (worst-fit): request %d vCPUs > threshold %d, prefer the host with the most free vCPU", req.VCPUs, w.packThreshold)
 }

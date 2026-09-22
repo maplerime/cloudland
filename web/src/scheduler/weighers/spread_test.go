@@ -55,15 +55,15 @@ func TestSpreadWeigher_Score_ThresholdZeroDisablesPack(t *testing.T) {
 func TestSpreadWeigher_Explain(t *testing.T) {
 	w := &SpreadWeigher{multiplier: 1.0, packThreshold: 4}
 
-	if got := w.Explain(&scheduler.PlacementRequest{VCPUs: 2}); !strings.Contains(got, "打包") {
-		t.Errorf("Explain(2 vCPUs, threshold=4) = %q, want it to mention 打包(pack)", got)
+	if got := w.Explain(&scheduler.PlacementRequest{VCPUs: 2}); !strings.Contains(got, "pack") {
+		t.Errorf("Explain(2 vCPUs, threshold=4) = %q, want it to mention pack", got)
 	}
-	if got := w.Explain(&scheduler.PlacementRequest{VCPUs: 6}); !strings.Contains(got, "打散") {
-		t.Errorf("Explain(6 vCPUs, threshold=4) = %q, want it to mention 打散(spread)", got)
+	if got := w.Explain(&scheduler.PlacementRequest{VCPUs: 6}); !strings.Contains(got, "spread") {
+		t.Errorf("Explain(6 vCPUs, threshold=4) = %q, want it to mention spread", got)
 	}
 
 	disabled := &SpreadWeigher{multiplier: 1.0, packThreshold: 0}
-	if got := disabled.Explain(&scheduler.PlacementRequest{VCPUs: 1}); !strings.Contains(got, "禁用") {
-		t.Errorf("Explain with threshold=0 = %q, want it to mention 禁用(disabled)", got)
+	if got := disabled.Explain(&scheduler.PlacementRequest{VCPUs: 1}); !strings.Contains(got, "disabled") {
+		t.Errorf("Explain with threshold=0 = %q, want it to mention disabled", got)
 	}
 }
