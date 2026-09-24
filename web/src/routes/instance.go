@@ -595,7 +595,12 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 	}
 
 	if needMigrate {
-		// Auto-migrate then resize: update instance with new spec, create migration with pending resize
+		// Auto-migrate then resize: update instance with new spec, create migration with pending resize.
+		// Status is intentionally left alone here (still shutoff/running/paused) - migrationAdmin.Create
+		// below re-locks the instance row and requires one of those states to accept it; it sets
+		// InstanceStatusMigrating itself once the migration is actually validated and dispatched.
+		// Writing InstanceStatusMigrating here first used to make Create's own precondition check
+		// see the instance as already migrating and silently skip it (no migration row, no error).
 		instance.Cpu = cpu
 		instance.Memory = memory
 		if instance.Disk == 0 {
@@ -603,7 +608,6 @@ func (a *InstanceAdmin) Resize(ctx context.Context, instance *model.Instance, cp
 		}
 		err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{
 			"flavor_id": 0,
-			"status":    model.InstanceStatusMigrating,
 			"memory":    memory,
 			"cpu":       cpu,
 			"disk":      instance.Disk,
