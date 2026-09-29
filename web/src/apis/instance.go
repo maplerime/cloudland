@@ -35,6 +35,16 @@ type InstanceSetUserPasswordPayload struct {
 	UserName string `json:"user_name" binding:"required,min=2,max=32"`
 }
 
+type InstanceUpdateKeysPayload struct {
+	Action string           `json:"action" binding:"required,oneof=add remove reset"`
+	Keys   []*BaseReference `json:"keys" binding:"omitempty,lte=16"`
+	User   string           `json:"user" binding:"omitempty,max=32"`
+}
+
+type InstanceUpdateKeysResponse struct {
+	Task *BaseReference `json:"task"`
+}
+
 type InstanceReinstallPayload struct {
 	Image     *BaseReference   `json:"image" binding:"omitempty"`
 	Flavor    string           `json:"flavor" binding:"omitempty"`
@@ -217,6 +227,59 @@ func (v *InstanceAPI) SetUserPassword(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, nil)
+}
+
+// @Summary update ssh keys of a running instance
+// @Description add, remove or reset the authorized_keys of a guest user through the guest agent; the result is reported by the returned task
+// @tags Compute
+// @Accept  json
+// @Produce json
+// @Param   id  path  string  true  "Instance UUID"
+// @Param   message	body   InstanceUpdateKeysPayload  true   "Instance update keys payload"
+// @Success 200 {object} InstanceUpdateKeysResponse
+// @Failure 400 {object} common.APIError "Bad request"
+// @Failure 401 {object} common.APIError "Not authorized"
+// @Router /instances/{id}/update_keys [post]
+func (v *InstanceAPI) UpdateKeys(c *gin.Context) {
+	ctx := c.Request.Context()
+	uuID := c.Param("id")
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, uuID)
+	if err != nil {
+		logger.Errorf("Failed to get instance %s, %+v", uuID, err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid instance query", err)
+		return
+	}
+	payload := &InstanceUpdateKeysPayload{}
+	if err = c.ShouldBindJSON(payload); err != nil {
+		logger.Errorf("Failed to bind JSON, %+v", err)
+		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
+		return
+	}
+	if payload.Action != "reset" && len(payload.Keys) == 0 {
+		ErrorResponse(c, http.StatusBadRequest, "At least one key must be provided", nil)
+		return
+	}
+	var keys []*model.Key
+	for _, ky := range payload.Keys {
+		key, err := keyAdmin.GetKey(ctx, ky)
+		if err != nil {
+			logger.Errorf("Failed to get key %+v, %+v", ky, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid key", err)
+			return
+		}
+		keys = append(keys, key)
+	}
+	task, err := instanceAdmin.UpdateKeys(ctx, instance, payload.Action, payload.User, keys)
+	if err != nil {
+		logger.Errorf("Update keys failed, %+v", err)
+		code := http.StatusBadRequest
+		if task != nil { // task created, then DB or HyperExecute failed: internal error
+			code = http.StatusInternalServerError
+		}
+		ErrorResponse(c, code, "Update keys failed", err)
+		return
+	}
+	c.JSON(http.StatusOK, &InstanceUpdateKeysResponse{Task: &BaseReference{ID: task.UUID}})
 }
 
 // @Summary reinstall a instance
