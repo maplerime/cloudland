@@ -1313,7 +1313,7 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Error("Failed to cleanup rule links", cleanupErr)
 	}
 	instance.Status = model.InstanceStatusDeleting
-	err = db.Model(instance).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
+	err = db.Model(&model.Instance{}).Where("id = ?", instance.ID).Updates(map[string]interface{}{"status": model.InstanceStatusDeleting}).Error
 	if err != nil {
 		logger.Errorf("Failed to mark vm as deleting ", err)
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to mark vm as deleting", err)
