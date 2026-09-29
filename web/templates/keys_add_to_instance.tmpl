@@ -1,0 +1,65 @@
+{{template "_head" .}}
+<div class="user signup">
+	<div class="ui middle very relaxed page grid">
+        <div class="column" >
+            <form class="ui form" action="{{.Link}}" method="post">
+                <h3 class="ui top attached header">
+                    {{.i18n.Tr "Add to Instance"}}
+                </h3>
+                <div class="ui attached segment">
+                    <div class="inline field">
+                        <label for="name">{{.i18n.Tr "Key"}}</label>
+                        <input id="name" name="name" value="{{ .Key.Name }}" disabled>
+                    </div>
+                    <div class="required inline field">
+                        <label for="instance">{{.i18n.Tr "Instance"}}</label>
+                        <div class="ui mini icon input" style="margin-bottom:5px;max-width:300px">
+                            <input type="text" id="instanceSearch" placeholder="{{.i18n.Tr "Search"}} ID / Name..." autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();$(this).trigger('input');}">
+                            <i class="search icon link" onclick="$('#instanceSearch').trigger('input')"></i>
+                        </div>
+                        <div class="ui selection dropdown" id="instanceDropdown">
+                            <input id="instance" name="instance" type="hidden">
+                            <i class="dropdown icon"></i>
+                            <div class="default text">{{.i18n.Tr "Instance"}}</div>
+                            <div class="menu" id="instanceMenu"></div>
+                        </div>
+                    </div>
+                    <div class="inline field">
+                        <label for="user">{{.i18n.Tr "Target User"}}</label>
+                        <input id="user" name="user" value="root">
+                    </div>
+                    <div class="inline field">
+                        <label></label>
+                        <button class="ui green button">{{.i18n.Tr "Add to Instance"}}</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+	</div>
+</div>
+<script>
+(function(){
+    var timer;
+    function search(q) {
+        // windows instances are excluded: ssh keys only apply to linux guests
+        $.getJSON('/instances/search.json', {q: q, exclude_os: 'windows'}, function(data){
+            var html = '';
+            if (data.results) {
+                for (var i = 0; i < data.results.length; i++) {
+                    var r = data.results[i];
+                    html += '<div class="item" data-value="' + r.value + '">' + $('<div>').text(r.name).html() + '</div>';
+                }
+            }
+            document.getElementById('instanceMenu').innerHTML = html;
+            $('#instanceDropdown').dropdown('refresh');
+        });
+    }
+    $('#instanceSearch').on('input', function(){
+        var q = $(this).val();
+        clearTimeout(timer);
+        timer = setTimeout(function(){ search(q); }, 300);
+    });
+    search('');
+})();
+</script>
+{{template "_footer" .}}

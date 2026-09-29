@@ -34,3 +34,29 @@ func TestGuestUserPattern(t *testing.T) {
 		}
 	}
 }
+
+func TestParseKeyIDs(t *testing.T) {
+	ok := map[string][]int64{
+		"":         nil,
+		"7":        {7},
+		"7,9":      {7, 9},
+		" 7 , 9 ,": {7, 9},
+	}
+	for in, want := range ok {
+		got, err := parseKeyIDs(in)
+		if err != nil || len(got) != len(want) {
+			t.Errorf("parseKeyIDs(%q) = %v, %v, want %v", in, got, err, want)
+			continue
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				t.Errorf("parseKeyIDs(%q) = %v, want %v", in, got, want)
+			}
+		}
+	}
+	for _, in := range []string{"abc", "7,x", "0", "-1"} {
+		if _, err := parseKeyIDs(in); err == nil {
+			t.Errorf("parseKeyIDs(%q) expected error", in)
+		}
+	}
+}

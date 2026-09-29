@@ -1,0 +1,67 @@
+{{template "_head" .}}
+<div class="admin user">
+
+    <div class="ui container">
+
+        <div class="ui grid">
+
+        {{template "_left" .}}
+			<div class="user signup">
+				<div class="ui middle very relaxed page grid">
+					<div class="" >
+						<form class="ui form" action="{{.Link}}" method="post">
+							<h3 class="ui top attached header">
+								{{.i18n.Tr "Update SSH Keys"}}
+							</h3>
+							<div class="ui attached segment">
+								<div class="inline field">
+									<label for="hostname">{{.i18n.Tr "Hostname"}}</label>
+									<input id="hostname" name="hostname" value="{{ .Instance.Hostname }}" disabled>
+								</div>
+								<div class="required inline field">
+									<label for="action">{{.i18n.Tr "Action"}}</label>
+									<div class="ui selection dropdown">
+										<input id="action" name="action" type="hidden" value="add">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "Add Keys"}}</div>
+										<div class="menu">
+											<div class="item" data-value="add">{{.i18n.Tr "Add Keys"}}</div>
+											<div class="item" data-value="remove">{{.i18n.Tr "Remove Keys"}}</div>
+											<div class="item" data-value="reset">{{.i18n.Tr "Reset Keys"}}</div>
+										</div>
+									</div>
+								</div>
+								<div class="inline field">
+									<label for="user">{{.i18n.Tr "Target User"}}</label>
+									<input id="user" name="user" value="root">
+								</div>
+								<div class="inline field">
+									<label for="keys">{{.i18n.Tr "Keys"}}</label>
+									<div class="ui multiple selection dropdown">
+										<input id="keys" name="keys" type="hidden">
+										<i class="dropdown icon"></i>
+										<div class="default text">{{.i18n.Tr "Key"}}</div>
+										<div class="menu">
+											{{ range .Keys }}
+											<div class="item" data-value="{{.ID}}">{{.Name}}</div>
+											{{ end }}
+										</div>
+									</div>
+								</div>
+								<div class="inline field">
+									<label></label>
+									<span class="ui small text">{{.i18n.Tr "Reset_Keys_Warning"}}</span>
+								</div>
+								<div class="inline field">
+									<label></label>
+									<button class="ui green button">{{.i18n.Tr "Update SSH Keys"}}</button>
+								</div>
+							</div>
+						</form>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+{{template "_footer" .}}

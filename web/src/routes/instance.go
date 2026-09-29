@@ -1855,6 +1855,7 @@ func (v *InstanceView) SearchJSON(c *macaron.Context, store session.Store) {
 	} else if q != "" {
 		params.Name = q
 	}
+	params.ExcludeOSCode = c.QueryTrim("exclude_os")
 	_, instances, err := instanceAdmin.List4View(c.Req.Context(), 0, 20, "-created_at", params)
 	if err != nil {
 		c.JSON(500, map[string]interface{}{"success": false, "message": err.Error()})
@@ -2197,6 +2198,87 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 		c.Redirect(redirectTo)
 
 	}
+}
+
+// parseKeyIDs parses the comma separated key IDs posted by the key dropdown.
+// Unlike reinstall it rejects bad IDs instead of skipping them.
+func parseKeyIDs(csv string) (ids []int64, err error) {
+	for _, s := range strings.Split(csv, ",") {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		id, perr := strconv.ParseInt(s, 10, 64)
+		if perr != nil || id <= 0 {
+			return nil, fmt.Errorf("invalid key ID: %s", s)
+		}
+		ids = append(ids, id)
+	}
+	return
+}
+
+func (v *InstanceView) UpdateKeys(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	instanceID := c.ParamsInt64("id")
+	instance, err := instanceAdmin.Get(ctx, instanceID)
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		if instance.Image != nil && instance.Image.OSCode == model.OS_WINDOWS {
+			c.Data["ErrorMsg"] = "SSH keys are not supported on windows instances"
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		_, keys, err := keyAdmin.List(ctx, 0, -1, "", "")
+		if err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Data["Instance"] = instance
+		c.Data["Keys"] = keys
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/update_keys", instanceID)
+		c.HTML(200, "instances_update_keys")
+		return
+	}
+	action := c.QueryTrim("action")
+	if action != "add" && action != "remove" && action != "reset" {
+		c.Data["ErrorMsg"] = "Invalid action: " + action
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	keyIDs, err := parseKeyIDs(c.QueryTrim("keys"))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if action != "reset" && len(keyIDs) == 0 {
+		c.Data["ErrorMsg"] = "At least one key must be selected"
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	var keys []*model.Key
+	for _, id := range keyIDs {
+		key, err := keyAdmin.Get(ctx, id)
+		if err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		keys = append(keys, key)
+	}
+	task, err := instanceAdmin.UpdateKeys(ctx, instance, action, c.QueryTrim("user"), keys)
+	if err != nil {
+		logger.Error("Update keys failed", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect(fmt.Sprintf("/tasks/%d", task.ID))
 }
 
 func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {
