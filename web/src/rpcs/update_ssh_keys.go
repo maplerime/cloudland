@@ -21,8 +21,9 @@ func init() {
 
 func UpdateSSHKeys(ctx context.Context, args []string) (status string, err error) {
 	//|:-COMMAND-:| update_ssh_keys.sh '<task_ID>' '<success|failed>' '<message>'
+	// DecodeCommand drops a trailing empty '' argument, so the message is optional here
 	logger.Debug("UpdateSSHKeys", args)
-	if len(args) < 4 {
+	if len(args) < 3 {
 		logger.Errorf("Invalid args for update_ssh_keys: %v", args)
 		err = fmt.Errorf("wrong params")
 		return
@@ -33,9 +34,13 @@ func UpdateSSHKeys(ctx context.Context, args []string) (status string, err error
 		return
 	}
 	status = args[2]
+	message := ""
+	if len(args) > 3 {
+		message = args[3]
+	}
 	updates := map[string]interface{}{"status": model.TaskStatusSuccess}
 	if status != "success" {
-		updates = map[string]interface{}{"status": model.TaskStatusFailed, "message": args[3]}
+		updates = map[string]interface{}{"status": model.TaskStatusFailed, "message": message}
 	}
 	err = DB().Model(&model.Task{Model: model.Model{ID: taskID}}).Updates(updates).Error
 	if err != nil {

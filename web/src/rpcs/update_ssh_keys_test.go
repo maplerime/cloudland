@@ -12,7 +12,7 @@ import (
 )
 
 func TestUpdateSSHKeys_TooFewArgs(t *testing.T) {
-	status, err := UpdateSSHKeys(context.Background(), []string{"update_ssh_keys.sh", "1", "success"})
+	status, err := UpdateSSHKeys(context.Background(), []string{"update_ssh_keys.sh", "1"})
 	if err == nil || !strings.Contains(err.Error(), "wrong params") {
 		t.Errorf("expected 'wrong params' error, got %v", err)
 	}
@@ -28,5 +28,15 @@ func TestUpdateSSHKeys_InvalidTaskID(t *testing.T) {
 	}
 	if status != "" {
 		t.Errorf("expected empty status, got %q", status)
+	}
+}
+
+// DecodeCommand drops a trailing empty '' argument, so the callback must not
+// require the message to be present.
+func TestUpdateSSHKeys_DecodedEmptyMessageNotWrongParams(t *testing.T) {
+	_, args := DecodeCommand("update_ssh_keys.sh 'abc' 'success' ''")
+	_, err := UpdateSSHKeys(context.Background(), args)
+	if err == nil || strings.Contains(err.Error(), "wrong params") {
+		t.Errorf("expected task ID parse error, got %v (args %q)", err, args)
 	}
 }

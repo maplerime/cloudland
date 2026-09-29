@@ -50,7 +50,7 @@ rm -rf $T
 
 # ---------- update_ssh_keys.sh (fake virsh) ----------
 # Fake virsh behaviour is driven by env: FAKE_STATE, FAKE_OS, FAKE_PING_RC,
-# FAKE_SSHKEYS_RC, FAKE_SSHKEYS_OUT, FAKE_EXEC_RC, FAKE_EXIT_CODE. Every call is logged to $T/virsh.log.
+# FAKE_SSHKEYS_RC, FAKE_SSHKEYS_OUT, FAKE_EXEC_RC, FAKE_EXIT_CODE, FAKE_ERR_DATA, FAKE_NO_PID. Every call is logged to $T/virsh.log.
 T=$(mktemp -d)
 mkdir -p $T/kvm $T/bin
 cp $ROOT/scripts/kvm/update_ssh_keys.sh $ROOT/scripts/kvm/guest_ssh_keys.sh $T/kvm/
@@ -75,8 +75,10 @@ qemu-agent-command)
     case "$req" in
     *guest-ping*) exit ${FAKE_PING_RC:-0} ;;
     *guest-get-osinfo*) echo '{"return":{"id":"'${FAKE_OS:-ubuntu}'"}}' ;;
-    *guest-exec-status*) echo '{"return":{"exited":true,"exitcode":'${FAKE_EXIT_CODE:-0}',"err-data":"'$(printf 'boom' | base64)'"}}' ;;
-    *guest-exec*) [ "${FAKE_EXEC_RC:-0}" -ne 0 ] && { echo "error: command disabled" >&2; exit 1; }; echo '{"return":{"pid":42}}' ;;
+    *guest-exec-status*) echo '{"return":{"exited":true,"exitcode":'${FAKE_EXIT_CODE:-0}',"err-data":"'$(printf '%s' "${FAKE_ERR_DATA-boom}" | base64)'"}}' ;;
+    *guest-exec*) [ "${FAKE_EXEC_RC:-0}" -ne 0 ] && { echo "error: command disabled" >&2; exit 1; }
+        [ -n "$FAKE_NO_PID" ] && { echo '{"return":{}}'; exit 0; }
+        echo '{"return":{"pid":42}}' ;;
     esac ;;
 esac
 EOF
@@ -92,7 +94,7 @@ CB="|:-COMMAND-:| update_ssh_keys.sh '7'"
 check "not running" "$CB 'failed' 'instance is not running'" "$(run_hyper add FAKE_STATE='shut off')"
 check "agent down" "$CB 'failed' 'guest agent not responding'" "$(run_hyper add FAKE_PING_RC=1)"
 check "windows" "$CB 'failed' 'windows is not supported'" "$(run_hyper add FAKE_OS=mswindows)"
-check "A add success" "$CB 'success' ''" "$(run_hyper add)"
+check "A add success" "$CB 'success' 'ok'" "$(run_hyper add)"
 check "A add flags" "1" "$(grep -c '^set-user-sshkeys inst-9 ubuntu --file ' $T/virsh.log)"
 run_hyper remove >/dev/null
 check "A remove flag" "1" "$(grep -c '^set-user-sshkeys inst-9 ubuntu --remove --file ' $T/virsh.log)"
@@ -101,13 +103,19 @@ echo "" | env PATH=$T/bin:$PATH FAKE_LOG=$T/virsh.log bash $T/kvm/update_ssh_key
 check "A reset-empty no --file" "set-user-sshkeys inst-9 ubuntu --reset" "$(grep '^set-user-sshkeys' $T/virsh.log | sed 's/ *$//')"
 check "A-other-error quote stripped" "$CB 'failed' 'error: user dont exist'" \
     "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT="error: user don't exist")"
-check "B fallback success" "$CB 'success' ''" \
+check "B fallback success" "$CB 'success' 'ok'" \
     "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT='error: Command guest-ssh-add-authorized-keys has not been found')"
 check "B used guest-exec" "1" "$(grep -c '"guest-exec","arguments":{"path":"/bin/sh"' $T/virsh.log)"
 check "B exit nonzero" "$CB 'failed' 'boom'" \
     "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT='not supported' FAKE_EXIT_CODE=1)"
 check "B exec disabled" "$CB 'failed' 'guest agent supports neither guest-ssh nor guest-exec'" \
     "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT='has been disabled' FAKE_EXEC_RC=1)"
+check "B empty err-data" "$CB 'failed' 'unknown error'" \
+    "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT='not supported' FAKE_EXIT_CODE=1 FAKE_ERR_DATA=)"
+check "B no pid" "$CB 'failed' 'guest-exec returned no pid'" \
+    "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT='not supported' FAKE_NO_PID=1)"
+check "multi-line message joined" "$CB 'failed' 'line one line two'" \
+    "$(run_hyper add FAKE_SSHKEYS_RC=1 FAKE_SSHKEYS_OUT="$(printf 'line one\nline two')")"
 rm -rf $T
 
 echo "passed: $pass, failed: $fail"
