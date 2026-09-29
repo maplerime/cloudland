@@ -9,6 +9,7 @@ package apis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -255,15 +256,15 @@ func (v *InstanceAPI) UpdateKeys(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Invalid input JSON", err)
 		return
 	}
-	if payload.Action != "reset" && len(payload.Keys) == 0 {
-		ErrorResponse(c, http.StatusBadRequest, "At least one key must be provided", nil)
-		return
-	}
 	var keys []*model.Key
 	for _, ky := range payload.Keys {
 		key, err := keyAdmin.GetKey(ctx, ky)
 		if err != nil {
 			logger.Errorf("Failed to get key %+v, %+v", ky, err)
+			var clErr *CLError
+			if !errors.As(err, &clErr) {
+				err = NewCLError(ErrSSHKeyNotFound, "Key not found", err)
+			}
 			ErrorResponse(c, http.StatusBadRequest, "Invalid key", err)
 			return
 		}

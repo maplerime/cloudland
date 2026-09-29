@@ -471,7 +471,7 @@ func (v *KeyView) AddToInstance(c *macaron.Context, store session.Store) {
 	}
 	instanceID := c.QueryInt64("instance")
 	if instanceID <= 0 {
-		c.Data["ErrorMsg"] = "An instance must be selected"
+		c.Data["ErrorMsg"] = NewCLError(ErrInvalidParameter, "An instance must be selected", nil).Error()
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}

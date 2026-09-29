@@ -909,14 +909,14 @@ func firstKeyLine(pub string) string {
 
 func (a *InstanceAdmin) UpdateKeys(ctx context.Context, instance *model.Instance, action, user string, keys []*model.Key) (task *model.Task, err error) {
 	logger.Debugf("Update keys (%s) for user %s of instance %d", action, user, instance.ID)
-	memberShip := GetMemberShip(ctx)
-	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
-	if err != nil {
-		logger.Error("Failed to check owner")
+	// input validation first: shared by the REST API and both web console forms
+	if action != "add" && action != "remove" && action != "reset" {
+		err = NewCLError(ErrInvalidParameter, "Invalid action: "+action, nil)
+		logger.Error(err)
 		return
 	}
-	if !permit {
-		err = NewCLError(ErrPermissionDenied, "Not authorized to update keys for the instance", nil)
+	if action != "reset" && len(keys) == 0 {
+		err = NewCLError(ErrSSHKeyRequired, "At least one key must be provided", nil)
 		logger.Error(err)
 		return
 	}
@@ -927,7 +927,18 @@ func (a *InstanceAdmin) UpdateKeys(ctx context.Context, instance *model.Instance
 		user = "root"
 	}
 	if !guestUserPattern.MatchString(user) {
-		err = NewCLError(ErrInvalidParameter, "Invalid user name", nil)
+		err = NewCLError(ErrSSHKeyInvalidGuestUser, "Invalid guest user name: "+user, nil)
+		logger.Error(err)
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
+	if err != nil {
+		logger.Error("Failed to check owner")
+		return
+	}
+	if !permit {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update keys for the instance", nil)
 		logger.Error(err)
 		return
 	}
@@ -947,6 +958,7 @@ func (a *InstanceAdmin) UpdateKeys(ctx context.Context, instance *model.Instance
 	}
 	if err = db.Create(task).Error; err != nil {
 		logger.Error("DB failed to create task", err)
+		err = NewCLError(ErrSSHKeyInjectFailed, "Failed to create task", err)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
@@ -955,6 +967,7 @@ func (a *InstanceAdmin) UpdateKeys(ctx context.Context, instance *model.Instance
 	if err = HyperExecute(ctx, control, command); err != nil {
 		logger.Error("Update keys command execution failed", err)
 		db.Model(task).Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": err.Error()})
+		err = NewCLError(ErrSSHKeyInjectFailed, "Failed to dispatch key injection to hypervisor", err)
 		return
 	}
 	return
@@ -2209,7 +2222,7 @@ func parseKeyIDs(csv string) (ids []int64, err error) {
 		}
 		id, perr := strconv.ParseInt(s, 10, 64)
 		if perr != nil || id <= 0 {
-			return nil, fmt.Errorf("invalid key ID: %s", s)
+			return nil, NewCLError(ErrInvalidParameter, "Invalid key ID: "+s, perr)
 		}
 		ids = append(ids, id)
 	}
@@ -2228,7 +2241,7 @@ func (v *InstanceView) UpdateKeys(c *macaron.Context, store session.Store) {
 	}
 	if c.Req.Method == "GET" {
 		if instance.Image != nil && instance.Image.OSCode == model.OS_WINDOWS {
-			c.Data["ErrorMsg"] = "SSH keys are not supported on windows instances"
+			c.Data["ErrorMsg"] = NewCLError(ErrSSHKeyUnsupportedOS, "SSH keys are not supported on windows instances", nil).Error()
 			c.HTML(http.StatusBadRequest, "error")
 			return
 		}
@@ -2244,20 +2257,9 @@ func (v *InstanceView) UpdateKeys(c *macaron.Context, store session.Store) {
 		c.HTML(200, "instances_update_keys")
 		return
 	}
-	action := c.QueryTrim("action")
-	if action != "add" && action != "remove" && action != "reset" {
-		c.Data["ErrorMsg"] = "Invalid action: " + action
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
 	keyIDs, err := parseKeyIDs(c.QueryTrim("keys"))
 	if err != nil {
 		c.Data["ErrorMsg"] = err.Error()
-		c.HTML(http.StatusBadRequest, "error")
-		return
-	}
-	if action != "reset" && len(keyIDs) == 0 {
-		c.Data["ErrorMsg"] = "At least one key must be selected"
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
@@ -2271,7 +2273,7 @@ func (v *InstanceView) UpdateKeys(c *macaron.Context, store session.Store) {
 		}
 		keys = append(keys, key)
 	}
-	task, err := instanceAdmin.UpdateKeys(ctx, instance, action, c.QueryTrim("user"), keys)
+	task, err := instanceAdmin.UpdateKeys(ctx, instance, c.QueryTrim("action"), c.QueryTrim("user"), keys)
 	if err != nil {
 		logger.Error("Update keys failed", err)
 		c.Data["ErrorMsg"] = err.Error()
