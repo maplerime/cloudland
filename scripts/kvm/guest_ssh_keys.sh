@@ -13,6 +13,8 @@ chmod 600 "$f"
 keys=$(cat)
 case "$1" in
 add)
+    # qemu-ga and hand edits may leave no trailing newline; appending would join two keys
+    [ -s "$f" ] && [ -n "$(tail -c 1 "$f")" ] && echo >> "$f"
     printf '%s\n' "$keys" | while IFS= read -r k; do
         [ -z "$k" ] || grep -qxF "$k" "$f" || printf '%s\n' "$k" >> "$f"
     done

@@ -43,6 +43,11 @@ check "reset overwrites" "r1 z" "$(cat $AK)"
 printf '' | $G reset $ME
 check "reset empty clears" "" "$(cat $AK)"
 
+# qemu-ga (virsh set-user-sshkeys) and hand edits leave no trailing newline
+printf 'q1 z' > $AK
+printf 'k1 a\n' | $G add $ME
+check "add after missing trailing newline" "$(printf 'q1 z\nk1 a')" "$(cat $AK)"
+
 err=$(printf 'k1 a\n' | $G add nosuchuser 2>&1 >/dev/null); rc=$?
 check "unknown user rc" "1" "$rc"
 check "unknown user msg" "user nosuchuser not found" "$err"
