@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	. "web/src/common"
@@ -887,6 +888,73 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set password command execution failed", err)
+		return
+	}
+	return
+}
+
+var guestUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+// firstKeyLine returns the first non-empty line of a stored public key.
+// KeyAdmin.Create only validates the first line but stores the raw input,
+// so anything after it must never reach authorized_keys.
+func firstKeyLine(pub string) string {
+	for _, line := range strings.Split(pub, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func (a *InstanceAdmin) UpdateKeys(ctx context.Context, instance *model.Instance, action, user string, keys []*model.Key) (task *model.Task, err error) {
+	logger.Debugf("Update keys (%s) for user %s of instance %d", action, user, instance.ID)
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
+	if err != nil {
+		logger.Error("Failed to check owner")
+		return
+	}
+	if !permit {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update keys for the instance", nil)
+		logger.Error(err)
+		return
+	}
+	if user == "" && instance.Image != nil {
+		user = instance.Image.UserName
+	}
+	if user == "" {
+		user = "root"
+	}
+	if !guestUserPattern.MatchString(user) {
+		err = NewCLError(ErrInvalidParameter, "Invalid user name", nil)
+		logger.Error(err)
+		return
+	}
+	pubKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pubKeys = append(pubKeys, firstKeyLine(key.PublicKey))
+	}
+	ctx, db := GetContextDB(ctx)
+	task = &model.Task{
+		Owner:     memberShip.OrgID,
+		Name:      fmt.Sprintf("update_keys_%s", instance.UUID),
+		Summary:   fmt.Sprintf("%s %d key(s) for user %s on instance %s", action, len(keys), user, instance.UUID),
+		Status:    model.TaskStatusRunning,
+		Source:    model.TaskSourceManual,
+		Action:    model.TaskActionUpdateKeys,
+		Resources: fmt.Sprintf(`["%d"]`, instance.ID),
+	}
+	if err = db.Create(task).Error; err != nil {
+		logger.Error("DB failed to create task", err)
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_ssh_keys.sh '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF\n",
+		task.ID, instance.ID, action, user, base64.StdEncoding.EncodeToString([]byte(strings.Join(pubKeys, "\n"))))
+	if err = HyperExecute(ctx, control, command); err != nil {
+		logger.Error("Update keys command execution failed", err)
+		db.Model(task).Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": err.Error()})
 		return
 	}
 	return
