@@ -94,3 +94,49 @@ are ignored. Empty value = all VLANs (and untagged). Examples:
 
 `rand_unicast_mac()` always emits `fe:55:xx:xx:xx:xx` — first octet
 `0xfe` = `11111110`: unicast (LSB = 0) + locally administered (bit 1 = 1).
+
+## ARP detection tool
+
+`arpdetect.py <device> <vlan> <ip1, ...>` sends ARP requests for all targets
+without waiting for each IP individually, while a background receiver collects
+ARP replies (`op=2`) from the targets on the selected VLAN. It waits once
+after the final request (3 seconds by default).
+Use VLAN `0` for untagged frames, or `1..4094` for an 802.1Q tag.
+With VLAN `0`, both sending and receiving use the specified device directly:
+no VLAN header is added and tagged replies are excluded.
+
+```bash
+sudo python3 arpdetect.py eth0 25 10.10.10.5
+sudo python3 arpdetect.py eth0 25 10.10.10.0/24
+sudo python3 arpdetect.py eth0 25 10.10.10.5-10.10.10.10
+sudo python3 arpdetect.py eth0 25 10.10.10.5,10.10.11.0/24 10.10.12.5-10.10.12.10 --timeout 5 --count 2
+```
+
+Targets can be comma- or space-separated and are deduplicated and sorted.
+CIDRs use host addresses (excluding network/broadcast except for `/31` and
+`/32`); ranges include both endpoints. IPv4 only. Expansion is limited to
+65,536 distinct targets by default; override with `--max-targets`.
+`--interval` sets the delay between sends (default: 0).
+
+The ARP sender IP defaults to the device's IPv4 address, falling back to
+`192.0.2.100` when unassigned. On a tagged VLAN, use `--source-ip` to specify
+an appropriate sender IP for that VLAN if the device address is unsuitable.
+Run on the underlying interface when the tool should add a VLAN tag itself;
+use VLAN `0` on an existing VLAN subinterface.
+
+Standard output is a tab-separated `IP` / `MAC` table, including `NO_REPLY`
+for unanswered targets and comma-separated MACs when multiple hosts reply
+for the same IP. Only ARP replies (`op=2`) whose sender IP matches a probed
+target are counted on the selected VLAN; locally sent frames are excluded.
+Replies need not be addressed to the probing MAC or source IP. ARP requests
+(`op=1`), including gratuitous requests, never count as replies.
+Progress and the response count go to standard error.
+`NO_REPLY` means no matching reply was received during this scan; it does not
+prove an IP is free. This tool collects replies and does not claim addresses.
+The same Scapy dependency and `sudo` / `CAP_NET_RAW` requirement apply.
+
+Offline verification (no network packets sent):
+
+```bash
+python3 -m unittest -v test_arpdetect
+```
