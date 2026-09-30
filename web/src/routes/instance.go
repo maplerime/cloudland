@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	. "web/src/common"
@@ -887,6 +888,86 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set password command execution failed", err)
+		return
+	}
+	return
+}
+
+var guestUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+
+// firstKeyLine returns the first non-empty line of a stored public key.
+// KeyAdmin.Create only validates the first line but stores the raw input,
+// so anything after it must never reach authorized_keys.
+func firstKeyLine(pub string) string {
+	for _, line := range strings.Split(pub, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			return line
+		}
+	}
+	return ""
+}
+
+func (a *InstanceAdmin) UpdateKeys(ctx context.Context, instance *model.Instance, action, user string, keys []*model.Key) (task *model.Task, err error) {
+	logger.Debugf("Update keys (%s) for user %s of instance %d", action, user, instance.ID)
+	// input validation first: shared by the REST API and both web console forms
+	if action != "add" && action != "remove" && action != "reset" {
+		err = NewCLError(ErrInvalidParameter, "Invalid action: "+action, nil)
+		logger.Error(err)
+		return
+	}
+	if action != "reset" && len(keys) == 0 {
+		err = NewCLError(ErrSSHKeyRequired, "At least one key must be provided", nil)
+		logger.Error(err)
+		return
+	}
+	if user == "" && instance.Image != nil {
+		user = instance.Image.UserName
+	}
+	if user == "" {
+		user = "root"
+	}
+	if !guestUserPattern.MatchString(user) {
+		err = NewCLError(ErrSSHKeyInvalidGuestUser, "Invalid guest user name: "+user, nil)
+		logger.Error(err)
+		return
+	}
+	memberShip := GetMemberShip(ctx)
+	permit, err := memberShip.CheckOwner(model.Writer, "instances", instance.ID)
+	if err != nil {
+		logger.Error("Failed to check owner")
+		return
+	}
+	if !permit {
+		err = NewCLError(ErrPermissionDenied, "Not authorized to update keys for the instance", nil)
+		logger.Error(err)
+		return
+	}
+	pubKeys := make([]string, 0, len(keys))
+	for _, key := range keys {
+		pubKeys = append(pubKeys, firstKeyLine(key.PublicKey))
+	}
+	ctx, db := GetContextDB(ctx)
+	task = &model.Task{
+		Owner:     memberShip.OrgID,
+		Name:      fmt.Sprintf("update_keys_%s", instance.UUID),
+		Summary:   fmt.Sprintf("%s %d key(s) for user %s on instance %s", action, len(keys), user, instance.UUID),
+		Status:    model.TaskStatusRunning,
+		Source:    model.TaskSourceManual,
+		Action:    model.TaskActionUpdateKeys,
+		Resources: fmt.Sprintf(`["%d"]`, instance.ID),
+	}
+	if err = db.Create(task).Error; err != nil {
+		logger.Error("DB failed to create task", err)
+		err = NewCLError(ErrSSHKeyInjectFailed, "Failed to create task", err)
+		return
+	}
+	control := fmt.Sprintf("inter=%d", instance.Hyper)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/update_ssh_keys.sh '%d' '%d' '%s' '%s' <<EOF\n%s\nEOF\n",
+		task.ID, instance.ID, action, user, base64.StdEncoding.EncodeToString([]byte(strings.Join(pubKeys, "\n"))))
+	if err = HyperExecute(ctx, control, command); err != nil {
+		logger.Error("Update keys command execution failed", err)
+		db.Model(task).Updates(map[string]interface{}{"status": model.TaskStatusFailed, "message": err.Error()})
+		err = NewCLError(ErrSSHKeyInjectFailed, "Failed to dispatch key injection to hypervisor", err)
 		return
 	}
 	return
@@ -1787,6 +1868,7 @@ func (v *InstanceView) SearchJSON(c *macaron.Context, store session.Store) {
 	} else if q != "" {
 		params.Name = q
 	}
+	params.ExcludeOSCode = c.QueryTrim("exclude_os")
 	_, instances, err := instanceAdmin.List4View(c.Req.Context(), 0, 20, "-created_at", params)
 	if err != nil {
 		c.JSON(500, map[string]interface{}{"success": false, "message": err.Error()})
@@ -2129,6 +2211,76 @@ func (v *InstanceView) SetUserPassword(c *macaron.Context, store session.Store) 
 		c.Redirect(redirectTo)
 
 	}
+}
+
+// parseKeyIDs parses the comma separated key IDs posted by the key dropdown.
+// Unlike reinstall it rejects bad IDs instead of skipping them.
+func parseKeyIDs(csv string) (ids []int64, err error) {
+	for _, s := range strings.Split(csv, ",") {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		id, perr := strconv.ParseInt(s, 10, 64)
+		if perr != nil || id <= 0 {
+			return nil, NewCLError(ErrInvalidParameter, "Invalid key ID: "+s, perr)
+		}
+		ids = append(ids, id)
+	}
+	return
+}
+
+func (v *InstanceView) UpdateKeys(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	instanceID := c.ParamsInt64("id")
+	instance, err := instanceAdmin.Get(ctx, instanceID)
+	if err != nil {
+		logger.Error("Instance query failed", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		if instance.Image != nil && instance.Image.OSCode == model.OS_WINDOWS {
+			c.Data["ErrorMsg"] = NewCLError(ErrSSHKeyUnsupportedOS, "SSH keys are not supported on windows instances", nil).Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		_, keys, err := keyAdmin.List(ctx, 0, -1, "", "")
+		if err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		c.Data["Instance"] = instance
+		c.Data["Keys"] = keys
+		c.Data["Link"] = fmt.Sprintf("/instances/%d/update_keys", instanceID)
+		c.HTML(200, "instances_update_keys")
+		return
+	}
+	keyIDs, err := parseKeyIDs(c.QueryTrim("keys"))
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	var keys []*model.Key
+	for _, id := range keyIDs {
+		key, err := keyAdmin.Get(ctx, id)
+		if err != nil {
+			c.Data["ErrorMsg"] = err.Error()
+			c.HTML(http.StatusBadRequest, "error")
+			return
+		}
+		keys = append(keys, key)
+	}
+	task, err := instanceAdmin.UpdateKeys(ctx, instance, c.QueryTrim("action"), c.QueryTrim("user"), keys)
+	if err != nil {
+		logger.Error("Update keys failed", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect(fmt.Sprintf("/tasks/%d", task.ID))
 }
 
 func (v *InstanceView) Reinstall(c *macaron.Context, store session.Store) {

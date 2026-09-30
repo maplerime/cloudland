@@ -452,3 +452,41 @@ func (v *KeyView) Create(c *macaron.Context, store session.Store) {
 		}
 	}
 }
+
+// AddToInstance injects one key into a running linux instance picked from a search dropdown.
+func (v *KeyView) AddToInstance(c *macaron.Context, store session.Store) {
+	ctx := c.Req.Context()
+	keyID := c.ParamsInt64("id")
+	key, err := keyAdmin.Get(ctx, keyID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	if c.Req.Method == "GET" {
+		c.Data["Key"] = key
+		c.Data["Link"] = fmt.Sprintf("/keys/%d/add_to_instance", keyID)
+		c.HTML(200, "keys_add_to_instance")
+		return
+	}
+	instanceID := c.QueryInt64("instance")
+	if instanceID <= 0 {
+		c.Data["ErrorMsg"] = NewCLError(ErrInvalidParameter, "An instance must be selected", nil).Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	instance, err := instanceAdmin.Get(ctx, instanceID)
+	if err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	task, err := instanceAdmin.UpdateKeys(ctx, instance, "add", c.QueryTrim("user"), []*model.Key{key})
+	if err != nil {
+		logger.Error("Add key to instance failed", err)
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
+		return
+	}
+	c.Redirect(fmt.Sprintf("/tasks/%d", task.ID))
+}

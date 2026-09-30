@@ -2964,6 +2964,59 @@
                 }
             }
         },
+        "/instances/{id}/update_keys": {
+            "post": {
+                "description": "add, remove or reset the authorized_keys of a guest user through the guest agent; the result is reported by the returned task",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Compute"
+                ],
+                "summary": "update ssh keys of a running instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Instance UUID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Instance update keys payload",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceUpdateKeysPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apis.InstanceUpdateKeysResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/ip_groups": {
             "get": {
                 "description": "list ipGroup",
@@ -4616,6 +4669,109 @@
                     },
                     "403": {
                         "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement/config": {
+            "get": {
+                "description": "Returns global config, or effective merged config for a specific zone",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Get placement configuration",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Zone ID (0 or omit = global config)",
+                        "name": "zone_id",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement/decisions": {
+            "get": {
+                "description": "Returns the most recent placement scheduling decisions (max 100)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Get recent placement decisions",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of decisions to return (default 20, max 100)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/placement/reload": {
+            "post": {
+                "description": "Hot-reloads placement.toml and invalidates the host state cache",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Placement"
+                ],
+                "summary": "Reload placement configuration",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/common.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
                         "schema": {
                             "$ref": "#/definitions/common.APIError"
                         }
@@ -8511,6 +8667,41 @@
                     "type": "string",
                     "maxLength": 32,
                     "minLength": 2
+                }
+            }
+        },
+        "apis.InstanceUpdateKeysPayload": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "add",
+                        "remove",
+                        "reset"
+                    ]
+                },
+                "keys": {
+                    "type": "array",
+                    "maxItems": 16,
+                    "items": {
+                        "$ref": "#/definitions/common.BaseReference"
+                    }
+                },
+                "user": {
+                    "type": "string",
+                    "maxLength": 32
+                }
+            }
+        },
+        "apis.InstanceUpdateKeysResponse": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "$ref": "#/definitions/common.BaseReference"
                 }
             }
         },
