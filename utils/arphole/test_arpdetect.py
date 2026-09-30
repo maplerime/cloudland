@@ -144,18 +144,15 @@ class ProbeTests(unittest.TestCase):
 
 class SourceTests(unittest.TestCase):
     def test_explicit_zero_source_is_preserved(self):
-        with patch.object(arpdetect, "get_if_addr") as get_addr, \
-                patch.object(arpdetect, "detect", return_value={}) as detect, \
+        with patch.object(arpdetect, "detect", return_value={}) as detect, \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(arpdetect.main(["ens5", "25", "198.2.215.39",
                                             "--source-ip", "0.0.0.0"]), 0)
-        get_addr.assert_not_called()
         self.assertEqual(detect.call_args.args[3], "0.0.0.0")
 
-    def test_unassigned_interface_uses_fallback(self):
-        with patch.object(arpdetect, "get_if_addr", return_value="0.0.0.0"), \
-                patch.object(arpdetect, "detect", return_value={}) as detect, \
+    def test_default_source_is_documentation_address(self):
+        with patch.object(arpdetect, "detect", return_value={}) as detect, \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(arpdetect.main(["ens5", "25", "198.2.215.39"]), 0)

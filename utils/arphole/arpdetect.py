@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-from scapy.all import ARP, AsyncSniffer, Dot1Q, Ether, conf, get_if_addr, get_if_hwaddr
+from scapy.all import ARP, AsyncSniffer, Dot1Q, Ether, conf, get_if_hwaddr
 
 
 def parse_targets(specs, max_targets=65536):
@@ -141,8 +141,8 @@ def main(argv=None):
     parser.add_argument("vlan", type=int,
                         help="0 = send/receive directly on device without a tag; 1..4094 = 802.1Q VLAN")
     parser.add_argument("ips", nargs="+", help="IPv4, CIDR or inclusive start-end; comma/space separated")
-    parser.add_argument("--source-ip", type=ipaddress.IPv4Address,
-                        help="ARP sender IP; default: interface IP, or 192.0.2.100 if unassigned")
+    parser.add_argument("--source-ip", type=ipaddress.IPv4Address, default="192.0.2.100",
+                        help="ARP sender IP (default: 192.0.2.100)")
     parser.add_argument("--timeout", type=nonnegative_float, default=3.0,
                         help="reply wait after the final probe, in seconds (default: 3)")
     parser.add_argument("--count", type=positive_int, default=1,
@@ -159,9 +159,7 @@ def main(argv=None):
     except ValueError as exc:
         parser.error(str(exc))
     try:
-        source_ip = str(args.source_ip) if args.source_ip else get_if_addr(args.device)
-        if args.source_ip is None and source_ip == "0.0.0.0":
-            source_ip = "192.0.2.100"
+        source_ip = str(args.source_ip)
         print(f"Probing {len(targets)} IPs on {args.device}, VLAN {args.vlan}, "
               f"source {source_ip}", file=sys.stderr)
         replies = detect(args.device, args.vlan, targets, source_ip,

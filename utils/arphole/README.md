@@ -118,9 +118,8 @@ CIDRs use host addresses (excluding network/broadcast except for `/31` and
 65,536 distinct targets by default; override with `--max-targets`.
 `--interval` sets the delay between sends (default: 0).
 
-The ARP sender IP defaults to the device's IPv4 address, falling back to
-`192.0.2.100` when unassigned. On a tagged VLAN, use `--source-ip` to specify
-an appropriate sender IP for that VLAN if the device address is unsuitable.
+The ARP sender IP defaults to `192.0.2.100` on all devices and VLANs.
+Use `--source-ip` to override it, including an explicit `0.0.0.0`.
 Run on the underlying interface when the tool should add a VLAN tag itself;
 use VLAN `0` on an existing VLAN subinterface.
 
