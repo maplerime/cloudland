@@ -47,6 +47,8 @@
           "type": "FactSet",
           "facts": [
             {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "告警发生时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" (index .Alerts 0).StartsAt) | toJson }}},
+            {"title": "本轮上报时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" now) | toJson }}},
             {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
             {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
@@ -92,6 +94,8 @@
           "type": "FactSet",
           "facts": [
             {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "告警发生时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" (index .Alerts 0).StartsAt) | toJson }}},
+            {"title": "本轮上报时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" now) | toJson }}},
             {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
             {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
@@ -136,6 +140,8 @@
           "type": "FactSet",
           "facts": [
             {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "告警发生时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" (index .Alerts 0).StartsAt) | toJson }}},
+            {"title": "本轮上报时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" now) | toJson }}},
             {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
             {"title": "详情", "value": {{ .CommonAnnotations.description | toJson }}},
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
@@ -180,6 +186,8 @@
           "type": "FactSet",
           "facts": [
             {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "告警发生时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" (index .Alerts 0).StartsAt) | toJson }}},
+            {"title": "本轮上报时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" now) | toJson }}},
             {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},
             {"title": "详细描述", "value": {{ .CommonLabels.description | toJson }}},
             {"title": "告警详情", "value": {{ .CommonAnnotations.description | toJson }}},
@@ -223,6 +231,8 @@
           "type": "FactSet",
           "facts": [
             {"title": "状态", "value": {{ .Status | toJson }}},
+            {"title": "告警发生时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" (index .Alerts 0).StartsAt) | toJson }}},
+            {"title": "本轮上报时间(UTC+8)", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" now) | toJson }}},
             {"title": "IP组", "value": {{ printf "%s (%s)" .CommonLabels.ipgroup_name .CommonLabels.ipgroup_id | toJson }}},
             {"title": "区域", "value": {{ .CommonLabels.region | toJson }}},
             {"title": "摘要", "value": {{ .CommonAnnotations.summary | toJson }}},

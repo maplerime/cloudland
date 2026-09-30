@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	. "web/src/common"
@@ -258,9 +259,29 @@ func SelectHost(ctx context.Context, req *PlacementRequest) (int32, error) {
 	dlog.Success = true
 	dlog.SelectedHost = best.HyperID
 	dlog.IsOvercommit = best.IsOvercommit
-	logger.Infof("SelectHost result: selected hyper %d (zoneID=%d, overcommit=%v) from %d candidates",
-		best.HyperID, best.ZoneID, best.IsOvercommit, len(candidates))
+	dlog.Summary = buildDecisionSummary(dlog, best, len(candidates))
+	logger.Infof("[Placement] %s", dlog.Summary)
 	return best.HyperID, nil
+}
+
+// buildDecisionSummary composes the one-line, human-readable recap stored in
+// DecisionLog.Summary: the request, the winning host's remaining capacity, and
+// (for any weigher that implements Explainer) why it won.
+func buildDecisionSummary(dlog *DecisionLog, best *HostState, candidateCount int) string {
+	req := dlog.Request
+	var b strings.Builder
+	fmt.Fprintf(&b, "请求 %d核/%dMB内存/%dGB磁盘(zone %d) → 从%d台候选中选中 hyper %d(剩余%d/%d vCPU)",
+		req.VCPUs, req.MemMB, req.DiskGB, req.ZoneID, candidateCount, best.HyperID, best.VCPUFree, best.VCPUTotal)
+	if best.IsOvercommit {
+		b.WriteString("，走超配fallback")
+	}
+	for _, s := range dlog.WeigherSteps {
+		if s.Explain != "" {
+			b.WriteString("；")
+			b.WriteString(s.Explain)
+		}
+	}
+	return b.String()
 }
 
 // weightAndPick normalizes and scores all candidates, returns the highest scorer.
@@ -337,16 +358,25 @@ func weightAndScore(weighers []Weigher, req *PlacementRequest, hosts []*HostStat
 			}
 			scores[i] += w.Multiplier() * normalized
 		}
+		explain := ""
+		if ex, ok := w.(Explainer); ok {
+			explain = ex.Explain(req)
+		}
 		if dlog != nil {
 			step := WeigherStep{
 				Name:       w.Name(),
+				Explain:    explain,
 				Multiplier: w.Multiplier(),
 				MinRaw:     minV,
 				MaxRaw:     maxV,
 			}
 			dlog.WeigherSteps = append(dlog.WeigherSteps, step)
 		}
-		logger.Debugf("Weigher %q: multiplier=%.1f, raw range=[%.2f, %.2f]", w.Name(), w.Multiplier(), minV, maxV)
+		if explain != "" {
+			logger.Debugf("Weigher %q: %s (weight=%.1f, raw range=[%.2f, %.2f])", w.Name(), explain, w.Multiplier(), minV, maxV)
+		} else {
+			logger.Debugf("Weigher %q: multiplier=%.1f, raw range=[%.2f, %.2f]", w.Name(), w.Multiplier(), minV, maxV)
+		}
 	}
 	return scores
 }
