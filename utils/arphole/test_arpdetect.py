@@ -1,6 +1,9 @@
 import unittest
 import contextlib
 import io
+import socket
+import struct
+import sys
 from unittest.mock import patch
 
 from scapy.all import ARP, Dot1Q, Ether
@@ -59,7 +62,18 @@ class ProbeTests(unittest.TestCase):
     def test_gratuitous_replies(self):
         self.run_collection(25, "announcement")
 
-    def run_collection(self, vlan, kind="reply"):
+    def test_replies_to_another_destination_are_accepted(self):
+        self.run_collection(25, "foreign_destination")
+
+    def test_debug_reports_rejection_and_acceptance(self):
+        output = self.run_collection(25, debug=True)
+        self.assertIn("VLAN mismatch", output)
+        self.assertIn("received untagged", output)
+        self.assertIn("sender MAC equals interface MAC", output)
+        self.assertIn("accept ", output)
+        self.assertIn("ARP frames from targets", output)
+
+    def run_collection(self, vlan, kind="reply", debug=False):
         state = {"sent": [], "closed": [], "sniffer": None}
         case = self
 
@@ -96,6 +110,8 @@ class ProbeTests(unittest.TestCase):
                 state["sent"].append(packet[ARP].pdst)
                 callback = state["sniffer"].kwargs["prn"]
                 callback(reply("10.0.0.5", tag=99, mac="02:00:00:00:00:fe"))
+                if vlan:
+                    callback(reply("10.0.0.5", tag=0))
                 callback(reply("10.0.0.5", op=3, mac="02:00:00:00:00:fe"))
                 callback(reply("10.0.0.5", mac=case.mac))
                 callback(reply("10.0.0.5", mac="00:00:00:00:00:00"))
@@ -116,20 +132,28 @@ class ProbeTests(unittest.TestCase):
                 packet = reply("10.0.0.5", mac=peer, **fields)
                 if kind != "reply":
                     packet[Ether].dst = "ff:ff:ff:ff:ff:ff"
+                if kind == "foreign_destination":
+                    packet[Ether].dst = "ce:b0:11:44:ff:e1"
+                    packet[ARP].hwdst = "ce:b0:11:44:ff:e1"
+                    packet[ARP].pdst = "192.0.2.100"
                 callback(packet)
 
+        debug_output = io.StringIO()
         with patch.object(arpdetect, "get_if_hwaddr", return_value=self.mac), \
                 patch.object(arpdetect.conf, "L2listen", return_value=Socket("receiver")) as listen, \
                 patch.object(arpdetect.conf, "L2socket", return_value=Socket("sender")) as open_sender, \
                 patch.object(arpdetect, "AsyncSniffer", Sniffer), \
-                patch.object(arpdetect.time, "sleep", side_effect=wait):
-            result = arpdetect.detect("fake0", vlan, ["10.0.0.5", "10.0.0.6"], self.source, count=2)
-            listen.assert_called_once_with(iface="fake0")
+                patch.object(arpdetect.time, "sleep", side_effect=wait), \
+                contextlib.redirect_stderr(debug_output):
+            result = arpdetect.detect("fake0", vlan, ["10.0.0.5", "10.0.0.6"], self.source,
+                                      count=2, debug=debug)
+            listen.assert_called_once_with(iface="fake0", filter=arpdetect.REPLY_FILTER)
             open_sender.assert_called_once_with(iface="fake0")
         expected = {} if kind == "request" else {"10.0.0.5": {self.peer, "02:00:00:00:00:03"}}
         self.assertEqual(result, expected)
         self.assertEqual(state["closed"], ["sender", "receiver"])
         self.assertFalse(state["sniffer"].running)
+        return debug_output.getvalue()
 
     def test_sender_open_failure_closes_receiver(self):
         from unittest.mock import Mock
@@ -140,6 +164,65 @@ class ProbeTests(unittest.TestCase):
             with self.assertRaises(PermissionError):
                 arpdetect.detect("fake0", 0, ["10.0.0.5"], self.source)
         receiver.close.assert_called_once()
+
+
+class CaptureTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux socket filter")
+    def test_kernel_filter_accepts_only_arp_replies(self):
+        # Exercise the actual kernel BPF on a local datagram socket pair;
+        # nothing is transmitted to a network interface.
+        from scapy.arch.common import compile_filter
+        from scapy.libs.structures import sock_fprog
+        from scapy.data import SO_ATTACH_FILTER
+
+        program = compile_filter(arpdetect.REPLY_FILTER, linktype=1)
+        receiver, sender = socket.socketpair(socket.AF_UNIX, socket.SOCK_DGRAM)
+        try:
+            receiver.setsockopt(socket.SOL_SOCKET, SO_ATTACH_FILTER,
+                                sock_fprog(program.bf_len, program.bf_insns))
+            receiver.settimeout(0.05)
+            ether = Ether(src="02:00:00:00:00:02", dst="02:00:00:00:00:01")
+
+            def arp(op):
+                return ARP(op=op, hwsrc=ether.src, hwdst=ether.dst,
+                           psrc="192.0.2.2", pdst="192.0.2.1")
+
+            frames = [
+                (ether / arp(2), True),
+                (ether / Dot1Q(vlan=25) / arp(2), True),
+                (ether / arp(1), False),
+                (ether / Dot1Q(vlan=25) / arp(1), False),
+                (Ether(src=ether.src, dst=ether.dst, type=0x0800) / bytes(60), False),
+                (ether / Dot1Q(vlan=25, type=0x0800) / bytes(60), False),
+            ]
+            for frame, accepted in frames:
+                with self.subTest(frame=frame.summary()):
+                    wire = bytes(frame)
+                    sender.send(wire)
+                    if accepted:
+                        self.assertEqual(receiver.recv(65535), wire)
+                    else:
+                        with self.assertRaises(socket.timeout):
+                            receiver.recv(65535)
+        finally:
+            sender.close()
+            receiver.close()
+
+    def test_packet_socket_drop_stats(self):
+        from unittest.mock import Mock
+        receiver = Mock()
+        receiver.ins.family = socket.AF_PACKET
+        receiver.ins.getsockopt.return_value = struct.pack("=II", 14000, 3000)
+        self.assertEqual(arpdetect.packet_socket_stats(receiver), (14000, 3000))
+        receiver.ins.getsockopt.assert_called_once_with(
+            getattr(socket, "SOL_PACKET", 263), 6, 8)
+
+    def test_packet_socket_stats_unavailable(self):
+        from unittest.mock import Mock
+        receiver = Mock()
+        receiver.ins.family = socket.AF_PACKET
+        receiver.ins.getsockopt.side_effect = OSError("unsupported")
+        self.assertIsNone(arpdetect.packet_socket_stats(receiver))
 
 
 class SourceTests(unittest.TestCase):

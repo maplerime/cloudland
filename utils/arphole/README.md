@@ -76,6 +76,14 @@ sudo cp arphole.service /etc/systemd/system/
 sudo systemctl enable --now arphole
 ```
 
+Individual probe/reclaim send failures and GC/sweep iteration errors are logged;
+other tasks and subsequent iterations continue. If a worker exits because of
+an uncaught exception or returns unexpectedly, the entire process terminates
+with exit status 1 rather than running with missing workers. This also covers
+capture errors that Scapy catches internally before returning, and service
+startup failures. systemd's `Restart=on-failure` starts a fresh process.
+SIGINT/SIGTERM remain normal stops with exit status 0.
+
 ## VLAN handling
 
 All sniff threads use the BPF filter `arp or (vlan and arp)` to capture
@@ -130,6 +138,21 @@ target are counted on the selected VLAN; locally sent frames are excluded.
 Replies need not be addressed to the probing MAC or source IP. ARP requests
 (`op=1`), including gratuitous requests, never count as replies.
 Progress and the response count go to standard error.
+The receiver uses a kernel BPF filter for untagged and VLAN-tagged ARP replies
+before Scapy parses them. This excludes unrelated traffic and ARP request floods
+from its receive queue. The libpcap runtime library is required to compile the
+filter (in addition to Scapy).
+Use `--debug` to log the interface MAC, capture backend/filter, target ARP replies,
+acceptance/rejection reasons, capture counts, and Linux packet socket drop counts
+when available, to standard error. A nonzero drop count produces a warning even
+without `--debug`; unanswered results may be incomplete. For example:
+
+```bash
+sudo ./arpdetect.py bond0 25 137.175.71.236 --count 2 --timeout 5 --debug
+```
+
+Run tcpdump concurrently with the scan when comparing captures. A reply seen
+after the scan has finished cannot be counted by that scan.
 `NO_REPLY` means no matching reply was received during this scan; it does not
 prove an IP is free. This tool collects replies and does not claim addresses.
 The same Scapy dependency and `sudo` / `CAP_NET_RAW` requirement apply.

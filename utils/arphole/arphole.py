@@ -609,6 +609,25 @@ class ArpHole:
             )
         except Exception:
             logger.exception("[%s] %s sniff loop crashed", iface, role)
+            raise
+
+    def _run_worker(self, target, *args) -> None:
+        """A service worker must never end while the process keeps running."""
+        try:
+            try:
+                target(*args)
+            except BaseException:
+                logger.critical("worker %s failed; exiting process",
+                                threading.current_thread().name, exc_info=True)
+            else:
+                # Scapy can catch socket/callback errors and return normally.
+                # Treat even a normal worker return as a fatal service failure.
+                logger.critical("worker %s stopped unexpectedly; exiting process",
+                                threading.current_thread().name)
+        finally:
+            # sys.exit() in a worker exits only that thread. Do not wait for
+            # the other workers, which could still be probing or reclaiming.
+            os._exit(1)
 
     def run(self) -> None:
         vlans_desc = "all" if self.allowed_vlans is None else (
@@ -626,20 +645,23 @@ class ArpHole:
         )
         conf.verb = 0
         threads = []
-        gc = threading.Thread(target=self._gc_loop, name="gc", daemon=True)
+        gc = threading.Thread(target=self._run_worker, args=(self._gc_loop,),
+                              name="gc", daemon=True)
         gc.start()
         threads.append(gc)
-        sender = threading.Thread(target=self._sender_loop, name="sender", daemon=True)
+        sender = threading.Thread(target=self._run_worker, args=(self._sender_loop,),
+                                  name="sender", daemon=True)
         sender.start()
         threads.append(sender)
-        sweeper = threading.Thread(target=self._sweep_loop, name="sweeper", daemon=True)
+        sweeper = threading.Thread(target=self._run_worker, args=(self._sweep_loop,),
+                                   name="sweeper", daemon=True)
         sweeper.start()
         threads.append(sweeper)
         for iface in self.ifaces:
             for role in ("request", "reply"):
                 t = threading.Thread(
-                    target=self._sniff_iface,
-                    args=(iface, role),
+                    target=self._run_worker,
+                    args=(self._sniff_iface, iface, role),
                     daemon=True,
                     name=f"sniff-{iface}-{role}",
                 )
@@ -733,14 +755,13 @@ def main() -> int:
     signal.signal(signal.SIGINT, _stop)
     signal.signal(signal.SIGTERM, _stop)
 
-    while True:
-        try:
-            hole.run()
-        except KeyboardInterrupt:
-            return 0
-        except Exception:
-            logger.exception("sniff loop crashed; retrying in 5s")
-            time.sleep(5)
+    try:
+        hole.run()
+    except KeyboardInterrupt:
+        return 0
+    except Exception:
+        logger.exception("service failed; exiting process")
+        return 1
 
 
 if __name__ == "__main__":
