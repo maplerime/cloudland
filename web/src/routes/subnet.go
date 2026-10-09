@@ -85,31 +85,29 @@ func checkIfExistVni(ctx context.Context, vni int64) (result bool, err error) {
 func generateIPAddresses(ctx context.Context, subnet *model.Subnet, start net.IP, end net.IP, preSize int) (err error) {
 	ctx, db := GetContextDB(ctx)
 	ip := start
+	ipType := "ipv4"
+	if start.To4() == nil {
+		ipType = "ipv6"
+	}
 	for {
 		ipstr := fmt.Sprintf("%s/%d", ip.String(), preSize)
-		if ipstr == subnet.Gateway {
-			if ip.String() == end.String() {
-				break
-			} else {
-				ip = cidr.Inc(ip)
-				ipstr = fmt.Sprintf("%s/%d", ip.String(), preSize)
+		if ipstr != subnet.Gateway {
+			address := &model.Address{
+				Model:    model.Model{Creater: subnet.Creater},
+				Owner:    subnet.Owner,
+				Address:  ipstr,
+				Netmask:  subnet.Netmask,
+				Type:     ipType,
+				SubnetID: subnet.ID,
+			}
+			err = db.Create(address).Error
+			if err != nil {
+				logger.Error("Database create IP address failed, %v", err)
+				err = NewCLError(ErrAddressCreateFailed, "Failed to create IP address", err)
+				return err
 			}
 		}
-		address := &model.Address{
-			Model:    model.Model{Creater: subnet.Creater},
-			Owner:    subnet.Owner,
-			Address:  ipstr,
-			Netmask:  subnet.Netmask,
-			Type:     "ipv4",
-			SubnetID: subnet.ID,
-		}
-		err = db.Create(address).Error
-		if err != nil {
-			logger.Error("Database create IP address failed, %v", err)
-			err = NewCLError(ErrAddressCreateFailed, "Failed to create IP address", err)
-			return err
-		}
-		if ip.String() == end.String() {
+		if ip.Equal(end) {
 			break
 		}
 		ip = cidr.Inc(ip)
@@ -237,6 +235,16 @@ func (a *SubnetAdmin) Update(ctx context.Context, id int64, name, subnetType str
 		}
 		logger.Debugf("Transaction ended, err=%v", err)
 	}()
+	var subnet model.Subnet
+	if err = db.Where("id = ?", id).Take(&subnet).Error; err != nil {
+		return NewCLError(ErrSubnetNotFound, "Subnet not found", err)
+	}
+	// Only identify the address family here; editing existing IPv4 metadata must
+	// not introduce a new requirement to revalidate its stored CIDR.
+	ip := net.ParseIP(strings.SplitN(subnet.Network, "/", 2)[0])
+	if err = validateSubnetType(ip, subnetType); err != nil {
+		return
+	}
 
 	updates := map[string]interface{}{
 		"name":     name,
@@ -322,6 +330,13 @@ func setRouting(ctx context.Context, subnet *model.Subnet, routeOnly bool) (err 
 
 func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gateway, start, end, rtype, dns, domain string, dhcp bool, router *model.Router, ipGroup *model.IpGroup, priority int32) (subnet *model.Subnet, err error) {
 	logger.Debugf("Creating subnet with vlan: %d, name: %s, network: %s, gateway: %s, start: %s, end: %s, rtype: %s, dns: %s, domain: %s, dhcp: %t, router: %+v, ipGroup: %+v", vlan, name, network, gateway, start, end, rtype, dns, domain, dhcp, router, ipGroup)
+	if rtype == "" {
+		rtype = "internal"
+	}
+	pool, err := prepareSubnetNetwork(network, gateway, start, end, rtype, dns)
+	if err != nil {
+		return nil, err
+	}
 	memberShip := GetMemberShip(ctx)
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
@@ -371,40 +386,19 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 	if ipGroup != nil {
 		groupID = ipGroup.ID
 	}
-	_, ipNet, err := net.ParseCIDR(network)
-	if err != nil {
-		logger.Error("CIDR parsing failed, %v", err)
-		err = NewCLError(ErrInvalidCIDR, "Invalid CIDR", err)
-		return
+	preSize := pool.prefix
+	gateway = fmt.Sprintf("%s/%d", pool.gateway.String(), preSize)
+	start, end = pool.start.String(), pool.end.String()
+	// Preserve the IPv4 pool boundary convention without relying on input spelling.
+	if pool.start.Equal(pool.gateway) && !pool.start.Equal(pool.end) {
+		pool.start = cidr.Inc(pool.start)
+		start = pool.start.String()
 	}
-	addrCount := cidr.AddressCount(ipNet)
-	if addrCount < 5 || addrCount > 1000 {
-		err = NewCLError(ErrCIDRTooBig, "Network/mask must have more than 5 but less than 1000 addresses", nil)
-		logger.Error("Invalid address count", err)
-		return
+	if pool.end.Equal(pool.gateway) && !pool.start.Equal(pool.end) {
+		pool.end = cidr.Dec(pool.end)
+		end = pool.end.String()
 	}
-	if rtype == "" {
-		rtype = "internal"
-	}
-	first, last := cidr.AddressRange(ipNet)
-	preSize, _ := ipNet.Mask.Size()
-	if gateway == "" {
-		gateway = cidr.Inc(first).String()
-	}
-	if start == "" {
-		start = cidr.Inc(first).String()
-	}
-	if start == gateway {
-		start = cidr.Inc(net.ParseIP(start)).String()
-	}
-	if end == "" {
-		end = cidr.Dec(last).String()
-	}
-	if end == gateway {
-		end = cidr.Dec(net.ParseIP(end)).String()
-	}
-	gateway = fmt.Sprintf("%s/%d", gateway, preSize)
-	netmask := net.IP(net.CIDRMask(preSize, 32)).String()
+	netmask := pool.netmask
 	subnet = &model.Subnet{
 		Model:        model.Model{Creater: memberShip.UserID},
 		Owner:        owner,
@@ -436,34 +430,16 @@ func (a *SubnetAdmin) Create(ctx context.Context, vlan int, name, network, gatew
 		return nil, err
 	}
 
-	ip := net.ParseIP(start)
-	for {
-		if !ipNet.Contains(ip) {
-			err = NewCLError(ErrInvalidParameter, "Invalid start/end/gateway range, IP exceeded subnet range", nil)
-			logger.Error("Invalid subnet IP range, IP exceeded subnet range")
-			return
-		}
-		ipstr := fmt.Sprintf("%s/%d", ip.String(), preSize)
-		address := &model.Address{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Address: ipstr, Netmask: netmask, Type: "ipv4", SubnetID: subnet.ID}
-		err = db.Create(address).Error
-		if err != nil {
-			logger.Error("Database create address failed, %v", err)
-			return
-		}
-		if ip.String() == end {
-			break
-		}
-		ip = cidr.Inc(ip)
-		// Skip gateway based on next IP, not previous ipstr.
-		if fmt.Sprintf("%s/%d", ip.String(), preSize) == gateway {
-			ip = cidr.Inc(ip)
-		}
+	err = generateIPAddresses(ctx, subnet, pool.start, pool.end, preSize)
+	if err != nil {
+		return
 	}
 	// Create record for gateway
-	address := &model.Address{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Address: gateway, Netmask: netmask, Type: "ipv4", SubnetID: subnet.ID}
+	address := &model.Address{Model: model.Model{Creater: memberShip.UserID}, Owner: owner, Address: gateway, Netmask: netmask, Type: pool.ipType, SubnetID: subnet.ID}
 	err = db.Create(address).Error
 	if err != nil {
 		logger.Error("Database create address for gateway failed, %v", err)
+		return
 	}
 	if subnet.RouterID > 0 {
 		err = setRouting(ctx, subnet, false)
