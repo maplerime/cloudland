@@ -135,8 +135,13 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Order("address::inet").Take(address).Error
 	} else {
 		if !strings.Contains(ipaddr, "/") {
-			preSize, _ := net.IPMask(net.ParseIP(subnet.Netmask).To4()).Size()
-			ipaddr = fmt.Sprintf("%s/%d", ipaddr, preSize)
+			ip, network, parseErr := net.ParseCIDR(subnet.Network)
+			requestedIP := net.ParseIP(ipaddr)
+			if parseErr != nil || requestedIP == nil || !network.Contains(requestedIP) || (ip.To4() == nil) != (requestedIP.To4() == nil) {
+				return nil, fmt.Errorf("requested address must belong to the subnet")
+			}
+			preSize, _ := network.Mask.Size()
+			ipaddr = fmt.Sprintf("%s/%d", requestedIP.String(), preSize)
 		}
 		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Order("address::inet").Take(address).Error
 	}
@@ -193,6 +198,11 @@ func GenerateMacaddr() (mac string, err error) {
 }
 
 func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface *model.Interface, floatingIps []*model.FloatingIp, primaryMac, primaryUUID string, inbound, outbound int32, allowSpoofing bool) (primaryIface *model.Interface, primarySubnet *model.Subnet, err error) {
+	for _, fip := range floatingIps {
+		if strings.Contains(fip.FipAddress, ":") {
+			return nil, nil, fmt.Errorf("IPv6 floating IPs must be assigned through a router namespace, not a public VM interface")
+		}
+	}
 	ctx, db := GetContextDB(ctx)
 	primaryIface = iface
 	updatePrimary := false
@@ -297,6 +307,9 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 }
 
 func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
+	if ifType != "floating" && strings.Contains(subnet.Network, ":") {
+		return nil, fmt.Errorf("IPv6 currently supports only namespace floating IP interfaces")
+	}
 	ctx, db := GetContextDB(ctx)
 	primary := false
 	if ifaceName == "eth0" {

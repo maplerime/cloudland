@@ -143,6 +143,7 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 		}
 	}()
 
+	explicitPublicSubnets := len(pubSubnets) > 0
 	if len(pubSubnets) == 0 {
 		err = db.Where("type = ?", "public").Order("priority ASC, id ASC").Find(&pubSubnets).Error
 		if err != nil {
@@ -153,6 +154,10 @@ func (a *FloatingIpAdmin) Create(ctx context.Context, instance *model.Instance, 
 			logger.Error("No public subnets available")
 			return nil, NewCLError(ErrSubnetNotFound, "No public subnets available", nil)
 		}
+	}
+	pubSubnets, publicIp, err = selectFloatingIPSubnets(pubSubnets, publicIp, explicitPublicSubnets, siteSubnets, loadBalancer)
+	if err != nil {
+		return nil, NewCLError(ErrInvalidParameter, err.Error(), err)
 	}
 	idleCountTotal := int64(0)
 	for _, subnet := range pubSubnets {
@@ -285,9 +290,12 @@ func (a *FloatingIpAdmin) Attach(ctx context.Context, floatingIp *model.Floating
 			break
 		}
 	}
-	if primaryIface == nil {
+	if primaryIface == nil || primaryIface.Address == nil || primaryIface.Address.Subnet == nil {
 		err = NewCLError(ErrInstanceNoPrimaryInterface, fmt.Sprintf("No primary interface for the instance, %d", instID), nil)
 		return
+	}
+	if err = validateFloatingIPTarget(floatingIp.FipAddress, primaryIface.Address.Address, floatingIp.Type); err != nil {
+		return NewCLError(ErrInvalidParameter, err.Error(), err)
 	}
 	floatingIp.IntAddress = primaryIface.Address.Address
 	floatingIp.InstanceID = instance.ID
@@ -468,6 +476,9 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 				break
 			}
 		}
+		if primaryIface == nil || primaryIface.Address == nil || primaryIface.Address.Subnet == nil {
+			return NewCLError(ErrInstanceNoPrimaryInterface, "No primary interface for the instance", nil)
+		}
 		control := fmt.Sprintf("inter=%d", floatingIp.Instance.Hyper)
 		command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_floating.sh '%d' '%s' '%s' '%d' '%d'", floatingIp.RouterID, floatingIp.FipAddress, floatingIp.IntAddress, primaryIface.Address.Subnet.Vlan, floatingIp.ID)
 		err = HyperExecute(ctx, control, command)
@@ -529,6 +540,28 @@ func (a *FloatingIpAdmin) Detach(ctx context.Context, floatingIp *model.Floating
 }
 
 func (a *FloatingIpAdmin) Update(ctx context.Context, floatingIp *model.FloatingIp, instance *model.Instance, group *model.IpGroup, loadBalancer *model.LoadBalancer) (floatingIpTemp *model.FloatingIp, err error) {
+	if strings.Contains(floatingIp.FipAddress, ":") && loadBalancer != nil {
+		return nil, NewCLError(ErrInvalidParameter, "IPv6 load balancer floating IPs are not supported", nil)
+	}
+	// Reject an invalid target before removing the existing namespace mapping.
+	if instance != nil {
+		if instance.Status == "pending" || instance.RouterID == 0 {
+			return nil, NewCLError(ErrInstanceInvalidState, "Instance must have an active router", nil)
+		}
+		var target *model.Address
+		for _, iface := range instance.Interfaces {
+			if iface.PrimaryIf && iface.Address != nil && iface.Address.Subnet != nil {
+				target = iface.Address
+				break
+			}
+		}
+		if target == nil {
+			return nil, NewCLError(ErrInstanceNoPrimaryInterface, "No primary interface for the instance", nil)
+		}
+		if err = validateFloatingIPTarget(floatingIp.FipAddress, target.Address, floatingIp.Type); err != nil {
+			return nil, NewCLError(ErrInvalidParameter, err.Error(), err)
+		}
+	}
 	ctx, db, newTransaction := StartTransaction(ctx)
 	defer func() {
 		if newTransaction {

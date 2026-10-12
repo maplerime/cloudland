@@ -16,6 +16,7 @@
         "bridge-utils",
         "ipcalc",
         "ipset",
+        "tayga",
         "keepalived",
         "iputils-arping",
         "libvirt-daemon",

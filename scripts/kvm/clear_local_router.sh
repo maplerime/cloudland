@@ -28,6 +28,9 @@ for link in $ns_links; do
     [ -n "$dnsmasq_pid" ] && kill -9 $dnsmasq_pid
 done
 
+# Stop translators before deleting a namespace they keep alive.
+python3 ./floating6.py clear-router "$ID" || exit 1
+
 ip netns exec $router ip link set lo down
 suffix=$ID
 ip netns exec router-0 ip link del int-$suffix

@@ -3,6 +3,11 @@
 cd `dirname $0`
 source ../cloudrc
 
+# Cross-family IPv6 floating IPs use the namespace NAT64 backend.
+if [[ "$2" == *:* ]]; then
+    exec bash "./create_floating6.sh" "$@"
+fi
+
 [ $# -lt 7 ] && echo "$0 <router> <ext_ip> <ext_gw> <ext_vlan> <int_ip> <int_vlan> <mark_id> <inbound> <outbound>" && exit -1
 
 ID=$1
