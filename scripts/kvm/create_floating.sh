@@ -27,6 +27,11 @@ outbound=$9
 ip netns list | grep -q $router
 [ $? -ne 0 ] && echo "Router $router does not exist" && exit -1
 
+# Share the namespace lock with IPv6 creation/cleanup, without requiring Python.
+exec 9<"/var/run/netns/$router" || exit 1
+flock -x 9 || exit 1
+export CLOUDLAND_FLOATING_NS_LOCK_FD=9
+
 rtID=$(( $ext_vlan % 250 + 2 ))
 table=fip-$ext_vlan
 rt_file=/etc/iproute2/rt_tables

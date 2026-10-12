@@ -20,16 +20,25 @@ mark_id=$(($5 % 2147483647))
 
 [ -z "$router" -o -z "$ext_ip" -o -z "$int_ip" ] && exit 1
 
-ext_dev=$(ip netns exec $router ip -o addr | grep "$ext_addr" | awk '{print $2}')
+exec 9<"/var/run/netns/$router" || exit 1
+flock -x 9 || exit 1
+export CLOUDLAND_FLOATING_NS_LOCK_FD=9
+
+address_listing=$(ip netns exec "$router" ip -o -4 addr show) || exit 1
+ext_dev=$(awk -v address="$ext_addr" '$4 == address {print $2}' <<<"$address_listing")
 table=fip-${ext_dev##*-}
 ip netns exec $router ip rule del from $int_ip lookup $table
 ip netns exec $router ip rule del to $int_ip lookup $table
 ip netns exec $router ip addr del $ext_addr dev $ext_dev
 ip netns exec $router iptables -t nat -D PREROUTING -d $ext_ip -j DNAT --to-destination $int_ip
 ip netns exec $router iptables -t nat -D POSTROUTING -s $int_ip -m set ! --match-set nonat dst -j SNAT --to-source $ext_ip
-ip netns exec $router ip -o addr show $ext_dev scope global | grep -E ' inet6? '
-if [ $? -ne 0 ] && [ -z "$(ip netns exec $router ip -6 neigh show proxy dev $ext_dev)" ]; then
-    ip netns exec $router ip link del $ext_dev
+if [ -n "$ext_dev" ]; then
+    remaining_addresses=$(ip netns exec "$router" ip -o addr show "$ext_dev" scope global) || exit 1
+    remaining_proxies=$(ip netns exec "$router" ip -6 neigh show proxy dev "$ext_dev") || exit 1
+    # Failed inspection cannot be mistaken for an unused shared interface.
+    if [ -z "$remaining_addresses" ] && [ -z "$remaining_proxies" ]; then
+        ip netns exec "$router" ip link del "$ext_dev" || exit 1
+    fi
 fi
 ip netns exec $router iptables -t mangle -D PREROUTING -d $ext_ip -j MARK --set-mark $mark_id
 ip netns exec $router iptables -S | grep "mark $(printf "0x%x" $mark_id)" | while read line; do
