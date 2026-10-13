@@ -216,19 +216,7 @@ func (a *HyperAdmin) GetHyperByHostIP(ctx context.Context, hostIP string) (hyper
 }
 
 func (a *HyperAdmin) cleanupSystemInterfaces(ctx context.Context, hostid int32) (err error) {
-	_, db := GetContextDB(ctx)
-	oldIfaces := []*model.Interface{}
-	err = db.Where("hyper = ? AND type = ?", hostid, "system").Find(&oldIfaces).Error
-	if err != nil {
-		return
-	}
-	for _, oldIface := range oldIfaces {
-		err = DeleteInterface(ctx, oldIface)
-		if err != nil {
-			return
-		}
-	}
-	return
+	return CleanupSystemInterfaces(ctx, hostid)
 }
 
 func (a *HyperAdmin) UpdateRouteIP(ctx context.Context, hyper *model.Hyper, newRouteIP string, subnetID int64) (err error) {

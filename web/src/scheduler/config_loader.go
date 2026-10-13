@@ -309,6 +309,10 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 				logger.Debugf("mergeZoneConfig: override cpu_load.idle_threshold_pct=%.1f", merged.Filters.CPULoad.IdleThresholdPct)
 			}
 		}
+		if z.Reserve != nil && z.Reserve.Count != nil {
+			merged.Filters.Reserve.Count = *z.Reserve.Count
+			logger.Debugf("mergeZoneConfig: override filters.reserve.count=%d", merged.Filters.Reserve.Count)
+		}
 	}
 	if zone.Overcommit != nil {
 		z := zone.Overcommit
@@ -338,6 +342,9 @@ func mergeZoneConfig(global *PlacementConfig, zone *ZonePlacementConfig) *Placem
 		}
 		if z.SpreadMultiplier != nil {
 			merged.Weighers.SpreadMultiplier = *z.SpreadMultiplier
+		}
+		if z.PackVCPUThreshold != nil {
+			merged.Weighers.PackVCPUThreshold = *z.PackVCPUThreshold
 		}
 	}
 	return &merged

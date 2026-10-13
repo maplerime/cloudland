@@ -1306,6 +1306,30 @@ definitions:
     - password
     - user_name
     type: object
+  apis.InstanceUpdateKeysPayload:
+    properties:
+      action:
+        enum:
+        - add
+        - remove
+        - reset
+        type: string
+      keys:
+        items:
+          $ref: '#/definitions/common.BaseReference'
+        maxItems: 16
+        type: array
+      user:
+        maxLength: 32
+        type: string
+    required:
+    - action
+    type: object
+  apis.InstanceUpdateKeysResponse:
+    properties:
+      task:
+        $ref: '#/definitions/common.BaseReference'
+    type: object
   apis.InterfacePatchPayload:
     properties:
       allow_spoofing:
@@ -4817,6 +4841,42 @@ paths:
       summary: set user password for a instance
       tags:
       - Compute
+  /instances/{id}/update_keys:
+    post:
+      consumes:
+      - application/json
+      description: add, remove or reset the authorized_keys of a guest user through
+        the guest agent; the result is reported by the returned task
+      parameters:
+      - description: Instance UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Instance update keys payload
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.InstanceUpdateKeysPayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apis.InstanceUpdateKeysResponse'
+        "400":
+          description: Bad request
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "401":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: update ssh keys of a running instance
+      tags:
+      - Compute
   /instances/rule-links:
     get:
       consumes:
@@ -5975,6 +6035,75 @@ paths:
           schema:
             $ref: '#/definitions/common.APIError'
       summary: Query available placement candidates
+      tags:
+      - Placement
+  /placement/config:
+    get:
+      description: Returns global config, or effective merged config for a specific
+        zone
+      parameters:
+      - description: Zone ID (0 or omit = global config)
+        in: query
+        name: zone_id
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get placement configuration
+      tags:
+      - Placement
+  /placement/decisions:
+    get:
+      description: Returns the most recent placement scheduling decisions (max 100)
+      parameters:
+      - description: Number of decisions to return (default 20, max 100)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Get recent placement decisions
+      tags:
+      - Placement
+  /placement/reload:
+    post:
+      description: Hot-reloads placement.toml and invalidates the host state cache
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/common.APIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/common.APIError'
+      summary: Reload placement configuration
       tags:
       - Placement
   /placement/validate:

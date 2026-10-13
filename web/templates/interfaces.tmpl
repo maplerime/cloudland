@@ -42,7 +42,6 @@
 	                        </thead>
 	                        <tbody>
                                 {{ range .Interfaces }}
-				    {{ if or $.IsAdmin (eq $.UserID .Creater) }}
 		                        <tr>
 									{{ if $.IsAdmin }}
 			                        <td>{{.ID}}</td>
@@ -76,7 +75,6 @@
 			                        <td><a href="{{$Link}}/{{.ID}}"><i class="fa fa-pencil-square-o"></i></a></td>
                                     <td>{{ if not .PrimaryIf }}<div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div>{{ end }}</td>
 		                        </tr>
-				    {{ end }}
 				{{ end }}
 	                        </tbody>
                         </table>

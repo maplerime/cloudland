@@ -219,8 +219,12 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 
 		authGroup.GET("/api/v1/placement/available", placementAPI.Available)
 		authGroup.POST("/api/v1/placement/validate", placementAPI.Validate)
+		authGroup.GET("/api/v1/placement/config", placementAPI.GetConfig)
+		authGroup.GET("/api/v1/placement/decisions", placementAPI.GetDecisions)
+		authGroup.POST("/api/v1/placement/reload", placementAPI.Reload)
 
 		authGroup.POST("/api/v1/instances/:id/set_user_password", instanceAPI.SetUserPassword)
+		authGroup.POST("/api/v1/instances/:id/update_keys", instanceAPI.UpdateKeys)
 		authGroup.POST("/api/v1/instances/:id/console", consoleAPI.Create)
 		authGroup.POST("/api/v1/instances/:id/reinstall", instanceAPI.Reinstall)
 		authGroup.POST("/api/v1/instances/:id/resize", instanceAPI.Resize)

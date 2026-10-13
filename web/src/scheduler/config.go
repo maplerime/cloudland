@@ -32,6 +32,10 @@ type ZonePlacementConfig struct {
 		CPULoad *struct {
 			IdleThresholdPct *float64 `mapstructure:"idle_threshold_pct"`
 		} `mapstructure:"cpu_load"`
+
+		Reserve *struct {
+			Count *int `mapstructure:"count"`
+		} `mapstructure:"reserve"`
 	} `mapstructure:"filters"`
 
 	// Overrides global overcommit section (field-level merge)
@@ -48,7 +52,8 @@ type ZonePlacementConfig struct {
 		HugepageMultiplier          *float64 `mapstructure:"hugepage_multiplier"`
 		RAMMultiplier               *float64 `mapstructure:"ram_multiplier"`
 		CPULoadMultiplier           *float64 `mapstructure:"cpu_load_multiplier"`
-		SpreadMultiplier            *float64 `mapstructure:"spread_multiplier"`
+		SpreadMultiplier  *float64 `mapstructure:"spread_multiplier"`
+		PackVCPUThreshold *int32   `mapstructure:"pack_vcpu_threshold"`
 	} `mapstructure:"weighers"`
 }
 
@@ -84,6 +89,14 @@ type PlacementConfig struct {
 		CPULoad struct {
 			IdleThresholdPct float64 `mapstructure:"idle_threshold_pct"`
 		} `mapstructure:"cpu_load"`
+
+		Reserve struct {
+			// Number of top-vCPU-free nodes to exclude from the candidate pool per zone.
+			// Applies to all request sizes uniformly: if non-reserved candidates can
+			// satisfy the request they are used; otherwise the reserved nodes are the
+			// fallback. 0 disables this behaviour. Default 2.
+			Count int `mapstructure:"count"`
+		} `mapstructure:"reserve"`
 	} `mapstructure:"filters"`
 
 	// Overcommit fallback parameters.
@@ -102,6 +115,8 @@ type PlacementConfig struct {
 		RAMMultiplier               float64 `mapstructure:"ram_multiplier"`
 		CPULoadMultiplier           float64 `mapstructure:"cpu_load_multiplier"`
 		SpreadMultiplier            float64 `mapstructure:"spread_multiplier"`
+		// PackVCPUThreshold: VCPUs <= this → pack strategy; 0 disables tiered logic.
+		PackVCPUThreshold int32 `mapstructure:"pack_vcpu_threshold"`
 	} `mapstructure:"weighers"`
 
 	// Per-zone override configs: key = zone ID string (e.g. "1").
@@ -130,13 +145,14 @@ func defaultConfig() *PlacementConfig {
 		Enabled: false,
 		Log2DB:  true,
 		// "zone" filter removed: DB query already scopes hosts to the requested zone.
-		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity"},
+		FilterChain:           []string{"compute_alive", "hugepage", "resource", "cpu_load", "affinity", "reserve"},
 		WeigherChain:          []string{"overcommit_penalty", "hugepage", "ram", "cpu_load", "spread"},
 		FallbackFilter:        "overcommit",
 		HostReportIntervalSec: 60,
 	}
 	cfg.Filters.CPULoad.IdleThresholdPct = 15.0
 	cfg.Filters.Hugepage.PageSizeKB = 2048
+	cfg.Filters.Reserve.Count = 2
 	cfg.Overcommit.Enabled = true
 	cfg.Overcommit.VCPUDeltaRatioPct = 10.0
 	cfg.Overcommit.CPUIdleFallbackPct = 5.0
@@ -145,6 +161,7 @@ func defaultConfig() *PlacementConfig {
 	cfg.Weighers.RAMMultiplier = 1.0
 	cfg.Weighers.CPULoadMultiplier = 1.0
 	cfg.Weighers.SpreadMultiplier = -1.0
+	cfg.Weighers.PackVCPUThreshold = 8
 	return cfg
 }
 

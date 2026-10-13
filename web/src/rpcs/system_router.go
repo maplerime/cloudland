@@ -39,8 +39,12 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 		return
 	}
 	hyperName := args[2]
+	// Lock the hyper row so concurrent/repeated status reports for the SAME hyper
+	// are serialized: only one of them can (re)establish the system router at a
+	// time, and the others observe the route_ip it committed instead of racing to
+	// allocate a second public IP.
 	hyper := &model.Hyper{}
-	err = db.Where("hostid = ?", hyperID).Take(hyper).Error
+	err = db.Set("gorm:query_option", "FOR UPDATE").Where("hostid = ?", hyperID).Take(hyper).Error
 	if err != nil {
 		logger.Error("Failed to query hypervisor", err)
 		return
@@ -56,7 +60,37 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 		return
 	}
 	var sysIface *model.Interface
-	if hyper.RouteIP == "" {
+	// Try to reuse the address this hyper already owns. Resolve it through the
+	// hyper's OWN system interface (addresses.interface -> interface.hyper), not by
+	// the route_ip string: the same address string exists in multiple subnets, so a
+	// string-only lookup could bind to another subnet's row or one owned by another
+	// hyper. Matching via ownership makes both impossible.
+	if hyper.RouteIP != "" {
+		var ifaceIDs []int64
+		err = db.Model(&model.Interface{}).Where("hyper = ? AND type = ?", hyperID, "system").Pluck("id", &ifaceIDs).Error
+		if err != nil {
+			logger.Error("Failed to query system interfaces", err)
+			return
+		}
+		if len(ifaceIDs) > 0 {
+			address := &model.Address{}
+			qErr := db.Set("gorm:query_option", "FOR UPDATE").Preload("Subnet").Where("address = ? AND allocated = ? AND interface IN (?)", hyper.RouteIP, true, ifaceIDs).Take(address).Error
+			if qErr == nil {
+				sysIface = &model.Interface{Address: address}
+			} else {
+				logger.Infof("Hyper %d route_ip %s is not owned by a live system interface, reallocating: %v", hyperID, hyper.RouteIP, qErr)
+			}
+		}
+	}
+	// No reusable address (new hyper, or a stale/broken route_ip): allocate a fresh
+	// public IP. Clean up any existing system interfaces first so a hyper never
+	// accumulates more than one system IP (self-heals past leaks).
+	if sysIface == nil {
+		if err = CleanupSystemInterfaces(ctx, int32(hyperID)); err != nil {
+			logger.Error("Failed to cleanup old system interfaces", err)
+			return
+		}
+		hyper.RouteIP = ""
 		for _, subnet := range subnets {
 			sysIface, err = CreateInterface(ctx, subnet, 0, 0, int32(hyperID), 0, 0, "", "", hyperName, "system", nil, false)
 			if err == nil && sysIface != nil {
@@ -71,22 +105,6 @@ func SystemRouter(ctx context.Context, args []string) (status string, err error)
 				break
 			}
 			logger.Errorf("Failed to create system router interface for hypervisor %d from subnet %d, %v", hyperID, subnet.ID, err)
-		}
-	} else {
-		address := &model.Address{}
-		err = db.Set("gorm:query_option", "FOR UPDATE").Preload("Subnet").Where("address = ?", hyper.RouteIP).Take(address).Error
-		if err != nil {
-			logger.Error("Failed to get hyper address", err)
-			return
-		}
-		if address.Allocated {
-			sysIface = &model.Interface{Address: address}
-		} else {
-			sysIface, err = CreateInterface(ctx, address.Subnet, 0, 0, int32(hyperID), 0, 0, hyper.RouteIP, "", hyperName, "system", nil, false)
-			if err != nil {
-				logger.Errorf("Failed to create interface with address %s, %v", hyper.RouteIP, err)
-				return
-			}
 		}
 	}
 	if sysIface == nil {

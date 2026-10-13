@@ -1,0 +1,42 @@
+/*
+Copyright <holder> All Rights Reserved.
+SPDX-License-Identifier: Apache-2.0
+*/
+
+package rpcs
+
+import (
+	"context"
+	"strings"
+	"testing"
+)
+
+func TestUpdateSSHKeys_TooFewArgs(t *testing.T) {
+	status, err := UpdateSSHKeys(context.Background(), []string{"update_ssh_keys.sh", "1"})
+	if err == nil || !strings.Contains(err.Error(), "wrong params") {
+		t.Errorf("expected 'wrong params' error, got %v", err)
+	}
+	if status != "" {
+		t.Errorf("expected empty status, got %q", status)
+	}
+}
+
+func TestUpdateSSHKeys_InvalidTaskID(t *testing.T) {
+	status, err := UpdateSSHKeys(context.Background(), []string{"update_ssh_keys.sh", "abc", "success", ""})
+	if err == nil {
+		t.Error("expected error for non-numeric task ID")
+	}
+	if status != "" {
+		t.Errorf("expected empty status, got %q", status)
+	}
+}
+
+// DecodeCommand drops a trailing empty '' argument, so the callback must not
+// require the message to be present.
+func TestUpdateSSHKeys_DecodedEmptyMessageNotWrongParams(t *testing.T) {
+	_, args := DecodeCommand("update_ssh_keys.sh 'abc' 'success' ''")
+	_, err := UpdateSSHKeys(context.Background(), args)
+	if err == nil || strings.Contains(err.Error(), "wrong params") {
+		t.Errorf("expected task ID parse error, got %v (args %q)", err, args)
+	}
+}

@@ -48,7 +48,7 @@
 			                        <td data-column="Owner">{{ if .OwnerInfo }} {{.OwnerInfo.Name}} {{end}}</td>
 						{{ end }}
 			                        <td data-column="CreatedAt"><span title="{{.CreatedAt}}">{{.CreatedAt}}</span></td>
-                                    <td data-column="Action"><div class="delete-button" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
+                                    <td data-column="Action"><a href="{{$Link}}/{{.ID}}/add_to_instance" title="{{$.i18n.Tr "Add to Instance"}}"><i class="dark green plus square outline icon"></i>{{$.i18n.Tr "Add to Instance"}}</a> <div class="delete-button" style="display:inline-block" data-url="{{$Link}}/{{.ID}}" data-id="{{.ID}}"><i class="dark purple trash alternate outline icon"></i></div></td>
 		                        </tr>
                                 {{ end }}
 	                        </tbody>

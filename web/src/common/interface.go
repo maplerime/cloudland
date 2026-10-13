@@ -424,6 +424,23 @@ func ReleaseInterfaceRefs(ctx context.Context, ifaceID int64) (err error) {
 	return
 }
 
+// CleanupSystemInterfaces deletes all "system" interfaces of a hyper (freeing
+// their addresses), so a hyper never keeps more than one system-router interface.
+func CleanupSystemInterfaces(ctx context.Context, hyperID int32) (err error) {
+	_, db := GetContextDB(ctx)
+	oldIfaces := []*model.Interface{}
+	if err = db.Where("hyper = ? AND type = ?", hyperID, "system").Find(&oldIfaces).Error; err != nil {
+		logger.Error("Failed to query system interfaces", err)
+		return
+	}
+	for _, oldIface := range oldIfaces {
+		if err = DeleteInterface(ctx, oldIface); err != nil {
+			return
+		}
+	}
+	return
+}
+
 func DeleteInterface(ctx context.Context, iface *model.Interface) (err error) {
 	var db *gorm.DB
 	ctx, db = GetContextDB(ctx)

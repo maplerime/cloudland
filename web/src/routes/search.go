@@ -26,6 +26,8 @@ type InstanceSearchParams struct {
 	IP       string  // fuzzy match on interface/address IP
 	HyperIDs []int32 // filter by hypervisor host ID (IN)
 	ZoneIDs  []int64 // filter by zone ID (IN)
+	// ExcludeOSCode drops instances whose image has this os_code (e.g. "windows")
+	ExcludeOSCode string
 }
 
 // VolumeSearchParams extends BaseSearchParams with volume-specific filters.
@@ -106,6 +108,9 @@ func ApplyInstanceSearch(db *gorm.DB, params *InstanceSearchParams) *gorm.DB {
 	}
 	if len(params.ZoneIDs) > 0 {
 		db = db.Where("zone_id IN (?)", params.ZoneIDs)
+	}
+	if params.ExcludeOSCode != "" {
+		db = db.Where("image_id NOT IN (SELECT id FROM images WHERE os_code = ?)", params.ExcludeOSCode)
 	}
 	// IP search requires JOINs — handled separately in InstanceAdmin.List
 	// because it needs GROUP BY to avoid duplicate rows.

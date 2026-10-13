@@ -174,6 +174,10 @@
                                         '<div class="item" data-value="8" data-text="SetUserPassword        ">' +
                                         '<a href="/instances/' + data.instancedata[i].ID + '/set_user_password">{{$.i18n.Tr "Set User Password"}}        </a>' +
                                         '</div>' +
+                                        (data.instancedata[i].Image && data.instancedata[i].Image.OSCode === 'windows' ? '' :
+                                        '<div class="item" data-value="9" data-text="UpdateSSHKeys        ">' +
+                                        '<a href="/instances/' + data.instancedata[i].ID + '/update_keys">{{$.i18n.Tr "Update SSH Keys"}}        </a>' +
+                                        '</div>') +
 									'</div>' +
 							'</div>';
 					html += "</td>" +
@@ -385,6 +389,11 @@
 															<div class="item" data-value="5" data-text="SetUserPassword        ">
 															<a href="{{$Link}}/{{.ID}}/set_user_password">{{$.i18n.Tr "Set User Password"}}        </a>
 															</div>
+						{{ if not (and .Image (eq .Image.OSCode "windows")) }}
+															<div class="item" data-value="9" data-text="UpdateSSHKeys        ">
+															<a href="{{$Link}}/{{.ID}}/update_keys">{{$.i18n.Tr "Update SSH Keys"}}        </a>
+															</div>
+						{{ end }}
 						{{ if eq .Status "rescuing" }}
 															<div class="item" data-value="6" data-text="EndRescue        ">
                                                                                                                         <a href="{{$Link}}/{{.ID}}/end_rescue">End Rescue                   </a>

@@ -41,6 +41,12 @@ type DecisionLog struct {
 	RejectReason   string `json:"reject_reason,omitempty"` // structured rejection reason
 	CandidateCount int    `json:"candidate_count"`
 
+	// Summary is a one-line, human-readable recap of the decision (request, winning
+	// host's remaining capacity, and why — from any weigher's Explain()). Empty on
+	// failure; read RejectReason instead. Meant for the decisions API / webconsole
+	// so a reader doesn't have to decode raw min_raw/max_raw signs by hand.
+	Summary string `json:"summary,omitempty"`
+
 	// Timing
 	DurationMs float64 `json:"duration_ms"`
 }
@@ -55,7 +61,11 @@ type FilterStep struct {
 
 // WeigherStep records one weigher's scoring summary.
 type WeigherStep struct {
-	Name       string  `json:"name"`
+	Name string `json:"name"`
+	// Explain is a human-readable reason for this weigher's scoring on this
+	// request (e.g. which internal mode it picked and why), if it implements
+	// Explainer. Empty for weighers that don't.
+	Explain    string  `json:"explain,omitempty"`
 	Multiplier float64 `json:"multiplier"`
 	MinRaw     float64 `json:"min_raw"`
 	MaxRaw     float64 `json:"max_raw"`

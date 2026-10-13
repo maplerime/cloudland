@@ -38,11 +38,12 @@ const (
 	TaskActionPause       TaskAction = "pause"
 	TaskActionResume      TaskAction = "resume"
 
-	TaskActionMigrate  TaskAction = "migrate"
-	TaskActionBackup   TaskAction = "backup"
-	TaskActionSnapshot TaskAction = "snapshot"
-	TaskActionRestore  TaskAction = "restore"
-	TaskActionExport   TaskAction = "export"
+	TaskActionMigrate    TaskAction = "migrate"
+	TaskActionBackup     TaskAction = "backup"
+	TaskActionSnapshot   TaskAction = "snapshot"
+	TaskActionRestore    TaskAction = "restore"
+	TaskActionExport     TaskAction = "export"
+	TaskActionUpdateKeys TaskAction = "update_keys"
 )
 
 type Task struct {

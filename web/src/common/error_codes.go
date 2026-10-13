@@ -275,6 +275,11 @@ const (
 	ErrSSHKeyDeleteFailed   ErrCode = 161004
 	ErrSSHKeyGenerateFailed ErrCode = 161005
 	ErrSSHKeyInUse          ErrCode = 161006
+	// ssh key live injection (PET-1981)
+	ErrSSHKeyRequired         ErrCode = 161007
+	ErrSSHKeyInvalidGuestUser ErrCode = 161008
+	ErrSSHKeyInjectFailed     ErrCode = 161009
+	ErrSSHKeyUnsupportedOS    ErrCode = 161010
 
 	// hypervisor/zone related errors (171xxx)
 	ErrNoQualifiedHypervisor  ErrCode = 171001
