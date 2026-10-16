@@ -1,0 +1,12 @@
+Cmnd_Alias CLAND_SCRIPTS = \
+    /opt/cloudland/scripts/, \
+    /opt/cloudland/scripts/kvm/, \
+    /opt/cloudland/scripts/kvm/async_job/, \
+    /opt/cloudland/scripts/kvm/operation/, \
+    /opt/cloudland/scripts/backend/, \
+    /opt/cloudland/scripts/backend/async_job/, \
+    /opt/cloudland/scripts/backend/operation/
+cland ALL=(ALL) NOPASSWD: SETENV: CLAND_SCRIPTS
+{% if ansible_distribution == "Ubuntu" and ansible_distribution_version is version('26.04', '>=') %}
+Defaults env_keep += "PATH LD_LIBRARY_PATH SCI_CLIENT_ID ZONE_NAME"
+{% endif %}

@@ -367,18 +367,13 @@
     reload: yes
   tags: [sysctl]
 
-- name: Add env_keep to /etc/sudoers.d/cland on Ubuntu 26.04+
+- name: Configure /etc/sudoers.d/cland
   become: true
-  lineinfile:
-    path: /etc/sudoers.d/cland
-    line: 'Defaults env_keep += "PATH LD_LIBRARY_PATH SCI_CLIENT_ID ZONE_NAME"'
-    state: present
-    create: yes
+  template:
+    src: cland.sudoers.j2
+    dest: /etc/sudoers.d/cland
     owner: root
     group: root
-    mode: '0440'
+    mode: "0440"
     validate: 'visudo -cf %s'
-  when:
-    - ansible_distribution == "Ubuntu"
-    - ansible_distribution_version is version('26.04', '>=')
-  tags: [cland_sudoers_2604]
+  tags: [cland_sudoers]
