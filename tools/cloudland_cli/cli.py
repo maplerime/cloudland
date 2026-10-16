@@ -17,6 +17,7 @@ from cloudland_cli.iaas_client import IaaSClient
 from cloudland_cli.wds_client import WDSClient
 from cloudland_cli.clean_volumes import clean_volumes
 from cloudland_cli.clean_images import clean_image_snapshots
+from cloudland_cli.db import get_instance_owners
 
 
 def _setup_logging(verbose, log_file):
@@ -162,6 +163,26 @@ def _print_output(data, as_json):
         click.echo(json.dumps(data, ensure_ascii=False, indent=2))
     else:
         click.echo(str(data))
+
+
+@cli.command("instance-owner")
+@click.argument("instance_ids", nargs=-1, required=True)
+@click.option("--json", "as_json", is_flag=True, help="Print raw JSON")
+@click.pass_context
+def instance_owner(ctx, instance_ids, as_json):
+    """Look up the owning user/org for instances (queries the DB directly).
+
+    Accepts either 'inst-42' (as seen in virsh/qemu output) or plain '42'.
+    """
+    try:
+        cfg = load_config(ctx.obj["config_path"], ctx.obj["wds_overrides"])
+    except Exception as e:
+        click.echo(f"Error loading config: {e}", err=True)
+        sys.exit(1)
+
+    ids = [int(i.replace("inst-", "")) for i in instance_ids]
+    rows = get_instance_owners(cfg["db"], ids)
+    _print_output(rows, as_json)
 
 
 @cli.group()

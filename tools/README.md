@@ -160,3 +160,62 @@ cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --passw
 cloudland iaas --endpoint https://dev-sv01.raksmart.com --username admin --password '***' --insecure \
 	instances delete <instance_uuid>
 ```
+
+## 排查客户 VM 高 CPU 进程
+
+两步走：第一步在 hypervisor 上跑，抓出高 CPU VM 里的进程；第二步在管理机上跑，把
+VM 反查成客户。
+
+### 第一步：hypervisor 上抓 top 进程（`scripts/kvm/operation/vm_top_cpu_procs.sh`）
+
+```bash
+# 逐台 hypervisor 执行，自动找 qemu %CPU >= 50 的 VM，抓其内部 top10 进程 + 所属用户，
+# 输出 CSV 存到以主机名区分的文件
+ssh hyper01 'CSV=1 /opt/cloudland/scripts/kvm/operation/vm_top_cpu_procs.sh' > top_cpu_hyper01.csv
+ssh hyper02 'CSV=1 /opt/cloudland/scripts/kvm/operation/vm_top_cpu_procs.sh' > top_cpu_hyper02.csv
+# ...对所有 hypervisor 重复（用 ansible/pssh 批量跑更省事）
+
+# 合并成一份表
+{ echo "hostname,vm_id,host_qemu_pcpu,user,pid,proc_pcpu,comm"; cat top_cpu_hyper*.csv | grep -v '^hostname,'; } > all_top_cpu.csv
+```
+
+不带 `CSV=1` 直接跑是人读的文本格式；调阈值用 `CPU_THRESHOLD=80`，只想查某几台 VM
+用 `./vm_top_cpu_procs.sh inst-42 inst-7`（跳过宿主机预过滤）。`-h` 看完整参数。
+
+#### 部分 VM 抓不到进程：guest-exec-status 被禁用
+
+有些 VM 的 qemu-ga 把 `guest-exec-status`（以及所有 `guest-file-*`）RPC 禁掉了——能
+下发命令但读不到执行结果，这看着像是平台故意留的防窃听边界（能控制，不能窥探）。
+`vm_top_cpu_procs.sh` 遇到这种 VM 会直接报 `guest-exec-status unavailable`，不会傻等
+超时。
+
+先用 `scripts/kvm/operation/check_guest_rpc_locked.sh` 批量找出这批 VM（纯只读，只调
+`guest-info`，不改任何东西）：
+
+```bash
+# 本机所有运行中 VM，跳过 Windows，列出被锁的 vm_id
+./check_guest_rpc_locked.sh
+
+# CSV 模式，方便多台 hypervisor 汇总
+CSV=1 ./check_guest_rpc_locked.sh   # hostname,vm_id,status（exec_status_disabled|agent_unreachable）
+```
+
+确认要解锁某台 VM 后，手动跑（`vm_top_cpu_procs.sh` 报错时也会打印同样这条命令）：
+
+```bash
+virsh qemu-agent-command <vm_ID> '{"execute":"guest-exec","arguments":{"path":"/bin/sh","arg":["-c","sed -i '\''s/--allow-rpcs=/--allow-rpcs=guest-exec-status,guest-file-open,guest-file-read,guest-file-close,/'\'' /etc/sysconfig/qemu-ga && systemctl restart qemu-guest-agent"]}}'
+```
+
+跑完等几秒，用 `virsh qemu-agent-command <vm_ID> '{"execute":"guest-info"}'` 确认
+`guest-exec-status` 变成 `enabled:true` 再重新跑 `vm_top_cpu_procs.sh`。这是改客户 VM
+内部配置并重启一个系统服务，必须每台单独人工确认，脚本不会自动执行。
+
+### 第二步：VM 反查客户（`cloudland instance-owner`）
+
+```bash
+# 从 all_top_cpu.csv 的 vm_id 列取值查询，拿到 user_id/username/org_name
+awk -F, 'NR>1{print $2}' all_top_cpu.csv | sort -u | xargs cloudland instance-owner --json
+```
+
+把结果按 `vm_id` 和 `all_top_cpu.csv` 关联，就是「客户 VM → 高 CPU 进程 → 所属用户」
+的完整表，可以丢进 Excel 或 `sort -t, -k6 -rn all_top_cpu.csv` 直接看全局 CPU 大户。
