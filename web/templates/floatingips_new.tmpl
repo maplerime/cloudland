@@ -71,7 +71,7 @@
 						{{ if .IsAdmin }}
 								<div class="inline field">
 									<label for="publicip">{{.i18n.Tr "Public IP"}}</label>
-									<input id="publicip" name="publicip" placeholder="192.168.1.25">
+									<input id="publicip" name="publicip" placeholder="IPv4 / IPv6">
 								</div>
 						{{ end }}
 								<div class="inline field">
@@ -82,7 +82,7 @@
 										<div class="default text">{{.i18n.Tr "Public Subnet"}}</div>
 										<div class="menu">
 											{{range .Subnets}}
-											<div class="item" data-value="{{.ID}}">{{.Name}}</div>
+											<div class="item" data-value="{{.ID}}">{{.Name}} ({{.Network}})</div>
 											{{end}}
 										</div>
 									</div>
