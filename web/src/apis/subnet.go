@@ -66,10 +66,10 @@ type SubnetListResponse struct {
 
 type SubnetPayload struct {
 	Name        string         `json:"name" binding:"required,min=2,max=64"`
-	NetworkCIDR string         `json:"network_cidr" binding:"required,cidrv4"`
-	Gateway     string         `json:"gateway" binding:"omitempty,ipv4"`
-	StartIP     string         `json:"start_ip" binding:"omitempty,ipv4"`
-	EndIP       string         `json:"end_ip" binding:"omitempty,ipv4"`
+	NetworkCIDR string         `json:"network_cidr" binding:"required,cidr"`
+	Gateway     string         `json:"gateway" binding:"omitempty,ip"`
+	StartIP     string         `json:"start_ip" binding:"omitempty,ip"`
+	EndIP       string         `json:"end_ip" binding:"omitempty,ip"`
 	NameServer  string         `json:"dns" binding:"omitempty"`
 	BaseDomain  string         `json:"base_domain" binding:"omitempty"`
 	Dhcp        bool           `json:"dhcp" binding:"omitempty"`

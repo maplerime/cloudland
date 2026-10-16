@@ -16,6 +16,8 @@
         "bridge-utils",
         "ipcalc",
         "ipset",
+        "jool-dkms",
+        "jool-tools",
         "keepalived",
         "iputils-arping",
         "libvirt-daemon",
