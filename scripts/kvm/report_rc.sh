@@ -238,6 +238,10 @@ function sync_instance()
 function sync_delayed_job()
 {
     for f in $(ls $async_job_dir/*.done); do
+        if grep -q '^|:-VM-INSPECTION-REPORT-:| ' "$f"; then
+            sudo -E /bin/bash /opt/cloudland/scripts/kvm/vm_inspection/report.sh --collect-job "$f"
+            continue
+        fi
         cat $f
 	sudo rm -f $f
     done
@@ -245,6 +249,8 @@ function sync_delayed_job()
 
 function calc_resource()
 {
+    local hive_status
+    hive_status=$(sudo -E python3 ./vm_inspection/common/hive_client.py status-base64)
     virtual_cpu=0
     virtual_memory=0
     virtual_disk=0
@@ -317,6 +323,7 @@ function calc_resource()
     else
         echo "cpu=$cpu/$total_cpu memory=$memory/$total_memory disk=$disk/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle"
     fi
+    [ -z "$hive_status" ] || echo "|:-COMMAND-:| report_rc.sh 'hive_status=$hive_status'"
     cd /opt/cloudland/run
     let disk=$disk/1000*1000
     let total_disk=$total_disk/1000*1000
@@ -336,6 +343,7 @@ calc_resource
 sync_instance
 recover_loadbalancer
 sync_delayed_job
+sudo -E /bin/bash /opt/cloudland/scripts/kvm/vm_inspection/report.sh --cleanup-metrics >&2 || echo 'VM inspection metric cleanup failed' >&2
 check_system_router
 #probe_arp >/dev/null 2>&1
 inst_status

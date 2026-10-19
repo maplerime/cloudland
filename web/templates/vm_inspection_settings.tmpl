@@ -1,0 +1,107 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+            {{template "_left" .}}
+            <div class="twelve wide column content">
+                <h4 class="ui top attached header">{{.i18n.Tr "VM_Inspection_Settings"}}</h4>
+                {{if .Saved}}<div class="ui positive message">{{.i18n.Tr "Success"}}</div>{{end}}
+                <form class="ui form" id="vm-inspection-settings-form" method="post" action="/vm-inspection/settings">
+                    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                    <div class="ui attached segment">
+                        <div class="two fields">
+                            <div class="field">
+                                <label for="isolation_enabled">{{.i18n.Tr "VM_Global_Isolation"}}</label>
+                                <select id="isolation_enabled" name="isolation_enabled">
+                                    <option value="false" {{if not .Settings.IsolationEnabled}}selected{{end}}>{{.i18n.Tr "Disable"}}</option>
+                                    <option value="true" {{if .Settings.IsolationEnabled}}selected{{end}}>{{.i18n.Tr "Enable"}}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="record_retention_days">{{.i18n.Tr "VM_Record_Retention"}}</label>
+                                <input type="number" id="record_retention_days" name="record_retention_days" min="1" step="1" value="{{.Settings.RecordRetentionDays}}" required>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="feature_library_url">{{.i18n.Tr "VM_Feature_Library_URL"}} ({{.i18n.Tr "Optional"}})</label>
+                            <input type="url" id="feature_library_url" name="feature_library_url" maxlength="512" value="{{.Settings.FeatureLibraryURL}}">
+                        </div>
+                        <div class="field">
+                            <label for="feature_library_token">Hive Bearer token {{if .Settings.FeatureLibraryTokenConfigured}}({{.i18n.Tr "VM_Token_Configured"}}){{end}}</label>
+                            <input type="password" id="feature_library_token" name="feature_library_token" maxlength="4096" autocomplete="new-password" placeholder="{{.i18n.Tr "VM_Token_Unchanged"}}">
+                            <label><input type="checkbox" name="clear_feature_library_token" value="true"> {{.i18n.Tr "VM_Token_Clear"}}</label>
+                        </div>
+                        <h5>{{.i18n.Tr "VM_Match_Policy"}}</h5>
+                        <div class="two fields">
+                            <div class="field"><label for="strong_action">strong</label><select id="strong_action" name="strong_action">
+                                <option value="pin" {{if eq (index .Settings.MatchPolicy "strong").Action "pin"}}selected{{end}}>{{.i18n.Tr "VM_Quarantine"}}</option>
+                                <option value="none" {{if eq (index .Settings.MatchPolicy "strong").Action "none"}}selected{{end}}>{{.i18n.Tr "VM_No_Auto_Pin"}}</option>
+                            </select></div>
+                            <div class="field"><label for="weak_action">weak</label><select id="weak_action" name="weak_action">
+                                <option value="pin" {{if eq (index .Settings.MatchPolicy "weak").Action "pin"}}selected{{end}}>{{.i18n.Tr "VM_Quarantine"}}</option>
+                                <option value="none" {{if eq (index .Settings.MatchPolicy "weak").Action "none"}}selected{{end}}>{{.i18n.Tr "VM_No_Auto_Pin"}}</option>
+                            </select></div>
+                        </div>
+                    </div>
+                    <div class="ui attached segment">
+                        <h4>{{.i18n.Tr "Compute_Node"}} ({{len .Nodes}})</h4>
+                        <div class="field">
+                            <label for="node-search">{{.i18n.Tr "Search"}}</label>
+                            <input id="node-search" type="search" autocomplete="off">
+                        </div>
+                        <div class="inline fields">
+                            <label>{{.i18n.Tr "VM_Selected_Nodes"}}: <span id="selected-node-count">0</span></label>
+                            <div class="field">
+                                <select id="batch-node-state">
+                                    <option value="default">default — {{.i18n.Tr "VM_Inherit_Global"}}</option>
+                                    <option value="true">{{.i18n.Tr "Enable"}}</option>
+                                    <option value="false">{{.i18n.Tr "Disable"}}</option>
+                                </select>
+                            </div>
+                            <button class="ui tiny button" id="apply-node-state" type="button">{{.i18n.Tr "Apply"}}</button>
+                        </div>
+                        <div style="overflow-x:auto; max-height:36rem; overflow-y:auto">
+                            <table class="ui compact striped table">
+                                <thead><tr>
+                                    <th><input type="checkbox" id="select-visible-nodes" aria-label="{{.i18n.Tr "VM_Select_Visible"}}"></th>
+                                    <th>{{.i18n.Tr "HyperID"}}</th>
+                                    <th>{{.i18n.Tr "Hostname"}}</th>
+                                    <th>{{.i18n.Tr "IP"}}</th>
+                                    <th>{{.i18n.Tr "VM_Node_Isolation"}}</th>
+                                    <th>{{.i18n.Tr "Status"}}</th><th>{{.i18n.Tr "VM_Hive_Status"}}</th>
+                                </tr></thead>
+                                <tbody>
+                                    {{range .Nodes}}
+                                    <tr class="vm-inspection-node" data-search="{{.HyperID}} {{.Hostname}} {{.HostIP}}">
+                                        <td><input class="node-selected" type="checkbox" aria-label="{{$.i18n.Tr "Compute_Node"}} {{.HyperID}}"></td>
+                                        <td>{{.HyperID}}</td><td>{{.Hostname}}</td><td>{{.HostIP}}</td>
+                                        <td><select class="node-state" data-hyper-id="{{.HyperID}}" data-original="{{.State}}" aria-label="{{$.i18n.Tr "VM_Node_Isolation"}} {{.HyperID}}">
+                                            <option value="default" {{if eq .State "default"}}selected{{end}}>default — {{$.i18n.Tr "VM_Inherit_Global"}}</option>
+                                            <option value="true" {{if eq .State "true"}}selected{{end}}>{{$.i18n.Tr "Enable"}}</option>
+                                            <option value="false" {{if eq .State "false"}}selected{{end}}>{{$.i18n.Tr "Disable"}}</option>
+                                        </select></td>
+                                        <td class="node-effective" data-enabled="{{$.i18n.Tr "Enable"}}" data-disabled="{{$.i18n.Tr "Disable"}}">{{if or (eq .State "true") (and (eq .State "default") $.Settings.IsolationEnabled)}}{{$.i18n.Tr "Enable"}}{{else}}{{$.i18n.Tr "Disable"}}{{end}}</td>
+                                        <td style="min-width:16rem;overflow-wrap:anywhere">
+                                            sync: {{call $.Display .Hive.SyncStatus}} / fetch: {{call $.Display .Hive.FetchStatus}}<br>
+                                            {{$.i18n.Tr "VM_Ruleset_Version"}}: {{call $.Display .Hive.SnapshotVersion}}<br>
+                                            {{$.i18n.Tr "VM_Hive_Last_Success"}} (UTC): {{call $.DisplayTime .Hive.LastSuccessAt}}<br>
+                                            {{$.i18n.Tr "VM_Hive_Cert_Expires"}} (UTC): {{call $.DisplayTime .Hive.CertificateExpiresAt}}<br>
+                                            {{$.i18n.Tr "Error"}}: {{call $.DisplayError .Hive.FetchStatus .Hive.ErrorMessage}}
+                                        </td>
+                                    </tr>
+                                    {{end}}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="ui bottom attached segment">
+                        <button class="ui green button" type="submit">{{.i18n.Tr "Update"}}</button>
+                        <a class="ui button" href="/vm-infections">{{.i18n.Tr "VM_Infection_Records"}}</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/js/vm_inspection.js"></script>
+{{template "_footer" .}}

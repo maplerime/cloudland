@@ -5,7 +5,9 @@
   注：match 若不可用，将 node-* 分支改为明确枚举（见注释）
   ========================================================= */}}
 {{ define "teams.card" -}}
-{{ if eq .CommonLabels.alert_type "packet_drop" -}}
+{{ if eq .Receiver "teams-vm-malware" -}}
+{{ template "teams.vm_malware.card" . }}
+{{- else if eq .CommonLabels.alert_type "packet_drop" -}}
 {{ template "teams.packet_drop.card" . }}
 {{- else if eq .CommonLabels.alert_type "ipgroup_low_ips" -}}
 {{ template "teams.ipgroup.card" . }}
@@ -241,6 +243,42 @@
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}}
           ]
         }
+      ]
+    }
+  }]
+}
+{{- end }}
+
+{{ define "teams.vm_malware.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard", "version": "1.2", "msteams": {"width": "Full"},
+      "body": [
+        {"type": "TextBlock", "text": "高 CPU VM 检测结果", "weight": "Bolder", "color": "Attention", "wrap": true}
+        {{ range .Alerts.Firing }},
+        {"type": "FactSet", "facts": [
+          {"title": "状态", "value": {{ .Status | toJson }}},
+          {"title": "告警发生时间（UTC+8）", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" .StartsAt) | toJson }}},
+          {"title": "本轮通知时间（UTC+8）", "value": {{ date "2006-01-02 15:04:05" (dateModify "+8h" now) | toJson }}},
+          {"title": "摘要", "value": {{ .Annotations.summary | replace "\\\\_" "_" | toJson }}},
+          {"title": "告警类型", "value": {{ .Labels.alert_type | replace "\\\\_" "_" | toJson }}},
+          {"title": "告警名称", "value": {{ .Labels.alertname | replace "\\\\_" "_" | toJson }}},
+          {"title": "通知级别", "value": {{ .Labels.severity | toJson }}},
+          {"title": "监控实例", "value": {{ or .Labels.instance .Labels.domain "N/A" | replace "\\\\_" "_" | toJson }}},
+          {"title": "VM", "value": {{ .Labels.instance_id | toJson }}},
+          {"title": "Domain", "value": {{ .Labels.domain | replace "\\\\_" "_" | toJson }}},
+          {"title": "区域 / 节点", "value": {{ printf "%s / %s (%s)" .Labels.region_id .Labels.node_hostname .Labels.source_hyper | replace "\\\\_" "_" | toJson }}},
+          {"title": "结果时间（UTC）", "value": {{ .Annotations.detected_at | toJson }}},
+          {"title": "扫描标识", "value": {{ .Labels.scan_id | replace "\\\\_" "_" | toJson }}},
+          {"title": "记录查询地址（需登录）", "value": {{ printf "https://<管理平台地址>/vm-infections?instance_uuid=%s" .Labels.instance_id | toJson }}}
+        ]},
+        {"type": "TextBlock", "text": {{ .Annotations.description | replace "\\\\_" "_" | replace "\\n" "\n" | toJson }}, "wrap": true}
+        {{ end }}
       ]
     }
   }]

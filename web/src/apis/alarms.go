@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"web/src/common"
 	"web/src/model"
 	"web/src/routes"
 
@@ -2621,6 +2622,10 @@ func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 
 	rulePtr, err := a.alarmAdmin.CreateNodeAlarmRule(c.Request.Context(), &rule)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": clErr.Message})
+			return
+		}
 		if strings.Contains(err.Error(), "already exists") {
 			c.JSON(http.StatusConflict, gin.H{
 				"error":   "Rule type already exists",
@@ -2644,6 +2649,10 @@ func (a *AlarmAPI) GetNodeAlarmRules(c *gin.Context) {
 
 	rules, err := a.alarmAdmin.GetNodeAlarmRules(c.Request.Context(), uuid, ruleType)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": clErr.Message})
+			return
+		}
 		logger.Errorf("Failed to get node alarm rules: error=%v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get node alarm rules"})
 		return
@@ -2665,6 +2674,10 @@ func (a *AlarmAPI) DeleteNodeAlarmRule(c *gin.Context) {
 
 	deletedFiles, err := a.alarmAdmin.DeleteNodeAlarmRule(c.Request.Context(), uuid)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
+			c.JSON(http.StatusForbidden, gin.H{"error": clErr.Message})
+			return
+		}
 		if strings.Contains(err.Error(), "not found") {
 			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 			return

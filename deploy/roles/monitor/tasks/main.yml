@@ -524,6 +524,16 @@
                 receiver: 'teams-ipgroup-alerts'
                 continue: true
 
+              # Completed inspection notifications are independent of the intelligent CPU webhook.
+              - match:
+                  alert_type: vm_malware
+                group_by: ['alertname', 'region_id', 'source_hyper', 'instance_id', 'scan_id']
+                group_wait: 10s
+                group_interval: 1m
+                repeat_interval: 3h
+                receiver: 'teams-vm-malware'
+                continue: false
+
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
               - match_re:
                   alert_type: (cpu|memory|bw)
@@ -581,6 +591,11 @@
               http_config:
                 tls_config:
                   insecure_skip_verify: true
+
+          - name: 'teams-vm-malware'
+            webhook_configs:
+            - url: 'http://localhost:2000/vm_malware'
+              send_resolved: false
 
           - name: 'teams-notifications'
             webhook_configs:

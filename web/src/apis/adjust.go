@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/spf13/viper"
 	"gorm.io/gorm"
 
 	"web/src/common"
@@ -30,6 +31,10 @@ type AdjustAPI struct {
 // Global variable
 var adjustAPI = &AdjustAPI{
 	operator: &routes.AdjustOperator{},
+}
+
+func init() {
+	viper.SetDefault("vm_inspection.enabled", true)
 }
 
 // Resource adjustment configuration file path constants
@@ -484,6 +489,8 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 	for i, alert := range req.Alerts {
 		// Create request tracking ID
 		requestID := fmt.Sprintf("adjust-%s-%d", time.Now().Format("20060102-150405"), i)
+
+		a.tryStartVMInspection(c.Request.Context(), alert, requestID)
 
 		// Process alert adjustment
 		result := a.processAlertAdjustment(c.Request.Context(), alert, requestID)
@@ -2605,4 +2612,22 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 			},
 		},
 	})
+}
+
+// tryStartVMInspection reuses the pre-adjustment status filter; scan completion is independent.
+func (a *AdjustAPI) tryStartVMInspection(ctx context.Context, alert routes.AdjustAlert, requestID string) {
+	if !viper.GetBool("vm_inspection.enabled") || alert.Status != "firing" || alert.Labels["action_type"] != "limit_cpu" || alert.Labels["domain"] == "" || alert.Labels["rule_id"] == "" {
+		return
+	}
+	if a.queryAdjustmentStatus(ctx, alert.Labels["domain"], alert.Labels["rule_id"], "cpu", "") == 1 {
+		return
+	}
+	input := routes.VMInspectionStartInput{InstanceUUID: alert.Labels["instance_id"], Domain: alert.Labels["domain"], RegionID: alert.Labels["region_id"], RuleGroupUUID: alert.Labels["rule_group"], GlobalRuleID: alert.Labels["global_rule_id"]}
+	logger.Infof("[VM-INSPECTION] request=%s VM=%q domain=%q rule=%q triggered",
+		requestID, input.InstanceUUID, input.Domain, alert.Labels["rule_id"])
+	go func() {
+		if err := (&routes.VMInspectionOperator{}).StartVMInspection(context.Background(), input); err != nil {
+			logger.Errorf("[VM-INSPECTION] request=%s start failed: %v", requestID, err)
+		}
+	}()
 }

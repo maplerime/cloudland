@@ -20,6 +20,7 @@
       - resource_alerts:  "{{ slack_resource_webhook_url }}"
       - drop_package:     "{{ slack_security_webhook_url }}"
       - ipgroup:          "{{ slack_resource_webhook_url }}"
+      - vm_malware:       "{{ slack_security_webhook_url }}"
     mode: 0644
   register: msteams_config_result
   tags: [monitor]
