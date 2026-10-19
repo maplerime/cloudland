@@ -106,3 +106,8 @@ bukyRyO4hBhxeBhipeaLi2HM2SJSeu867NzBKbQqbsaXbb+D+Ko4T4C5ouJATYe6
 VQIDAQAB
 -----END PUBLIC KEY-----
 """
+
+{% if vm_inspection_enabled is defined and not (vm_inspection_enabled | bool) %}
+[vm_inspection]
+enabled = false
+{% endif %}

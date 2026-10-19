@@ -62,6 +62,14 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/hypers", hyperAPI.List)
 		authGroup.GET("/api/v1/hypers/:hostid", hyperAPI.Get)
 		authGroup.PATCH("/api/v1/hypers/:hostid", hyperAPI.Patch)
+		authGroup.GET("/api/v1/vm-inspection/settings", vmInspectionSettingsAPI.Get)
+		authGroup.PATCH("/api/v1/vm-inspection/settings", vmInspectionSettingsAPI.Update)
+		authGroup.POST("/api/v1/instances/:id/quarantine", vmIsolationAPI.Quarantine)
+		authGroup.POST("/api/v1/instances/:id/release-quarantine", vmIsolationAPI.Release)
+		authGroup.GET("/api/v1/vm-infections", vmInfectionAPI.List)
+		authGroup.GET("/api/v1/vm-infections/:uuid", vmInfectionAPI.Get)
+		authGroup.DELETE("/api/v1/vm-infections/:uuid", vmInfectionAPI.Delete)
+		authGroup.POST("/api/v1/vm-infections/:uuid/sync", vmInfectionAPI.Sync)
 
 		authGroup.GET("/api/v1/migrations", migrationAPI.List)
 		authGroup.POST("/api/v1/migrations", migrationAPI.Create)
@@ -188,7 +196,7 @@ func Register() (r *gin.Engine) {
 		authGroup.DELETE("/api/v1/backups/:id", volBackupAPI.Delete)
 		authGroup.POST("/api/v1/backups/:id/restore", volBackupAPI.Restore)
 
-authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
+		authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.POST("/api/v1/consistency_groups", consistencyGroupAPI.Create)
 		authGroup.GET("/api/v1/consistency_groups/:id", consistencyGroupAPI.Get)
 		authGroup.PATCH("/api/v1/consistency_groups/:id", consistencyGroupAPI.Patch)
@@ -244,7 +252,6 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.POST("/api/v1/ip-whitelist", ipWhitelistAPI.Create)
 		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
 		authGroup.POST("/api/v1/ip-whitelist/refresh", ipWhitelistAPI.Refresh)
-
 
 		authGroup.GET("/api/v1/traffic-billing", trafficBillingAPI.List)
 		authGroup.GET("/api/v1/traffic-billing/:uuid", trafficBillingAPI.List)

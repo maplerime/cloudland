@@ -111,6 +111,13 @@
     - { src: "scid.service", dest: "/lib/systemd/system", owner: "root" }
   tags: [be_srv, sci]
 
+- name: Ensure VM inspection script dependencies
+  apt:
+    name: ["jq", "coreutils", "util-linux", "python3", "gzip"]
+    state: present
+  when: virt_type == 'kvm-x86_64'
+  tags: [be_pkg, scripts, scripts_only]
+
 - name: copy scripts
   synchronize:
     src: "{{ item.src }}"
@@ -131,6 +138,20 @@
     recurse: yes
     state: directory
   tags: [scripts, scripts_only]
+
+- name: Create VM inspection local directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    owner: cland
+    group: cland
+    mode: '0755'
+  loop:
+    - /opt/cloudland/cache/vm_inspection
+    - /opt/cloudland/run/vm_inspection
+    - /var/lib/node_exporter
+  when: virt_type == 'kvm-x86_64'
+  tags: [be_conf, scripts, scripts_only]
 
 - name: link backend to kvm
   file:

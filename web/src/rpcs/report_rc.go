@@ -14,10 +14,12 @@ import (
 
 	. "web/src/common"
 	"web/src/model"
+	"web/src/routes"
 )
 
 func init() {
 	Add("report_rc", ReportRC)
+	Add("vm_infection_result", VMInfectionResult)
 }
 
 func ReportRC(ctx context.Context, args []string) (status string, err error) {
@@ -157,4 +159,28 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to update hypervisor load metrics", err)
 	}
 	return
+}
+
+func VMInfectionResult(ctx context.Context, args []string) (string, error) {
+	if len(args) != 6 {
+		return "", fmt.Errorf("wrong infection result parameters")
+	}
+	source, ok := ctx.Value("source_hyper").(int32)
+	if !ok || source < 0 {
+		return "", fmt.Errorf("missing infection result source")
+	}
+	logger.Debugf("[VM-INFECTION] report_rc source=%d fragment received", source)
+	seq, err := strconv.Atoi(args[2])
+	if err != nil {
+		return "", err
+	}
+	total, err := strconv.Atoi(args[3])
+	if err != nil {
+		return "", err
+	}
+	err = routes.ReceiveVMInfectionChunk(ctx, source, routes.VMInfectionChunkInput{RecordUUID: args[1], Seq: seq, Total: total, SHA256: args[4], Payload: args[5]})
+	if err != nil {
+		return "", err
+	}
+	return "OK", nil
 }

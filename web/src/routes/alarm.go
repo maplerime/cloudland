@@ -2069,6 +2069,14 @@ func validateNodeAlarmRule(rule *model.NodeAlarmRule) error {
 }
 
 func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule) (*model.NodeAlarmRule, error) {
+	if rule.RuleType == RuleTypeVMMalware {
+		if err := requireVMInspectionAdmin(ctx); err != nil {
+			return nil, err
+		}
+		if _, err := validateVMMalwareRuleConfig(rule.Config.RawMessage); err != nil {
+			return nil, err
+		}
+	}
 	if err := validateNodeAlarmRule(rule); err != nil {
 		return nil, err
 	}
@@ -2113,6 +2121,8 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
 	case RuleTypeNodeReboot:
 		templateFiles = []string{"node-reboot-detection.yml.j2"}
+	case RuleTypeVMMalware:
+		templateFiles = []string{"vm-malware.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
@@ -2123,6 +2133,14 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		if err = json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
 			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 			return nil, fmt.Errorf("failed to parse config JSON: %v", err)
+		}
+
+		if rule.RuleType == RuleTypeVMMalware {
+			configData, err = validateVMMalwareRuleConfig(rule.Config.RawMessage)
+			if err != nil {
+				operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
+				return nil, err
+			}
 		}
 
 		if rule.RuleType == RuleTypeAvailable {
@@ -2236,6 +2254,10 @@ func (v *AlarmView) CreateNodeAlarmRule(c *macaron.Context) {
 	// ... existing code to call createNodeAlarmRuleInternal and handle response ...
 	rulePtr, err := createNodeAlarmRuleInternal(c.Req.Context(), &rule)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
+			c.JSON(http.StatusForbidden, map[string]interface{}{"error": clErr.Message})
+			return
+		}
 		handleAlarmRuleError(c, err)
 		return
 	}
@@ -2255,14 +2277,34 @@ func (v *AlarmView) CreateNodeAlarmRule(c *macaron.Context) {
 }
 
 func getNodeAlarmRulesInternal(ctx context.Context, uuid, ruleType string) ([]model.NodeAlarmRule, error) {
-	operator := &AlarmOperator{}
-	if uuid != "" {
-		return operator.GetNodeAlarmRules(ctx, uuid)
-	} else if ruleType != "" {
-		return operator.GetNodeAlarmRulesByType(ctx, ruleType)
-	} else {
-		return operator.GetNodeAlarmRules(ctx, "")
+	adminErr := requireVMInspectionAdmin(ctx)
+	if uuid == "" && ruleType == RuleTypeVMMalware && adminErr != nil {
+		return nil, adminErr
 	}
+	operator := &AlarmOperator{}
+	var rules []model.NodeAlarmRule
+	var err error
+	if uuid != "" {
+		rules, err = operator.GetNodeAlarmRules(ctx, uuid)
+	} else if ruleType != "" {
+		rules, err = operator.GetNodeAlarmRulesByType(ctx, ruleType)
+	} else {
+		rules, err = operator.GetNodeAlarmRules(ctx, "")
+	}
+	if err != nil {
+		return nil, err
+	}
+	visible := rules[:0]
+	for _, rule := range rules {
+		if rule.RuleType == RuleTypeVMMalware && adminErr != nil {
+			if uuid != "" {
+				return nil, adminErr
+			}
+			continue
+		}
+		visible = append(visible, rule)
+	}
+	return visible, nil
 }
 
 func (a *AlarmAdmin) GetNodeAlarmRules(ctx context.Context, uuid, ruleType string) ([]model.NodeAlarmRule, error) {
@@ -2275,6 +2317,10 @@ func (v *AlarmView) GetNodeAlarmRules(c *macaron.Context, store session.Store) {
 
 	rules, err := getNodeAlarmRulesInternal(c.Req.Context(), uuid, ruleType)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
+			c.JSON(http.StatusForbidden, map[string]interface{}{"error": clErr.Message})
+			return
+		}
 		logger.Errorf("Failed to get node alarm rules: error=%v", err)
 		c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": "failed to get node alarm rules"})
 		return
@@ -2357,6 +2403,11 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 	}
 
 	rule := rules[0]
+	if rule.RuleType == RuleTypeVMMalware {
+		if err := requireVMInspectionAdmin(ctx); err != nil {
+			return nil, err
+		}
+	}
 
 	if err := operator.DeleteNodeAlarmRules(ctx, uuid); err != nil {
 		return nil, fmt.Errorf("failed to delete rule from database: %v", err)
@@ -2383,6 +2434,8 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
 	case RuleTypeNodeReboot:
 		templateFiles = []string{"node-reboot-detection.yml"}
+	case RuleTypeVMMalware:
+		templateFiles = []string{"vm-malware.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
 	}
@@ -2425,6 +2478,10 @@ func (v *AlarmView) DeleteNodeAlarmRule(c *macaron.Context) {
 
 	deletedFiles, err := deleteNodeAlarmRuleInternal(c.Req.Context(), uuid)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
+			c.JSON(http.StatusForbidden, map[string]interface{}{"error": clErr.Message})
+			return
+		}
 		logger.Errorf("Failed to delete node alarm rule: uuid=%s, error=%v", uuid, err)
 		c.JSON(http.StatusInternalServerError, map[string]interface{}{"error": fmt.Sprintf("failed to delete node alarm rule: %v", err)})
 		return

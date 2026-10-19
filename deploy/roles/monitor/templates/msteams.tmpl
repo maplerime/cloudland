@@ -5,7 +5,9 @@
   注：match 若不可用，将 node-* 分支改为明确枚举（见注释）
   ========================================================= */}}
 {{ define "teams.card" -}}
-{{ if eq .CommonLabels.alert_type "packet_drop" -}}
+{{ if eq .CommonLabels.alert_type "vm_malware" -}}
+{{ template "teams.vm_malware.card" . }}
+{{- else if eq .CommonLabels.alert_type "packet_drop" -}}
 {{ template "teams.packet_drop.card" . }}
 {{- else if eq .CommonLabels.alert_type "ipgroup_low_ips" -}}
 {{ template "teams.ipgroup.card" . }}
@@ -241,6 +243,33 @@
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}}
           ]
         }
+      ]
+    }
+  }]
+}
+{{- end }}
+
+{{ define "teams.vm_malware.card" -}}
+{
+  "type": "message",
+  "attachments": [{
+    "contentType": "application/vnd.microsoft.card.adaptive",
+    "contentUrl": null,
+    "content": {
+      "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+      "type": "AdaptiveCard", "version": "1.2", "msteams": {"width": "Full"},
+      "body": [
+        {"type": "TextBlock", "text": "高 CPU VM 检测结果", "weight": "Bolder", "color": "Attention", "wrap": true}
+        {{ range .Alerts.Firing }},
+        {"type": "FactSet", "facts": [
+          {"title": "VM", "value": {{ .Labels.instance_id | toJson }}},
+          {"title": "Domain", "value": {{ .Labels.domain | toJson }}},
+          {"title": "区域 / 节点", "value": {{ printf "%s / %s (%s)" .Labels.region_id .Labels.node_hostname .Labels.source_hyper | toJson }}},
+          {"title": "结果时间（UTC）", "value": {{ .Annotations.detected_at | toJson }}},
+          {"title": "查看完整记录（需登录）", "value": {{ .Annotations.query_url | toJson }}}
+        ]},
+        {"type": "TextBlock", "text": {{ .Annotations.description | toJson }}, "wrap": true}
+        {{ end }}
       ]
     }
   }]

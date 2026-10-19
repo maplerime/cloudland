@@ -238,6 +238,10 @@ function sync_instance()
 function sync_delayed_job()
 {
     for f in $(ls $async_job_dir/*.done); do
+        if grep -q '^|:-VM-INSPECTION-REPORT-:| ' "$f"; then
+            sudo -E /bin/bash /opt/cloudland/scripts/kvm/vm_inspection/report.sh --collect-job "$f"
+            continue
+        fi
         cat $f
 	sudo rm -f $f
     done
@@ -336,6 +340,7 @@ calc_resource
 sync_instance
 recover_loadbalancer
 sync_delayed_job
+sudo -E /bin/bash /opt/cloudland/scripts/kvm/vm_inspection/report.sh --cleanup-metrics >&2 || echo 'VM inspection metric cleanup failed' >&2
 check_system_router
 #probe_arp >/dev/null 2>&1
 inst_status
