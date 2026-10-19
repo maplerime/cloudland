@@ -1,0 +1,88 @@
+{{template "_head" .}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+            {{template "_left" .}}
+            <div class="twelve wide column content">
+                <h4 class="ui top attached header">{{.i18n.Tr "VM_Infection_Records"}} ({{.i18n.Tr "Total"}}: {{.Total}})</h4>
+                {{if .Accepted}}<div class="ui info message">{{.i18n.Tr "VM_Action_Accepted"}}</div>{{end}}
+                {{if .Deleted}}<div class="ui positive message">{{.i18n.Tr "Success"}}</div>{{end}}
+                <div class="ui attached segment">
+                    <form class="ui form" method="get" action="/vm-infections">
+                        <div class="three fields">
+                            <div class="field"><label for="instance_uuid">{{.i18n.Tr "InstanceUUID"}}</label><input id="instance_uuid" name="instance_uuid" value="{{.InstanceUUID}}"></div>
+                            <div class="field">
+                                <label for="isolation_status">{{.i18n.Tr "VM_Isolation_Status"}}</label>
+                                <select name="isolation_status" id="isolation_status">
+                                    <option value="">{{.i18n.Tr "VM_All"}}</option>
+                                    <option value="isolated" {{if eq .IsolationStatus "isolated"}}selected{{end}}>{{.i18n.Tr "VM_Status_isolated"}}</option>
+                                    <option value="failed" {{if eq .IsolationStatus "failed"}}selected{{end}}>{{.i18n.Tr "VM_Status_failed"}}</option>
+                                    <option value="released" {{if eq .IsolationStatus "released"}}selected{{end}}>{{.i18n.Tr "VM_Status_released"}}</option>
+                                    <option value="release_failed" {{if eq .IsolationStatus "release_failed"}}selected{{end}}>{{.i18n.Tr "VM_Status_release_failed"}}</option>
+                                    <option value="disabled" {{if eq .IsolationStatus "disabled"}}selected{{end}}>{{.i18n.Tr "VM_Status_disabled"}}</option>
+                                    <option value="not_requested" {{if eq .IsolationStatus "not_requested"}}selected{{end}}>{{.i18n.Tr "VM_Status_not_requested"}}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="verdict">{{.i18n.Tr "VM_Verdict"}}</label>
+                                <select name="verdict" id="verdict">
+                                    <option value="">{{.i18n.Tr "VM_All"}}</option>
+                                    <option value="confirmed" {{if eq .Verdict "confirmed"}}selected{{end}}>{{.i18n.Tr "VM_Verdict_confirmed"}}</option>
+                                    <option value="suspected" {{if eq .Verdict "suspected"}}selected{{end}}>{{.i18n.Tr "VM_Verdict_suspected"}}</option>
+                                    <option value="not_evaluated" {{if eq .Verdict "not_evaluated"}}selected{{end}}>{{.i18n.Tr "VM_Verdict_not_evaluated"}}</option>
+                                    <option value="no_match" {{if eq .Verdict "no_match"}}selected{{end}}>{{.i18n.Tr "VM_Verdict_no_match"}}</option>
+                                </select>
+                            </div>
+                        </div>
+                        <button class="ui blue tiny button" type="submit">{{.i18n.Tr "Search"}}</button>
+                        <a class="ui tiny button" href="/vm-infections">{{.i18n.Tr "VM_All"}}</a>
+                        <a class="ui tiny button" href="/vm-infections?isolation_status=isolated">{{.i18n.Tr "VM_Status_isolated"}}</a>
+                        <a class="ui tiny button" href="/vm-inspection/settings">{{.i18n.Tr "VM_Inspection_Settings"}}</a>
+                    </form>
+                </div>
+                <div class="ui attached segment" style="overflow-x:auto">
+                    <table class="ui compact striped table">
+                        <thead><tr>
+                            <th>{{.i18n.Tr "InstanceUUID"}}</th><th>{{.i18n.Tr "Compute_Node"}}</th>
+                            <th>{{.i18n.Tr "VM_Collection_Result"}}</th><th>{{.i18n.Tr "VM_Collection_Time"}} (UTC)</th>
+                            <th>{{.i18n.Tr "VM_Verdict"}}</th><th>{{.i18n.Tr "VM_Isolation_Status"}}</th>
+                            <th>{{.i18n.Tr "VM_Isolation_CPUs"}}</th><th>{{.i18n.Tr "VM_Isolation_Source"}}</th>
+                            <th>{{.i18n.Tr "VM_Isolation_Operation_Time"}} (UTC)</th><th>{{.i18n.Tr "VM_Record_Detail"}}</th>
+                        </tr></thead>
+                        <tbody>
+                            {{range .Records}}
+                            <tr>
+                                <td style="overflow-wrap:anywhere"><a href="/vm-infections/{{.UUID}}">{{.InstanceUUID}}</a></td>
+                                <td>{{call $.Display .HyperHostname}}</td>
+                                <td>{{if .CollectionStatus}}{{$.i18n.Tr (printf "VM_Collection_%s" .CollectionStatus)}}{{else}}NA{{end}}</td>
+                                <td>{{call $.DisplayTime .CollectedAt}}</td>
+                                <td>{{if .Verdict}}{{$.i18n.Tr (printf "VM_Verdict_%s" .Verdict)}}{{else}}NA{{end}}{{if .MatchSummary}}<div>{{.MatchSummary}}</div>{{end}}</td>
+                                <td>{{if .IsolationStatus}}{{$.i18n.Tr (printf "VM_Status_%s" .IsolationStatus)}}{{else}}NA{{end}}</td><td>{{call $.Display .IsolationCPUs}}</td>
+                                <td>{{if .IsolationSource}}{{$.i18n.Tr (printf "VM_Source_%s" .IsolationSource)}}{{else}}NA{{end}}</td>
+                                <td>{{if and .IsolationStatus (ne .IsolationStatus "disabled") (ne .IsolationStatus "not_requested")}}{{call $.DisplayTime .OperationAt}}{{else}}NA{{end}}</td>
+                                <td><a href="/vm-infections/{{.UUID}}">{{$.i18n.Tr "VM_Record_Detail"}}</a></td>
+                            </tr>
+                            {{else}}<tr><td colspan="10">{{.i18n.Tr "None"}}</td></tr>{{end}}
+                        </tbody>
+                    </table>
+                    {{template "_pagination" .}}
+                </div>
+                <div class="ui bottom attached segment">
+                    <details>
+                        <summary>{{.i18n.Tr "Operation"}}</summary>
+                        <form class="ui form" method="post" action="/vm-infections/action" data-confirm="{{.i18n.Tr "VM_Action_Confirm"}}" style="margin-top:1em">
+                            <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                            <div class="two fields">
+                                <div class="required field"><label for="action_vm_uuid">{{.i18n.Tr "InstanceUUID"}}</label><input id="action_vm_uuid" name="instance_uuid" value="{{.InstanceUUID}}" required></div>
+                                <div class="field"><label for="action">{{.i18n.Tr "Operation"}}</label><select id="action" name="action"><option value="quarantine">{{.i18n.Tr "VM_Quarantine"}}</option><option value="release">{{.i18n.Tr "VM_Release"}}</option></select></div>
+                            </div>
+                            <button class="ui orange button" type="submit">{{.i18n.Tr "Apply"}}</button>
+                        </form>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/js/vm_inspection.js"></script>
+{{template "_footer" .}}

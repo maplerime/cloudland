@@ -1,3 +1,13 @@
+- name: Copy Hive CA certificate
+  copy:
+    src: hive.pem
+    dest: /etc/sysconfig/cloudland-hive-ca.pem
+    owner: root
+    group: root
+    mode: '0644'
+  when: virt_type == 'kvm-x86_64'
+  tags: [monitor]
+
 - name: Install Docker SDK for Python on Ubuntu 26+
   become: true
   apt:
