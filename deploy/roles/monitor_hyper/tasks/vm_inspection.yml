@@ -1,0 +1,66 @@
+---
+- name: Install VM inspection compute runtime
+  package:
+    name: [python3, jq]
+    state: present
+  tags: [monitor]
+
+- name: Create VM inspection compute directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: '0755'
+  loop:
+    - /opt/cloudland/scripts/kvm/async_job
+    - /opt/cloudland/scripts/kvm/vm_inspection
+    - /opt/cloudland/cache/vm_inspection
+    - /opt/cloudland/run/vm_inspection
+  tags: [monitor]
+
+- name: Deploy VM inspection collection and isolation scripts
+  copy:
+    src: "/opt/cloudland/scripts/kvm/{{ item }}"
+    dest: "/opt/cloudland/scripts/kvm/{{ item }}"
+    mode: '0755'
+  loop:
+    - vm_inspection/
+    - inspect_vm.sh
+    - quarantine_vm.sh
+    - release_vm.sh
+    - report_rc.sh
+    - async_job/inspect_vm.sh
+    - async_job/quarantine_vm.sh
+    - async_job/release_vm.sh
+    - async_job/vm_isolation.sh
+    - async_job/source_migration.sh
+  tags: [monitor]
+
+- name: Remove retired VM inspection script names
+  file:
+    path: "/opt/cloudland/scripts/kvm/{{ item }}"
+    state: absent
+  loop:
+    - vm_inspection/README.md
+    - vm_inspection/common/quarantine_vm.sh
+    - vm_inspection/common/release_vm.sh
+    - vm_inspection/common/apply_cpu_quarantine.sh
+    - vm_inspection/common/release_cpu_quarantine.sh
+    - vm_inspection/common/check_guest_rpc_locked.sh
+    - vm_inspection/common/check_uss_core_bind.sh
+    - vm_inspection/common/cpu_affinity.py
+    - vm_inspection/common/inner_check.sh
+    - vm_inspection/common/inner_process_check.sh
+    - vm_inspection/common/inner_stat_check.sh
+    - vm_inspection/common/outer_check.sh
+    - vm_inspection/common/select_quarantine_cpus.sh
+    - vm_inspection/common/unlock_guest_exec_status.sh
+    - vm_inspection/common/vm_top_cpu_procs.sh
+    - vm_inspection/common/evaluate_inspection.sh
+    - vm_inspection/evaluation.sh
+    - vm_inspection/scan.py
+    - vm_inspection/runners/inspect_vm.sh
+    - vm_inspection/result.sh
+    - vm_inspection/metrics.sh
+    - hive.sh
+    - async_job/hive.sh
+  tags: [monitor]

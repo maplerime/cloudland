@@ -1,0 +1,189 @@
+---
+# Runs on hosts: monitor, alongside Prometheus. No Guest scanning service is installed here.
+- name: Create monitor Hive state directory
+  file:
+    path: /etc/prometheus/vm_inspection
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0750'
+
+# Create only once; subsequent monitor deployments preserve the URL and token saved by UI/API.
+- name: Initialize private Hive configuration without overwriting user settings
+  copy:
+    content: "{}\n"
+    dest: /etc/prometheus/vm_inspection/config.json
+    owner: prometheus
+    group: prometheus
+    mode: '0600'
+    force: false
+
+- name: Create monitor textfile directory
+  file:
+    path: /var/lib/node_exporter
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+
+- name: Create monitor node exporter override directory
+  file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    mode: '0755'
+
+- name: Enable existing monitor node exporter textfile collector
+  copy:
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/override.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/bin/prometheus-node-exporter --web.listen-address=:9101 --collector.textfile.directory=/var/lib/node_exporter
+    mode: '0644'
+
+- name: Reload monitor node exporter
+  systemd:
+    name: prometheus-node-exporter
+    daemon_reload: true
+    state: restarted
+    enabled: true
+
+- name: Install Hive updater runtime
+  package:
+    name: [python3, ca-certificates]
+    state: present
+
+- name: Create shared Hive schema directory
+  file:
+    path: /etc/prometheus/vm_inspection/common
+    state: directory
+    owner: root
+    group: prometheus
+    mode: '0750'
+
+- name: Deploy shared Hive schema and atomic file helper
+  copy:
+    src: "/opt/cloudland/scripts/kvm/vm_inspection/{{ item }}"
+    dest: "/etc/prometheus/vm_inspection/{{ item }}"
+    owner: root
+    group: prometheus
+    mode: '0640'
+  loop:
+    - common/hive_client.py
+
+- name: Remove retired monitor metrics helper
+  file:
+    path: /etc/prometheus/vm_inspection/metrics.py
+    state: absent
+
+- name: Install monitor Hive updater
+  copy:
+    src: hive_update.py
+    dest: /etc/prometheus/vm_inspection/hive_update.py
+    owner: root
+    group: prometheus
+    mode: '0750'
+
+- name: Install Hive updater service
+  copy:
+    dest: /etc/systemd/system/cloudland-hive-update.service
+    content: |
+      [Unit]
+      Description=Cloudland Hive snapshot update
+      After=network-online.target
+      [Service]
+      Type=oneshot
+      User=prometheus
+      Group=prometheus
+      UMask=0077
+      ExecStart=/usr/bin/python3 /etc/prometheus/vm_inspection/hive_update.py
+      TimeoutStartSec=180
+      NoNewPrivileges=true
+
+- name: Install Hive updater timer
+  copy:
+    dest: /etc/systemd/system/cloudland-hive-update.timer
+    content: |
+      [Unit]
+      Description=Check Cloudland Hive configuration and update schedule
+      [Timer]
+      OnBootSec=10s
+      OnUnitInactiveSec=15s
+      AccuracySec=1s
+      [Install]
+      WantedBy=timers.target
+
+- name: Enable Hive updater timer
+  systemd:
+    name: cloudland-hive-update.timer
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Install VM inspection collection and Hive health rules
+  template:
+    src: vm-inspection.yml.j2
+    dest: /etc/prometheus/rules_enabled/vm-inspection.yml
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+- name: Scrape Hive status through the existing node exporter
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    insertafter: '^scrape_configs:'
+    marker: '  # {mark} ANSIBLE MANAGED Hive updater'
+    block: |2
+        - job_name: cloudland_hive
+          static_configs:
+            - targets: ['127.0.0.1:9101']
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'hive_.*'
+              action: keep
+
+- name: Route collection ready alerts only to the authenticated inspection webhook
+  no_log: true
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    insertafter: '^\s{2}routes:\s*$'
+    marker: '    # {mark} ANSIBLE MANAGED VM inspection route'
+    block: |2
+          - match:
+              alert_type: vm_inspection_ready
+            group_by: ['alertname', 'instance_uuid', 'hyper_id', 'scan_id']
+            group_wait: 0s
+            group_interval: 30s
+            repeat_interval: 1m
+            receiver: vm-inspection-webhook
+            continue: false
+          - match:
+              alert_type: vm_inspection_health
+            group_by: ['alertname', 'job', 'instance', 'instance_uuid', 'hyper_id', 'scan_id', 'error_code']
+            receiver: teams-node-status
+            continue: false
+
+- name: Configure authenticated inspection receiver
+  no_log: true
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    insertafter: '^receivers:'
+    marker: '# {mark} ANSIBLE MANAGED VM inspection receiver'
+    block: |
+      - name: vm-inspection-webhook
+        webhook_configs:
+          - url: 'https://{{ alert_webhook_url }}/api/v1/alerts/vm-inspection-webhook'
+            send_resolved: false
+            http_config:
+              tls_config:
+                insecure_skip_verify: true
+              http_headers:
+                X-API-Key:
+                  secrets: ['{{ alert_webhook_api_key | trim }}']
+              follow_redirects: false
+
+- name: Reload VM inspection monitoring configuration
+  command: systemctl reload prometheus.service
+
+- name: Reload VM inspection alert routing
+  command: docker restart alertmanager

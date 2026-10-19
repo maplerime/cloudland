@@ -316,3 +316,7 @@
         state: started
   when: boot_reason_detector_script.stat.exists
   tags: [monitor]
+
+- name: Deploy VM inspection compute scripts
+  import_tasks: vm_inspection.yml
+  tags: [monitor]

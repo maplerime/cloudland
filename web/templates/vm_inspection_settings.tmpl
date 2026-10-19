@@ -1,0 +1,183 @@
+{{template "_head" .}}
+{{$libraryConfigured := .Settings.FeatureLibraryURL}}
+<div class="admin user">
+    <div class="ui container">
+        <div class="ui grid">
+            {{template "_left" .}}
+            <div class="twelve wide column content">
+                <h4 class="ui top attached header">{{.i18n.Tr "VM_Inspection_Settings"}}</h4>
+                {{if .Saved}}<div class="ui positive message">{{.i18n.Tr "Success"}}</div>{{end}}
+                <form class="ui form" id="vm-inspection-settings-form" method="post" action="/vm-inspection/settings?{{.PageQuery}}" data-unsaved="{{.i18n.Tr "VM_Unsaved_Confirm"}}">
+                    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                    <div class="ui attached segment">
+                        <h4>{{if $libraryConfigured}}{{.i18n.Tr "VM_Hive_Edit"}}{{else}}{{.i18n.Tr "VM_Hive_Create"}}{{end}}</h4>
+                        {{if not $libraryConfigured}}<div class="ui info message">{{.i18n.Tr "VM_Hive_Detection_not_configured"}}</div>{{end}}
+                        <div class="two fields">
+                            <div class="field">
+                                <label for="isolation_enabled">{{.i18n.Tr "VM_Global_Isolation"}}</label>
+                                <select id="isolation_enabled" name="isolation_enabled">
+                                    <option value="false" {{if not .Settings.IsolationEnabled}}selected{{end}}>{{.i18n.Tr "Disable"}}</option>
+                                    <option value="true" {{if .Settings.IsolationEnabled}}selected{{end}}>{{.i18n.Tr "Enable"}}</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label for="record_retention_days">{{.i18n.Tr "VM_Record_Retention"}}</label>
+                                <input type="number" id="record_retention_days" name="record_retention_days" min="1" step="1" value="{{.Settings.RecordRetentionDays}}" required>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="feature_library_url">{{.i18n.Tr "VM_Feature_Library_URL"}} ({{.i18n.Tr "Optional"}})</label>
+                            <p>{{.i18n.Tr "VM_Hive_Detection_Help"}}</p>
+                            <input type="url" id="feature_library_url" name="feature_library_url" maxlength="512" value="{{.Settings.FeatureLibraryURL}}">
+                        </div>
+                        <div class="field">
+                            <label for="feature_library_token">Hive Bearer token {{if .Settings.FeatureLibraryTokenConfigured}}({{.i18n.Tr "VM_Token_Configured"}}){{end}}</label>
+                            <input type="password" id="feature_library_token" name="feature_library_token" maxlength="4096" autocomplete="new-password" placeholder="{{if .Settings.FeatureLibraryTokenConfigured}}{{.i18n.Tr "VM_Token_Unchanged"}}{{else}}{{.i18n.Tr "VM_Token_Enter"}}{{end}}">
+                            {{if .Settings.FeatureLibraryTokenConfigured}}<label><input type="checkbox" name="clear_feature_library_token" value="true"> {{.i18n.Tr "VM_Token_Clear"}}</label>{{end}}
+                        </div>
+                        {{if $libraryConfigured}}
+                        <div class="ui message">
+                            <strong>{{.i18n.Tr (printf "VM_Hive_Detection_%s" (call .HiveDetectionState .Hive))}}</strong><br>
+                            {{if and .Hive.UsingCache (eq .Hive.FetchStatus "failed")}}{{.i18n.Tr "VM_Hive_Using_Cache"}}<br>{{end}}
+                            sync: {{call .Display .Hive.SyncStatus}} / fetch: {{call .Display .Hive.FetchStatus}}<br>
+                            {{.i18n.Tr "VM_Ruleset_Version"}}: {{call .Display .Hive.SnapshotVersion}}<br>
+                            {{.i18n.Tr "VM_Hive_Last_Success"}} (UTC): {{call .DisplayTime .Hive.LastSuccessAt}}<br>
+                            {{.i18n.Tr "VM_Hive_Cert_Expires"}} (UTC): {{call .DisplayTime .Hive.CertificateExpiresAt}}<br>
+                            {{.i18n.Tr "Error"}}: {{call .DisplayError .Hive.FetchStatus .Hive.ErrorMessage}}
+                        </div>
+                        {{end}}
+                        <h5>{{.i18n.Tr "VM_Match_Policy"}}</h5>
+                        <div class="two fields">
+                            <div class="field"><label for="strong_action">strong</label><select id="strong_action" name="strong_action">
+                                <option value="pin" {{if eq (index .Settings.MatchPolicy "strong").Action "pin"}}selected{{end}}>{{.i18n.Tr "VM_Quarantine"}}</option>
+                                <option value="none" {{if eq (index .Settings.MatchPolicy "strong").Action "none"}}selected{{end}}>{{.i18n.Tr "VM_No_Auto_Pin"}}</option>
+                            </select></div>
+                            <div class="field"><label for="weak_action">weak</label><select id="weak_action" name="weak_action">
+                                <option value="pin" {{if eq (index .Settings.MatchPolicy "weak").Action "pin"}}selected{{end}}>{{.i18n.Tr "VM_Quarantine"}}</option>
+                                <option value="none" {{if eq (index .Settings.MatchPolicy "weak").Action "none"}}selected{{end}}>{{.i18n.Tr "VM_No_Auto_Pin"}}</option>
+                            </select></div>
+                        </div>
+                    </div>
+                    <div class="ui attached segment" id="nodes">
+                        <h4>{{.i18n.Tr "Compute_Node"}} ({{.NodePage.Total}})</h4>
+                        <p>{{.i18n.Tr "VM_Node_Isolation_Help"}}</p>
+                        <div class="field">
+                            <label for="node-search">{{.i18n.Tr "Search"}}</label>
+                            <input id="node-search" name="nodes_q" type="search" maxlength="255" value="{{.NodePage.Query}}" form="inspection-nodes-filter" placeholder="{{.i18n.Tr "VM_Node_Search"}}" autocomplete="off">
+                        </div>
+                        <div class="inline fields">
+                            <div class="field"><label>{{.i18n.Tr "Page_Size"}}</label><select name="nodes_limit" form="inspection-nodes-filter">{{range .InspectionPageSizes}}<option value="{{.}}" {{if eq $.NodePage.Limit .}}selected{{end}}>{{.}}</option>{{end}}</select></div>
+                            <div class="field"><label>{{.i18n.Tr "Page"}}</label><input type="number" name="nodes_page" min="1" max="{{.NodePage.Info.TotalPages}}" value="{{.NodePage.Info.CurrentPage}}" form="inspection-nodes-filter"></div>
+                            <button class="ui tiny button" type="submit" form="inspection-nodes-filter">{{.i18n.Tr "Search"}} / {{.i18n.Tr "Go"}}</button>
+                        </div>
+                        <p>{{.i18n.Tr "VM_Current_Page_Only"}}</p>
+                        <div class="inline fields">
+                            <label>{{.i18n.Tr "VM_Selected_Nodes"}}: <span id="selected-node-count">0</span></label>
+                            <div class="field">
+                                <select id="batch-node-state">
+                                    <option value="default">default — {{.i18n.Tr "VM_Inherit_Global"}}</option>
+                                    <option value="true">{{.i18n.Tr "Enable"}}</option>
+                                    <option value="false">{{.i18n.Tr "Disable"}}</option>
+                                </select>
+                            </div>
+                            <button class="ui tiny button" id="apply-node-state" type="button">{{.i18n.Tr "Apply"}}</button>
+                        </div>
+                        <div style="overflow-x:auto; max-height:36rem; overflow-y:auto">
+                            <table class="ui compact striped table">
+                                <thead><tr>
+                                    <th><input type="checkbox" id="select-visible-nodes" aria-label="{{.i18n.Tr "VM_Select_Visible"}}"></th>
+                                    <th>{{.i18n.Tr "HyperID"}}</th>
+                                    <th>{{.i18n.Tr "Hostname"}}</th>
+                                    <th>{{.i18n.Tr "IP"}}</th>
+                                    <th>{{.i18n.Tr "VM_Node_Isolation"}}</th>
+                                    <th>{{.i18n.Tr "VM_Effective_Isolation_Policy"}}</th>
+                                </tr></thead>
+                                <tbody>
+                                    {{range .Nodes}}
+                                    <tr class="vm-inspection-node" data-search="{{.HyperID}} {{.Hostname}} {{.HostIP}}">
+                                        <td><input class="node-selected" type="checkbox" aria-label="{{$.i18n.Tr "Compute_Node"}} {{.HyperID}}"></td>
+                                        <td>{{.HyperID}}</td><td>{{.Hostname}}</td><td>{{.HostIP}}</td>
+                                        <td><select class="node-state" data-hyper-id="{{.HyperID}}" data-original="{{.State}}" aria-label="{{$.i18n.Tr "VM_Node_Isolation"}} {{.HyperID}}">
+                                            <option value="default" {{if eq .State "default"}}selected{{end}}>default — {{$.i18n.Tr "VM_Inherit_Global"}}</option>
+                                            <option value="true" {{if eq .State "true"}}selected{{end}}>{{$.i18n.Tr "Enable"}}</option>
+                                            <option value="false" {{if eq .State "false"}}selected{{end}}>{{$.i18n.Tr "Disable"}}</option>
+                                        </select></td>
+                                        <td class="node-effective" data-enabled="{{$.i18n.Tr "Enable"}}" data-disabled="{{$.i18n.Tr "Disable"}}">{{if or (eq .State "true") (and (eq .State "default") $.Settings.IsolationEnabled)}}{{$.i18n.Tr "Enable"}}{{else}}{{$.i18n.Tr "Disable"}}{{end}}</td>
+
+                                    </tr>
+                                    {{else}}<tr><td colspan="6">{{.i18n.Tr "VM_No_Results"}}</td></tr>{{end}}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="ui attached segment">
+                        {{if .NodePage.Info.HasPrevious}}<a class="ui tiny button" data-inspection-navigation href="{{.NodePage.PreviousURL}}">{{.i18n.Tr "Previous"}}</a>{{end}}
+                        {{.i18n.Tr "Page"}} {{.NodePage.Info.CurrentPage}} / {{.NodePage.Info.TotalPages}}
+                        {{if .NodePage.Info.HasNext}}<a class="ui tiny button" data-inspection-navigation href="{{.NodePage.NextURL}}">{{.i18n.Tr "Next"}}</a>{{end}}
+                    </div>
+                    <div class="ui bottom attached segment">
+                        <button class="ui green button" type="submit">{{if $libraryConfigured}}{{.i18n.Tr "VM_Settings_Save"}}{{else}}{{.i18n.Tr "VM_Hive_Create"}}{{end}}</button>
+                        <a class="ui button" href="/vm-infections">{{.i18n.Tr "VM_Infection_Records"}}</a>
+                    </div>
+                </form>
+                {{if $libraryConfigured}}
+                <form method="post" action="/vm-inspection/feature-library/refresh" data-inspection-navigation>
+                    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                    <button class="ui basic button" type="submit">{{.i18n.Tr "VM_Hive_Refresh"}}</button>
+                </form>
+                {{end}}
+                {{if or $libraryConfigured .Settings.FeatureLibraryTokenConfigured}}
+                <form method="post" action="/vm-inspection/feature-library/delete?{{.PageQuery}}" data-inspection-navigation data-confirm="{{.i18n.Tr "VM_Hive_Delete_Confirm"}}">
+                    <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                    <button class="ui red basic button" type="submit">{{.i18n.Tr "VM_Hive_Delete"}}</button>
+                </form>
+                {{end}}
+                <form id="inspection-nodes-filter" method="get" action="/vm-inspection/settings#nodes" data-inspection-navigation>
+                    <input type="hidden" name="whitelist_q" value="{{.WhitelistPage.Query}}">
+                    <input type="hidden" name="whitelist_page" value="{{.WhitelistPage.Info.CurrentPage}}">
+                    <input type="hidden" name="whitelist_limit" value="{{.WhitelistPage.Limit}}">
+                </form>
+                <div class="ui segment" id="whitelist">
+                    <h4>{{.i18n.Tr "VM_Pin_Whitelist"}} ({{.WhitelistPage.Total}})</h4>
+                    <p>{{.i18n.Tr "VM_Pin_Whitelist_Help"}}</p>
+                    <form class="ui form" method="post" action="/vm-inspection/pin-whitelist?{{.PageQuery}}" data-inspection-navigation>
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
+                        <div class="fields">
+                            <div class="eight wide field"><label>{{.i18n.Tr "VM_Instance_UUID"}}</label><input name="instance_uuid" required maxlength="36" placeholder="{{.i18n.Tr "VM_Instance_UUID"}}"></div>
+                            <div class="six wide field"><label>{{.i18n.Tr "VM_Operation_Reason"}}</label><input name="reason" maxlength="255"></div>
+                            <div class="two wide field"><label>&nbsp;</label><button class="ui green button" type="submit">{{.i18n.Tr "Create"}}</button></div>
+                        </div>
+                    </form>
+                    <form class="ui form" method="get" action="/vm-inspection/settings#whitelist" data-inspection-navigation>
+                        <input type="hidden" name="nodes_q" value="{{.NodePage.Query}}">
+                        <input type="hidden" name="nodes_page" value="{{.NodePage.Info.CurrentPage}}">
+                        <input type="hidden" name="nodes_limit" value="{{.NodePage.Limit}}">
+                        <div class="fields">
+                            <div class="eight wide field"><label>{{.i18n.Tr "Search"}}</label><input type="search" name="whitelist_q" maxlength="255" value="{{.WhitelistPage.Query}}" placeholder="{{.i18n.Tr "VM_Whitelist_Search"}}"></div>
+                            <div class="three wide field"><label>{{.i18n.Tr "Page_Size"}}</label><select name="whitelist_limit">{{range .InspectionPageSizes}}<option value="{{.}}" {{if eq $.WhitelistPage.Limit .}}selected{{end}}>{{.}}</option>{{end}}</select></div>
+                            <div class="three wide field"><label>{{.i18n.Tr "Page"}}</label><input type="number" name="whitelist_page" min="1" max="{{.WhitelistPage.Info.TotalPages}}" value="{{.WhitelistPage.Info.CurrentPage}}"></div>
+                            <div class="two wide field"><label>&nbsp;</label><button class="ui button" type="submit">{{.i18n.Tr "Search"}} / {{.i18n.Tr "Go"}}</button></div>
+                        </div>
+                    </form>
+                    <div style="overflow-x:auto">
+                        <table class="ui compact striped table">
+                            <thead><tr><th>{{.i18n.Tr "Name"}}</th><th>{{.i18n.Tr "VM_Instance_UUID"}}</th><th>{{.i18n.Tr "Organizations"}}</th><th>{{.i18n.Tr "VM_Operation_Reason"}}</th><th>{{.i18n.Tr "VM_Whitelist_Created"}} (UTC)</th><th>{{.i18n.Tr "Operation"}}</th></tr></thead>
+                            <tbody>{{range .Whitelist}}
+                                <tr class="vm-inspection-whitelist"><td>{{.InstanceName}}</td><td>{{.InstanceUUID}}</td><td>{{.Organization}}</td><td>{{.Reason}}</td><td>{{call $.DisplayTime .CreatedAt}}</td><td>
+                                    <form method="post" action="/vm-inspection/pin-whitelist/{{.UUID}}/delete?{{$.PageQuery}}" data-inspection-navigation data-confirm="{{$.i18n.Tr "VM_Whitelist_Delete_Confirm"}}">
+                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}"><button class="ui tiny red button" type="submit">{{$.i18n.Tr "Remove"}}</button>
+                                    </form>
+                                </td></tr>
+                            {{else}}<tr><td colspan="6">{{.i18n.Tr "VM_No_Results"}}</td></tr>{{end}}</tbody>
+                        </table>
+                    </div>
+                    {{if .WhitelistPage.Info.HasPrevious}}<a class="ui tiny button" data-inspection-navigation href="{{.WhitelistPage.PreviousURL}}">{{.i18n.Tr "Previous"}}</a>{{end}}
+                    {{.i18n.Tr "Page"}} {{.WhitelistPage.Info.CurrentPage}} / {{.WhitelistPage.Info.TotalPages}}
+                    {{if .WhitelistPage.Info.HasNext}}<a class="ui tiny button" data-inspection-navigation href="{{.WhitelistPage.NextURL}}">{{.i18n.Tr "Next"}}</a>{{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="/js/vm_inspection.js"></script>
+{{template "_footer" .}}

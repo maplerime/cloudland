@@ -39,7 +39,7 @@
       "body": [
         {
           "type": "TextBlock",
-          "text": {{ printf "%s | %s | %s" .CommonLabels.alert_type .CommonLabels.alertname (or .CommonLabels.instance .CommonLabels.domain "N/A") | toJson }},
+          "text": {{ printf "%s | %s | %s" .CommonLabels.alert_type .CommonLabels.alertname (or (and .CommonAnnotations.monitor_host .CommonLabels.domain) .CommonAnnotations.monitor_host .CommonLabels.instance .CommonLabels.domain "N/A") | toJson }},
           "weight": "Bolder",
           "size": "Medium",
           "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
@@ -56,7 +56,9 @@
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
             {"title": "告警名称", "value": {{ .CommonLabels.alertname | toJson }}},
             {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
-            {"title": "实例/域名", "value": {{ or .CommonLabels.instance .CommonLabels.domain "N/A" | toJson }}},
+            {"title": "实例/域名", "value": {{ or (and .CommonAnnotations.monitor_host .CommonLabels.domain) .CommonAnnotations.monitor_host .CommonLabels.instance .CommonLabels.domain "N/A" | toJson }}},
+            {{if .CommonAnnotations.feature_library_url}}{"title": "特征库地址", "value": {{ .CommonAnnotations.feature_library_url | toJson }}},{{end}}
+            {{if .CommonAnnotations.monitor_host}}{"title": "监控节点", "value": {{ printf "%s（%s）" .CommonAnnotations.monitor_host .CommonAnnotations.monitor_ip | toJson }}},{{end}}
             {"title": "标签", "value": {{ printf "%v" .CommonLabels | toJson }}},
             {"title": "注释", "value": {{ printf "%v" .CommonAnnotations | toJson }}}
           ]

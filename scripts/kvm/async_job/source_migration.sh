@@ -13,6 +13,9 @@ router=$4
 target_hyper=$5
 migration_type=$6
 state=failed
+# A migration starts a new lifecycle, even if migration later rolls back.
+bash /opt/cloudland/scripts/kvm/async_job/inspect_vm.sh --finish "$vm_ID" '' || log_debug "$ID" "VM inspection cleanup failed; continuing migration"
+python3 /opt/cloudland/scripts/kvm/vm_inspection/common/configuration.py release "$vm_ID" || log_debug "$ID" "VM inspection unpin failed; continuing migration"
 
 log_debug $ID "source_migration.sh: Starting migration_ID=$migration_ID, task_ID=$task_ID, target_hyper=$target_hyper, migration_type=$migration_type"
 

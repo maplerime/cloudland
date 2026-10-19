@@ -485,6 +485,8 @@ func (a *AdjustAPI) ProcessResourceAdjustmentWebhook(c *gin.Context) {
 		// Create request tracking ID
 		requestID := fmt.Sprintf("adjust-%s-%d", time.Now().Format("20060102-150405"), i)
 
+		a.tryStartVMInspection(c.Request.Context(), alert, requestID)
+
 		// Process alert adjustment
 		result := a.processAlertAdjustment(c.Request.Context(), alert, requestID)
 		if result {
@@ -2616,4 +2618,27 @@ func (a *AdjustAPI) PatchBWAdjustRule(c *gin.Context) {
 			},
 		},
 	})
+}
+
+// tryStartVMInspection reuses the pre-adjustment status filter; scan completion is independent.
+func (a *AdjustAPI) tryStartVMInspection(ctx context.Context, alert routes.AdjustAlert, requestID string) {
+	if alert.Status != "firing" || alert.Labels["action_type"] != "limit_cpu" || alert.Labels["domain"] == "" || alert.Labels["rule_id"] == "" {
+		return
+	}
+	if a.queryAdjustmentStatus(ctx, alert.Labels["domain"], alert.Labels["rule_id"], "cpu", "") == 1 {
+		return
+	}
+	if alert.StartsAt.IsZero() {
+		logger.Errorf("[VM-INSPECTION] request=%s missing alert startsAt; scan not started", requestID)
+		return
+	}
+	input := routes.VMInspectionStartInput{InstanceUUID: alert.Labels["instance_id"], Domain: alert.Labels["domain"], RegionID: alert.Labels["region_id"], RuleGroupUUID: alert.Labels["rule_group"], GlobalRuleID: alert.Labels["global_rule_id"], RequestID: alert.StartsAt.UTC().Format(time.RFC3339Nano)}
+	logger.Infof("[VM-INSPECTION] request=%s VM=%q domain=%q rule=%q triggered",
+		requestID, input.InstanceUUID, input.Domain, alert.Labels["rule_id"])
+	taskCtx := context.WithoutCancel(ctx)
+	go func() {
+		if err := (&routes.VMInspectionOperator{}).StartVMInspection(taskCtx, input); err != nil {
+			logger.Errorf("[VM-INSPECTION] request=%s start failed: %v", requestID, err)
+		}
+	}()
 }

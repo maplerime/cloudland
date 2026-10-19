@@ -17,6 +17,12 @@ if ! virsh dominfo "$domain" >/dev/null 2>&1; then
     exit 1
 fi
 
+# Share the per-domain config lock with CPU isolation/restoration.
+[[ "$domain" =~ ^[A-Za-z0-9_.-]{1,128}$ ]] || exit 1
+mkdir -p "$run_dir/vm_inspection" || exit 1
+exec 8>"$run_dir/vm_inspection/$domain.affinity.lock" || exit 1
+flock -w 120 8 || exit 1
+
 # If restore operation, remove CPU limits
 if [ "$limit_percent" = "restore" ]; then
     echo "Restoring CPU resources for $domain (removing limits)"
