@@ -63,10 +63,15 @@ nft add element bridge cloudland arp_dispatch { $vnic : jump arp-$vnic }
 nft add rule bridge cloudland arp-$vnic arp saddr ether . arp saddr ip @set-$vnic counter accept
 nft add rule bridge cloudland arp-$vnic counter drop
 # Batch all set elements (primary + extras) into a single nft call
-nft_elements="$mac . $ip"
+nft_elements=""
+[[ "$ip" != *:* ]] && nft_elements="$mac . $ip"
 for extra_ip in $extra_ips; do
-    nft_elements="$nft_elements, $mac . $extra_ip"
+    [[ "$extra_ip" == *:* ]] && continue
+    nft_elements="${nft_elements:+$nft_elements, }$mac . $extra_ip"
 done
-nft add element bridge cloudland set-$vnic { $nft_elements }
+[ -n "$nft_elements" ] && nft add element bridge cloudland set-$vnic { $nft_elements }
 
-[ -n "$extra_ips" ] && ./send_spoof_arp.py $bridge $mac $extra_ips &
+announce_ips=""
+[[ "$ip" == *:* ]] && announce_ips="$ip"
+for extra_ip in $extra_ips; do announce_ips="$announce_ips $extra_ip"; done
+[ -n "$announce_ips" ] && ./send_spoof_arp.py "$bridge" "$mac" $announce_ips &

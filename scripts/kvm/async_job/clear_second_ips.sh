@@ -21,11 +21,5 @@ if [ "$os_code" = "windows" ]; then
 	    break
         fi
     done
-    i=0
-    while [ $i -lt $naddrs ]; do
-        read -d'\n' -r address < <(jq -r ".[$i]" <<< "$more_addresses")
-        read -d'\n' -r ip netmask  < <(ipcalc -nb $address | awk '/Address/ {print $2} /Netmask/ {print $2}')
-        virsh qemu-agent-command "$vm_ID" '{"execute":"guest-exec","arguments":{"path":"C:\\Windows\\System32\\netsh.exe","arg":["interface","ipv4","del","address","name=eth0","addr='"$ip"'","mask='"$netmask"'"],"capture-output":true}}'
-        let i=$i+1
-    done
+    python3 ../windows_network.py "$vm_ID" --remove <<< "$more_addresses"
 fi

@@ -25,7 +25,7 @@ fi
 
 root_passwd=$(jq -r '.root_passwd' <<< $vm_meta)
 os_code=$(jq -r '.os_code' <<< $vm_meta)
-dns=$(jq -r '.dns' <<< $vm_meta)
+dns=$(jq -r '.dns // empty' <<< "$vm_meta")
 login_port=$(jq -r '.login_port' <<< $vm_meta)
 pub_keys=$(jq -r '.keys' <<< $vm_meta)
 admin_pass=`openssl rand -base64 12`
@@ -198,14 +198,28 @@ if [ "${os_code}" != "windows" ]; then
         write_mime_multipart_args+="custom_vendor_script.sh:text/x-shellscript "
     fi
     cd $latest_dir
-    write-mime-multipart -o vendor_data.txt $write_mime_multipart_args
+    if command -v write-mime-multipart >/dev/null; then
+        write-mime-multipart -o vendor_data.txt $write_mime_multipart_args
+    else
+        mime_args=()
+        for attachment in $write_mime_multipart_args; do
+            mime_args+=(-a "${attachment/:text\//:}")
+        done
+        cloud-init devel make-mime "${mime_args[@]}" > vendor_data.txt || exit 1
+    fi
     jq -n --arg data "$(cat vendor_data.txt)" '{"cloud-init": $data}' > vendor_data.json
     cd -
     rm -f $latest_dir/cloud_config.txt $latest_dir/custom_vendor_script.sh $latest_dir/vendor_data.txt $latest_dir/*.sh
 fi
 
-[ -z "$dns" ] && dns=$dns_server
-net_json=$(jq 'del(.userdata) | del(.userdata_type) | del(.vendordata) | del(.vendordata_type) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns)' <<< $vm_meta | jq --arg dns $dns '.services[0].type = "dns" | .services[0].address |= .+$dns')
+# Pick the deployment DNS fallback from the primary network's family.
+# A valid subnet-specific DNS continues to take precedence.
+if jq -e '.networks[] | select(.type == "ipv6" and (.routes | length) > 0)' <<< "$vm_meta" >/dev/null; then
+    [[ "$dns" != *:* ]] && dns=${dns6_server:-}
+else
+    [ -z "$dns" ] && dns=$dns_server
+fi
+net_json=$(jq 'del(.userdata) | del(.userdata_type) | del(.vendordata) | del(.vendordata_type) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns)' <<< $vm_meta | jq --arg dns "$dns" '.services = (if $dns == "" then [] else [{type: "dns", address: $dns}] end)')
 let mtu=$(cat /sys/class/net/$vxlan_interface/mtu)-50
 if [ "$mtu" -lt 1450 ]; then
     net_json=$(sed "s/\"mtu\": 1450/\"mtu\": $mtu/g" <<<$net_json)

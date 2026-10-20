@@ -42,4 +42,5 @@ apply_fw -X $chain_out
 
 # ipset: destroy anti-spoofing set after iptables rules referencing it are gone
 ipset destroy sgas-$vnic 2>/dev/null
+../clear_sg_chain6.sh "$vnic"
 flock -u 200

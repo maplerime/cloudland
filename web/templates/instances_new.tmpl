@@ -263,7 +263,8 @@
 
                                     <label for="primaryip">{{.i18n.Tr "Primary IP"}}</label>
 
-                                    <input id="primaryip" name="primaryip" placeholder="10.10.50.100">
+                                    <input id="primaryip" name="primaryip" placeholder="10.10.50.100 / 2001:db8::10">
+                                    <div class="ui small message">IPv4 / IPv6: leave blank to allocate an address from the selected primary subnet. For IPv6, configure an IPv6 gateway and reachable IPv6 DNS on the subnet.</div>
 
                                 </div>
 

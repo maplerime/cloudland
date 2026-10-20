@@ -9,6 +9,7 @@ package routes
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -69,14 +70,13 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 		return
 	}
 	if remoteIp != "" {
-		netLen := strings.Split(remoteIp, "/")
-		NetLen, _ := strconv.Atoi(netLen[1])
-		if NetLen < 0 || NetLen > 32 {
+		if _, _, parseErr := net.ParseCIDR(remoteIp); parseErr != nil {
 			logger.Error("Invalid Netmask,fill in valid one")
 			err = fmt.Errorf("Invalid Netmask for RemoteIp, please fill a valid one")
 			return
 		}
 		secrule.RemoteIp = remoteIp
+		secrule.IpVersion = IPAddressType(remoteIp)
 	}
 	//direction
 	if direction != "" {
@@ -118,12 +118,13 @@ func (a *SecruleAdmin) Update(ctx context.Context, id int64, name, remoteIp, dir
 		return
 	}
 	err = db.Model(&model.SecurityRule{}).Where("id = ?", secrule.ID).Updates(map[string]interface{}{
-		"remote_ip": secrule.RemoteIp,
-		"direction": secrule.Direction,
-		"protocol":  secrule.Protocol,
-		"name":      secrule.Name,
-		"port_min":  secrule.PortMin,
-		"port_max":  secrule.PortMax,
+		"remote_ip":  secrule.RemoteIp,
+		"ip_version": secrule.IpVersion,
+		"direction":  secrule.Direction,
+		"protocol":   secrule.Protocol,
+		"name":       secrule.Name,
+		"port_min":   secrule.PortMin,
+		"port_max":   secrule.PortMax,
 	}).Error
 	if err != nil {
 		logger.Error("DB failed to save security rule ", err)
@@ -162,6 +163,11 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 		return
 	}
 	protocol = strings.ToLower(protocol)
+	if remoteIp != "" {
+		if _, _, parseErr := net.ParseCIDR(remoteIp); parseErr != nil {
+			return nil, NewCLError(ErrInvalidParameter, "Invalid remote IP CIDR", parseErr)
+		}
+	}
 	// Validate before opening a transaction: an unusable port range must never
 	// reach the DB, where a zero would silently become the -1 column default.
 	if err = validateRulePorts(protocol, portMin, portMax); err != nil {
@@ -189,7 +195,7 @@ func (a *SecruleAdmin) Create(ctx context.Context, name, remoteIp, direction, pr
 		Secgroup:  secgroup.ID,
 		RemoteIp:  remoteIp,
 		Direction: direction,
-		IpVersion: "ipv4",
+		IpVersion: IPAddressType(remoteIp),
 		Protocol:  protocol,
 		PortMin:   portMin,
 		PortMax:   portMax,
@@ -227,7 +233,7 @@ func (a *SecruleAdmin) GetRule(ctx context.Context, remoteIp, direction, protoco
 		Secgroup:  secgroup.ID,
 		RemoteIp:  remoteIp,
 		Direction: direction,
-		IpVersion: "ipv4",
+		IpVersion: IPAddressType(remoteIp),
 		Protocol:  protocol,
 		PortMin:   portMin,
 		PortMax:   portMax,
