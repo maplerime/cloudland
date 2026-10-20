@@ -286,12 +286,12 @@ func (a *SecgroupAdmin) GetInterfaceSecgroups(ctx context.Context, iface *model.
 }
 
 func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, iface *model.Interface) (err error) {
-	// Bootstrap legacy default groups from their current world-wide IPv4
+	// Bootstrap legacy account default groups from their current world-wide IPv4
 	// permissions once. Respect existing IPv6 policy and custom groups.
 	if IPAddressType(iface.Address.Address) == "ipv6" {
 		_, db := GetContextDB(ctx)
 		for _, sg := range iface.SecurityGroups {
-			if !sg.IsDefault {
+			if !sg.IsDefault || sg.RouterID != 0 {
 				continue
 			}
 			var rules []*model.SecurityRule
@@ -408,40 +408,35 @@ func (a *SecgroupAdmin) Create(ctx context.Context, name string, isDefault bool,
 		err = NewCLError(ErrSecurityGroupCreateFailed, "Failed to create security group", err)
 		return
 	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "egress", "tcp", 1, 65535, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
+	// Account networks support both families; VPC internal networks are IPv4-only.
+	// The backend applies only the NIC's allocated families.
+	remoteIPs := []string{"0.0.0.0/0"}
+	if router == nil {
+		remoteIPs = append(remoteIPs, "::/0")
 	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "egress", "udp", 1, 65535, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", 22, 22, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", 3389, 3389, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "udp", 68, 68, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "egress", "icmp", -1, -1, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
-	}
-	_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "icmp", -1, -1, secgroup)
-	if err != nil {
-		logger.Error("Failed to create security rule", err)
-		return
+	for _, remoteIP := range remoteIPs {
+		dhcpPort := int32(68)
+		if remoteIP == "::/0" {
+			dhcpPort = 546
+		}
+		for _, rule := range []struct {
+			direction, protocol string
+			min, max            int32
+		}{
+			{"egress", "tcp", 1, 65535},
+			{"egress", "udp", 1, 65535},
+			{"ingress", "tcp", 22, 22},
+			{"ingress", "tcp", 3389, 3389},
+			{"ingress", "udp", dhcpPort, dhcpPort},
+			{"egress", "icmp", -1, -1},
+			{"ingress", "icmp", -1, -1},
+		} {
+			_, err = secruleAdmin.Create(ctx, "", remoteIP, rule.direction, rule.protocol, rule.min, rule.max, secgroup)
+			if err != nil {
+				logger.Error("Failed to create security rule", err)
+				return
+			}
+		}
 	}
 	if router != nil {
 		var subnets []*model.Subnet

@@ -84,9 +84,12 @@ if __name__ == "__main__":
     elif sys.argv[2] == "--metadata":
         data = json.load(sys.stdin)
         primary = next(n for n in data["networks"] if n["id"] == "network0" and n.get("routes"))
-        dns = data.get("dns") or os.environ.get("dns_server", "")
-        if primary["type"] == "ipv6" and ":" not in dns:
-            dns = os.environ.get("dns_server6", "")
+        dns = data.get("dns") or ""
+        if primary["type"] == "ipv6":
+            if ":" not in dns:
+                dns = os.environ.get("dns6_server", "")
+        else:
+            dns = dns or os.environ.get("dns_server", "")
         extras = [primary_cidr(n) for n in data["networks"] if n["id"] == "network0" and not n.get("routes")]
         configure(vm, primary_cidr(primary), primary["routes"][0]["gateway"], extras, dns)
     else:

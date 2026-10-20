@@ -24,7 +24,7 @@ class NativeIPv6BootTest(unittest.TestCase):
             source = Path(os.environ.get("CLOUDLAND_PRIMARY6_SCRIPTS", "/opt/cloudland/scripts/kvm"))
             shutil.copy2(source / "build_meta.sh", scripts)
             (root / "cache/meta").mkdir(parents=True)
-            (root / "cloudrc").write_text(f'cloud_domain=example.test\nvxlan_interface=lo\ncache_dir={root}/cache\ndns_server6=2001:db8:6::3\n')
+            (root / "cloudrc").write_text(f'cloud_domain=example.test\nvxlan_interface=lo\ncache_dir={root}/cache\ndns6_server=2001:db8:6::3\n')
             command = (
                 "ip -6 addr; ip -6 route; "
                 "if ip -6 addr | grep -q '2001:db8:6::15/64' && "

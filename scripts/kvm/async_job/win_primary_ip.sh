@@ -12,4 +12,4 @@ wait_qemu_ping $ID 10
 metadata=$(cat)
 
 # Keep Linux cloud-init and the Windows guest-agent fallback in sync.
-dns_server="$dns_server" dns_server6="${dns_server6:-}" python3 ../windows_network.py "$vm_ID" --metadata <<< "$metadata"
+dns_server="$dns_server" dns6_server="${dns6_server:-}" python3 ../windows_network.py "$vm_ID" --metadata <<< "$metadata"

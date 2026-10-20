@@ -212,11 +212,12 @@ if [ "${os_code}" != "windows" ]; then
     rm -f $latest_dir/cloud_config.txt $latest_dir/custom_vendor_script.sh $latest_dir/vendor_data.txt $latest_dir/*.sh
 fi
 
-[ -z "$dns" ] && dns=$dns_server
-# An IPv6-only guest cannot reach an IPv4 resolver. Prefer its configured
-# subnet DNS; dns_server6 is the deployment fallback.
+# Pick the deployment DNS fallback from the primary network's family.
+# A valid subnet-specific DNS continues to take precedence.
 if jq -e '.networks[] | select(.type == "ipv6" and (.routes | length) > 0)' <<< "$vm_meta" >/dev/null; then
-    [[ "$dns" != *:* ]] && dns=${dns_server6:-}
+    [[ "$dns" != *:* ]] && dns=${dns6_server:-}
+else
+    [ -z "$dns" ] && dns=$dns_server
 fi
 net_json=$(jq 'del(.userdata) | del(.userdata_type) | del(.vendordata) | del(.vendordata_type) | del(.vlans) | del(.keys) | del(.security) | del(.login_port) | del(.root_passwd) | del(.dns)' <<< $vm_meta | jq --arg dns "$dns" '.services = (if $dns == "" then [] else [{type: "dns", address: $dns}] end)')
 let mtu=$(cat /sys/class/net/$vxlan_interface/mtu)-50

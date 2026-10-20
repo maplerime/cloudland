@@ -70,14 +70,18 @@ class PrimaryNetworkTest(unittest.TestCase):
             # Capture the actual config-drive tree just before build_meta removes it.
             (binaries / "mkisofs").write_text('#!/bin/bash\ncp -r "${@: -1}/." "$CAPTURE/"\n')
             (binaries / "mkisofs").chmod(0o755)
-            (root / "cloudrc").write_text('cloud_domain=example.test\nvxlan_interface=lo\ndns_server=192.0.2.53\n')
-            for family, address, dns in [("ipv6", "2001:db8::10", "2001:db8::53"),
-                                          ("ipv4", "192.0.2.10", "192.0.2.53")]:
-                output = root / family
+            (root / "cloudrc").write_text('cloud_domain=example.test\nvxlan_interface=lo\ndns_server=192.0.2.53\ndns6_server=2001:db8::53\ndns_server6=2001:db8::bad\n')
+            for index, (family, address, subnet_dns, dns) in enumerate([
+                    ("ipv6", "2001:db8::10", "2001:db8::54", "2001:db8::54"),
+                    ("ipv6", "2001:db8::10", "", "2001:db8::53"),
+                    ("ipv6", "2001:db8::10", "192.0.2.54", "2001:db8::53"),
+                    ("ipv4", "192.0.2.10", "192.0.2.54", "192.0.2.54"),
+                    ("ipv4", "192.0.2.10", "", "192.0.2.53")]):
+                output = root / str(index)
                 output.mkdir()
                 metadata = {"networks": [network(address, family)],
                             "links": [{"id": "eth0", "type": "phy", "ethernet_mac_address": "52:54:00:12:34:56", "mtu": 1450}],
-                            "dns": dns, "os_code": "linux", "userdata": "", "userdata_type": "", "keys": [],
+                            "dns": subnet_dns, "os_code": "linux", "userdata": "", "userdata_type": "", "keys": [],
                             "root_passwd": "", "vendordata": "", "vendordata_type": "", "login_port": 22}
                 env = dict(os.environ, PATH=f"{binaries}:{os.environ['PATH']}", CAPTURE=str(output))
                 subprocess.run(["bash", str(scripts / "build_meta.sh"), f"primary6-{os.getpid()}-{family}", "guest"],
@@ -88,7 +92,7 @@ class PrimaryNetworkTest(unittest.TestCase):
                 self.assertEqual(actual["networks"], metadata["networks"])
                 self.assertEqual(actual["services"], [{"type": "dns", "address": dns}])
                 if shutil.which("cloud-init"):
-                    rendered = root / (family + "-rendered")
+                    rendered = root / (str(index) + "-rendered")
                     result = subprocess.run(["cloud-init", "devel", "net-convert", "-p", str(config), "-k", "network_data.json",
                                     "-d", str(rendered), "-D", "ubuntu", "-O", "netplan", "-m", "eth0,52:54:00:12:34:56"],
                                    capture_output=True, text=True, timeout=30)

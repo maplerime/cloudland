@@ -6,7 +6,18 @@ source ../cloudrc
 [ $# -lt 1 ] && echo "$0 <interface>" && exit -1
 
 vnic=$1
-family=${2:-ipv4}
+family=${2:-auto}
+if [ "$family" = auto ]; then
+    sec_data=$(cat)
+    # create_sg_chain.sh creates only the families allocated to this NIC.
+    if iptables -w -S "secgroup-in-$vnic" >/dev/null 2>&1; then
+        ./apply_sg_rule.sh "$vnic" ipv4 <<< "$sec_data" || exit 1
+    fi
+    if ip6tables -w -S "secgroup6-in-$vnic" >/dev/null 2>&1; then
+        ./apply_sg_rule.sh "$vnic" ipv6 <<< "$sec_data" || exit 1
+    fi
+    exit 0
+fi
 restore=iptables-restore
 icmp_protocol=icmp
 icmp_option=--icmp-type
@@ -150,8 +161,4 @@ if [ -n "$rules" ]; then
         echo "apply_sg_rule: iptables-restore failed for $vnic: $restore_err" >&2
         exit 1
     fi
-fi
-
-if [ "$family" = ipv4 ]; then
-    ./apply_sg_rule.sh "$vnic" ipv6 <<< "$sec_data"
 fi

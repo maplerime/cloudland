@@ -10,6 +10,23 @@ ip=${2%%/*}
 mac=$3
 allow_spoofing=$4
 
+# A NIC may have both families through its additional addresses.
+more_addresses=$(cat)
+has_ipv4=false
+has_ipv6=false
+while IFS= read -r address; do
+    [ -z "$address" ] && continue
+    if [[ "$address" == *:* ]]; then
+        has_ipv6=true
+    else
+        has_ipv4=true
+    fi
+done < <(printf '%s\n' "$ip"; jq -r '.[]?' <<< "$more_addresses")
+if [ "$has_ipv6" = true ]; then
+    ./create_sg_chain6.sh "$vnic" "$ip" "$mac" "$allow_spoofing" <<< "$more_addresses" || exit 1
+fi
+[ "$has_ipv4" = true ] || exit 0
+
 apply_fw -I FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j secgroup-chain
 apply_fw -I FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j secgroup-chain
 
@@ -36,7 +53,6 @@ else
     apply_fw -A $chain_as -j DROP
 fi
 
-more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
 
 if [ "$allow_spoofing" != true ]; then
@@ -65,6 +81,3 @@ apply_fw -A $chain_out -m state --state RELATED,ESTABLISHED -j RETURN
 apply_fw -A $chain_out -j $chain_as
 apply_fw -A $chain_out -m state --state INVALID -j DROP
 apply_fw -A $chain_out -j DROP
-
-# Filter both families, including unallocated IPv6 on an IPv4-only NIC.
-./create_sg_chain6.sh "$vnic" "$ip" "$mac" "$allow_spoofing" <<< "$more_addresses"

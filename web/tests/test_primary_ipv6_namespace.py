@@ -32,10 +32,13 @@ class NativeIPv6NamespaceTest(unittest.TestCase):
         self.scripts.mkdir()
         (self.scripts / "async_job").mkdir()
         source = Path(os.environ.get("CLOUDLAND_PRIMARY6_SCRIPTS", "/opt/cloudland/scripts/kvm"))
-        for name in ("create_sg_chain6.sh", "clear_sg_chain6.sh", "apply_sg_rule.sh"):
-            shutil.copy2(source / name, self.scripts)
+        for name in ("create_sg_chain.sh", "create_sg_chain6.sh", "clear_sg_chain6.sh", "apply_sg_rule.sh", "async_job/clear_sg_chain.sh"):
+            shutil.copy2(source / name, self.scripts / name)
             (self.scripts / name).chmod(0o755)
-        (self.root / "cloudrc").write_text("# Test namespace: no production cloudrc\n")
+        cloudrc = (Path(__file__).resolve().parents[2] / "scripts/cloudrc").read_text()
+        firewall_function = cloudrc[cloudrc.index("function apply_fw()"):cloudrc.index("function apply_vnic()")]
+        (self.root / "jobs").mkdir()
+        (self.root / "cloudrc").write_text(f"# Test namespace: no production configuration\nrun_dir={self.root}\nasync_job_dir={self.root}/jobs\n" + firewall_function)
         self.hyper, self.guest, self.peer = [f"p6-{role}-{os.getpid()}" for role in ("h", "g", "p")]
         for ns in (self.hyper, self.guest, self.peer):
             self.command("ip", "netns", "add", ns)
@@ -45,9 +48,10 @@ class NativeIPv6NamespaceTest(unittest.TestCase):
         self.net(self.hyper, "ip", "link", "set", "br6", "type", "bridge", "nf_call_ip6tables", "1")
         self.net(self.hyper, "ip", "link", "set", "br6", "up")
         self.mac = "52:54:00:12:34:56"
-        for chain in ("secgroup-in-tap6", "secgroup-out-tap6"):
-            self.net(self.hyper, "iptables", "-N", chain)
-            self.net(self.hyper, "iptables", "-A", chain, "-j", "DROP")
+        self.net(self.hyper, "iptables", "-N", "secgroup-chain")
+        for chain in ("FORWARD", "INPUT"):
+            self.net(self.hyper, "iptables", "-A", chain, "-m", "conntrack", "--ctstate", "RELATED,ESTABLISHED", "-j", "ACCEPT")
+        self.net(self.hyper, "iptables", "-A", "FORWARD", "-m", "conntrack", "--ctstate", "INVALID", "-j", "DROP")
         for port, namespace, addr in (("tap6", self.guest, "2001:db8:6::10/120"),
                                       ("uplink6", self.peer, "2001:db8:6::1/120")):
             self.net(self.hyper, "ip", "link", "add", port, "type", "veth", "peer", "name", "eth0", "netns", namespace)
@@ -62,7 +66,30 @@ class NativeIPv6NamespaceTest(unittest.TestCase):
         self.create()
 
     def create(self):
-        self.net(self.hyper, "bash", self.scripts / "create_sg_chain6.sh", "tap6", "2001:db8:6::10", self.mac, "false", data='["2001:db8:6::20/120"]')
+        self.net(self.hyper, "bash", self.scripts / "create_sg_chain.sh", "tap6", "2001:db8:6::10", self.mac, "false", data='["2001:db8:6::20/120"]')
+
+    def test_chains_follow_allocated_address_families(self):
+        for primary, extra, v4, v6 in [
+                ("192.0.2.10", [], True, False),
+                ("2001:db8:6::10", [], False, True),
+                ("192.0.2.10", ["2001:db8:6::20/120"], True, True),
+                ("2001:db8:6::10", ["192.0.2.20/24"], True, True),
+                ("192.0.2.10", [], True, False)]:
+            with self.subTest(primary=primary, extras=extra):
+                self.net(self.hyper, "bash", self.scripts / "async_job/clear_sg_chain.sh", "tap6", "true")
+                self.net(self.hyper, "bash", self.scripts / "create_sg_chain.sh", "tap6", primary, self.mac, "false", data=json.dumps(extra))
+                self.allow()
+                rules4 = self.net(self.hyper, "iptables-save").stdout
+                rules6 = self.net(self.hyper, "ip6tables-save").stdout
+                self.assertEqual("secgroup-in-tap6" in rules4, v4)
+                self.assertEqual("secgroup6-in-tap6" in rules6, v6)
+                sets = self.net(self.hyper, "ipset", "list", "-name").stdout.splitlines()
+                self.assertEqual("sgas-tap6" in sets, v4)
+                self.assertEqual("sgas6-tap6" in sets, v6)
+                if v4:
+                    self.assertIn("--dport 22", rules4)
+                if v6:
+                    self.assertIn("-p ipv6-icmp", rules6)
 
     def allow(self):
         rules = [{"direction": direction, "remote_ip": "::/0", "protocol": "icmp", "port_min": -1,
