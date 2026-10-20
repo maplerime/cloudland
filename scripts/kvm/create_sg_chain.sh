@@ -31,7 +31,7 @@ else
     # ipset: single hash:ip,mac set replaces per-IP RETURN rules
     ipset create sgas-$vnic hash:ip,mac -exist
     ipset flush sgas-$vnic
-    ipset add sgas-$vnic $ip,$mac -exist
+    [[ "$ip" != *:* ]] && ipset add sgas-$vnic $ip,$mac -exist
     apply_fw -A $chain_as -m set --match-set sgas-$vnic src,src -j RETURN
     apply_fw -A $chain_as -j DROP
 fi
@@ -51,6 +51,7 @@ if [ "$allow_spoofing" != true ]; then
     fi
     ipset_restore=""
     for extra_ip in $extra_ips; do
+        [[ "$extra_ip" == *:* ]] && continue
         ipset_restore="${ipset_restore}add sgas-$vnic $extra_ip,$mac -exist"$'\n'
     done
     [ -n "$ipset_restore" ] && printf '%s' "$ipset_restore" | ipset restore -exist
@@ -64,3 +65,6 @@ apply_fw -A $chain_out -m state --state RELATED,ESTABLISHED -j RETURN
 apply_fw -A $chain_out -j $chain_as
 apply_fw -A $chain_out -m state --state INVALID -j DROP
 apply_fw -A $chain_out -j DROP
+
+# Filter both families, including unallocated IPv6 on an IPv4-only NIC.
+./create_sg_chain6.sh "$vnic" "$ip" "$mac" "$allow_spoofing" <<< "$more_addresses"

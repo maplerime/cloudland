@@ -286,17 +286,53 @@ func (a *SecgroupAdmin) GetInterfaceSecgroups(ctx context.Context, iface *model.
 }
 
 func (a *SecgroupAdmin) AllowInstanceLoginPort(ctx context.Context, port int32, iface *model.Interface) (err error) {
+	// Bootstrap legacy default groups from their current world-wide IPv4
+	// permissions once. Respect existing IPv6 policy and custom groups.
+	if IPAddressType(iface.Address.Address) == "ipv6" {
+		_, db := GetContextDB(ctx)
+		for _, sg := range iface.SecurityGroups {
+			if !sg.IsDefault {
+				continue
+			}
+			var rules []*model.SecurityRule
+			if err = db.Where("secgroup = ?", sg.ID).Find(&rules).Error; err != nil {
+				return
+			}
+			for _, rule := range legacyDefaultIPv6Rules(rules) {
+				if _, err = secruleAdmin.Create(ctx, rule.Name, "::/0", rule.Direction, rule.Protocol, rule.PortMin, rule.PortMax, sg); err != nil {
+					return
+				}
+			}
+		}
+	}
 	if port == 22 || port == 3389 || port <= 0 {
 		return
 	}
 	for _, sg := range iface.SecurityGroups {
-		_, err = secruleAdmin.Create(ctx, "", "0.0.0.0/0", "ingress", "tcp", port, port, sg)
+		remote := "0.0.0.0/0"
+		if IPAddressType(iface.Address.Address) == "ipv6" {
+			remote = "::/0"
+		}
+		_, err = secruleAdmin.Create(ctx, "", remote, "ingress", "tcp", port, port, sg)
 		if err != nil {
 			logger.Error("Failed to create security rule", err)
 			return
 		}
 	}
 	return
+}
+
+func legacyDefaultIPv6Rules(rules []*model.SecurityRule) []*model.SecurityRule {
+	var defaults []*model.SecurityRule
+	for _, rule := range rules {
+		if rule.IpVersion == "ipv6" || IPAddressType(rule.RemoteIp) == "ipv6" {
+			return nil
+		}
+		if rule.RemoteIp == "0.0.0.0/0" && (rule.Protocol == "tcp" || rule.Protocol == "udp" || rule.Protocol == "icmp") {
+			defaults = append(defaults, rule)
+		}
+	}
+	return defaults
 }
 
 func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *model.Instance, iface *model.Interface) (err error) {
@@ -319,7 +355,11 @@ func (a *SecgroupAdmin) RemoveInstanceLoginPort(ctx context.Context, instance *m
 	}
 	for _, sg := range iface.SecurityGroups {
 		var secrule *model.SecurityRule
-		secrule, err = secruleAdmin.GetRule(ctx, "0.0.0.0/0", "ingress", "tcp", port, port, sg)
+		remote := "0.0.0.0/0"
+		if IPAddressType(iface.Address.Address) == "ipv6" {
+			remote = "::/0"
+		}
+		secrule, err = secruleAdmin.GetRule(ctx, remote, "ingress", "tcp", port, port, sg)
 		if err != nil {
 			logger.Error("Failed to remove security rule", err)
 			err = NewCLError(ErrSecurityRuleNotFound, "Failed to find security rule", err)

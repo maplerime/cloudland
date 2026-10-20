@@ -17,6 +17,8 @@ nic_name=tap$(echo $mac | cut -d: -f4- | tr -d :)
 vm_br=br$vlan
 ./create_link.sh $vlan
 brctl setageing $vm_br 120
+# Enable IPv6 security-group traversal for this bridge.
+ip link set dev "$vm_br" type bridge nf_call_ip6tables 1
 virsh domiflist $vm_ID | grep $mac
 if [ $? -ne 0 ]; then
     template=$template_dir/interface.xml
@@ -29,7 +31,7 @@ if [ $? -ne 0 ]; then
     echo "vm_ip=${ip%/*} vm_br=$vm_br router=$router" >> "$async_job_dir/$nic_name"
 fi
 udevadm settle
-async_exec ./send_spoof_arp.py "$vm_br" "${ip%/*}" "$mac"
+async_exec ./send_spoof_arp.py "$vm_br" "$mac" "${ip%/*}"
 ./set_nic_speed.sh "$ID" "$nic_name" "$inbound" "$outbound"
 ./reapply_secgroup.sh "$ip" "$mac" "$allow_spoofing" "$nic_name" <<< $vlan_info
 ./set_subnet_gw.sh "$router" "$vlan" "$gateway" "$ext_vlan"
