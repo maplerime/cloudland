@@ -56,10 +56,10 @@ function probe_arp()
     cd /opt/cloudland/cache/router
     for router in *; do
         ID=${router##router-}
-        ext_ips=$(sudo ip netns exec $router ip addr show te-$ID | grep 'inet ' | awk '{print $2}')
-        ext_mac=$(sudo ip netns exec $router ip -o link show te-$ID | awk '{print $17}')
+        ext_ips=$(ip netns exec $router ip addr show te-$ID | grep 'inet ' | awk '{print $2}')
+        ext_mac=$(ip netns exec $router ip -o link show te-$ID | awk '{print $17}')
         for ip in $ext_ips; do
-            sudo ip netns exec $router arping -c 1 -I te-$ID ${ip%%/*}
+            ip netns exec $router arping -c 1 -I te-$ID ${ip%%/*}
         done
     done
     cd -
@@ -73,7 +73,7 @@ function daily_job()
         last_run_date=$(cat $daily_state_file)
     fi
     if [ "$last_run_date" != "$current_date" ]; then
-        sudo $base_dir/operation/cleanup_outdated_iptables.sh >>$log_dir/iptables_cleanup.log 2>&1
+        $base_dir/operation/cleanup_outdated_iptables.sh >>$log_dir/iptables_cleanup.log 2>&1
         echo "$current_date" >$daily_state_file
     fi
 }
@@ -88,7 +88,7 @@ function halfday_job()
         [[ "$last_halfday" == "$current_halfday" ]] && return
     fi
 
-    sudo $base_dir/generate_vm_instance_map.sh full
+    $base_dir/generate_vm_instance_map.sh full
     # Different action name on purpose -- vm_traffic_billing_map has no "full".
     # vm_instance_map's "full" rescans XML_DIR and truly rebuilds; the traffic
     # billing metric is opt-in per VM, so rescanning XML_DIR there would wrongly
@@ -98,7 +98,7 @@ function halfday_job()
     # Rebuilding from the authoritative DB list is operator-triggered via clapi's
     # BroadcastSync; see that function's comment for why there is no scheduled
     # equivalent.
-    sudo $base_dir/generate_vm_traffic_billing_map.sh gc
+    $base_dir/generate_vm_traffic_billing_map.sh gc
     echo "$current_halfday" > "$state_file"
 }
 
@@ -110,8 +110,8 @@ function inst_status()
     current_time=$(date +"%s")
     [ $(( $current_time - $old_state_time )) -gt 600 ] && rm -f $inst_list_file
     old_inst_list=$(cat $inst_list_file 2>/dev/null)
-    all_inst_list=$(sudo virsh list --all | tail -n +3 | cut -d' ' -f3-)
-    shutoff_list=$(sudo virsh list --all | grep 'shut off' | awk '{print $2}')
+    all_inst_list=$(virsh list --all | tail -n +3 | cut -d' ' -f3-)
+    shutoff_list=$(virsh list --all | grep 'shut off' | awk '{print $2}')
     for inst in $shutoff_list; do
         echo "$all_inst_list" | grep -q $inst-rescue
 	[ $? -eq 0 ] && all_inst_list=$(echo "$all_inst_list" | grep -v $inst-rescue | sed "s/$inst.*shut off/$inst rescuing/")
@@ -164,7 +164,7 @@ function router_status()
     cd /opt/cloudland/cache/router
     old_router_list=$(cat old_router_list 2>/dev/null)
     router_list=$(ls router* 2>/dev/null)
-    router_list=$(echo "$router_list $(sudo ip netns list | grep router | cut -d' ' -f1)" | xargs | sed 's/router-//g')
+    router_list=$(echo "$router_list $(ip netns list | grep router | cut -d' ' -f1)" | xargs | sed 's/router-//g')
     [ "$router_list" = "$old_router_list" ] && return
     [ -n "$router_list" ] && echo "|:-COMMAND-:| router_status.sh '$SCI_CLIENT_ID' '$router_list'"
     echo "$router_list" >old_router_list
@@ -172,11 +172,11 @@ function router_status()
 
 function check_system_router()
 {
-    sudo systemctl status NetworkManager >/dev/null
-    [ $? -ne 0 ] && sudo systemctl restart NetworkManager
-    sudo ip netns exec router-0 ip r | grep default
+    systemctl status NetworkManager >/dev/null
+    [ $? -ne 0 ] && systemctl restart NetworkManager
+    ip netns exec router-0 ip r | grep default
     if [ $? -ne 0 ]; then
-        sudo -E bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
+        bash -c "echo '|:-COMMAND-:|' system_router.sh \'$SCI_CLIENT_ID\' \'$HOSTNAME\' >$async_job_dir/system_router.done"
     fi
 }
 
@@ -195,7 +195,7 @@ function check_conntrack()
         syn_threshold_src=$(($syn_threshold_dst * 3 / 5))
         syn_threshold_src_dst=$(($syn_threshold_src/2))
     fi
-    sudo $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
+    $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
 }
 
 function recover_loadbalancer()
@@ -212,15 +212,15 @@ function sync_instance()
     boot_file=/proc/sys/kernel/random/boot_id
     diff $flag_file $boot_file
     [ $? -eq 0 ] && return
-    sudo iptables-restore </etc/iptables.rules
+    iptables-restore </etc/iptables.rules
     bridges=$(cat /proc/net/dev | grep br | awk -F: '{print $1}')
-    sudo iptables -N secgroup-chain && sudo iptables -A secgroup-chain -j ACCEPT
+    iptables -N secgroup-chain && iptables -A secgroup-chain -j ACCEPT
     for bridge in $bridges; do
-	sudo iptables -C FORWARD -i $bridge -o $bridge -j ACCEPT
-	[ $? -ne 0 ] && sudo iptables -I FORWARD 2 -i $bridge -o $bridge -j ACCEPT
+	iptables -C FORWARD -i $bridge -o $bridge -j ACCEPT
+	[ $? -ne 0 ] && iptables -I FORWARD 2 -i $bridge -o $bridge -j ACCEPT
     done
-    sudo iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
-    sudo iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
+    iptables -D FORWARD -j REJECT --reject-with icmp-host-prohibited
+    iptables -A FORWARD -j REJECT --reject-with icmp-host-prohibited
     insts=$(ls $xml_dir)
     for inst in $insts; do
 	inst_id=${inst/inst-/}
@@ -229,17 +229,17 @@ function sync_instance()
             [ $? -eq 0 ] && break
             sleep 2
         done
-        sudo virsh start inst-$inst_id
+        virsh start inst-$inst_id
         echo "|:-COMMAND-:| launch_vm.sh '$inst_id' 'running' '$SCI_CLIENT_ID' 'sync'"
     done
-    sudo cp $boot_file $flag_file
+    cp $boot_file $flag_file
 }
 
 function sync_delayed_job()
 {
     for f in $(ls $async_job_dir/*.done); do
         cat $f
-	sudo rm -f $f
+	rm -f $f
     done
 }
 
@@ -258,8 +258,8 @@ function calc_resource()
     total_disk=10000000000000
     if [ -z "$wds_address" ]; then
         # Physical usage of instance/volume dirs (root-owned, need sudo), unit: bytes
-        inst_used=$(sudo du -sB1 $image_dir | awk '{print $1}')
-        vol_used=$(sudo du -sB1 $volume_dir 2>/dev/null | awk '{print $1}')
+        inst_used=$(du -sB1 $image_dir | awk '{print $1}')
+        vol_used=$(du -sB1 $volume_dir 2>/dev/null | awk '{print $1}')
         [ -z "$vol_used" ] && vol_used=0
         # Sum of allocated virtual size across boot disks, and local volumes.
         # Take the bytes value in parentheses directly; restrict to *.disk to
@@ -298,7 +298,7 @@ function calc_resource()
         # scheduler must keep their memory reserved so they can be restarted on
         # this node. Subtract their configured memory from the reported free.
         shutoff_hp_mem=0
-        for inst in $(sudo virsh list --all | grep 'shut off' | awk '{print $2}'); do
+        for inst in $(virsh list --all | grep 'shut off' | awk '{print $2}'); do
             xml="$xml_dir/$inst/$inst.xml"
             [ -f "$xml" ] || continue
             vmem=$(xmllint --xpath 'string(/domain/memory)' "$xml" 2>/dev/null)
