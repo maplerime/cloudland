@@ -23,7 +23,7 @@ SPDX-License-Identifier: Apache-2.0
 #include "netlayer.hpp"
 #include "packer.hpp"
 
-const char * REPORT_RC_CMD = "/opt/cloudland/scripts/backend/report_rc.sh";
+const char * REPORT_RC_CMD = "sudo -E /opt/cloudland/scripts/backend/report_rc.sh";
 
 string pidFile;
 string hostList;
