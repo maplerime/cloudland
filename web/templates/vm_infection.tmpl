@@ -49,8 +49,8 @@
                             <tr><td>{{.i18n.Tr "VM_Match_Rules"}}</td><td>{{range .MatchRules}}<div>{{.}}</div>{{else}}NA{{end}}</td></tr>
                             <tr><td>{{.i18n.Tr "VM_Isolation_Status"}}</td><td>{{if .Record.IsolationStatus}}{{.i18n.Tr (printf "VM_Status_%s" .Record.IsolationStatus)}}{{else}}NA{{end}}</td></tr>
                             <tr><td>{{.i18n.Tr "VM_Isolation_CPUs"}}</td><td>{{call .Display .Record.IsolationCPUs}}</td></tr>
-                            <tr><td>{{.i18n.Tr "Source"}}</td><td>{{if .Record.IsolationSource}}{{.i18n.Tr (printf "VM_Source_%s" .Record.IsolationSource)}}{{else}}NA{{end}}</td></tr>
-                            <tr><td>{{.i18n.Tr "Execution Time"}} (UTC)</td><td>{{if and .Record.IsolationStatus (ne .Record.IsolationStatus "disabled") (ne .Record.IsolationStatus "not_requested")}}{{call .DisplayTime .Record.OperationAt}}{{else}}NA{{end}}</td></tr>
+                            <tr><td>{{.i18n.Tr "VM_Isolation_Source"}}</td><td>{{if .Record.IsolationSource}}{{.i18n.Tr (printf "VM_Source_%s" .Record.IsolationSource)}}{{else}}NA{{end}}</td></tr>
+                            <tr><td>{{.i18n.Tr "VM_Isolation_Operation_Time"}} (UTC)</td><td>{{if and .Record.IsolationStatus (ne .Record.IsolationStatus "disabled") (ne .Record.IsolationStatus "not_requested")}}{{call .DisplayTime .Record.OperationAt}}{{else}}NA{{end}}</td></tr>
                             <tr><td>{{.i18n.Tr "Created_At"}} (UTC)</td><td>{{call .DisplayTime .Record.CreatedAt}}</td></tr>
                             <tr><td>{{.i18n.Tr "Updated_At"}} (UTC)</td><td>{{call .DisplayTime .Record.UpdatedAt}}</td></tr>
                             <tr><td>{{.i18n.Tr "VM_Scan_ID"}}</td><td>{{call .Display .Record.ScanID}}</td></tr>

@@ -77,8 +77,8 @@ collect_vm_inspection_job() {
         [ "$marker" = '|:-VM-INSPECTION-REPORT-:|' ] && [ -z "$extra" ] || continue
         remove_collected_inspection_report "$vm" "$scan" >&2 || cleanup_pending=true
     done < "$file"
-    # Keep only this VM job for retry while its report is still in use.
-    [ "$cleanup_pending" = true ] || rm -f -- "$file"
+    # Retry on the next report_rc cycle while busy or retained for debugging.
+    [ "$cleanup_pending" = true ] || [ "$inspection_debug_keep_results" = true ] || rm -f -- "$file"
 }
 
 remove_collected_inspection_report() {
