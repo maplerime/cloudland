@@ -34,7 +34,7 @@ fi
 is_windows_vm() {
     local osinfo
     guest_os=''
-    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null) || return 2
+    osinfo=$(timeout --foreground "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null) || return 2
     guest_os=$(jq -r '.return.id | select(type=="string" and length>0)' <<<"$osinfo" 2>/dev/null) || return 2
     [ -n "$guest_os" ] || return 2
     jq -e '(.return.id // "") | test("mswindows"; "i")' <<<"$osinfo" >/dev/null 2>&1
@@ -61,7 +61,7 @@ for vm_ID in $vm_IDs; do
         continue
     fi
 
-    if ! info=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" '{"execute":"guest-info"}' 2>&1) ||
+    if ! info=$(timeout --foreground "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" '{"execute":"guest-info"}' 2>&1) ||
        [ -z "$info" ] || ! jq -e '.return.supported_commands | type=="array"' <<<"$info" >/dev/null 2>&1; then
         if [ "$JSON" = "1" ]; then
             info=null
