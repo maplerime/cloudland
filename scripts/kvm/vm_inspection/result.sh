@@ -15,10 +15,10 @@ build_inspection_result() {
         jq -cn --arg name "$part" --arg code "$code" --arg collected "$collected" --arg ended "$ended" --rawfile output "$work/$part.out" '
           def number: try tonumber catch null;
           def stamp($name): [$output|split("\n")[]|split("|")|select(length==2 and .[0]==$name)|.[1]|number]|.[0];
-          ($collected|number) as $start | ($ended|number) as $end |
+          ($collected|number) as $start | ($ended|number) as $end_time |
           stamp("GUEST_STARTED") as $gs | stamp("GUEST_FINISHED") as $ge |
           {key:$name,value:{status:(if $code=="" then "ok" else "failed" end),error_code:$code,collected_at:$start,
-           started_at:$start,finished_at:$end,duration_ms:(if $start!=null and $end!=null then ($end-$start)*1000 else null end),
+           started_at:$start,finished_at:$end_time,duration_ms:(if $start!=null and $end_time!=null then ($end_time-$start)*1000 else null end),
            guest_started_at:$gs,guest_finished_at:$ge,guest_duration_ms:(if $gs!=null and $ge!=null then ($ge-$gs)*1000 else null end)}}'
     done | jq -s 'from_entries' > "$work/steps.json" || return 1
     # Preserve the PoC gateway/core query and convert only its output representation.
