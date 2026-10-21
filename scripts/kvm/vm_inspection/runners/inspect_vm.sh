@@ -17,19 +17,30 @@ export GUEST_EXEC_TIMEOUT="$guest_timeout" TOPN="$inspection_top_n" CSV=1 LC_ALL
 resolve_target_vm() { validate_inspection_target "$vm_uuid" "$vm_ID"; }
 
 run_rpc_check() {
-    if ! JSON=1 timeout "$((rpc_timeout * 2 + 2))" bash "$common_dir/check_guest_rpc_locked.sh" "$vm_ID" > "$work/rpc.json" 2>"$work/rpc.stderr" ||
+    local rc
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=rpc_check start timeout=$((rpc_timeout * 2 + 2))s" >&2
+    JSON=1 timeout --foreground "$((rpc_timeout * 2 + 2))" bash "$common_dir/check_guest_rpc_locked.sh" "$vm_ID" > "$work/rpc.json" 2>"$work/rpc.stderr"
+    rc=$?
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=rpc_check end exit=$rc" >&2
+    if [ "$rc" -ne 0 ] ||
        ! jq -e -s 'length==1 and (.[0]|type=="object" and has("reachable"))' "$work/rpc.json" >/dev/null 2>&1; then
+        echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=rpc_check failed exit=$rc; recording agent_unreachable" >&2
+        [ ! -s "$work/rpc.stderr" ] || cat "$work/rpc.stderr" >&2
         printf '%s\n' '{"status":"failed","error_code":"agent_unreachable","reachable":false,"guest_exec_enabled":false,"guest_exec_status_enabled":false}' > "$work/rpc.json"
     fi
 }
 
 ensure_guest_rpc() {
-    local attempted=false unlock=not_needed
+    local attempted=false unlock=not_needed unlock_rc
     run_rpc_check
     if jq -e '.status=="ok" and .guest_exec_enabled and (.guest_exec_status_enabled|not)' "$work/rpc.json" >/dev/null; then
         attempted=true
         # Keep the PoC unlock operation in its own script; verify using a fresh check.
-        timeout "$((rpc_timeout * 4 + 6))" bash "$common_dir/unlock_guest_exec_status.sh" "$vm_ID" > "$work/unlock.stdout" 2>"$work/unlock.stderr"
+        echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=rpc_unlock start timeout=$((rpc_timeout * 4 + 6))s" >&2
+        timeout --foreground "$((rpc_timeout * 4 + 6))" bash "$common_dir/unlock_guest_exec_status.sh" "$vm_ID" > "$work/unlock.stdout" 2>"$work/unlock.stderr"
+        unlock_rc=$?
+        echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=rpc_unlock end exit=$unlock_rc" >&2
+        [ ! -s "$work/unlock.stderr" ] || cat "$work/unlock.stderr" >&2
         run_rpc_check
         unlock=failed
         if jq -e '.status=="ok" and .guest_exec_enabled and .guest_exec_status_enabled' "$work/rpc.json" >/dev/null; then unlock=verified; fi
@@ -43,12 +54,17 @@ ensure_guest_rpc() {
 }
 
 run_check() {
-    local name=$1 budget=$2
+    local name=$1 budget=$2 rc
     shift 2
     date +%s > "$work/$name.collected_at"
-    timeout -k 2 "$budget" bash "$@" > "$work/$name.out" 2>"$work/$name.stderr"
-    printf '%s\n' "$?" > "$work/$name.rc"
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=$name start timeout=${budget}s" >&2
+    timeout --foreground -k 2 "$budget" bash "$@" > "$work/$name.out" 2>"$work/$name.stderr"
+    rc=$?
+    printf '%s\n' "$rc" > "$work/$name.rc"
     date +%s > "$work/$name.finished_at"
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=$name end exit=$rc" >&2
+    [ "$rc" -eq 0 ] || { [ ! -s "$work/$name.stderr" ] || cat "$work/$name.stderr" >&2; }
+    return 0
 }
 
 collect_guest_evidence() {
@@ -60,9 +76,17 @@ collect_guest_evidence() {
     run_check timestamps "$guest_timeout" "$common_dir/outer_check.sh" "$vm_ID" "$inner"
 }
 
+echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=identity start" >&2
 if ! resolve_target_vm; then
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=identity failed; skipping collection" >&2
     printf '%s\n' vm_identity_mismatch > "$work/failure"
     exit 1
 fi
-if ensure_guest_rpc; then collect_guest_evidence; fi
+echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=identity end exit=0" >&2
+if ensure_guest_rpc; then
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=guest_collection start" >&2
+    collect_guest_evidence
+else
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=guest_collection skipped agent=$(jq -c . "$work/agent.json")" >&2
+fi
 run_check wds "$wds_timeout" "$common_dir/check_uss_core_bind.sh"

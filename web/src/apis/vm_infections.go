@@ -16,15 +16,6 @@ type VMInfectionAPI struct{}
 
 var vmInfectionAPI = &VMInfectionAPI{}
 
-func (*VMInfectionAPI) Sync(c *gin.Context) {
-	out, err := routes.SyncVMInfection(c.Request.Context(), c.Param("uuid"))
-	if err != nil {
-		vmInspectionAPIError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, out)
-}
-
 type VMInfectionResponse struct {
 	UUID             string            `json:"uuid"`
 	CreatedAt        time.Time         `json:"created_at"`

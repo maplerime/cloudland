@@ -69,7 +69,6 @@ func Register() (r *gin.Engine) {
 		authGroup.GET("/api/v1/vm-infections", vmInfectionAPI.List)
 		authGroup.GET("/api/v1/vm-infections/:uuid", vmInfectionAPI.Get)
 		authGroup.DELETE("/api/v1/vm-infections/:uuid", vmInfectionAPI.Delete)
-		authGroup.POST("/api/v1/vm-infections/:uuid/sync", vmInfectionAPI.Sync)
 
 		authGroup.GET("/api/v1/migrations", migrationAPI.List)
 		authGroup.POST("/api/v1/migrations", migrationAPI.Create)

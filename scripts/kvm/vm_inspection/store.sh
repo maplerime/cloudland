@@ -19,7 +19,9 @@ validate_inspection_target() {
     python3 - "$1" "$2" <<'CHECK'
 import subprocess,sys,uuid,xml.etree.ElementTree as ET
 uuid.UUID(sys.argv[1])
+print('[VM-INSPECTION] domain='+sys.argv[2]+' step=identity command=virsh-dumpxml start timeout=15s',file=sys.stderr,flush=True)
 p=subprocess.run(['virsh','dumpxml',sys.argv[2]],check=True,capture_output=True,text=True,timeout=15)
+print('[VM-INSPECTION] domain='+sys.argv[2]+' step=identity command=virsh-dumpxml end exit='+str(p.returncode),file=sys.stderr,flush=True)
 r=ET.fromstring(p.stdout)
 values=[e.text for e in r.iter() if e.tag.rsplit('}',1)[-1]=='instance_id']
 if values!=[sys.argv[1]]: raise SystemExit('VM identity mismatch')

@@ -77,15 +77,10 @@ WDS 查询失败或无法确认可用 CPU 时不隔离。
 与现有 adjust_cpu_hotplug.sh 共用 per-domain 锁，保护同时进行的 quota 配置更新。
 
 完整报告默认上限 64 KiB；内部结构化结果上限 64 KiB，每片 768 个 Base64 字符、最多 128 片，单行最多 1022 字节。
-report_rc 只读取 `.done`，读取完成不代表数据库已经保存。本机保留 result.json，允许通过内部
-`inspect_vm.sh --read-result <VM_UUID> <RECORD_UUID> <SYNC_UUID>` 重读。用户没有创建/改写结果的 API。
+report_rc 只读取 `.done`，读取完成不代表数据库已经保存。UI/API 直接查询管理数据库，
+不再提供从计算节点手动重传结果的接口或同步按钮。用户没有创建/改写结果的 API。
 
-手动收集使用 `POST /api/v1/vm-infections/<记录UUID>/sync`，返回 202 表示下发成功；
-实际回收后更新原数据库记录的 updated_at，不改操作时间、采集时间或延长记录保留期。
-管理 UI 的“VM 隔离记录”页提供逐条同步和“同步本页”按钮，等待记录更新后刷新，
-支持失败提示和等待超时提示，不重新扫描 guest。
-
-扫描、隔离/释放、手动读取共用 per-VM 处理锁；清理遇到处理锁占用时保留 .done，
+扫描、隔离/释放共用 per-VM 处理锁；清理遇到处理锁占用时保留 .done，
 由下一轮既有 report_rc 继续回收。完整流程结束前不输出清理标记，`.in_progress` 不参与回收。
 清理只处理 reports 内对应的 scan_id，不删除 state/result.json 或 affinity.json。
 同一内容的分片须到同一 clbase 进程；在途缓冲不持久化。库写失败不标记已保存。

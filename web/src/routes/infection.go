@@ -349,7 +349,6 @@ type VMInfectionSummary struct {
 	ScanID           string          `json:"scan_id"`
 	Remark           string          `json:"remark"`
 	ErrorMessage     string          `json:"error_message"`
-	SyncID           string          `json:"sync_id,omitempty"`
 }
 
 func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSummary) error {
@@ -358,11 +357,6 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	}
 	if id, err := uuid.Parse(e.RecordUUID); err != nil || id.String() != e.RecordUUID {
 		return fmt.Errorf("invalid record UUID")
-	}
-	if e.SyncID != "" {
-		if id, err := uuid.Parse(e.SyncID); err != nil || id.String() != e.SyncID {
-			return fmt.Errorf("invalid sync UUID")
-		}
 	}
 	if !inspectionDomain.MatchString(e.Domain) {
 		return fmt.Errorf("invalid VM domain")
@@ -454,7 +448,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 			latest = *e.CollectedAt
 		}
 	}
-	if e.OperationAt.IsZero() || e.OperationAt.After(now.Add(5*time.Minute)) || (e.SyncID == "" && latest.Before(now.AddDate(0, 0, -settings.RecordRetentionDays))) {
+	if e.OperationAt.IsZero() || e.OperationAt.After(now.Add(5*time.Minute)) || latest.Before(now.AddDate(0, 0, -settings.RecordRetentionDays)) {
 		return fmt.Errorf("expired or invalid result time")
 	}
 	adminCtx, err := CreateAdminContext(ctx)
@@ -492,9 +486,6 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 	if err != nil && !fresh {
 		return err
 	}
-	if fresh && e.SyncID != "" {
-		return gorm.ErrRecordNotFound
-	} // Sync refreshes an existing record; it never recreates a deleted case.
 	if !fresh {
 		if old.DeletedAt != nil || old.InstanceUUID != e.InstanceUUID || old.HyperID != source {
 			return fmt.Errorf("record deleted or identity mismatched")
@@ -503,9 +494,9 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 			return fmt.Errorf("older operation rejected")
 		}
 		newInspection := e.CollectedAt != nil && (old.CollectedAt == nil || e.CollectedAt.After(*old.CollectedAt) || (e.CollectedAt.Equal(*old.CollectedAt) && e.ScanID > old.ScanID))
-		if e.OperationAt.Equal(old.OperationAt) && !newInspection && e.SyncID == "" {
+		if e.OperationAt.Equal(old.OperationAt) && !newInspection {
 			return nil
-		} // Only a new observation/operation or explicit sync refreshes this row.
+		} // Only a new observation or operation updates this row.
 		if len(e.InspectionResult) == 0 || string(e.InspectionResult) == "null" || (e.CollectedAt != nil && old.CollectedAt != nil && e.CollectedAt.Before(*old.CollectedAt)) {
 			// A delayed operation may update disposition, but cannot overwrite newer observations.
 			e.InspectionResult = json.RawMessage(old.InspectionResult)
@@ -542,40 +533,7 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 		return err
 	}
 	logger.Infof("[VM-INFECTION] record=%s VM=%s source=%d scan=%q collected_at=%v verdict=%q status=%q saved", e.RecordUUID, e.InstanceUUID, source, e.ScanID, e.CollectedAt, e.Verdict, e.IsolationStatus)
-	if e.SyncID != "" {
-		logger.Infof("[VM-INFECTION] sync=%s record=%s result saved", e.SyncID, e.RecordUUID)
-	}
 	return nil
-}
-
-type VMInfectionSyncAccepted struct {
-	UUID         string    `json:"uuid"`
-	InstanceUUID string    `json:"instance_uuid"`
-	SyncID       string    `json:"sync_id"`
-	Status       string    `json:"status"`
-	UpdatedAt    time.Time `json:"updated_at"`
-}
-
-// SyncVMInfection reads saved node state, without running another guest scan.
-func SyncVMInfection(ctx context.Context, id string) (*VMInfectionSyncAccepted, error) {
-	row, err := GetVMInfection(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	// GetVMInfection already enforces admin access. Only location is needed here.
-	_, db := common.GetContextDB(ctx)
-	inst := &model.Instance{}
-	if err := db.Select("uuid, hyper").Where("uuid = ?", row.InstanceUUID).Take(inst).Error; err != nil {
-		return nil, err
-	}
-	syncID := uuid.NewString()
-	cmd := fmt.Sprintf("/opt/cloudland/scripts/kvm/inspect_vm.sh --read-result '%s' '%s' '%s'", inst.UUID, row.UUID, syncID)
-	if err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", inst.Hyper), cmd); err != nil {
-		logger.Errorf("[VM-INFECTION] sync=%s record=%s dispatch failed: %v", syncID, id, err)
-		return nil, err
-	}
-	logger.Infof("[VM-INFECTION] sync=%s record=%s VM=%s hyper=%d command sent", syncID, id, inst.UUID, inst.Hyper)
-	return &VMInfectionSyncAccepted{row.UUID, inst.UUID, syncID, "accepted", row.UpdatedAt}, nil
 }
 
 type VMInfectionListInput struct {
@@ -920,7 +878,7 @@ func cleanupExpiredVMInfections(ctx context.Context, now time.Time) {
 	}
 	cutoff := now.UTC().AddDate(0, 0, -settings.RecordRetentionDays)
 	_, db := common.GetContextDB(ctx)
-	// Only fresh observations or actual operations extend retention; manual sync does not.
+	// Retention follows the latest observation or operation time.
 	safe := []string{"", "disabled", "not_requested", "released"}
 	for {
 		var rows []model.VMInfectionRecord
@@ -1182,8 +1140,6 @@ func (*VMInspectionView) Infections(c *macaron.Context) {
 	c.Data["Verdict"] = p.Verdict
 	c.Data["Accepted"] = c.Query("accepted") == "1"
 	c.Data["Deleted"] = c.Query("deleted") == "1"
-	c.Data["Synced"] = c.Query("synced") == "1"
-	c.Data["SyncFailed"] = c.Query("sync_failed") != ""
 	query := url.Values{"instance_uuid": {p.InstanceUUID}, "isolation_status": {p.IsolationStatus}, "verdict": {p.Verdict}}
 	c.Data["ExtraQuery"] = template.URL("&" + query.Encode())
 	SetPaginationData(c, "vm_infections", int64(total), limit, offset, config, "[]", nil)
@@ -1195,10 +1151,6 @@ func (*VMInspectionView) Infection(c *macaron.Context) {
 	row, err := GetVMInfection(c.Req.Context(), c.Params(":uuid"))
 	if err != nil {
 		vmInspectionViewError(c, err)
-		return
-	}
-	if c.Query("format") == "json" {
-		c.JSON(http.StatusOK, map[string]interface{}{"updated_at": row.UpdatedAt})
 		return
 	}
 	rules := []string{}
@@ -1217,17 +1169,7 @@ func (*VMInspectionView) Infection(c *macaron.Context) {
 	c.Data["Record"] = row
 	c.Data["MatchRules"] = rules
 	c.Data["NeedsRestore"] = infectionNeedsRestore(row.IsolationStatus)
-	c.Data["Synced"] = c.Query("synced") == "1"
 	c.HTML(http.StatusOK, "vm_infection")
-}
-
-func (*VMInspectionView) Sync(c *macaron.Context) {
-	out, err := SyncVMInfection(c.Req.Context(), c.Params(":uuid"))
-	if err != nil {
-		vmInspectionViewError(c, err)
-		return
-	}
-	c.JSON(http.StatusAccepted, out)
 }
 
 func (*VMInspectionView) Delete(c *macaron.Context) {

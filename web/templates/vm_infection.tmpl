@@ -5,9 +5,6 @@
             {{template "_left" .}}
             <div class="twelve wide column content">
                 <h4 class="ui top attached header">{{.i18n.Tr "VM_Record_Detail"}}</h4>
-                {{if .Synced}}<div class="ui positive message">{{.i18n.Tr "Success"}}</div>{{end}}
-                <div id="vm-infection-sync-status" class="ui message" hidden role="status"
-                     data-pending="{{.i18n.Tr "VM_Sync_Pending"}}" data-timeout="{{.i18n.Tr "VM_Sync_Timeout"}}" data-failed="{{.i18n.Tr "VM_Sync_Failed"}}"></div>
                 <div class="ui attached segment">
                     <h5>{{.i18n.Tr "VM_Collection_Result"}}</h5>
                     {{if .Inspection}}
@@ -61,8 +58,6 @@
                             <tr><td>{{.i18n.Tr "Error"}}</td><td style="white-space:pre-wrap">{{call .DisplayError .Record.IsolationStatus .Record.ErrorMessage}}</td></tr>
                         </tbody>
                     </table>
-                    <button type="button" class="ui button vm-infection-sync" data-url="/vm-infections/{{.Record.UUID}}/sync" data-status-url="/vm-infections/{{.Record.UUID}}?format=json" data-csrf="{{.CSRFToken}}"><i class="sync icon"></i>{{.i18n.Tr "VM_Sync"}}</button>
-                    <a class="ui button" href="/vm-infections">{{.i18n.Tr "VM_Infection_Records"}}</a>
                 </div>
                 <div class="ui attached segment">
                     <form class="ui form" method="post" action="/vm-infections/action" data-confirm="{{.i18n.Tr "VM_Action_Confirm"}}">

@@ -119,7 +119,6 @@ func New() (m *macaron.Macaron) {
 	m.Get("/vm-infections/:uuid", vmInspectionView.Infection)
 	m.Post("/vm-infections/action", vmInspectionView.Action)
 	m.Post("/vm-infections/:uuid/delete", vmInspectionView.Delete)
-	m.Post("/vm-infections/:uuid/sync", vmInspectionView.Sync)
 	m.Get("/users", userView.List)
 	m.Get("/users/:id", userView.Edit)
 	m.Post("/users/:id", userView.Patch)

@@ -60,56 +60,6 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    var syncButtons = Array.prototype.slice.call(document.querySelectorAll('.vm-infection-sync'));
-    var syncPage = document.getElementById('vm-infection-sync-page');
-    var syncStatus = document.getElementById('vm-infection-sync-status');
-
-    async function syncRecord(button) {
-        var reply = await fetch(button.getAttribute('data-url'), {
-            method: 'POST', credentials: 'same-origin',
-            headers: { 'X-Csrf-Token': button.getAttribute('data-csrf'), 'Accept': 'application/json' }
-        });
-        if (reply.status !== 202) { throw new Error(syncStatus.getAttribute('data-failed')); }
-        var accepted = await reply.json();
-        for (var attempt = 0; attempt < 30; attempt++) {
-            await new Promise(function (resolve) { setTimeout(resolve, 2000); });
-            var current = await fetch(button.getAttribute('data-status-url'), {
-                credentials: 'same-origin', cache: 'no-store', headers: { 'Accept': 'application/json' }
-            });
-            if (!current.ok) { throw new Error(syncStatus.getAttribute('data-failed')); }
-            var record = await current.json();
-            if (record.updated_at !== accepted.updated_at) { return; }
-        }
-        throw new Error(syncStatus.getAttribute('data-timeout'));
-    }
-
-    async function syncRecords(buttons) {
-        syncButtons.forEach(function (button) { button.disabled = true; });
-        if (syncPage) { syncPage.disabled = true; }
-        syncStatus.hidden = false;
-        syncStatus.textContent = syncStatus.getAttribute('data-pending');
-        // All requests use the same read-result API as a single-row sync.
-        var results = await Promise.all(buttons.map(function (button) {
-            return syncRecord(button).then(function () { return null; }, function (error) { return error.message; });
-        }));
-        var failures = results.filter(function (result) { return result !== null; });
-        if (failures.length < results.length) {
-            var url = new URL(window.location.href);
-            url.searchParams.set('synced', '1');
-            if (failures.length) { url.searchParams.set('sync_failed', String(failures.length)); }
-            else { url.searchParams.delete('sync_failed'); }
-            window.location.assign(url.toString());
-            return;
-        }
-        syncStatus.textContent = failures[0] + ' (' + (results.length - failures.length) + '/' + results.length + ')';
-        syncButtons.forEach(function (button) { button.disabled = false; });
-        if (syncPage) { syncPage.disabled = false; }
-    }
-    syncButtons.forEach(function (button) {
-        button.addEventListener('click', function () { syncRecords([button]); });
-    });
-    if (syncPage) { syncPage.addEventListener('click', function () { syncRecords(syncButtons); }); }
-
     document.querySelectorAll('form[data-confirm]').forEach(function (actionForm) {
         actionForm.addEventListener('submit', function (event) {
             if (!window.confirm(actionForm.getAttribute('data-confirm'))) {

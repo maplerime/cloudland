@@ -63,28 +63,6 @@ emit_vm_infection_result() {
         printf '%s\n' "$line"
     done
 }
-read_vm_infection_result() {
-    local vm=$1 record=$2 sync=$3 domain file snapshot rc
-    [[ "$vm" =~ ^[0-9a-fA-F-]{36}$ && "$record" =~ ^[0-9a-fA-F-]{36}$ && "$sync" =~ ^[0-9a-fA-F-]{36}$ ]] || return 1
-    lock_inspection_work "$vm" || return 1
-    file="$inspection_root/state/$vm/result.json"
-    domain=$(jq -er .domain "$file") || return 1
-    [[ "$domain" =~ ^[A-Za-z0-9_.-]{1,128}$ ]] || return 1
-    lock_inspection_vm || return 1
-    jq -e --arg vm "$vm" --arg record "$record" '.instance_uuid==$vm and .record_uuid==$record' "$file" >/dev/null || return 1
-    snapshot=$(mktemp "$inspection_run/sync.XXXXXXXX") || return 1
-    # A fresh callback checksum allows an explicit sync through normal replay filtering.
-    jq --arg sync "$sync" '. + {sync_id:$sync}' "$file" > "$snapshot" || { rm -f -- "$snapshot"; return 1; }
-    flock -u 8
-    emit_vm_infection_result "$snapshot"
-    rc=$?
-    if [ "$rc" -eq 0 ]; then
-        emit_inspection_report_reference "$vm" "$(jq -r '.scan_id // ""' "$snapshot")"
-    fi
-    rm -f -- "$snapshot"
-    return "$rc"
-}
-
 emit_inspection_report_reference() {
     [ -n "$2" ] || return 0
     printf '|:-VM-INSPECTION-REPORT-:| %s %s\n' "$1" "$2"

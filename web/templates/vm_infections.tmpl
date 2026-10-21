@@ -5,13 +5,9 @@
             {{template "_left" .}}
             <div class="twelve wide column content">
                 <h4 class="ui top attached header">{{.i18n.Tr "VM_Infection_Records"}} ({{.i18n.Tr "Total"}}: {{.Total}})</h4>
-                {{if .Synced}}<div class="ui message">{{if .SyncFailed}}{{.i18n.Tr "VM_Sync_Partial"}}{{else}}{{.i18n.Tr "Success"}}{{end}}</div>{{end}}
-                <div id="vm-infection-sync-status" class="ui message" hidden role="status"
-                     data-pending="{{.i18n.Tr "VM_Sync_Pending"}}" data-timeout="{{.i18n.Tr "VM_Sync_Timeout"}}" data-failed="{{.i18n.Tr "VM_Sync_Failed"}}"></div>
                 {{if .Accepted}}<div class="ui info message">{{.i18n.Tr "VM_Action_Accepted"}}</div>{{end}}
                 {{if .Deleted}}<div class="ui positive message">{{.i18n.Tr "Success"}}</div>{{end}}
                 <div class="ui attached segment">
-                    <button type="button" class="ui small button" id="vm-infection-sync-page" {{if not .Records}}disabled{{end}}><i class="sync icon"></i>{{.i18n.Tr "VM_Sync"}}</button>
                     <form class="ui form" method="get" action="/vm-infections">
                         <div class="three fields">
                             <div class="field"><label for="instance_uuid">{{.i18n.Tr "InstanceUUID"}}</label><input id="instance_uuid" name="instance_uuid" value="{{.InstanceUUID}}"></div>
@@ -63,8 +59,7 @@
                                 <td>{{if .IsolationStatus}}{{$.i18n.Tr (printf "VM_Status_%s" .IsolationStatus)}}{{else}}NA{{end}}</td><td>{{call $.Display .IsolationCPUs}}</td>
                                 <td>{{if .IsolationSource}}{{$.i18n.Tr (printf "VM_Source_%s" .IsolationSource)}}{{else}}NA{{end}}</td>
                                 <td>{{if and .IsolationStatus (ne .IsolationStatus "disabled") (ne .IsolationStatus "not_requested")}}{{call $.DisplayTime .OperationAt}}{{else}}NA{{end}}</td>
-                                <td><a href="/vm-infections/{{.UUID}}">{{$.i18n.Tr "VM_Record_Detail"}}</a>
-                                    <button type="button" class="ui mini basic button vm-infection-sync" data-url="/vm-infections/{{.UUID}}/sync" data-status-url="/vm-infections/{{.UUID}}?format=json" data-csrf="{{$.CSRFToken}}"><i class="sync icon"></i>{{$.i18n.Tr "VM_Sync"}}</button></td>
+                                <td><a href="/vm-infections/{{.UUID}}">{{$.i18n.Tr "VM_Record_Detail"}}</a></td>
                             </tr>
                             {{else}}<tr><td colspan="10">{{.i18n.Tr "None"}}</td></tr>{{end}}
                         </tbody>
