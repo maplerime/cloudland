@@ -1,5 +1,7 @@
 #!/bin/bash
 # Structured observations, dispositions and cleanup references share async_exec output.
+# Debug only: set false before committing to resume collected-report deletion.
+inspection_debug_keep_results=true
 inspection_max_result_bytes=65536
 inspection_max_result_chunks=128
 build_vm_infection_summary() {
@@ -89,7 +91,9 @@ remove_collected_inspection_report() {
         flock -n 6 || exit 1
         flock -x 7 || exit 1
         # A previous .done must never remove a newer report or CPU restore state.
-        rm -f -- "$inspection_root/reports/$vm/$stamp.json.gz" || exit 1
+        if [ "$inspection_debug_keep_results" != true ]; then
+            rm -f -- "$inspection_root/reports/$vm/$stamp.json.gz" || exit 1
+        fi
         # This only marks collection. A later report_rc pass retires the metric.
         source "$(dirname "${BASH_SOURCE[0]}")/metrics.sh"
         mark_inspection_metrics_collected "$vm" "$scan"
