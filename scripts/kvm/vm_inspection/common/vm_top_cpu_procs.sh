@@ -61,11 +61,22 @@ fi
 # probe (single request, no exec-status polling) instead of failing later.
 # Return 0 for Windows, 1 for another identified OS, 2 if identification fails.
 is_windows_vm() {
-    local osinfo
+    local osinfo rc
     guest_os=''
-    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null) || return 2
-    guest_os=$(jq -r '.return.id | select(type=="string" and length>0)' <<<"$osinfo" 2>/dev/null) || return 2
-    [ -n "$guest_os" ] || return 2
+    osinfo=$(timeout --foreground "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        if [ "$rc" -eq 124 ]; then
+            echo "== $1: OS detection failed: guest-get-osinfo timed out after ${RPC_TIMEOUT}s (exit=$rc); process collection not started" >&2
+        else
+            echo "== $1: OS detection failed: guest-get-osinfo failed (exit=$rc): ${osinfo:-empty response}; process collection not started" >&2
+        fi
+        return 2
+    fi
+    if ! guest_os=$(jq -r '.return.id | select(type=="string" and length>0)' <<<"$osinfo" 2>/dev/null) || [ -z "$guest_os" ]; then
+        echo "== $1: OS detection failed: guest-get-osinfo returned an invalid response or missing OS id: ${osinfo:-empty response}; process collection not started" >&2
+        return 2
+    fi
     jq -e '(.return.id // "") | test("mswindows"; "i")' <<<"$osinfo" >/dev/null 2>&1
 }
 
@@ -74,7 +85,6 @@ for vm_ID in $vm_IDs; do
     is_windows_vm "$vm_ID"
     os_status=$?
     if [ "$os_status" -eq 2 ]; then
-        echo "== $vm_ID: OS detection failed" >&2
         continue
     fi
     if [ "$os_status" -eq 0 ]; then
@@ -86,7 +96,7 @@ done
 vm_IDs=$linux_IDs
 
 if [ -z "$vm_IDs" ]; then
-    echo "No non-Windows VMs left to check" >&2
+    echo "No VM process data collected. See per-VM failure or skip reasons above." >&2
     exit 0
 fi
 
@@ -97,24 +107,36 @@ ps_cmd='printf "GUEST_STARTED|%s\n" "$(date +%s)"; ps -eo user:32,pid,pcpu,comm 
 for vm_ID in $vm_IDs; do
     host_pcpu=$(host_pcpu_of "$vm_ID")
     request=$(jq -cn --arg cmd "$ps_cmd" '{execute:"guest-exec",arguments:{path:"/bin/sh",arg:["-c",$cmd],"capture-output":true}}')
-    exec_resp=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" "$request" 2>&1)
-    pid=$(jq -r '.return.pid // empty' <<<"$exec_resp" 2>/dev/null)
+    exec_resp=$(timeout --foreground "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" "$request" 2>&1)
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        [ "$rc" -ne 124 ] || exec_resp="timed out after ${RPC_TIMEOUT}s"
+        echo "== $vm_ID: guest-exec failed (exit=$rc): ${exec_resp:-empty response}; process output unavailable" >&2
+        continue
+    fi
+    pid=$(jq -r -s 'if length==1 then .[0].return.pid | select(type=="number" and .>0 and .==floor) else empty end' <<<"$exec_resp" 2>/dev/null)
     if [ -z "$pid" ]; then
-        echo "== $vm_ID: guest-exec failed (guest agent unreachable?) - $exec_resp" >&2
+        echo "== $vm_ID: guest-exec returned an invalid response or missing PID: ${exec_resp:-empty response}; process output unavailable" >&2
         continue
     fi
 
     status_resp=""
     exited="false"
     for i in $(seq 1 $GUEST_EXEC_TIMEOUT); do
-        status_resp=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" \
+        status_resp=$(timeout --foreground "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" \
             '{"execute":"guest-exec-status","arguments":{"pid":'"$pid"'}}' 2>&1)
+        rc=$?
+        if [ "$rc" -eq 124 ]; then
+            echo "== $vm_ID: guest-exec-status timed out after ${RPC_TIMEOUT}s (exit=$rc); process output unavailable" >&2
+            exited=failed
+            break
+        fi
         # virsh errors (e.g. RPC disabled on this guest's qemu-ga) come back as
         # plain "error: ..." text, not JSON - fail fast instead of burning the
         # whole timeout retrying a request that will never succeed.
         case "$status_resp" in
             error:*)
-                echo "== $vm_ID: guest-exec-status unavailable - $status_resp" >&2
+                echo "== $vm_ID: guest-exec-status unavailable (exit=$rc) - $status_resp" >&2
                 if [[ "$status_resp" == *"has been disabled"* ]]; then
                     echo "   this guest's qemu-ga blocks reading command output (guest-exec-status/guest-file-*)." >&2
                     echo "   to unlock manually: virsh qemu-agent-command $vm_ID '{\"execute\":\"guest-exec\",\"arguments\":{\"path\":\"/bin/sh\",\"arg\":[\"-c\",\"sed -i \x27s/--allow-rpcs=/--allow-rpcs=guest-exec-status,guest-file-open,guest-file-read,guest-file-close,/\x27 /etc/sysconfig/qemu-ga && systemctl restart qemu-guest-agent\"]}}' then re-run this script." >&2
@@ -123,22 +145,32 @@ for vm_ID in $vm_IDs; do
                 break
                 ;;
         esac
+        if [ "$rc" -ne 0 ]; then
+            echo "== $vm_ID: guest-exec-status failed (exit=$rc): ${status_resp:-empty response}; process output unavailable" >&2
+            exited=failed
+            break
+        fi
+        if ! jq -e -s 'length==1 and (.[0].return|type=="object") and (.[0].return.exited|type=="boolean")' <<<"$status_resp" >/dev/null 2>&1; then
+            echo "== $vm_ID: guest-exec-status returned an invalid response or missing exited flag: ${status_resp:-empty response}; process output unavailable" >&2
+            exited=failed
+            break
+        fi
         exited=$(jq -r '.return.exited' <<<"$status_resp" 2>/dev/null)
         [ "$exited" = "true" ] && break
         sleep 1
     done
 
-    [ "$exited" = "disabled" ] && continue
+    case "$exited" in disabled|failed) continue;; esac
 
     if [ "$exited" != "true" ]; then
-        echo "== $vm_ID: timed out waiting for ps output" >&2
+        echo "== $vm_ID: guest command did not finish after $GUEST_EXEC_TIMEOUT status checks (pid=$pid); process output unavailable" >&2
         continue
     fi
 
     raw_out=$(jq -r '.return."out-data" // empty' <<<"$status_resp" | base64 -d)
     if [ "$CSV" = "1" ]; then printf '%s\n' "$raw_out" | sed -n '/^GUEST_STARTED|/p; /^GUEST_FINISHED|/p'; fi
     if ! jq -e '.return.exitcode==0 and (.return."out-truncated"!=true)' <<<"$status_resp" >/dev/null 2>&1; then
-        echo "== $vm_ID: guest command failed or output was truncated" >&2
+        echo "== $vm_ID: guest command failed or output was truncated (exitcode=$(jq -r .return.exitcode <<<"$status_resp"), truncated=$(jq -r '.return["out-truncated"] // false' <<<"$status_resp"))" >&2
         continue
     fi
     if [ "$CSV" = "1" ]; then

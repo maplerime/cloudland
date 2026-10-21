@@ -18,7 +18,7 @@ resolve_target_vm() { validate_inspection_target "$vm_uuid" "$vm_ID"; }
 
 run_rpc_check() {
     if ! JSON=1 timeout "$((rpc_timeout * 2 + 2))" bash "$common_dir/check_guest_rpc_locked.sh" "$vm_ID" > "$work/rpc.json" 2>"$work/rpc.stderr" ||
-       ! jq -e 'type=="object" and has("reachable")' "$work/rpc.json" >/dev/null 2>&1; then
+       ! jq -e -s 'length==1 and (.[0]|type=="object" and has("reachable"))' "$work/rpc.json" >/dev/null 2>&1; then
         printf '%s\n' '{"status":"failed","error_code":"agent_unreachable","reachable":false,"guest_exec_enabled":false,"guest_exec_status_enabled":false}' > "$work/rpc.json"
     fi
 }
