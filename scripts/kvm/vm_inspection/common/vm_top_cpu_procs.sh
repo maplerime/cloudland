@@ -59,15 +59,25 @@ fi
 
 # Windows guests don't have /bin/sh; skip them via a cheap guest-get-osinfo
 # probe (single request, no exec-status polling) instead of failing later.
+# Return 0 for Windows, 1 for another identified OS, 2 if identification fails.
 is_windows_vm() {
     local osinfo
-    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null)
+    guest_os=''
+    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null) || return 2
+    guest_os=$(jq -r '.return.id | select(type=="string" and length>0)' <<<"$osinfo" 2>/dev/null) || return 2
+    [ -n "$guest_os" ] || return 2
     jq -e '(.return.id // "") | test("mswindows"; "i")' <<<"$osinfo" >/dev/null 2>&1
 }
 
 linux_IDs=""
 for vm_ID in $vm_IDs; do
-    if is_windows_vm "$vm_ID"; then
+    is_windows_vm "$vm_ID"
+    os_status=$?
+    if [ "$os_status" -eq 2 ]; then
+        echo "== $vm_ID: OS detection failed" >&2
+        continue
+    fi
+    if [ "$os_status" -eq 0 ]; then
         echo "== $vm_ID: skipped (Windows guest)" >&2
         continue
     fi

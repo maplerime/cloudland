@@ -13,9 +13,13 @@
 source "${CLOUDRC:-/opt/cloudland/scripts/cloudrc}"
 RPC_TIMEOUT=${RPC_TIMEOUT:-5}
 
+# Return 0 for Windows, 1 for another identified OS, 2 if identification fails.
 is_windows_vm() {
     local osinfo
-    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null)
+    guest_os=''
+    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null) || return 2
+    guest_os=$(jq -r '.return.id | select(type=="string" and length>0)' <<<"$osinfo" 2>/dev/null) || return 2
+    [ -n "$guest_os" ] || return 2
     jq -e '(.return.id // "") | test("mswindows"; "i")' <<<"$osinfo" >/dev/null 2>&1
 }
 
@@ -44,7 +48,14 @@ fail=0
 skipped=0
 
 for vm_ID in $vm_IDs; do
-    is_windows_vm "$vm_ID" && { skipped=$((skipped + 1)); continue; }
+    is_windows_vm "$vm_ID"
+    os_status=$?
+    if [ "$os_status" -eq 2 ]; then
+        echo "== $vm_ID: OS detection failed" >&2
+        fail=$((fail + 1))
+        continue
+    fi
+    [ "$os_status" -ne 0 ] || { skipped=$((skipped + 1)); continue; }
 
     if [ $# -eq 0 ] && ! is_locked "$vm_ID"; then
         continue # already unlocked or agent unreachable - nothing to do

@@ -7,7 +7,7 @@
 source "${CLOUDRC:-/opt/cloudland/scripts/cloudrc}"
 RPC_TIMEOUT=${RPC_TIMEOUT:-5}
 
-CSV=${CSV:-0} # 1 = emit "hostname,vm_id,status" rows (status: exec_status_disabled|agent_unreachable) instead of pretty text
+CSV=${CSV:-0} # 1 = emit "hostname,vm_id,status" rows (status: exec_status_disabled|agent_unreachable|os_detection_failed) instead of pretty text
 JSON=${JSON:-0} # Cloudland integration: report capabilities for the specified VM.
 hostname=$(hostname -s)
 
@@ -30,10 +30,13 @@ if [ -z "$vm_IDs" ]; then
     exit 0
 fi
 
+# Return 0 for Windows, 1 for another identified OS, 2 if identification fails.
 is_windows_vm() {
     local osinfo
-    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null)
-    guest_os=$(jq -r '.return.id // ""' <<<"$osinfo" 2>/dev/null)
+    guest_os=''
+    osinfo=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$1" '{"execute":"guest-get-osinfo"}' 2>/dev/null) || return 2
+    guest_os=$(jq -r '.return.id | select(type=="string" and length>0)' <<<"$osinfo" 2>/dev/null) || return 2
+    [ -n "$guest_os" ] || return 2
     jq -e '(.return.id // "") | test("mswindows"; "i")' <<<"$osinfo" >/dev/null 2>&1
 }
 
@@ -51,13 +54,15 @@ locked_count=0
 
 for vm_ID in $vm_IDs; do
     info=null
-    if is_windows_vm "$vm_ID"; then
+    is_windows_vm "$vm_ID"
+    os_status=$?
+    if [ "$os_status" -eq 0 ]; then
         [ "$JSON" != "1" ] || report_json skipped windows_unsupported
         continue
     fi
 
-    info=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" '{"execute":"guest-info"}' 2>&1)
-    if ! jq -e '.return.supported_commands | type=="array"' <<<"$info" >/dev/null 2>&1; then
+    if ! info=$(timeout "$RPC_TIMEOUT" virsh qemu-agent-command "$vm_ID" '{"execute":"guest-info"}' 2>&1) ||
+       [ -z "$info" ] || ! jq -e '.return.supported_commands | type=="array"' <<<"$info" >/dev/null 2>&1; then
         if [ "$JSON" = "1" ]; then
             info=null
             report_json failed agent_unreachable
@@ -65,6 +70,17 @@ for vm_ID in $vm_IDs; do
             echo "$hostname,$vm_ID,agent_unreachable"
         else
             echo "== $vm_ID: agent unreachable - $info" >&2
+        fi
+        continue
+    fi
+
+    if [ "$os_status" -eq 2 ]; then
+        if [ "$JSON" = "1" ]; then
+            report_json failed os_detection_failed
+        elif [ "$CSV" = "1" ]; then
+            echo "$hostname,$vm_ID,os_detection_failed"
+        else
+            echo "== $vm_ID: OS detection failed" >&2
         fi
         continue
     fi
