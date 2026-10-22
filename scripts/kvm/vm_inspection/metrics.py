@@ -63,6 +63,11 @@ def notification_summary(record, action, library_configured):
     if status == 'isolated':
         text = '成功，已校验' if action.get('action') == 'quarantine' else '当前已隔离（此前处置）'
         lines.append('CPU 隔离：' + text + '；CPU：' + cpus)
+    elif status == 'not_requested':
+        lines.append('CPU 隔离：当前未隔离，本轮未执行')
+    elif not status and record.get('error_message'):
+        lines.append('CPU 隔离：当前绑核状态查询失败，本轮未执行')
+        lines.append('查询原因：' + clean(record['error_message'], 160))
     elif status == 'disabled':
         lines.append('CPU 隔离：本轮未执行（自动隔离开关关闭）' if action.get('action') == 'quarantine' else 'CPU 隔离：本轮未执行（没有确诊结论）')
     elif status in ('failed', 'release_failed'):

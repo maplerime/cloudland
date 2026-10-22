@@ -4,6 +4,16 @@
 inspection_debug_keep_results=true
 inspection_max_result_bytes=65536
 inspection_max_result_chunks=128
+read_vm_isolation() {
+    isolation_status=not_requested isolation_cpus='' operation_error=''
+    if ! isolation_cpus=$(python3 "$inspection_dir/common/cpu_affinity.py" status "$domain" 2>"$work/isolation.stderr"); then
+        isolation_status='' isolation_cpus=''
+        operation_error="CPU affinity query failed: $(tail -c 400 "$work/isolation.stderr")"
+    elif [ -n "$isolation_cpus" ]; then
+        isolation_status=isolated
+    fi
+}
+
 build_vm_infection_summary() {
     local now
     now=$(date -u +%Y-%m-%dT%H:%M:%S.%6NZ)
@@ -16,7 +26,7 @@ build_vm_infection_summary() {
        verdict:(if $e.verdict=="not_evaluated" then "" else ($e.verdict // "") end),
        ruleset_version:($e.ruleset_version // ""),match_rule_ids:($e.match_rule_ids // []),
        match_summary:($e.match_summary // ""),
-       isolation_source:(if $status=="" then "" else $o.action_source end),
+       isolation_source:(if $o.action=="record" then (if $status=="isolated" then "existing" else "" end) elif $status=="" then "" else $o.action_source end),
        action:$o.action,action_source:$o.action_source,operation_at:$now,
        collected_at:($o.collected_at // null),inspection_result:($o.inspection_result // null),
        isolation_status:$status,isolation_cpus:$cpus,scan_id:($o.scan_id // ""),
@@ -24,7 +34,6 @@ build_vm_infection_summary() {
 }
 
 record_vm_inspection() {
-    isolation_status='' isolation_cpus='' operation_error=''
     build_vm_infection_summary || return 1
     emit_vm_infection_result "$work/summary.json"
 }

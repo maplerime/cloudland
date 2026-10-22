@@ -371,8 +371,11 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	if e.ActionSource != "automatic" && e.ActionSource != "manual" {
 		return fmt.Errorf("invalid action source")
 	}
-	if e.IsolationSource != "" && e.IsolationSource != "automatic" && e.IsolationSource != "manual" {
+	if e.IsolationSource != "" && e.IsolationSource != "automatic" && e.IsolationSource != "manual" && e.IsolationSource != "existing" {
 		return fmt.Errorf("invalid isolation source")
+	}
+	if e.IsolationSource == "existing" && (e.Action != "record" || e.IsolationStatus != "isolated") {
+		return fmt.Errorf("invalid existing isolation observation")
 	}
 	if e.ActionSource == "automatic" && e.Action != "record" && e.Verdict != "confirmed" {
 		return fmt.Errorf("unconfirmed automatic result")
@@ -386,7 +389,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	default:
 		return fmt.Errorf("invalid isolation status")
 	}
-	if e.IsolationStatus != "" && e.IsolationSource == "" {
+	if e.IsolationStatus != "" && e.IsolationSource == "" && e.Action != "record" {
 		return fmt.Errorf("disposition has no action source")
 	}
 	if len([]rune(e.RulesetVersion)) > 128 || len([]rune(e.MatchSummary)) > 256 {
@@ -510,12 +513,23 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 				e.MatchRuleIDs = nil
 			}
 		}
-		if old.HyperID == source && (e.Action == "record" || (e.IsolationStatus == "disabled" && old.IsolationStatus != "") || e.OperationAt.Before(old.OperationAt)) {
+		if old.HyperID == source && ((e.Action == "record" && e.IsolationStatus == "") || (e.IsolationStatus == "disabled" && old.IsolationStatus != "") || e.OperationAt.Before(old.OperationAt)) {
 			e.IsolationStatus, e.IsolationCPUs, e.IsolationSource = old.IsolationStatus, old.IsolationCPUs, old.IsolationSource
-			e.OperationAt, e.ErrorMessage = old.OperationAt, old.ErrorMessage
+			e.OperationAt = old.OperationAt
+			if e.ErrorMessage == "" || e.Action != "record" {
+				e.ErrorMessage = old.ErrorMessage
+			}
 		}
 		if e.Remark == "" {
 			e.Remark = old.Remark
+		}
+	}
+
+	if e.Action == "record" && e.IsolationSource == "existing" {
+		// Observation is not a new pin operation; preserve its known original time.
+		e.OperationAt = time.Time{}
+		if !fresh && old.HyperID == source && old.IsolationStatus == "isolated" && old.IsolationCPUs == e.IsolationCPUs {
+			e.OperationAt = old.OperationAt
 		}
 	}
 

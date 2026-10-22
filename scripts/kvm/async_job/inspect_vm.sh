@@ -46,17 +46,18 @@ main() {
     save_inspection_report || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=save_report failed exit=$rc" >&2; return 1; }
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_structured_result start" >&2
     build_vm_inspection_data || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_structured_result failed exit=$rc" >&2; return 1; }
-    jq -cn --slurpfile o "$work/target.json" --slurpfile e "$work/evaluation.json" \
+    read_vm_isolation
+    jq -cn --slurpfile o "$work/target.json" --slurpfile e "$work/evaluation.json" --arg status "$isolation_status" \
       --slurpfile data "$work/inspection.json" --arg scan "$scan_id" --arg region "${cloud_domain:-}" --argjson enabled "$enabled" '
       {schema_version:1,vm_uuid:$o[0].vm_uuid,domain:$o[0].domain,
        source_hyper:$o[0].hyper_id,region_id:$region,
-       action:(if $e[0].verdict=="confirmed" then "quarantine" else "record" end),
+       action:(if $e[0].verdict=="confirmed" and $status=="not_requested" then "quarantine" else "record" end),
        action_source:"automatic",
        isolation_enabled:$enabled,scan_id:$scan,evaluation:$e[0],
        collected_at:$data[0].finished_at,
        inspection_result:$data[0]}' > "$work/action.json" || return 1
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=disposition verdict=$(jq -r .verdict "$work/evaluation.json") isolation_enabled=$enabled" >&2
-    if jq -e '.verdict=="confirmed"' "$work/evaluation.json" >/dev/null;then
+    if [ "$(jq -r .action "$work/action.json")" = quarantine ]; then
         echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=quarantine start" >&2
         bash "$inspection_dir/common/quarantine_vm.sh" "$work" || return 1
     else

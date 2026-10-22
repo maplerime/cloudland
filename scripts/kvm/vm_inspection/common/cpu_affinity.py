@@ -114,6 +114,10 @@ def main():
         verify(domain, 'live', before, target)
         if any(e.tag in PIN_TAGS for e in xml(domain, True).findall('./cputune/*')):
             raise ValueError('persistent isolation pins remain')
+    elif mode == 'status' and len(sys.argv) == 3:
+        rows = scope_pins(domain, 'live')['vcpupin']
+        bound = set().union(*(cpus(value) for value in rows.values()))
+        print(str(next(iter(bound))) if len(bound) == 1 else '')
     elif mode in ('apply', 'verify') and len(sys.argv) == 4:
         target = sys.argv[3]
         cpus(target)
