@@ -5,7 +5,7 @@
   注：match 若不可用，将 node-* 分支改为明确枚举（见注释）
   ========================================================= */}}
 {{ define "teams.card" -}}
-{{ if eq .CommonLabels.alert_type "vm_malware" -}}
+{{ if eq .Receiver "teams-vm-malware" -}}
 {{ template "teams.vm_malware.card" . }}
 {{- else if eq .CommonLabels.alert_type "packet_drop" -}}
 {{ template "teams.packet_drop.card" . }}
@@ -263,12 +263,12 @@
         {{ range .Alerts.Firing }},
         {"type": "FactSet", "facts": [
           {"title": "VM", "value": {{ .Labels.instance_id | toJson }}},
-          {"title": "Domain", "value": {{ .Labels.domain | toJson }}},
-          {"title": "区域 / 节点", "value": {{ printf "%s / %s (%s)" .Labels.region_id .Labels.node_hostname .Labels.source_hyper | toJson }}},
+          {"title": "Domain", "value": {{ .Labels.domain | replace "\\\\_" "_" | toJson }}},
+          {"title": "区域 / 节点", "value": {{ printf "%s / %s (%s)" .Labels.region_id .Labels.node_hostname .Labels.source_hyper | replace "\\\\_" "_" | toJson }}},
           {"title": "结果时间（UTC）", "value": {{ .Annotations.detected_at | toJson }}},
-          {"title": "查看完整记录（需登录）", "value": {{ .Annotations.query_url | toJson }}}
+          {"title": "查看完整记录（需登录）", "value": {{ .Annotations.query_url | replace "\\\\_" "_" | toJson }}}
         ]},
-        {"type": "TextBlock", "text": {{ .Annotations.description | toJson }}, "wrap": true}
+        {"type": "TextBlock", "text": {{ .Annotations.description | replace "\\\\_" "_" | replace "\\n" "\n" | toJson }}, "wrap": true}
         {{ end }}
       ]
     }
