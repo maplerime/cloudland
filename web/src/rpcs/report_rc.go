@@ -178,7 +178,7 @@ func VMInfectionResult(ctx context.Context, args []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	err = routes.ReceiveVMInfectionChunk(ctx, source, routes.VMInfectionChunkInput{RecordUUID: args[1], Seq: seq, Total: total, SHA256: args[4], Payload: args[5]})
+	err = routes.ReceiveVMInfectionChunk(ctx, source, routes.VMInfectionChunkInput{InstanceUUID: args[1], Seq: seq, Total: total, SHA256: args[4], Payload: args[5]})
 	if err != nil {
 		return "", err
 	}

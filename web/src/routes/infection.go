@@ -99,7 +99,7 @@ func dispatchVMInspection(ctx context.Context, inst *model.Instance, enabled boo
 	}
 	// Keep an unconfigured URL nonempty through the existing async_exec.
 	quotedURL := "'" + strings.ReplaceAll(libraryArgument, "'", "'\"'\"'") + "'"
-	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/inspect_vm.sh '%s' '%s' '%t' %s", inst.UUID, inst.Domain, enabled, quotedURL)
+	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/inspect_vm.sh '%s' '%t' %s", inst.Domain, enabled, quotedURL)
 	if err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", inst.Hyper), command); err != nil {
 		return err
 	}
@@ -329,7 +329,6 @@ func UpdateVMInspectionSettings(ctx context.Context, p VMInspectionSettingsPatch
 // This DTO carries node observations and optional judgment/disposition results.
 type VMInfectionSummary struct {
 	SchemaVersion    int             `json:"schema_version"`
-	RecordUUID       string          `json:"record_uuid"`
 	InstanceUUID     string          `json:"instance_uuid"`
 	Domain           string          `json:"domain"`
 	SourceHyper      int32           `json:"source_hyper"`
@@ -345,7 +344,6 @@ type VMInfectionSummary struct {
 	OperationAt      time.Time       `json:"operation_at"`
 	Action           string          `json:"action"`
 	ActionSource     string          `json:"action_source"`
-	OperatorID       int64           `json:"operator_id"`
 	ScanID           string          `json:"scan_id"`
 	Remark           string          `json:"remark"`
 	ErrorMessage     string          `json:"error_message"`
@@ -355,8 +353,8 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	if e.SchemaVersion != 1 || source < 0 || e.SourceHyper != source {
 		return fmt.Errorf("invalid infection result source or schema")
 	}
-	if id, err := uuid.Parse(e.RecordUUID); err != nil || id.String() != e.RecordUUID {
-		return fmt.Errorf("invalid record UUID")
+	if id, err := uuid.Parse(e.InstanceUUID); err != nil || id.String() != e.InstanceUUID {
+		return fmt.Errorf("invalid instance UUID")
 	}
 	if !inspectionDomain.MatchString(e.Domain) {
 		return fmt.Errorf("invalid VM domain")
@@ -378,9 +376,6 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	}
 	if e.ActionSource == "automatic" && e.Action != "record" && e.Verdict != "confirmed" {
 		return fmt.Errorf("unconfirmed automatic result")
-	}
-	if e.ActionSource == "manual" && (e.OperatorID <= 0 || strings.TrimSpace(e.Remark) == "") {
-		return fmt.Errorf("manual action missing operator or reason")
 	}
 	switch e.IsolationStatus {
 	case "":
@@ -468,8 +463,8 @@ func SaveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 	if err := validateVMInfectionResult(ctx, source, e); err != nil {
 		return err
 	}
-	logger.Infof("[VM-INFECTION] result received: record=%s VM=%s source=%d scan=%q action=%s action_source=%s verdict=%s status=%s cpus=%q operation_at=%s error=%q",
-		e.RecordUUID, e.InstanceUUID, source, e.ScanID, e.Action, e.ActionSource, e.Verdict, e.IsolationStatus, e.IsolationCPUs, e.OperationAt.UTC().Format(time.RFC3339Nano), e.ErrorMessage)
+	logger.Infof("[VM-INFECTION] result received: VM=%s source=%d scan=%q action=%s action_source=%s verdict=%s status=%s cpus=%q operation_at=%s error=%q",
+		e.InstanceUUID, source, e.ScanID, e.Action, e.ActionSource, e.Verdict, e.IsolationStatus, e.IsolationCPUs, e.OperationAt.UTC().Format(time.RFC3339Nano), e.ErrorMessage)
 	return saveVMInfectionResult(ctx, source, e)
 }
 
@@ -480,33 +475,50 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 		return tx.Error
 	}
 	defer tx.Rollback()
+	// Serialize updates for one VM using its existing row; no task table or node-side record ID.
+	var inst model.Instance
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("uuid = ?", e.InstanceUUID).Take(&inst).Error; err != nil {
+		return err
+	}
+	if inst.Hyper != source {
+		return fmt.Errorf("VM moved or result source mismatched")
+	}
 	old := model.VMInfectionRecord{}
-	err := tx.Unscoped().Set("gorm:query_option", "FOR UPDATE").Where("uuid = ?", e.RecordUUID).Take(&old).Error
+	err := tx.Set("gorm:query_option", "FOR UPDATE").Where("instance_uuid = ?", e.InstanceUUID).Order("id DESC").Take(&old).Error
 	fresh := gorm.IsRecordNotFoundError(err)
 	if err != nil && !fresh {
 		return err
 	}
 	if !fresh {
-		if old.DeletedAt != nil || old.InstanceUUID != e.InstanceUUID || old.HyperID != source {
-			return fmt.Errorf("record deleted or identity mismatched")
-		}
-		if e.OperationAt.Before(old.OperationAt) {
-			return fmt.Errorf("older operation rejected")
-		}
-		newInspection := e.CollectedAt != nil && (old.CollectedAt == nil || e.CollectedAt.After(*old.CollectedAt) || (e.CollectedAt.Equal(*old.CollectedAt) && e.ScanID > old.ScanID))
-		if e.OperationAt.Equal(old.OperationAt) && !newInspection {
+		hasInspection := len(e.InspectionResult) > 0 && string(e.InspectionResult) != "null"
+		newInspection := hasInspection && e.CollectedAt != nil && (old.CollectedAt == nil || e.CollectedAt.After(*old.CollectedAt) || (e.CollectedAt.Equal(*old.CollectedAt) && e.ScanID > old.ScanID))
+		if e.Action == "record" && !newInspection {
 			return nil
-		} // Only a new observation or operation updates this row.
-		if len(e.InspectionResult) == 0 || string(e.InspectionResult) == "null" || (e.CollectedAt != nil && old.CollectedAt != nil && e.CollectedAt.Before(*old.CollectedAt)) {
-			// A delayed operation may update disposition, but cannot overwrite newer observations.
+		}
+		if e.Action != "record" && !e.OperationAt.After(old.OperationAt) && !newInspection {
+			return nil
+		}
+		if !newInspection {
 			e.InspectionResult = json.RawMessage(old.InspectionResult)
 			e.CollectedAt = old.CollectedAt
 			e.ScanID = old.ScanID
 		}
-		if old.IsolationStatus == "released" && e.IsolationStatus != "released" {
-			return fmt.Errorf("closed record cannot be reopened")
+		// Manual disposition results do not carry the earlier scan or feature judgment.
+		if e.Verdict == "" || e.Verdict == "not_evaluated" || !newInspection {
+			e.Verdict, e.RulesetVersion, e.MatchSummary = old.Verdict, old.RulesetVersion, old.MatchSummary
+			if err := json.Unmarshal([]byte(old.MatchRuleIDs), &e.MatchRuleIDs); err != nil {
+				e.MatchRuleIDs = nil
+			}
+		}
+		if old.HyperID == source && (e.Action == "record" || (e.IsolationStatus == "disabled" && old.IsolationStatus != "") || e.OperationAt.Before(old.OperationAt)) {
+			e.IsolationStatus, e.IsolationCPUs, e.IsolationSource = old.IsolationStatus, old.IsolationCPUs, old.IsolationSource
+			e.OperationAt, e.ErrorMessage = old.OperationAt, old.ErrorMessage
+		}
+		if e.Remark == "" {
+			e.Remark = old.Remark
 		}
 	}
+
 	ids, _ := json.Marshal(e.MatchRuleIDs)
 	updates := map[string]interface{}{"instance_uuid": e.InstanceUUID, "hyper_id": source, "verdict": e.Verdict, "match_rule_ids": string(ids), "isolation_status": e.IsolationStatus, "isolation_cpus": e.IsolationCPUs, "isolation_source": e.IsolationSource, "operation_at": e.OperationAt, "scan_id": e.ScanID, "remark": e.Remark, "error_message": e.ErrorMessage}
 	updates["inspection_result"] = string(e.InspectionResult)
@@ -514,15 +526,13 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 	updates["ruleset_version"] = e.RulesetVersion
 	updates["match_summary"] = e.MatchSummary
 	if fresh {
-		row := model.VMInfectionRecord{Model: model.Model{UUID: e.RecordUUID, Creater: 1}, InstanceUUID: e.InstanceUUID, HyperID: source, Verdict: e.Verdict, MatchRuleIDs: string(ids), IsolationStatus: e.IsolationStatus, IsolationCPUs: e.IsolationCPUs, IsolationSource: e.IsolationSource, OperationAt: e.OperationAt, ScanID: e.ScanID, Remark: e.Remark, ErrorMessage: e.ErrorMessage}
+		row := model.VMInfectionRecord{Model: model.Model{Creater: 1}, InstanceUUID: e.InstanceUUID, HyperID: source, Verdict: e.Verdict, MatchRuleIDs: string(ids), IsolationStatus: e.IsolationStatus, IsolationCPUs: e.IsolationCPUs, IsolationSource: e.IsolationSource, OperationAt: e.OperationAt, ScanID: e.ScanID, Remark: e.Remark, ErrorMessage: e.ErrorMessage}
 		row.InspectionResult = string(e.InspectionResult)
 		row.CollectedAt = e.CollectedAt
 		row.RulesetVersion = e.RulesetVersion
 		row.MatchSummary = e.MatchSummary
-		if e.ActionSource == "manual" {
-			row.Creater = e.OperatorID
-		}
 		err = tx.Create(&row).Error
+		old.UUID = row.UUID
 	} else {
 		err = tx.Model(&old).Updates(updates).Error
 	}
@@ -532,7 +542,7 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 	if err = tx.Commit().Error; err != nil {
 		return err
 	}
-	logger.Infof("[VM-INFECTION] record=%s VM=%s source=%d scan=%q collected_at=%v verdict=%q status=%q saved", e.RecordUUID, e.InstanceUUID, source, e.ScanID, e.CollectedAt, e.Verdict, e.IsolationStatus)
+	logger.Infof("[VM-INFECTION] record=%s VM=%s source=%d scan=%q collected_at=%v verdict=%q status=%q saved", old.UUID, e.InstanceUUID, source, e.ScanID, e.CollectedAt, e.Verdict, e.IsolationStatus)
 	return nil
 }
 
@@ -654,15 +664,15 @@ func DeleteVMInfection(ctx context.Context, id string) error {
 }
 
 type VMInfectionChunkInput struct {
-	RecordUUID string
-	Seq        int
-	Total      int
-	SHA256     string
-	Payload    string
+	InstanceUUID string
+	Seq          int
+	Total        int
+	SHA256       string
+	Payload      string
 }
 
 type vmInfectionKey struct {
-	record string
+	vm     string
 	hash   string
 	source int32
 }
@@ -705,8 +715,8 @@ func ReceiveVMInfectionChunk(_ context.Context, source int32, chunk VMInfectionC
 	return infectionRuntime.receive(source, chunk)
 }
 func (r *vmInfectionRuntime) receive(source int32, c VMInfectionChunkInput) error {
-	if _, err := uuid.Parse(c.RecordUUID); err != nil || len(c.RecordUUID) != 36 {
-		return fmt.Errorf("invalid infection record UUID")
+	if _, err := uuid.Parse(c.InstanceUUID); err != nil || len(c.InstanceUUID) != 36 {
+		return fmt.Errorf("invalid infection instance UUID")
 	}
 	if source < 0 || c.Total < 1 || c.Total > r.maxChunks || c.Seq < 1 || c.Seq > c.Total || len(c.Payload) < 1 || len(c.Payload) > 768 {
 		return fmt.Errorf("invalid inspection chunk bounds")
@@ -723,7 +733,7 @@ func (r *vmInfectionRuntime) receive(source int32, c VMInfectionChunkInput) erro
 			return fmt.Errorf("invalid Base64 chunk")
 		}
 	}
-	key := vmInfectionKey{record: c.RecordUUID, hash: strings.ToLower(c.SHA256), source: source}
+	key := vmInfectionKey{vm: c.InstanceUUID, hash: strings.ToLower(c.SHA256), source: source}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if expiry, ok := r.completed[key]; ok {
@@ -783,8 +793,8 @@ func assembleVMInfection(b *vmInfectionBuffer, maxBytes int) (*VMInfectionSummar
 	if err = json.Unmarshal(data, &e); err != nil {
 		return nil, err
 	}
-	if e.SchemaVersion != 1 || e.RecordUUID != b.key.record {
-		return nil, fmt.Errorf("inspection schema/record mismatch")
+	if e.SchemaVersion != 1 || e.InstanceUUID != b.key.vm {
+		return nil, fmt.Errorf("inspection schema/VM mismatch")
 	}
 	if e.SourceHyper != b.key.source {
 		return nil, fmt.Errorf("inspection source mismatch")
@@ -798,7 +808,7 @@ func (r *vmInfectionRuntime) processVMInfectionResult(b *vmInfectionBuffer) {
 		err = r.process(b.key.source, e)
 	}
 	if err != nil {
-		logger.Errorf("[VM-INFECTION] record=%s source=%d save failed: %v", b.key.record, b.key.source, err)
+		logger.Errorf("[VM-INFECTION] VM=%s source=%d save failed: %v", b.key.vm, b.key.source, err)
 		return
 	}
 	r.mu.Lock()
@@ -818,7 +828,7 @@ func (r *vmInfectionRuntime) expireVMInfectionBuffer(key vmInfectionKey) {
 			missing = append(missing, i+1)
 		}
 	}
-	logger.Warningf("[VM-INSPECTION] record=%s source=%d result_incomplete missing=%v", key.record, key.source, missing)
+	logger.Warningf("[VM-INSPECTION] VM=%s source=%d result_incomplete missing=%v", key.vm, key.source, missing)
 	r.releaseLocked(key)
 }
 func (r *vmInfectionRuntime) releaseLocked(key vmInfectionKey) {
@@ -935,7 +945,7 @@ func validateVMMalwareRuleConfig(raw json.RawMessage) (map[string]interface{}, e
 		"for_duration":                config.ForDuration,
 		"notification_window":         fmt.Sprintf("%ds", windowSeconds),
 		"notification_window_seconds": windowSeconds,
-		"query_url":                   strconv.Quote(base + "/vm-infections/{{ $labels.record_uuid }}"),
+		"query_url":                   strconv.Quote(base + "/vm-infections?instance_uuid={{ $labels.instance_id }}"),
 	}, nil
 }
 

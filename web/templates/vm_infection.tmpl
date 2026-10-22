@@ -63,9 +63,7 @@
                     <form class="ui form" method="post" action="/vm-infections/action" data-confirm="{{.i18n.Tr "VM_Action_Confirm"}}">
                         <input type="hidden" name="_csrf" value="{{.CSRFToken}}">
                         <input type="hidden" name="instance_uuid" value="{{.Record.InstanceUUID}}">
-                        <input type="hidden" name="record_uuid" value="{{.Record.UUID}}">
                         <input type="hidden" name="action" value="{{if .NeedsRestore}}release{{else}}quarantine{{end}}">
-                        <div class="required field"><label for="reason">{{.i18n.Tr "VM_Operation_Reason"}}</label><textarea id="reason" name="reason" rows="2" maxlength="255" required></textarea></div>
                         <button class="ui {{if .NeedsRestore}}green{{else}}orange{{end}} button" type="submit">{{if .NeedsRestore}}{{.i18n.Tr "VM_Release"}}{{else}}{{.i18n.Tr "VM_Quarantine"}}{{end}}</button>
                     </form>
                 </div>

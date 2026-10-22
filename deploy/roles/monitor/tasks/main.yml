@@ -527,7 +527,7 @@
               # Completed inspection notifications are independent of the intelligent CPU webhook.
               - match:
                   alert_type: vm_malware
-                group_by: ['alertname', 'region_id', 'source_hyper', 'instance_id', 'record_uuid', 'scan_id']
+                group_by: ['alertname', 'region_id', 'source_hyper', 'instance_id', 'scan_id']
                 group_wait: 10s
                 group_interval: 1m
                 repeat_interval: 3h

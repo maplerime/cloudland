@@ -7,7 +7,7 @@ import (
 )
 
 // Structured observations and optional feature judgments share the VM record.
-// Evidence and affinity backups stay on the source compute node.
+// Completed reports are collected and removed by report_rc on the compute node.
 type VMInfectionRecord struct {
 	Model
 	InstanceUUID     string     `gorm:"type:varchar(64);not null;index"`

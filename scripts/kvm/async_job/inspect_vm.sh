@@ -15,8 +15,9 @@ main() {
         return
     fi
     inspection_init || return 1
-    [ "$#" -eq 4 ] || return 1
-    vm=$1 domain=$2 enabled=$3 library_url=$4
+    [ "$#" -eq 3 ] || return 1
+    domain=$1 enabled=$2 library_url=$3
+    vm=$(get_inspection_vm_uuid "$domain") || return 1
     if [ "$library_url" = NONE ]; then library_url=''; fi
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=input instance=$vm source_hyper=${SCI_CLIENT_ID:-unset} isolation=$enabled" >&2
     [[ "$vm" =~ ^[0-9a-fA-F-]{36}$ && "$domain" =~ ^[A-Za-z0-9_.-]{1,128}$ && "${SCI_CLIENT_ID:-}" =~ ^[0-9]+$ ]] || return 1
@@ -50,7 +51,7 @@ main() {
       {schema_version:1,vm_uuid:$o[0].vm_uuid,domain:$o[0].domain,
        source_hyper:$o[0].hyper_id,region_id:$region,
        action:(if $e[0].verdict=="confirmed" then "quarantine" else "record" end),
-       action_source:"automatic",operator_id:1,reason:"",record_uuid:"",
+       action_source:"automatic",
        isolation_enabled:$enabled,scan_id:$scan,evaluation:$e[0],
        collected_at:$data[0].finished_at,
        inspection_result:$data[0]}' > "$work/action.json" || return 1
@@ -64,10 +65,10 @@ main() {
     fi
     [ -z "${library_url//[[:space:]]/}" ] || library_configured=true
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=metrics start" >&2
-    export_infection_metrics "$inspection_root/state/$vm/result.json" "$work/action.json" "$library_configured" || echo 'failed to publish VM inspection metrics' >&2
+    export_infection_metrics "$work/summary.json" "$work/action.json" "$library_configured" || echo 'failed to publish VM inspection metrics' >&2
     # Only a finished scan AND disposition may be marked for collection/cleanup.
     emit_inspection_report_reference "$vm" "$scan_id"
-    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=complete collection_status=$(jq -r .inspection_result.collection_status "$inspection_root/state/$vm/result.json") result=$inspection_root/state/$vm/result.json" >&2
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=complete collection_status=$(jq -r .inspection_result.collection_status "$work/summary.json") scan=$scan_id" >&2
     return 0
 }
 main "$@"

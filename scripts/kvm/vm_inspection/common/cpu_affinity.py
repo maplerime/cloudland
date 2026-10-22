@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""Save/apply/restore only libvirt CPU affinity. Never restore an old whole-domain XML."""
+"""Apply/remove vCPU isolation pins, preserving other current VM settings."""
 import io
-import json
 import os
 from pathlib import Path
 import re
@@ -10,7 +9,8 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
-PIN_TAGS={'vcpupin','emulatorpin','iothreadpin'}
+PIN_TAGS={'vcpupin'}
+
 def virsh(*args):
     return subprocess.run(['virsh',*args],check=True,capture_output=True,text=True,timeout=30,env=dict(os.environ,LC_ALL='C')).stdout
 
@@ -37,31 +37,15 @@ def table(command,domain,scope):
         if m: rows[m[1]]=m[2]
     return rows
 
-def pins(root):
-    return [(e.tag,dict(e.attrib)) for e in root.findall('./cputune/*') if e.tag in PIN_TAGS]
+def scope_pins(domain,scope):
+    rows={'vcpupin':table('vcpupin',domain,scope)}
+    if not rows['vcpupin']: raise ValueError('VM vCPU affinity could not be read')
+    return rows
 
-def capture(domain):
-    live=xml(domain);config=xml(domain,True)
-    if live.findtext('uuid')!=config.findtext('uuid'): raise ValueError('live/config identity mismatch')
-    state={'domain':domain,'domain_uuid':live.findtext('uuid'),'config_pins':pins(config),'scopes':{}}
-    for scope in ('live','config'):
-        current=live if scope=='live' else config
-        has_iothreads=int(current.findtext('iothreads') or '0')>0
-        item={'vcpupin':table('vcpupin',domain,scope),'emulatorpin':table('emulatorpin',domain,scope),'iothreadpin':table('iothreadinfo',domain,scope) if has_iothreads else {}}
-        if has_iothreads and not item['iothreadpin']: raise ValueError('IOThread affinity could not be read')
-        if not item['vcpupin'] or not item['emulatorpin']: raise ValueError('incomplete affinity snapshot')
-        state['scopes'][scope]=item
-    return state
-
-def identity(domain,state):
-    if state['domain']!=domain or xml(domain).findtext('uuid')!=state['domain_uuid']: raise ValueError('saved affinity belongs to another domain')
-
-def apply_scope(domain,scope,values,target=None):
+def apply_scope(domain,scope,values,target):
     for name,rows in values.items():
-        for ident,original in rows.items():
-            mask=target if target is not None else original
-            if name=='emulatorpin': virsh('emulatorpin',domain,mask,'--'+scope)
-            else: virsh(name,domain,ident,mask,'--'+scope)
+        for ident in rows:
+            virsh(name,domain,ident,target,'--'+scope)
 
 def compare(expected,actual):
     for name,rows in expected.items():
@@ -69,42 +53,78 @@ def compare(expected,actual):
         for ident,value in rows.items():
             if cpus(value)!=cpus(actual[name][ident]): raise ValueError('CPU affinity verification failed')
 
-def restore_config(domain,state):
-    # Merge affinity fields into freshly read config so quotas and other settings remain current.
-    # The shell caller holds the same lock as adjust_cpu_hotplug.sh through define/verification.
-    root=xml(domain,True)
-    if root.findtext('uuid')!=state['domain_uuid']: raise ValueError('persistent identity mismatch')
-    tune=root.find('cputune')
-    if tune is None: tune=ET.SubElement(root,'cputune')
+def verify(domain, scope, before, target):
+    expected = {name: {ident: target for ident in rows} for name, rows in before.items()}
+    compare(expected, scope_pins(domain, scope))
+
+def allowed_cpus(domain):
+    allowed = cpus(Path('/sys/devices/system/cpu/online').read_text().strip())
+    # Keep the current base configuration, excluding our vCPU isolation pins.
+    vcpu = xml(domain, True).find('vcpu')
+    if vcpu is not None and vcpu.get('cpuset'):
+        allowed &= cpus(vcpu.get('cpuset'))
+    pid_files = [Path(directory) / (domain + '.pid')
+                 for directory in ('/run/libvirt/qemu', '/var/run/libvirt/qemu')]
+    pid_file = next((path for path in pid_files if path.is_file()), None)
+    if pid_file is None:
+        raise ValueError('QEMU cgroup could not be confirmed')
+    pid = int(pid_file.read_text().strip())
+    if b'qemu' not in Path('/proc/%d/cmdline' % pid).read_bytes():
+        raise ValueError('invalid QEMU PID file')
+    for entry in Path('/proc/%d/cgroup' % pid).read_text().splitlines():
+        _, controllers, relative = entry.split(':', 2)
+        if controllers == '':
+            base, filename = Path('/sys/fs/cgroup'), 'cpuset.cpus.effective'
+        elif 'cpuset' in controllers.split(','):
+            base, filename = Path('/sys/fs/cgroup/cpuset'), 'cpuset.effective_cpus'
+        else:
+            continue
+        group = base / relative.lstrip('/')
+        # Use the VM parent limit, not the isolated emulator/vcpu/iothread child group.
+        while group != base and re.fullmatch(r'libvirt|emulator|vcpu\d+|iothread\d+', group.name):
+            group = group.parent
+        allowed &= cpus((group / filename).read_text().strip())
+    if not allowed:
+        raise ValueError('no CPU available for normal VM scheduling')
+    return ','.join(map(str, sorted(allowed)))
+
+def remove_config_pins(domain):
+    # Read current XML under the existing domain lock to preserve CPU quota changes.
+    root = xml(domain, True)
+    tune = root.find('cputune')
+    if tune is None:
+        return
     for child in list(tune):
-        if child.tag in PIN_TAGS: tune.remove(child)
-    for tag,attrs in state['config_pins']: ET.SubElement(tune,tag,attrs)
-    if not list(tune) and not tune.attrib: root.remove(tune)
-    with tempfile.NamedTemporaryFile(mode='w',suffix='.xml',dir=Path(sys.argv[3]).parent) as handle:
-        handle.write(ET.tostring(root,encoding='unicode'));handle.flush()
-        virsh('define',handle.name)
+        if child.tag in PIN_TAGS:
+            tune.remove(child)
+    if not list(tune) and not tune.attrib:
+        root.remove(tune)
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.xml') as handle:
+        handle.write(ET.tostring(root, encoding='unicode'))
+        handle.flush()
+        virsh('define', handle.name)
 
 def main():
-    mode,domain,filename=sys.argv[1:4]
-    if mode=='capture':
-        print(json.dumps(capture(domain)));return
-    state=json.loads(Path(filename).read_text());identity(domain,state)
-    if mode=='apply':
-        target=sys.argv[4];cpus(target)
-        for scope,values in state['scopes'].items(): apply_scope(domain,scope,values,target)
-    elif mode=='restore':
-        apply_scope(domain,'live',state['scopes']['live'])
-        restore_config(domain,state)
-    elif mode not in ('verify','verify-restored'): raise ValueError('unknown affinity operation')
-    if mode in ('apply','verify'):
-        actual=capture(domain);target=sys.argv[4]
-        for scope,values in state['scopes'].items():
-            desired={name:{ident:target for ident in rows} for name,rows in values.items()}
-            compare(desired,actual['scopes'][scope])
+    mode, domain = sys.argv[1:3]
+    if mode == 'release' and len(sys.argv) == 3:
+        target = allowed_cpus(domain)
+        before = scope_pins(domain, 'live')
+        apply_scope(domain, 'live', before, target)
+        remove_config_pins(domain)
+        verify(domain, 'live', before, target)
+        if any(e.tag in PIN_TAGS for e in xml(domain, True).findall('./cputune/*')):
+            raise ValueError('persistent isolation pins remain')
+    elif mode in ('apply', 'verify') and len(sys.argv) == 4:
+        target = sys.argv[3]
+        cpus(target)
+        for scope in ('live', 'config'):
+            before = scope_pins(domain, scope)
+            if mode == 'apply':
+                apply_scope(domain, scope, before, target)
+            verify(domain, scope, before, target)
     else:
-        actual=capture(domain)
-        for scope,values in state['scopes'].items(): compare(values,actual['scopes'][scope])
-        if sorted(state['config_pins'],key=str)!=sorted(pins(xml(domain,True)),key=str): raise ValueError('original explicit/implicit config pinning not restored')
+        raise ValueError('invalid affinity operation')
+
 if __name__=='__main__':
     try: main()
     except (ValueError,KeyError,OSError,subprocess.SubprocessError) as error:

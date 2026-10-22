@@ -75,7 +75,6 @@
                                 <div class="required field"><label for="action_vm_uuid">{{.i18n.Tr "InstanceUUID"}}</label><input id="action_vm_uuid" name="instance_uuid" value="{{.InstanceUUID}}" required></div>
                                 <div class="field"><label for="action">{{.i18n.Tr "Operation"}}</label><select id="action" name="action"><option value="quarantine">{{.i18n.Tr "VM_Quarantine"}}</option><option value="release">{{.i18n.Tr "VM_Release"}}</option></select></div>
                             </div>
-                            <div class="required field"><label for="reason">{{.i18n.Tr "VM_Operation_Reason"}}</label><textarea id="reason" name="reason" rows="2" maxlength="255" required></textarea></div>
                             <button class="ui orange button" type="submit">{{.i18n.Tr "Apply"}}</button>
                         </form>
                     </details>

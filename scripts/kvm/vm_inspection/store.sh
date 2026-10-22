@@ -1,5 +1,5 @@
 #!/bin/bash
-# Local evidence and restore state have separate lifetimes.
+# Reports wait for report_rc; operation state belongs to the controller database.
 inspection_top_n=10
 inspection_concurrency=6
 inspection_rpc_timeout=5
@@ -12,20 +12,20 @@ inspection_init() {
     export cache_dir=${cache_dir:-/opt/cloudland/cache} run_dir=${run_dir:-/opt/cloudland/run}
     inspection_root=$cache_dir/vm_inspection
     inspection_run=$run_dir/vm_inspection
-    mkdir -p "$inspection_root/reports" "$inspection_root/state" "$inspection_run" || return 1
+    mkdir -p "$inspection_root/reports" "$inspection_run" || return 1
+}
+get_inspection_vm_uuid() {
+    [[ "$1" =~ ^[A-Za-z0-9_.-]{1,128}$ ]] || return 1
+    python3 - "$1" <<'CHECK'
+import subprocess,sys,uuid,xml.etree.ElementTree as ET
+p=subprocess.run(['virsh','dumpxml',sys.argv[1]],check=True,capture_output=True,text=True,timeout=15)
+values=[e.text for e in ET.fromstring(p.stdout).iter() if e.tag.rsplit('}',1)[-1]=='instance_id']
+if len(values)!=1: raise SystemExit('VM instance_id missing or ambiguous')
+print(uuid.UUID(values[0]))
+CHECK
 }
 validate_inspection_target() {
-    [[ "$1" =~ ^[0-9a-fA-F-]{36}$ && "$2" =~ ^[A-Za-z0-9_.-]{1,128}$ ]] || return 1
-    python3 - "$1" "$2" <<'CHECK'
-import subprocess,sys,uuid,xml.etree.ElementTree as ET
-uuid.UUID(sys.argv[1])
-print('[VM-INSPECTION] domain='+sys.argv[2]+' step=identity command=virsh-dumpxml start timeout=15s',file=sys.stderr,flush=True)
-p=subprocess.run(['virsh','dumpxml',sys.argv[2]],check=True,capture_output=True,text=True,timeout=15)
-print('[VM-INSPECTION] domain='+sys.argv[2]+' step=identity command=virsh-dumpxml end exit='+str(p.returncode),file=sys.stderr,flush=True)
-r=ET.fromstring(p.stdout)
-values=[e.text for e in r.iter() if e.tag.rsplit('}',1)[-1]=='instance_id']
-if values!=[sys.argv[1]]: raise SystemExit('VM identity mismatch')
-CHECK
+    [ "$(get_inspection_vm_uuid "$2")" = "$1" ]
 }
 lock_inspection_vm() {
     exec 8>"$inspection_run/$domain.affinity.lock" || return 1
@@ -75,25 +75,4 @@ save_inspection_report() {
     local rc=$?
     [ "$rc" -eq 0 ] || rm -f -- "$tmp"
     return "$rc"
-}
-load_or_create_infection_record() {
-    local supplied previous_status
-    state_dir="$inspection_root/state/$vm"
-    mkdir -p "$state_dir" || return 1
-    supplied=$(jq -r '.record_uuid // ""' "$work/action.json")
-    printf '%s\n' '{}' > "$work/previous.json"
-    if [ -s "$state_dir/result.json" ]; then
-        jq -e --arg vm "$vm" '.instance_uuid==$vm' "$state_dir/result.json" >/dev/null || return 1
-        previous_status=$(jq -r .isolation_status "$state_dir/result.json")
-        if [ "$previous_status" != released ] || [ "$action" = release ]; then
-            cp "$state_dir/result.json" "$work/previous.json" || return 1
-        fi
-    fi
-    record_uuid=$(jq -r '.record_uuid // ""' "$work/previous.json")
-    if [ -n "$supplied" ] && [ "$supplied" != "$record_uuid" ]; then echo 'record UUID does not match local state' >&2; return 1; fi
-    if [ -z "$record_uuid" ]; then
-        [ "$action" != release ] || { echo 'no local quarantine state to release' >&2; return 1; }
-        [ ! -e "$state_dir/affinity.json" ] || { echo 'restore state exists without a matching record' >&2; return 1; }
-        record_uuid=$(cat /proc/sys/kernel/random/uuid)
-    fi
 }

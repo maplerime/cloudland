@@ -77,7 +77,7 @@ def notification_summary(record, action, library_configured):
         lines.append('CPU 隔离：本轮未执行（没有确诊结论）')
     if status in ('isolated', 'failed', 'release_failed', 'released'):
         stamp = record.get('operation_at')
-        if stamp:
+        if stamp and action.get('action') != 'record':
             label = '处置时间：' if action.get('action') == 'quarantine' else '此前处置时间：'
             lines.append(label + clean(stamp, 64) + '（UTC）')
 
@@ -121,7 +121,7 @@ def export(run, record_file, action_file, library_configured):
     validate_scan(vm, scan)
     if action['vm_uuid'] != vm or action['scan_id'] != scan:
         raise ValueError('notification target/scan mismatch')
-    labels = {key: record.get(key, '') for key in ('domain', 'region_id', 'record_uuid')}
+    labels = {key: record.get(key, '') for key in ('domain', 'region_id')}
     labels.update(instance_id=vm, source_hyper=record['source_hyper'], scan_id=scan,
                   node_hostname=socket.gethostname().split('.')[0])
     def quote(value):
