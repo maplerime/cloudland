@@ -163,6 +163,11 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Error("Failed to delete instance, %v", err)
 		return
 	}
+	// The VM is deleted; its inspection records do not require a release.
+	if err = db.Unscoped().Where("instance_uuid = ?", instance.UUID).Delete(&model.VMInfectionRecord{}).Error; err != nil {
+		logger.Errorf("Failed to delete VM inspection records for %s: %v", instance.UUID, err)
+		return
+	}
 	if err = volumeAdmin.UpdateDataVolumeStatus(ctx, instance.ID, model.VolumeStatusAvailable); err != nil {
 		logger.Error("Failed to update attached volumes", err)
 		return
