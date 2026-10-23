@@ -70,6 +70,15 @@ run_check() {
 collect_guest_evidence() {
     local inner
     run_check cputop_processes "$guest_timeout" "$common_dir/vm_top_cpu_procs.sh" "$vm_ID"
+    if [ -s "$work/hive_snapshot.json" ]; then
+        local pids hash_files
+        pids=$(awk -F, -v vm="$vm_ID" '$2==vm && $5 ~ /^[0-9]+$/ {printf "%s ",$5}' "$work/cputop_processes.out")
+        hash_files=$(jq -r 'any(.file[]; .sha256!=null and .sha256!="")' "$work/hive_snapshot.json")
+        if [ -n "$pids" ]; then
+            inner=$({ printf "PIDS='%s'\nHASH_FILES=%s\n" "$pids" "$hash_files"; cat "$common_dir/inner_process_check.sh"; } | base64 | tr -d '\n')
+            run_check process_evidence "$guest_timeout" "$common_dir/outer_check.sh" "$vm_ID" "$inner"
+        fi
+    fi
     inner=$(base64 < "$common_dir/inner_check.sh" | tr -d '\n')
     run_check cupsd "$guest_timeout" "$common_dir/outer_check.sh" "$vm_ID" "$inner"
     inner=$(base64 < "$common_dir/inner_stat_check.sh" | tr -d '\n')

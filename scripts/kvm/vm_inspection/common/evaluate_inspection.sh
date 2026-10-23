@@ -1,11 +1,4 @@
 #!/bin/bash
-# Future feature-library implementation belongs here. No signature database exists yet.
-evaluate_inspection() {
-    # Input: complete collection JSON file, then the configured feature-library URL.
-    # Output: one JSON object; only a future confirmed result may enable isolation.
-    [ "$#" -eq 2 ] || return 1
-    local report=$1 library_url=$2
-    [ -s "$report" ] && [ -n "${library_url//[[:space:]]/}" ] || return 1
-    printf '%s\n' '{"verdict":"not_evaluated","ruleset_version":"","match_rule_ids":[],"match_summary":""}'
-}
-if [ "${BASH_SOURCE[0]}" = "$0" ]; then evaluate_inspection "$@"; fi
+# One scan uses the snapshot copied at its start, even if a refresh finishes later.
+[ "$#" -eq 2 ] && [ -s "$1" ] && [ -n "$2" ] || exit 1
+python3 "$(dirname "$0")/match_inspection.py" evaluate "$1" "$2"

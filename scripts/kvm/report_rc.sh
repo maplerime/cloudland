@@ -249,6 +249,8 @@ function sync_delayed_job()
 
 function calc_resource()
 {
+    local hive_status
+    hive_status=$(sudo -E python3 ./vm_inspection/common/hive_client.py status-base64)
     virtual_cpu=0
     virtual_memory=0
     virtual_disk=0
@@ -316,10 +318,10 @@ function calc_resource()
     fi
     state=1
     if [ -f "$run_dir/disabled" ]; then
-        echo "cpu=0/$total_cpu memory=0/$total_memory disk=0/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle"
+        echo "cpu=0/$total_cpu memory=0/$total_memory disk=0/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle${hive_status:+ hive_status=$hive_status}"
         state=0
     else
-        echo "cpu=$cpu/$total_cpu memory=$memory/$total_memory disk=$disk/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle"
+        echo "cpu=$cpu/$total_cpu memory=$memory/$total_memory disk=$disk/$total_disk network=$network/$total_network hugepages_2m=$hp_2m_free/$hp_2m_total hugepages_1g=$hp_1g_free/$hp_1g_total hugepage_size_kb=$hp_size_kb load=$load_1m/$load_5m/$load_15m cpu_idle=$cpu_idle${hive_status:+ hive_status=$hive_status}"
     fi
     cd /opt/cloudland/run
     let disk=$disk/1000*1000

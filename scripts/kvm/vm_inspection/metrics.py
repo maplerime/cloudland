@@ -49,8 +49,8 @@ def notification_summary(record, action, library_configured):
     verdict = evaluation.get('verdict', 'not_evaluated')
     if not library_configured:
         lines.append('特征比对：未配置特征库，未判断是否存在木马或病毒')
-    elif verdict == 'confirmed':
-        lines.extend(['特征比对：命中',
+    elif verdict in ('confirmed', 'suspected'):
+        lines.extend(['特征比对：' + ('strong 命中' if verdict == 'confirmed' else 'weak 命中（可疑）'),
                       '特征库版本：' + clean(evaluation.get('ruleset_version'), 64),
                       '命中说明：' + clean(evaluation.get('match_summary') or ', '.join(evaluation.get('match_rule_ids', [])[:3]), 120)])
     elif verdict == 'no_match':
@@ -58,13 +58,33 @@ def notification_summary(record, action, library_configured):
     else:
         lines.append('特征比对：地址已配置，本轮未完成识别')
 
+    hive = inspection.get('hive') or {}
+    if library_configured:
+        lines.append('Hive：' + ('获取正常' if hive.get('fetch_status') == 'ok' else '获取异常') +
+                     '；缓存版本：' + clean(hive.get('snapshot_version'), 32) +
+                     ('；继续使用旧缓存' if hive.get('using_cache') else ''))
+        if hive.get('error_message'):
+            lines.append('Hive 原因：' + clean(hive['error_message'], 120))
+    matched = [p for p in inspection.get('cputop_processes', {}).get('items', []) if p.get('matches')]
+    for process in matched[:10]:
+        hits = process['matches']
+        text = ', '.join('%s#%s %s' % (h['category'], h['id'], h['confidence']) for h in hits[:4])
+        lines.append('命中进程：%s | PID %s | %s%s' %
+                     (clean(process.get('name'), 32), process.get('pid'), text, ' …' if len(hits) > 4 else ''))
+        lines.append('命中依据：' + clean(json.dumps(hits[0]['conditions'], ensure_ascii=False, separators=(',', ':')), 160))
+
     status = record.get('isolation_status', '')
     cpus = clean(record.get('isolation_cpus'), 64)
     if status == 'isolated':
         text = '成功，已校验' if action.get('action') == 'quarantine' else '当前已隔离（此前处置）'
         lines.append('CPU 隔离：' + text + '；CPU：' + cpus)
     elif status == 'not_requested':
-        lines.append('CPU 隔离：当前未隔离，本轮未执行')
+        if evaluation.get('pin_requested') and action.get('isolation_enabled') is False:
+            lines.append('CPU 隔离：当前未隔离，本轮未执行（自动隔离开关关闭）')
+        elif evaluation.get('pin_requested') is False and verdict in ('confirmed', 'suspected'):
+            lines.append('CPU 隔离：当前未隔离，本轮未执行（命中策略不隔离）')
+        else:
+            lines.append('CPU 隔离：当前未隔离，本轮未执行')
     elif not status and record.get('error_message'):
         lines.append('CPU 隔离：当前绑核状态查询失败，本轮未执行')
         lines.append('查询原因：' + clean(record['error_message'], 160))

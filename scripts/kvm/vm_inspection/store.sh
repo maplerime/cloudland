@@ -6,7 +6,7 @@ inspection_rpc_timeout=5
 inspection_guest_timeout=45
 inspection_wds_timeout=10
 inspection_scan_timeout=90
-inspection_max_report_bytes=65536
+inspection_max_report_bytes=262144
 inspection_init() {
     umask 077
     export cache_dir=${cache_dir:-/opt/cloudland/cache} run_dir=${run_dir:-/opt/cloudland/run}

@@ -26,6 +26,22 @@
                             <label for="feature_library_url">{{.i18n.Tr "VM_Feature_Library_URL"}} ({{.i18n.Tr "Optional"}})</label>
                             <input type="url" id="feature_library_url" name="feature_library_url" maxlength="512" value="{{.Settings.FeatureLibraryURL}}">
                         </div>
+                        <div class="field">
+                            <label for="feature_library_token">Hive Bearer token {{if .Settings.FeatureLibraryTokenConfigured}}({{.i18n.Tr "VM_Token_Configured"}}){{end}}</label>
+                            <input type="password" id="feature_library_token" name="feature_library_token" maxlength="4096" autocomplete="new-password" placeholder="{{.i18n.Tr "VM_Token_Unchanged"}}">
+                            <label><input type="checkbox" name="clear_feature_library_token" value="true"> {{.i18n.Tr "VM_Token_Clear"}}</label>
+                        </div>
+                        <h5>{{.i18n.Tr "VM_Match_Policy"}}</h5>
+                        <div class="two fields">
+                            <div class="field"><label for="strong_action">strong</label><select id="strong_action" name="strong_action">
+                                <option value="pin" {{if eq (index .Settings.MatchPolicy "strong").Action "pin"}}selected{{end}}>{{.i18n.Tr "VM_Quarantine"}}</option>
+                                <option value="none" {{if eq (index .Settings.MatchPolicy "strong").Action "none"}}selected{{end}}>{{.i18n.Tr "VM_No_Auto_Pin"}}</option>
+                            </select></div>
+                            <div class="field"><label for="weak_action">weak</label><select id="weak_action" name="weak_action">
+                                <option value="pin" {{if eq (index .Settings.MatchPolicy "weak").Action "pin"}}selected{{end}}>{{.i18n.Tr "VM_Quarantine"}}</option>
+                                <option value="none" {{if eq (index .Settings.MatchPolicy "weak").Action "none"}}selected{{end}}>{{.i18n.Tr "VM_No_Auto_Pin"}}</option>
+                            </select></div>
+                        </div>
                     </div>
                     <div class="ui attached segment">
                         <h4>{{.i18n.Tr "Compute_Node"}} ({{len .Nodes}})</h4>
@@ -52,7 +68,7 @@
                                     <th>{{.i18n.Tr "Hostname"}}</th>
                                     <th>{{.i18n.Tr "IP"}}</th>
                                     <th>{{.i18n.Tr "VM_Node_Isolation"}}</th>
-                                    <th>{{.i18n.Tr "Status"}}</th>
+                                    <th>{{.i18n.Tr "Status"}}</th><th>{{.i18n.Tr "VM_Hive_Status"}}</th>
                                 </tr></thead>
                                 <tbody>
                                     {{range .Nodes}}
@@ -65,6 +81,13 @@
                                             <option value="false" {{if eq .State "false"}}selected{{end}}>{{$.i18n.Tr "Disable"}}</option>
                                         </select></td>
                                         <td class="node-effective" data-enabled="{{$.i18n.Tr "Enable"}}" data-disabled="{{$.i18n.Tr "Disable"}}">{{if or (eq .State "true") (and (eq .State "default") $.Settings.IsolationEnabled)}}{{$.i18n.Tr "Enable"}}{{else}}{{$.i18n.Tr "Disable"}}{{end}}</td>
+                                        <td style="min-width:16rem;overflow-wrap:anywhere">
+                                            sync: {{call $.Display .Hive.SyncStatus}} / fetch: {{call $.Display .Hive.FetchStatus}}<br>
+                                            {{$.i18n.Tr "VM_Ruleset_Version"}}: {{call $.Display .Hive.SnapshotVersion}}<br>
+                                            {{$.i18n.Tr "VM_Hive_Last_Success"}} (UTC): {{call $.DisplayTime .Hive.LastSuccessAt}}<br>
+                                            {{$.i18n.Tr "VM_Hive_Cert_Expires"}} (UTC): {{call $.DisplayTime .Hive.CertificateExpiresAt}}<br>
+                                            {{$.i18n.Tr "Error"}}: {{call $.DisplayError .Hive.FetchStatus .Hive.ErrorMessage}}
+                                        </td>
                                     </tr>
                                     {{end}}
                                 </tbody>

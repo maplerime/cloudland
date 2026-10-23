@@ -2,6 +2,7 @@ package routes
 
 import (
 	"bytes"
+	"compress/zlib"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
@@ -10,9 +11,11 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
@@ -89,41 +92,60 @@ func (*VMInspectionOperator) StartVMInspection(ctx context.Context, input VMInsp
 	if err != nil {
 		logger.Errorf("[VM-INSPECTION] VM=%s settings unavailable, automatic isolation disabled: %v", inst.UUID, err)
 	}
-	return dispatchVMInspection(ctx, inst, settings.IsolationEnabled, settings.FeatureLibraryURL)
+	return dispatchVMInspection(ctx, inst, settings.IsolationEnabled, settings.MatchPolicy)
 }
 
-func dispatchVMInspection(ctx context.Context, inst *model.Instance, enabled bool, libraryURL string) error {
-	libraryArgument := libraryURL
-	if strings.TrimSpace(libraryArgument) == "" {
-		libraryArgument = "NONE"
+func dispatchVMInspection(ctx context.Context, inst *model.Instance, enabled bool, policy VMInspectionMatchPolicy) error {
+	if policy == nil {
+		policy = defaultVMInspectionMatchPolicy()
 	}
-	// Keep an unconfigured URL nonempty through the existing async_exec.
-	quotedURL := "'" + strings.ReplaceAll(libraryArgument, "'", "'\"'\"'") + "'"
-	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/inspect_vm.sh '%s' '%t' %s", inst.Domain, enabled, quotedURL)
+	data, err := json.Marshal(policy)
+	if err != nil {
+		return err
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/inspect_vm.sh '%s' '%t' '%s'", inst.Domain, enabled, string(data))
 	if err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", inst.Hyper), command); err != nil {
 		return err
 	}
-	logger.Infof("[VM-INSPECTION] VM=%s domain=%s hyper=%d isolation_enabled=%t feature_comparison_enabled=%t command sent", inst.UUID, inst.Domain, inst.Hyper, enabled, strings.TrimSpace(libraryURL) != "")
+	logger.Infof("[VM-INSPECTION] VM=%s domain=%s hyper=%d isolation_enabled=%t command sent", inst.UUID, inst.Domain, inst.Hyper, enabled)
 	return nil
 }
 
+type VMInspectionMatchAction struct {
+	Action string `json:"action"`
+}
+type VMInspectionMatchPolicy map[string]VMInspectionMatchAction
+
+func defaultVMInspectionMatchPolicy() VMInspectionMatchPolicy {
+	return VMInspectionMatchPolicy{"strong": {Action: "pin"}, "weak": {Action: "pin"}}
+}
+func validVMInspectionMatchPolicy(policy VMInspectionMatchPolicy) bool {
+	return len(policy) == 2 && (policy["strong"].Action == "pin" || policy["strong"].Action == "none") &&
+		(policy["weak"].Action == "pin" || policy["weak"].Action == "none")
+}
+
 type VMInspectionGlobalSettings struct {
-	IsolationEnabled    bool   `json:"isolation_enabled"`
-	RecordRetentionDays int    `json:"record_retention_days"`
-	FeatureLibraryURL   string `json:"feature_library_url"`
+	IsolationEnabled              bool                    `json:"isolation_enabled"`
+	RecordRetentionDays           int                     `json:"record_retention_days"`
+	FeatureLibraryURL             string                  `json:"feature_library_url"`
+	FeatureLibraryTokenConfigured bool                    `json:"feature_library_token_configured"`
+	MatchPolicy                   VMInspectionMatchPolicy `json:"match_policy"`
 }
 type VMInspectionNodeSetting struct {
 	HyperID          int32 `json:"hyper_id"`
 	IsolationEnabled bool  `json:"isolation_enabled"`
 }
 type VMInspectionSettingsResponse struct {
-	Global VMInspectionGlobalSettings `json:"global"`
-	Nodes  []VMInspectionNodeSetting  `json:"nodes"`
+	Global    VMInspectionGlobalSettings `json:"global"`
+	Nodes     []VMInspectionNodeSetting  `json:"nodes"`
+	HiveNodes []VMInspectionHiveNode     `json:"hive_nodes"`
 }
 type VMInspectionGlobalPatch struct {
-	IsolationEnabled    *bool   `json:"isolation_enabled"`
-	RecordRetentionDays *int    `json:"record_retention_days"`
-	FeatureLibraryURL   *string `json:"feature_library_url"`
+	IsolationEnabled    *bool                    `json:"isolation_enabled"`
+	RecordRetentionDays *int                     `json:"record_retention_days"`
+	FeatureLibraryURL   *string                  `json:"feature_library_url"`
+	FeatureLibraryToken *string                  `json:"feature_library_token"`
+	MatchPolicy         *VMInspectionMatchPolicy `json:"match_policy"`
 }
 type VMInspectionNodePatch struct {
 	HyperIDs         []int32 `json:"hyper_ids"`
@@ -143,11 +165,15 @@ func requireVMInspectionAdmin(ctx context.Context) error {
 	return nil
 }
 func inspectionSettingsFromRows(rows []model.VMInspectionSetting) VMInspectionSettingsResponse {
-	out := VMInspectionSettingsResponse{Global: VMInspectionGlobalSettings{RecordRetentionDays: 7}, Nodes: []VMInspectionNodeSetting{}}
+	out := VMInspectionSettingsResponse{Global: VMInspectionGlobalSettings{RecordRetentionDays: 7, MatchPolicy: defaultVMInspectionMatchPolicy()}, Nodes: []VMInspectionNodeSetting{}}
 	for _, row := range rows {
 		if row.HyperID == -1 {
 			out.Global.IsolationEnabled = row.IsolationEnabled
 			out.Global.FeatureLibraryURL = row.FeatureLibraryURL
+			out.Global.FeatureLibraryTokenConfigured = row.FeatureLibraryToken != ""
+			if row.MatchPolicy != "" {
+				_ = json.Unmarshal([]byte(row.MatchPolicy), &out.Global.MatchPolicy)
+			}
 			if row.RecordRetentionDays != nil && *row.RecordRetentionDays > 0 {
 				out.Global.RecordRetentionDays = *row.RecordRetentionDays
 			}
@@ -166,7 +192,24 @@ func ListVMInspectionSettings(ctx context.Context) (VMInspectionSettingsResponse
 	if err := db.Order("hyper_id").Find(&rows).Error; err != nil {
 		return VMInspectionSettingsResponse{}, err
 	}
-	return inspectionSettingsFromRows(rows), nil
+	out := inspectionSettingsFromRows(rows)
+	healthByNode := map[int32]HiveNodeStatus{}
+	for _, row := range rows {
+		if row.HyperID == -1 && row.HiveStatus != "" {
+			if err := json.Unmarshal([]byte(row.HiveStatus), &healthByNode); err != nil {
+				return out, err
+			}
+		}
+	}
+	var hypers []model.Hyper
+	if err := db.Select("hostid, hostname").Where("hostid >= 0").Order("hostid").Find(&hypers).Error; err != nil {
+		return out, err
+	}
+	out.HiveNodes = []VMInspectionHiveNode{}
+	for _, h := range hypers {
+		out.HiveNodes = append(out.HiveNodes, VMInspectionHiveNode{h.Hostid, h.Hostname, healthByNode[h.Hostid]})
+	}
+	return out, nil
 }
 
 // Internal reader: a missing row is a default; a database failure is an error.
@@ -217,18 +260,28 @@ func UpdateVMInspectionSettings(ctx context.Context, p VMInspectionSettingsPatch
 		value := strings.TrimSpace(*p.Global.FeatureLibraryURL)
 		if value != "" {
 			u, err := url.ParseRequestURI(value)
-			if err != nil || len(value) > 512 || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
-				return VMInspectionSettingsResponse{}, invalid("feature_library_url must be an absolute HTTP(S) URL of at most 512 bytes, or empty")
+			if err != nil || len(value) > 512 || u.Hostname() == "" || (u.Scheme != "https" || u.User != nil || u.RawQuery != "" || u.Fragment != "") {
+				return VMInspectionSettingsResponse{}, invalid("feature_library_url must be an absolute HTTPS URL of at most 512 bytes, or empty")
 			}
 		}
 		p.Global.FeatureLibraryURL = &value
 	}
-	globalChanged := p.Global != nil && (p.Global.IsolationEnabled != nil || p.Global.RecordRetentionDays != nil || p.Global.FeatureLibraryURL != nil)
+	hiveChanged := p.Global != nil && (p.Global.FeatureLibraryURL != nil || p.Global.FeatureLibraryToken != nil)
+	if p.Global != nil {
+		if p.Global.FeatureLibraryToken != nil && (len(*p.Global.FeatureLibraryToken) > 4096 || strings.ContainsAny(*p.Global.FeatureLibraryToken, "\x00 \t\r\n\v\f")) {
+			return VMInspectionSettingsResponse{}, invalid("invalid Hive read token")
+		}
+
+		if p.Global.MatchPolicy != nil && !validVMInspectionMatchPolicy(*p.Global.MatchPolicy) {
+			return VMInspectionSettingsResponse{}, invalid("match_policy needs strong/weak actions pin or none")
+		}
+	}
+	globalChanged := p.Global != nil && (p.Global.IsolationEnabled != nil || p.Global.RecordRetentionDays != nil || p.Global.MatchPolicy != nil || hiveChanged)
 	if !globalChanged && len(ids) == 0 {
 		return VMInspectionSettingsResponse{}, invalid("no settings supplied")
 	}
 	_, db := common.GetContextDB(ctx)
-	tx := db.Begin()
+	tx := db.New().LogMode(false).Begin()
 	if tx.Error != nil {
 		return VMInspectionSettingsResponse{}, tx.Error
 	}
@@ -277,6 +330,15 @@ func UpdateVMInspectionSettings(ctx context.Context, p VMInspectionSettingsPatch
 					row.FeatureLibraryURL = *libraryURL
 				}
 			}
+			if id == -1 {
+				if p.Global.FeatureLibraryToken != nil {
+					row.FeatureLibraryToken = *p.Global.FeatureLibraryToken
+				}
+				if p.Global.MatchPolicy != nil {
+					data, _ := json.Marshal(*p.Global.MatchPolicy)
+					row.MatchPolicy = string(data)
+				}
+			}
 			return tx.Create(&row).Error
 		}
 		if err != nil {
@@ -291,6 +353,15 @@ func UpdateVMInspectionSettings(ctx context.Context, p VMInspectionSettingsPatch
 		}
 		if libraryURL != nil && id == -1 {
 			updates["feature_library_url"] = *libraryURL
+		}
+		if id == -1 {
+			if p.Global.FeatureLibraryToken != nil {
+				updates["feature_library_token"] = *p.Global.FeatureLibraryToken
+			}
+			if p.Global.MatchPolicy != nil {
+				data, _ := json.Marshal(*p.Global.MatchPolicy)
+				updates["match_policy"] = string(data)
+			}
 		}
 		if id >= 0 {
 			updates["record_retention_days"] = nil
@@ -321,6 +392,9 @@ func UpdateVMInspectionSettings(ctx context.Context, p VMInspectionSettingsPatch
 	out := inspectionSettingsFromRows(rows)
 	if err := tx.Commit().Error; err != nil {
 		return VMInspectionSettingsResponse{}, err
+	}
+	if hiveChanged {
+		go syncHiveNodes(common.SetContextDB(context.Background(), db))
 	}
 	logger.Infof("[VM-INSPECTION] settings updated operator=%d nodes=%d global=%t", member.UserID, len(ids), globalChanged)
 	return out, nil
@@ -362,7 +436,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	if len(e.ScanID) > 128 || (e.ScanID != "" && !strings.HasPrefix(e.ScanID, e.InstanceUUID+"_")) {
 		return fmt.Errorf("invalid scan reference")
 	}
-	if e.Verdict != "" && e.Verdict != "confirmed" && e.Verdict != "not_evaluated" && e.Verdict != "no_match" {
+	if e.Verdict != "" && e.Verdict != "confirmed" && e.Verdict != "suspected" && e.Verdict != "not_evaluated" && e.Verdict != "no_match" {
 		return fmt.Errorf("invalid verdict")
 	}
 	if e.Action != "record" && e.Action != "quarantine" && e.Action != "release" {
@@ -377,7 +451,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	if e.IsolationSource == "existing" && (e.Action != "record" || e.IsolationStatus != "isolated") {
 		return fmt.Errorf("invalid existing isolation observation")
 	}
-	if e.ActionSource == "automatic" && e.Action != "record" && e.Verdict != "confirmed" {
+	if e.ActionSource == "automatic" && e.Action != "record" && !validAutomaticHiveAction(e) {
 		return fmt.Errorf("unconfirmed automatic result")
 	}
 	switch e.IsolationStatus {
@@ -405,7 +479,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 			CollectionStatus string    `json:"collection_status"`
 			FinishedAt       time.Time `json:"finished_at"`
 		}
-		if len(e.InspectionResult) > 65536 || json.Unmarshal(e.InspectionResult, &data) != nil || data.SchemaVersion != 1 {
+		if len(e.InspectionResult) > 262144 || json.Unmarshal(e.InspectionResult, &data) != nil || data.SchemaVersion != 1 {
 			return fmt.Errorf("invalid inspection observations")
 		}
 		switch data.CollectionStatus {
@@ -420,7 +494,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	if e.IsolationStatus == "isolated" && e.IsolationCPUs == "" {
 		return fmt.Errorf("isolated result has no CPUs")
 	}
-	if len(e.Remark) > 1024 || len([]rune(e.Remark)) > 255 || len(e.ErrorMessage) > 2048 || len([]rune(e.ErrorMessage)) > 512 || len(e.IsolationCPUs) > 255 || len(e.MatchRuleIDs) > 16 {
+	if len(e.Remark) > 1024 || len([]rune(e.Remark)) > 255 || len(e.ErrorMessage) > 2048 || len([]rune(e.ErrorMessage)) > 512 || len(e.IsolationCPUs) > 255 || len(e.MatchRuleIDs) > 4096 {
 		return fmt.Errorf("infection summary exceeds field bounds")
 	}
 	for _, id := range e.MatchRuleIDs {
@@ -429,7 +503,7 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 		}
 	}
 	encoded, _ := json.Marshal(e.MatchRuleIDs)
-	if len(encoded) > 1024 {
+	if len(encoded) > 65536 {
 		return fmt.Errorf("feature identifiers exceed limit")
 	}
 	settings, err := GetVMInspectionSettings(ctx, -1)
@@ -507,7 +581,7 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 			e.ScanID = old.ScanID
 		}
 		// Manual disposition results do not carry the earlier scan or feature judgment.
-		if e.Verdict == "" || e.Verdict == "not_evaluated" || !newInspection {
+		if !newInspection {
 			e.Verdict, e.RulesetVersion, e.MatchSummary = old.Verdict, old.RulesetVersion, old.MatchSummary
 			if err := json.Unmarshal([]byte(old.MatchRuleIDs), &e.MatchRuleIDs); err != nil {
 				e.MatchRuleIDs = nil
@@ -720,7 +794,7 @@ var infectionRuntime *vmInfectionRuntime
 
 func ReceiveVMInfectionChunk(_ context.Context, source int32, chunk VMInfectionChunkInput) error {
 	infectionRuntimeOnce.Do(func() {
-		infectionRuntime = newVMInfectionRuntime(65536, 128, 128, 60*time.Second, 300*time.Second, func(source int32, e *VMInfectionSummary) error {
+		infectionRuntime = newVMInfectionRuntime(262144, 512, 128, 60*time.Second, 300*time.Second, func(source int32, e *VMInfectionSummary) error {
 			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 			defer cancel()
 			return SaveVMInfectionResult(ctx, source, e)
@@ -976,6 +1050,7 @@ type vmInspectionNodeView struct {
 	HyperID          int32
 	Hostname, HostIP string
 	State            string
+	Hive             HiveNodeStatus
 }
 
 func inspectionDisplay(value interface{}) string {
@@ -983,6 +1058,11 @@ func inspectionDisplay(value interface{}) string {
 		return "NA"
 	}
 	switch v := value.(type) {
+	case *int64:
+		if v == nil {
+			return "NA"
+		}
+		return strconv.FormatInt(*v, 10)
 	case []interface{}:
 		if len(v) == 0 {
 			return "NA"
@@ -1026,6 +1106,7 @@ func inspectionError(status interface{}, message interface{}) string {
 	return "NA"
 }
 func setVMInspectionDisplay(c *macaron.Context) {
+	c.Data["DisplayJSON"] = func(value interface{}) string { data, _ := json.MarshalIndent(value, "", "  "); return string(data) }
 	c.Data["Display"] = inspectionDisplay
 	c.Data["DisplayTime"] = inspectionTime
 	c.Data["DisplayError"] = inspectionError
@@ -1071,6 +1152,10 @@ func (*VMInspectionView) Settings(c *macaron.Context) {
 		vmInspectionViewError(c, err)
 		return
 	}
+	healthByNode := map[int32]HiveNodeStatus{}
+	for _, node := range settings.HiveNodes {
+		healthByNode[node.HyperID] = node.Hive
+	}
 	overrides := map[int32]bool{}
 	for _, node := range settings.Nodes {
 		overrides[node.HyperID] = node.IsolationEnabled
@@ -1081,8 +1166,9 @@ func (*VMInspectionView) Settings(c *macaron.Context) {
 		if enabled, ok := overrides[hyper.Hostid]; ok {
 			state = strconv.FormatBool(enabled)
 		}
-		nodes = append(nodes, vmInspectionNodeView{hyper.Hostid, hyper.Hostname, hyper.HostIP, state})
+		nodes = append(nodes, vmInspectionNodeView{hyper.Hostid, hyper.Hostname, hyper.HostIP, state, healthByNode[hyper.Hostid]})
 	}
+	setVMInspectionDisplay(c)
 	c.Data["Settings"] = settings.Global
 	c.Data["Nodes"] = nodes
 	c.Data["Saved"] = c.Query("saved") == "1"
@@ -1110,6 +1196,17 @@ func (*VMInspectionView) SaveSettings(c *macaron.Context) {
 	patch := VMInspectionSettingsPatch{Global: &VMInspectionGlobalPatch{IsolationEnabled: &enabled, RecordRetentionDays: &days}}
 	if values, ok := form["feature_library_url"]; ok && len(values) == 1 {
 		patch.Global.FeatureLibraryURL = &values[0]
+	}
+	if token := form.Get("feature_library_token"); token != "" {
+		patch.Global.FeatureLibraryToken = &token
+	}
+	if form.Get("clear_feature_library_token") == "true" {
+		empty := ""
+		patch.Global.FeatureLibraryToken = &empty
+	}
+	if _, ok := form["strong_action"]; ok {
+		policy := VMInspectionMatchPolicy{"strong": {Action: form.Get("strong_action")}, "weak": {Action: form.Get("weak_action")}}
+		patch.Global.MatchPolicy = &policy
 	}
 	for key, values := range form {
 		if !strings.HasPrefix(key, "node_") {
@@ -1202,4 +1299,195 @@ func (*VMInspectionView) Delete(c *macaron.Context) {
 		return
 	}
 	c.Redirect("/vm-infections?deleted=1")
+}
+
+// Hive health is the latest node state, never a VM record or a credential store.
+type HiveNodeStatus struct {
+	SyncStatus           string `json:"sync_status"`
+	FetchStatus          string `json:"fetch_status"`
+	ConfigUpdatedAt      string `json:"config_updated_at"`
+	LastAttemptAt        string `json:"last_attempt_at,omitempty"`
+	LastSuccessAt        string `json:"last_success_at,omitempty"`
+	SnapshotVersion      *int64 `json:"snapshot_version,omitempty"`
+	UsingCache           bool   `json:"using_cache"`
+	ErrorCode            string `json:"error_code,omitempty"`
+	ErrorMessage         string `json:"error_message,omitempty"`
+	CertificateExpiresAt string `json:"certificate_expires_at,omitempty"`
+}
+type VMInspectionHiveNode struct {
+	HyperID  int32          `json:"hyper_id"`
+	Hostname string         `json:"hostname"`
+	Hive     HiveNodeStatus `json:"hive"`
+}
+
+func validAutomaticHiveAction(e *VMInfectionSummary) bool {
+	if e.Action != "quarantine" || (e.Verdict != "confirmed" && e.Verdict != "suspected") {
+		return false
+	}
+	var data struct {
+		MatchPolicy VMInspectionMatchPolicy `json:"match_policy"`
+		Processes   struct {
+			Items []struct {
+				Matches []struct {
+					Confidence string `json:"confidence"`
+				} `json:"matches"`
+			} `json:"items"`
+		} `json:"cputop_processes"`
+	}
+	if json.Unmarshal(e.InspectionResult, &data) != nil || !validVMInspectionMatchPolicy(data.MatchPolicy) {
+		return false
+	}
+	strong, weak, pin := false, false, false
+	for _, p := range data.Processes.Items {
+		for _, hit := range p.Matches {
+			if hit.Confidence == "strong" {
+				strong = true
+			} else if hit.Confidence == "weak" {
+				weak = true
+			} else {
+				return false
+			}
+			pin = pin || data.MatchPolicy[hit.Confidence].Action == "pin"
+		}
+	}
+	return pin && ((e.Verdict == "confirmed" && strong) || (e.Verdict == "suspected" && weak && !strong))
+}
+
+var hiveSyncMu sync.Mutex
+
+func syncHiveNodes(ctx context.Context) {
+	hiveSyncMu.Lock()
+	defer hiveSyncMu.Unlock()
+	_, db := common.GetContextDB(ctx)
+	var row model.VMInspectionSetting
+	if err := db.Where("hyper_id = ?", -1).Take(&row).Error; err != nil {
+		if !gorm.IsRecordNotFoundError(err) {
+			logger.Errorf("[HIVE] read configuration failed: %v", err)
+		}
+		return
+	}
+	var hypers []model.Hyper
+	if err := db.Where("hostid >= 0 AND (virt_type = ? OR virt_type = ?)", "kvm-x86_64", "").Find(&hypers).Error; err != nil {
+		logger.Errorf("[HIVE] list nodes failed: %v", err)
+		return
+	}
+	stamp := row.UpdatedAt.UTC().Format(time.RFC3339Nano)
+	payload, _ := json.Marshal(map[string]string{"url": row.FeatureLibraryURL, "token": row.FeatureLibraryToken, "updated_at": stamp})
+	encoded := base64.StdEncoding.EncodeToString(payload)
+	healthByNode := map[int32]HiveNodeStatus{}
+	if row.HiveStatus != "" {
+		if err := json.Unmarshal([]byte(row.HiveStatus), &healthByNode); err != nil {
+			logger.Errorf("[HIVE] read node status: %v", err)
+			return
+		}
+	}
+	saveStatus := func(id int32, health HiveNodeStatus) error {
+		tx := db.Begin()
+		if tx.Error != nil {
+			return tx.Error
+		}
+		defer tx.Rollback()
+		if err := updateHiveNodeStatus(tx, id, health); err != nil {
+			return err
+		}
+		return tx.Commit().Error
+	}
+	for _, h := range hypers {
+		health := healthByNode[h.Hostid]
+		health.ConfigUpdatedAt, health.SyncStatus, health.FetchStatus = stamp, "pending", "pending"
+		health.ErrorCode, health.ErrorMessage = "", ""
+		if err := saveStatus(h.Hostid, health); err != nil {
+			logger.Errorf("[HIVE] node=%d pending state: %v", h.Hostid, err)
+			continue
+		}
+		var err error
+		for attempt := 0; attempt < 4; attempt++ {
+			// Reuse the existing SSH action helper; credentials travel only on stdin.
+			script := `source /opt/cloudland/scripts/cloudrc || exit 1; set -e; action_target "$1" 'sudo -E /opt/cloudland/scripts/kvm/hive.sh sync'`
+			cmd := exec.CommandContext(ctx, "/bin/bash", "-c", script, "hive-sync", strconv.FormatInt(int64(h.Hostid), 10))
+			cmd.Stdin = strings.NewReader(encoded + "\n")
+			err = cmd.Run()
+			if err == nil {
+				break
+			}
+			if attempt < 3 {
+				time.Sleep(time.Second)
+			}
+		}
+		if err != nil {
+			health.SyncStatus, health.ErrorCode, health.ErrorMessage = "failed", "dispatch_failed", "Hive command could not be sent after retries"
+			_ = saveStatus(h.Hostid, health)
+			logger.Errorf("[HIVE] node=%d dispatch failed", h.Hostid)
+		} else {
+			logger.Infof("[HIVE] node=%d configuration sync sent", h.Hostid)
+		}
+	}
+}
+
+// Called only inside report_rc. Config timestamps prevent stale callbacks replacing a new save.
+func SaveHiveNodeStatus(ctx context.Context, hyperID int32, encoded string) error {
+	if hyperID < 0 || len(encoded) > 1800 {
+		return fmt.Errorf("invalid Hive health source/size")
+	}
+	compressed, err := base64.RawURLEncoding.DecodeString(encoded)
+	if err != nil {
+		return err
+	}
+	reader, err := zlib.NewReader(bytes.NewReader(compressed))
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(io.LimitReader(reader, 4097))
+	if err != nil || len(data) > 4096 {
+		return fmt.Errorf("invalid Hive health payload")
+	}
+	var health HiveNodeStatus
+	if json.Unmarshal(data, &health) != nil {
+		return fmt.Errorf("invalid Hive health JSON")
+	}
+	if len(health.ErrorMessage) > 512 || len(health.ErrorCode) > 64 {
+		return fmt.Errorf("invalid Hive health error")
+	}
+	_, db := common.GetContextDB(ctx)
+	return updateHiveNodeStatus(db, hyperID, health)
+}
+
+// The caller's transaction serializes updates to one node entry in the global settings row.
+func updateHiveNodeStatus(db *gorm.DB, hyperID int32, health HiveNodeStatus) error {
+	stamp, err := time.Parse(time.RFC3339Nano, health.ConfigUpdatedAt)
+	if err != nil {
+		return fmt.Errorf("invalid Hive config timestamp")
+	}
+	var settings model.VMInspectionSetting
+	if err := db.Set("gorm:query_option", "FOR UPDATE").Where("hyper_id = ?", -1).Take(&settings).Error; err != nil {
+		return err
+	}
+	if stamp.After(settings.UpdatedAt) {
+		return nil
+	}
+	states := map[int32]HiveNodeStatus{}
+	if settings.HiveStatus != "" {
+		if err := json.Unmarshal([]byte(settings.HiveStatus), &states); err != nil {
+			return err
+		}
+	}
+	if previous := states[hyperID].ConfigUpdatedAt; previous != "" {
+		applied, err := time.Parse(time.RFC3339Nano, previous)
+		if err != nil {
+			return err
+		}
+		if stamp.Before(applied) {
+			return nil
+		}
+	}
+	before, _ := json.Marshal(states[hyperID])
+	after, _ := json.Marshal(health)
+	if bytes.Equal(before, after) {
+		return nil
+	}
+	states[hyperID] = health
+	data, _ := json.Marshal(states)
+	// A health report must not change the configuration revision or isolation overrides.
+	return db.Model(&settings).UpdateColumn("hive_status", string(data)).Error
 }

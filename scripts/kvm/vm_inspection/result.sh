@@ -79,12 +79,13 @@ build_inspection_result() {
       .collection_status=(if $reason=="vm_identity_mismatch" then "failed"
         elif .agent.status=="ok" and ($checks|all(.status=="ok")) and $reason=="" then "complete"
         elif any($checks[]; .status=="ok") then "partial" else "failed" end)
-      ' > "$work/result.json"
+      ' > "$work/result.json" || return 1
+    python3 "$inspection_dir/common/match_inspection.py" merge "$work"
 }
 
 # Return structured observations without duplicating raw command output in the DB.
 build_vm_inspection_data() {
     jq '{schema_version,collection_status,started_at,finished_at,duration_ms,
          agent,cputop_processes,required_check:(.required_check | .cupsd |= del(.raw_output,.timestamp_output)),
-         wds}' "$work/report.json" > "$work/inspection.json"
+         wds,hive,match_policy}' "$work/report.json" > "$work/inspection.json"
 }

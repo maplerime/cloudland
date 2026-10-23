@@ -98,6 +98,14 @@ func ReportRC(ctx context.Context, args []string) (status string, err error) {
 			}
 		case "cpu_idle":
 			cpuIdlePct, _ = strconv.ParseFloat(value, 64)
+		case "hive_status":
+			source := id
+			if actual, ok := ctx.Value("source_hyper").(int32); ok && actual >= 0 {
+				source = actual
+			}
+			if hiveErr := routes.SaveHiveNodeStatus(ctx, source, value); hiveErr != nil {
+				logger.Errorf("[HIVE] report_rc node=%d status rejected: %v", source, hiveErr)
+			}
 		case "network":
 			// accepted but not stored
 		default:

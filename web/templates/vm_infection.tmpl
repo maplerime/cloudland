@@ -14,12 +14,19 @@
                     <h5>{{.i18n.Tr "VM_Processes"}}</h5>
                     <p>{{.i18n.Tr "VM_Process_CPU_Basis"}}</p>
                     <table class="ui compact striped table">
-                        <thead><tr><th>{{.i18n.Tr "Username"}}</th><th>PID</th><th>CPU %</th><th>{{.i18n.Tr "Name"}}</th></tr></thead>
+                        <thead><tr><th>{{.i18n.Tr "Username"}}</th><th>PID</th><th>CPU %</th><th>{{.i18n.Tr "Name"}}</th><th>{{.i18n.Tr "VM_Verdict"}}</th></tr></thead>
                         <tbody>{{range .Inspection.cputop_processes.items}}
-                            <tr><td>{{call $.Display .user}}</td><td>{{call $.Display .pid}}</td><td>{{call $.Display .cpu_percent}}</td><td style="overflow-wrap:anywhere">{{call $.Display .name}}</td></tr>
-                        {{else}}<tr><td colspan="4">NA</td></tr>{{end}}</tbody>
+                            <tr><td>{{call $.Display .user}}</td><td>{{call $.Display .pid}}</td><td>{{call $.Display .cpu_percent}}</td><td style="overflow-wrap:anywhere">{{call $.Display .name}}</td><td>
+                                {{if .match_status}}{{$.i18n.Tr (printf "VM_Process_%s" .match_status)}}{{else}}NA{{end}}
+                                <details><summary>{{$.i18n.Tr "VM_Evidence_Matches"}}</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{call $.DisplayJSON .}}</pre></details>
+                            </td></tr>
+                        {{else}}<tr><td colspan="5">NA</td></tr>{{end}}</tbody>
                     </table>
                     <p>{{call .Display .Inspection.cputop_processes.status}} · {{call .DisplayTime .Inspection.cputop_processes.collected_at}} · {{call .DisplayError .Inspection.cputop_processes.status .Inspection.cputop_processes.error_message}}</p>
+                    {{if .Inspection.hive}}
+                    <h5>{{.i18n.Tr "VM_Hive_Status"}}</h5>
+                    <pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{call .DisplayJSON .Inspection.hive}}</pre>
+                    {{end}}
                     <h5>{{.i18n.Tr "VM_File_Observations"}}</h5>
                     {{$cupsd := .Inspection.required_check.cupsd}}
                     <p>{{call .Display $cupsd.status}} · {{call .DisplayError $cupsd.status $cupsd.error_message}}</p>

@@ -9,16 +9,15 @@ source "$inspection_dir/evaluation.sh"
 source "$inspection_dir/report.sh"
 source "$inspection_dir/metrics.sh"
 main() {
-    local vm domain enabled library_url library_configured=false rc
+    local vm domain enabled policy library_configured=false rc
     if [ "${1:-}" = --collect ]; then
         bash "$inspection_dir/runners/inspect_vm.sh" "$2"
         return
     fi
     inspection_init || return 1
     [ "$#" -eq 3 ] || return 1
-    domain=$1 enabled=$2 library_url=$3
+    domain=$1 enabled=$2 policy=$3
     vm=$(get_inspection_vm_uuid "$domain") || return 1
-    if [ "$library_url" = NONE ]; then library_url=''; fi
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=input instance=$vm source_hyper=${SCI_CLIENT_ID:-unset} isolation=$enabled" >&2
     [[ "$vm" =~ ^[0-9a-fA-F-]{36}$ && "$domain" =~ ^[A-Za-z0-9_.-]{1,128}$ && "${SCI_CLIENT_ID:-}" =~ ^[0-9]+$ ]] || return 1
     case "$enabled" in true|false) ;; *) return 1;; esac
@@ -29,6 +28,11 @@ main() {
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=lock_and_slot wait" >&2
     lock_inspection_work "$vm" && acquire_inspection_slot || return 1
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=lock_and_slot acquired" >&2
+    # NONE keeps the existing manual invocation useful with the default policy.
+    [ "$policy" != NONE ] || policy='{"strong":{"action":"pin"},"weak":{"action":"pin"}}'
+    printf '%s\n' "$policy" > "$work/policy.json"
+    PYTHONPATH="$inspection_dir/common" python3 -c 'import sys; from hive_client import load,validate_policy; validate_policy(load(__import__("pathlib").Path(sys.argv[1])))' "$work/policy.json" || return 1
+    python3 "$inspection_dir/common/hive_client.py" prepare "$work" || printf '%s\n' '{"fetch_status":"failed","error_message":"Hive status unavailable"}' > "$work/hive.json"
     started=$(date +%s) failure_reason=''
     scan_stamp=$(date -u +%Y%m%dT%H%M%S.%NZ)
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=scan start timeout=${inspection_scan_timeout}s work=$work" >&2
@@ -40,7 +44,7 @@ main() {
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_result start" >&2
     build_inspection_result || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_result failed exit=$rc" >&2; return 1; }
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=evaluation start" >&2
-    evaluate_saved_inspection "$work/result.json" "$library_url" || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=evaluation failed exit=$rc" >&2; return 1; }
+    evaluate_saved_inspection "$work/result.json" "$work/hive_snapshot.json" || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=evaluation failed exit=$rc" >&2; return 1; }
     # A report must be safely stored before any automatic isolation is attempted.
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=save_report start" >&2
     save_inspection_report || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=save_report failed exit=$rc" >&2; return 1; }
@@ -51,7 +55,7 @@ main() {
       --slurpfile data "$work/inspection.json" --arg scan "$scan_id" --arg region "${cloud_domain:-}" --argjson enabled "$enabled" '
       {schema_version:1,vm_uuid:$o[0].vm_uuid,domain:$o[0].domain,
        source_hyper:$o[0].hyper_id,region_id:$region,
-       action:(if $e[0].verdict=="confirmed" and $status=="not_requested" then "quarantine" else "record" end),
+       action:(if $e[0].pin_requested and $enabled and $status=="not_requested" then "quarantine" else "record" end),
        action_source:"automatic",
        isolation_enabled:$enabled,scan_id:$scan,evaluation:$e[0],
        collected_at:$data[0].finished_at,
@@ -64,7 +68,7 @@ main() {
         echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=record start" >&2
         record_vm_inspection || return 1
     fi
-    [ -z "${library_url//[[:space:]]/}" ] || library_configured=true
+    [ "$(jq -r .fetch_status "$work/hive.json")" = not_configured ] || library_configured=true
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=metrics start" >&2
     export_infection_metrics "$work/summary.json" "$work/action.json" "$library_configured" || echo 'failed to publish VM inspection metrics' >&2
     # Only a finished scan AND disposition may be marked for collection/cleanup.

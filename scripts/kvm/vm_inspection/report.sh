@@ -2,8 +2,8 @@
 # Structured observations, dispositions and cleanup references share async_exec output.
 # Debug only: set false before committing to resume collected-report deletion.
 inspection_debug_keep_results=true
-inspection_max_result_bytes=65536
-inspection_max_result_chunks=128
+inspection_max_result_bytes=262144
+inspection_max_result_chunks=512
 read_vm_isolation() {
     isolation_status=not_requested isolation_cpus='' operation_error=''
     if ! isolation_cpus=$(python3 "$inspection_dir/common/cpu_affinity.py" status "$domain" 2>"$work/isolation.stderr"); then
@@ -23,7 +23,7 @@ build_vm_infection_summary() {
       $opts[0] as $o | ($o.evaluation // {}) as $e |
       {schema_version:1,instance_uuid:$o.vm_uuid,domain:$o.domain,source_hyper:$o.source_hyper,
        region_id:($o.region_id // ""),
-       verdict:(if $e.verdict=="not_evaluated" then "" else ($e.verdict // "") end),
+       verdict:($e.verdict // ""),
        ruleset_version:($e.ruleset_version // ""),match_rule_ids:($e.match_rule_ids // []),
        match_summary:($e.match_summary // ""),
        isolation_source:(if $o.action=="record" then (if $status=="isolated" then "existing" else "" end) elif $status=="" then "" else $o.action_source end),
