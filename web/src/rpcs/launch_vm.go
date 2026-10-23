@@ -219,7 +219,9 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 		}
 	}
 	if reason == "sync" {
-		err = syncMigration(ctx, instance)
+		reportedInstance := *instance
+		reportedInstance.Status = model.InstanceStatus(serverStatus)
+		err = syncMigration(ctx, &reportedInstance)
 		if err != nil {
 			logger.Error("Failed to sync migration info", err)
 		}
@@ -240,7 +242,9 @@ func LaunchVM(ctx context.Context, args []string) (status string, err error) {
 func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 	migration := &model.Migration{}
 	ctx, db := GetContextDB(ctx)
-	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ? and source_hyper = ?", instance.ID, instance.Hyper).Last(migration).Error
+	// Select the latest attempt before inspecting its phases, so a later
+	// migration cannot cause recovery to clean up an old source again.
+	err = db.Preload("Phases", "name = 'Prepare_Source' and status != 'completed'").Where("instance_id = ?", instance.ID).Last(migration).Error
 	if err != nil {
 		if gorm.IsRecordNotFoundError(err) {
 			err = nil
@@ -249,7 +253,12 @@ func syncMigration(ctx context.Context, instance *model.Instance) (err error) {
 		logger.Error("Failed to get migrations", err)
 		return
 	}
-	if len(migration.Phases) > 0 {
+	// A rebuilt source has no old VM to report. Let the cold-migration target
+	// resume source cleanup regardless of the VM's current power state.
+	fromSource := migration.SourceHyper == instance.Hyper
+	fromTarget := migration.TargetHyper == instance.Hyper && migration.Type == "cold" &&
+		migration.Status == "target_prepared"
+	if len(migration.Phases) > 0 && (fromSource || fromTarget) {
 		for _, task := range migration.Phases {
 			err = execSourceMigrate(ctx, instance, migration, task.ID, "/opt/cloudland/scripts/backend/source_migration.sh", "cold")
 			if err != nil {
