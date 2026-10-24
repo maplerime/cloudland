@@ -79,11 +79,21 @@ collect_guest_evidence() {
             run_check process_evidence "$guest_timeout" "$common_dir/outer_check.sh" "$vm_ID" "$inner"
         fi
     fi
+}
+
+collect_additional_checks() {
+    local inner
     inner=$(base64 < "$common_dir/inner_check.sh" | tr -d '\n')
     run_check cupsd "$guest_timeout" "$common_dir/outer_check.sh" "$vm_ID" "$inner"
     inner=$(base64 < "$common_dir/inner_stat_check.sh" | tr -d '\n')
     run_check timestamps "$guest_timeout" "$common_dir/outer_check.sh" "$vm_ID" "$inner"
+    run_check wds "$wds_timeout" "$common_dir/check_uss_core_bind.sh"
 }
+
+if [ "${2:-}" = details ]; then
+    collect_additional_checks
+    exit 0
+fi
 
 echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=identity start" >&2
 if ! resolve_target_vm; then
@@ -98,4 +108,3 @@ if ensure_guest_rpc; then
 else
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$vm_ID step=guest_collection skipped agent=$(jq -c . "$work/agent.json")" >&2
 fi
-run_check wds "$wds_timeout" "$common_dir/check_uss_core_bind.sh"

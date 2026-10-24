@@ -14,6 +14,10 @@ main() {
         bash "$inspection_dir/runners/inspect_vm.sh" "$2"
         return
     fi
+    if [ "${1:-}" = --collect-details ]; then
+        bash "$inspection_dir/runners/inspect_vm.sh" "$2" details
+        return
+    fi
     inspection_init || return 1
     [ "$#" -eq 3 ] || return 1
     domain=$1 enabled=$2 policy=$3
@@ -45,6 +49,17 @@ main() {
     build_inspection_result || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_result failed exit=$rc" >&2; return 1; }
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=evaluation start" >&2
     evaluate_saved_inspection "$work/result.json" "$work/hive_snapshot.json" || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=evaluation failed exit=$rc" >&2; return 1; }
+    if [ "$enabled" != true ] || ! jq -e '.pin_requested == true' "$work/evaluation.json" >/dev/null; then
+        echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=disposition skipped verdict=$(jq -r .verdict "$work/evaluation.json") isolation_enabled=$enabled pin_requested=$(jq -r .pin_requested "$work/evaluation.json")" >&2
+        return 0
+    fi
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=full_collection start" >&2
+    timeout --foreground -k 2 "$inspection_scan_timeout" bash "$0" --collect-details "$work"
+    rc=$?
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=full_collection end exit=$rc" >&2
+    echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_full_result start" >&2
+    build_inspection_result || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=build_full_result failed exit=$rc" >&2; return 1; }
+    evaluate_saved_inspection "$work/result.json" "$work/hive_snapshot.json" || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=full_evaluation failed exit=$rc" >&2; return 1; }
     # A report must be safely stored before any automatic isolation is attempted.
     echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=save_report start" >&2
     save_inspection_report || { rc=$?; echo "[VM-INSPECTION] $(date -u +%Y-%m-%dT%H:%M:%SZ) domain=$domain step=save_report failed exit=$rc" >&2; return 1; }
