@@ -117,7 +117,7 @@
                     <div class="inline field">
                     	<label for="allow_spoofing">{{.i18n.Tr "Allow Spoofing"}}</label>
                     	<div class="ui selection dropdown">
-                    	  <input id="allow_spoofing" name="allow_spoofing" type="hidden">
+                          <input id="allow_spoofing" name="allow_spoofing" type="hidden" value="{{if .Interface.AllowSpoofing}}yes{{else}}no{{end}}">
                     	  <i class="dropdown icon"></i>
 			  {{if .Interface.AllowSpoofing }}
                     	      <div class="default text">{{.i18n.Tr "yes"}}</div>
