@@ -202,6 +202,7 @@ int Socket::iflisten(int & port, const string & ifname)
     IPConverter converter;
     struct sockaddr_in addr;
     converter.getIP(ifname, true, &addr);
+    addr.sin_port = htons(port);
 
     int rc = ::bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
     if (rc == 0) {
