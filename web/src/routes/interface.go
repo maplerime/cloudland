@@ -959,10 +959,10 @@ func (v *InterfaceView) Patch(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	allowSpoofing := false
+	allowSpoofing := iface.AllowSpoofing
 	allowSpf := c.QueryTrim("allow_spoofing")
-	if allowSpf == "yes" {
-		allowSpoofing = true
+	if allowSpf != "" {
+		allowSpoofing = allowSpf == "yes"
 	}
 
 	sgs := c.QueryStrings("secgroups")
