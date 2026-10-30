@@ -141,7 +141,6 @@
   shell: |
     rm -f /etc/apt/sources.list.d/grafana*.list
     rm -f /etc/apt/sources.list.d/packages_grafana*.list
-    rm -f /etc/apt/keyrings/grafana*
     rm -f /usr/share/keyrings/grafana*
   ignore_errors: true
   tags: [monitor]
@@ -155,19 +154,32 @@
     mode: '0755'
   tags: [monitor]
 
+- name: Download Grafana GPG key
+  delegate_to: localhost
+  become: false
+  run_once: true
+  get_url:
+    url: https://packages.grafana.com/gpg.key
+    dest: "{{ playbook_dir }}/grafana.asc"
+    mode: '0644'
+    timeout: 20
+    force: true
+  tags: [monitor]
+
 - name: Install Grafana GPG key
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
-  shell: |
-    curl -fsSL https://packages.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
-    chmod 644 /etc/apt/keyrings/grafana.gpg
+  copy:
+    src: "{{ playbook_dir }}/grafana.asc"
+    dest: /etc/apt/keyrings/grafana.asc
+    mode: '0644'
   tags: [monitor]
 
 - name: Add Grafana repository
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main"
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://packages.grafana.com/oss/deb stable main"
     state: present
     filename: grafana
     update_cache: "{{ 'grafana' not in ansible_facts.packages }}"
@@ -192,7 +204,6 @@
       shell: |
         rm -f /etc/apt/sources.list.d/docker*.list
         rm -f /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
-        rm -f /etc/apt/keyrings/docker*
         rm -f /usr/share/keyrings/docker*
       ignore_errors: true
 
@@ -202,12 +213,22 @@
         state: directory
         mode: '0755'
 
-    - name: Install Docker GPG key
+    - name: Download Docker GPG key
+      delegate_to: localhost
+      become: false
+      run_once: true
       get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
+        dest: "{{ playbook_dir }}/docker.asc"
+        mode: '0644'
+        timeout: 20
+        force: true
+
+    - name: Install Docker GPG key
+      copy:
+        src: "{{ playbook_dir }}/docker.asc"
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
-        force: true
 
     - name: Add Docker repository
       apt_repository:
