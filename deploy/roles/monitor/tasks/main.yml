@@ -94,6 +94,13 @@
     - slack_security_webhook_url
   tags: [monitor]
 
+- name: Gather installed packages on Prometheus server
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  package_facts:
+    manager: apt
+  tags: [monitor]
+
 - name: Install packages for monitor server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -163,6 +170,7 @@
     repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main"
     state: present
     filename: grafana
+    update_cache: "{{ 'grafana' not in ansible_facts.packages }}"
   tags: [monitor]
 
 - name: Setup Docker for Alertmanager
@@ -206,12 +214,13 @@
         repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
         filename: docker
+        update_cache: "{{ 'docker-ce' not in ansible_facts.packages }}"
 
     - name: Install Docker CE
       apt:
         name: docker-ce
         state: present
-        update_cache: yes
+        update_cache: "{{ 'docker-ce' not in ansible_facts.packages }}"
 
     - name: Install Docker SDK for Python on Ubuntu 26+
       apt:
@@ -865,10 +874,18 @@
       when: prometheus_installed_version is version('2.55.0', '<')
       block:
         - name: Download Prometheus 2.55.0
+          delegate_to: localhost
+          become: false
           get_url:
             url: https://github.com/prometheus/prometheus/releases/download/v2.55.0/prometheus-2.55.0.linux-amd64.tar.gz
-            dest: /tmp/prometheus-2.55.0.linux-amd64.tar.gz
+            dest: "{{ playbook_dir }}/prometheus-2.55.0.linux-amd64.tar.gz"
             checksum: sha256:7a6b6d5ea003e8d59def294392c64e28338da627bf760cf268e788d6a8832a23
+            mode: '0644'
+
+        - name: Copy Prometheus 2.55.0 package to Prometheus server
+          copy:
+            src: "{{ playbook_dir }}/prometheus-2.55.0.linux-amd64.tar.gz"
+            dest: /tmp/prometheus-2.55.0.linux-amd64.tar.gz
             mode: '0644'
 
         - name: Extract Prometheus 2.55.0
@@ -1095,7 +1112,7 @@
   apt:
     name: socat
     state: present
-    update_cache: yes
+    update_cache: "{{ 'socat' not in ansible_facts.packages }}"
   tags: [monitor]
 
 - name: Create vm-metadata-anchor systemd service
@@ -1147,7 +1164,7 @@
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   apt:
-    update_cache: true
+    update_cache: "{{ 'grafana' not in ansible_facts.packages }}"
     name: grafana
     state: present
   tags: [monitor]
