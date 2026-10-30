@@ -846,6 +846,42 @@
     mode: 0755
   tags: [monitor]
 
+- name: Prepare Prometheus version upgrade
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  tags: [monitor]
+  block:
+    - name: Read installed Prometheus version
+      command: /usr/bin/prometheus --version
+      register: prometheus_version_check
+      changed_when: false
+      check_mode: no
+
+    - name: Set installed Prometheus version
+      set_fact:
+        prometheus_installed_version: "{{ (prometheus_version_check.stdout | regex_findall('^prometheus, version ([0-9]+[.][0-9]+[.][0-9]+)')) | first }}"
+
+    - name: Prepare Prometheus 2.55.0 package
+      when: prometheus_installed_version is version('2.55.0', '<')
+      block:
+        - name: Download Prometheus 2.55.0
+          get_url:
+            url: https://github.com/prometheus/prometheus/releases/download/v2.55.0/prometheus-2.55.0.linux-amd64.tar.gz
+            dest: /tmp/prometheus-2.55.0.linux-amd64.tar.gz
+            checksum: sha256:7a6b6d5ea003e8d59def294392c64e28338da627bf760cf268e788d6a8832a23
+            mode: '0644'
+
+        - name: Extract Prometheus 2.55.0
+          unarchive:
+            src: /tmp/prometheus-2.55.0.linux-amd64.tar.gz
+            dest: /tmp
+            remote_src: yes
+
+        - name: Check configuration with Prometheus 2.55.0
+          become_user: prometheus
+          command: /tmp/prometheus-2.55.0.linux-amd64/promtool check config /etc/prometheus/prometheus.yml
+          changed_when: false
+
 - name: Add Prometheus service overrides
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -861,7 +897,7 @@
         --storage.tsdb.path=/var/lib/prometheus/data \
         --log.level=info \
         --log.format=json \
-        --web.enable-lifecycle
+        --web.enable-lifecycle{{ ' --enable-feature=new-service-discovery-manager' if prometheus_installed_version is version('3.0.0', '<') else '' }}
     mode: 0644
   tags: [monitor]
 
@@ -891,6 +927,28 @@
     daemon_reload: yes
   tags: [monitor]
 
+- name: Upgrade Prometheus binaries
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  when: prometheus_installed_version is version('2.55.0', '<')
+  tags: [monitor]
+  block:
+    - name: Stop Prometheus before replacing binaries
+      systemd:
+        name: prometheus
+        state: stopped
+
+    - name: Replace Prometheus binaries with 2.55.0
+      copy:
+        src: "/tmp/prometheus-2.55.0.linux-amd64/{{ item }}"
+        dest: "/usr/bin/{{ item }}"
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0755'
+        backup: yes
+      loop: [prometheus, promtool]
+
 - name: Start Prometheus services on Prometheus server
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
@@ -902,6 +960,41 @@
   loop:
     - 'prometheus-node-exporter'
     - 'prometheus'
+  tags: [monitor]
+
+- name: Verify Prometheus discovery manager
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  tags: [monitor]
+  block:
+    - name: Read Prometheus runtime flags
+      uri:
+        url: http://localhost:9090/api/v1/status/flags
+        method: GET
+        status_code: 200
+        timeout: 5
+      register: prometheus_runtime_flags
+      until: prometheus_runtime_flags.status == 200
+      retries: 12
+      delay: 5
+
+    - name: Check new service discovery manager is enabled
+      assert:
+        that:
+          - prometheus_installed_version is version('3.0.0', '>=') or 'new-service-discovery-manager' in prometheus_runtime_flags.json.data['enable-feature'].split(',')
+        fail_msg: Prometheus new service discovery manager is not enabled.
+
+- name: Verify running Prometheus version is 2.55.0 after upgrade
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  when: prometheus_installed_version is version('2.55.0', '<')
+  uri:
+    url: http://localhost:9090/api/v1/status/buildinfo
+    method: GET
+    status_code: 200
+    timeout: 5
+  register: prometheus_running_version
+  failed_when: prometheus_running_version.status != 200 or (prometheus_running_version.json.data.version | default('')) != '2.55.0'
   tags: [monitor]
 
 - name: Create alarm_rules_manager directory

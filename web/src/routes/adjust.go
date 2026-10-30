@@ -817,8 +817,8 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		bwType = "out"
 	}
 
-	// For restore operation, execute if any original bandwidth limit exists (non-zero value)
-	if originalInBw > 0 || originalOutBw > 0 {
+	// A directional restore must also apply zero (unlimited) business bandwidth.
+	if bwType != "" || originalInBw > 0 || originalOutBw > 0 {
 		needActualRestore = true
 	}
 
@@ -841,6 +841,11 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		// Restore bandwidth to original configuration values
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '%d' '%d'",
 			vmID, nicName, originalInBw, originalOutBw)
+		if bwType == "in" {
+			command += " --inbound-only"
+		} else if bwType == "out" {
+			command += " --outbound-only"
+		}
 
 		// Execute command
 		err = common.HyperExecute(ctx, control, command)

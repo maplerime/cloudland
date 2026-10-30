@@ -745,6 +745,13 @@ func (a *AdjustAPI) processAlertAdjustment(ctx context.Context, alert routes.Adj
 		return false
 	}
 
+	if actionType == "limit_cpu" || actionType == "limit_in_bw" || actionType == "limit_out_bw" {
+		if !(&routes.AlarmOperator{}).CheckVMLinkExists(ctx, ruleGroup, instanceID, alert.Labels["target_device"]) {
+			logger.Infof("[ADJUST-%s] Skip limit for unlinked VM: instance=%s rule_group=%s", requestID, instanceID, ruleGroup)
+			return true
+		}
+	}
+
 	logger.Infof("[ADJUST-%s] Processing %s for domain=%s, rule=%s", requestID, actionType, domain, ruleID)
 
 	// Create adjustment record
