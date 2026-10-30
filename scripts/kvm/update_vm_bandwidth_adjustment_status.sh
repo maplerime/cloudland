@@ -174,7 +174,7 @@ if grep -q "^$PATTERN" "$METRICS_FILE"; then
         # Update existing metric with new status
         while IFS= read -r line; do
             if [[ "$line" =~ ^$PATTERN ]]; then
-                echo "$METRIC_LINE"
+                echo "$STATUS_METRIC_LINE"
             else
                 echo "$line"
             fi
