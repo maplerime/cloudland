@@ -332,6 +332,10 @@ func (v *InterfaceAPI) Patch(c *gin.Context) {
 			}
 		} else if len(payload.PublicAddresses) > 0 {
 			for _, pubAddr := range payload.PublicAddresses {
+				if pubAddr == nil {
+					ErrorResponse(c, http.StatusBadRequest, "Public address reference cannot be null", nil)
+					return
+				}
 				var floatingIp *model.FloatingIp
 				floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
 				if err != nil {
@@ -483,6 +487,10 @@ func (v *InterfaceAPI) getInterfaceInfo(ctx context.Context, vpc *model.Router, 
 	vlan := int64(0)
 	if len(ifacePayload.PublicAddresses) > 0 {
 		for _, pubAddr := range ifacePayload.PublicAddresses {
+			if pubAddr == nil {
+				err = fmt.Errorf("Public address reference cannot be null")
+				return
+			}
 			var floatingIp *model.FloatingIp
 			floatingIp, err = floatingIpAdmin.GetFloatingIpByUUID(ctx, pubAddr.ID)
 			if err != nil {
