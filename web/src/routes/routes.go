@@ -288,6 +288,8 @@ func New() (m *macaron.Macaron) {
 	m.Get("/alarms/node/new", alarmView.NewNodeAlarmRule)
 	m.Post("/alarms/node/:uuid/delete", alarmView.DeleteNodeAlarmRule)
 	m.Delete("/alarms/node/:uuid", alarmView.DeleteNodeAlarmRule)
+	m.Get("/check_connection", checkConnectionView.List)
+	m.Post("/check_connection", checkConnectionView.Create)
 	m.Get("/ip-whitelists", ipWhitelistView.List)
 	m.Get("/ip-whitelists/new", ipWhitelistView.New)
 	m.Post("/ip-whitelists/new", ipWhitelistView.Create)
