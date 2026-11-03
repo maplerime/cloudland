@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"web/src/common"
 	"web/src/model"
 	"web/src/routes"
 
@@ -177,6 +178,15 @@ func (a *AlarmAPI) UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 // This supports incremental addition of VMs to rules (alarm or adjust)
 func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		memberShip := common.GetMemberShip(c.Request.Context())
+		if memberShip.UserID <= 0 || memberShip.OrgID <= 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Missing authenticated user or organization context",
+				"code":  "AUTH_CONTEXT_REQUIRED",
+			})
+			return
+		}
+
 		var req struct {
 			GroupUUID string `json:"group_uuid,omitempty"`
 			RuleID    string `json:"rule_id,omitempty"`
@@ -443,6 +453,15 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 // UnlinkRuleFromVMWithType returns a closure that handles VM unlinking based on rule category
 func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		memberShip := common.GetMemberShip(c.Request.Context())
+		if memberShip.UserID <= 0 || memberShip.OrgID <= 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Missing authenticated user or organization context",
+				"code":  "AUTH_CONTEXT_REQUIRED",
+			})
+			return
+		}
+
 		var req struct {
 			GroupUUID string `json:"group_uuid,omitempty"`
 			RuleID    string `json:"rule_id,omitempty"`
