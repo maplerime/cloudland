@@ -1,0 +1,30 @@
+{{template "_head" .}}
+<div class="admin user"><div class="ui container"><div class="ui grid">
+    {{template "_left" .}}
+    <div class="twelve wide column content">
+        <h4 class="ui top attached header">{{.i18n.Tr "Check_Connection"}} ({{.Total}})</h4>
+        <div class="ui attached segment">
+            <p>{{.i18n.Tr "Check_Connection_Description"}}</p>
+            {{if .CanWrite}}
+            <form class="ui form" action="/check_connection" method="post">
+                <div class="required field">
+                    <label for="check-ips">{{.i18n.Tr "Check_Connection_IPs"}}</label>
+                    <textarea id="check-ips" name="ips" rows="4" required placeholder="192.0.2.10&#10;2001:db8::10"></textarea>
+                </div>
+                <button class="ui green button" type="submit">{{.i18n.Tr "Check_Connection_Submit"}}</button>
+            </form>
+            {{end}}
+        </div>
+        <div class="ui unstackable attached table segment">
+            <table class="ui unstackable very basic striped table">
+                <thead><tr><th>{{.i18n.Tr "UUID"}}</th><th>{{.i18n.Tr "IP"}}</th><th>{{.i18n.Tr "Check_Connection_Status"}}</th><th>{{.i18n.Tr "Check_Connection_Error"}}</th><th>{{.i18n.Tr "Check_Connection_CreatedAt"}}</th></tr></thead>
+                <tbody>{{range .Checks}}
+                    <tr><td>{{.UUID}}</td><td>{{.IP}}</td><td>{{$.i18n.Tr (printf "Check_Connection_Status_%s" .Status)}}</td><td>{{.DispatchError}}</td><td>{{.CreatedAt}}</td>
+                    </tr>
+                {{else}}<tr><td colspan="5">{{.i18n.Tr "Check_Connection_Empty"}}</td></tr>{{end}}</tbody>
+            </table>
+        </div>
+        {{template "_pagination" .}}
+    </div>
+</div></div></div>
+{{template "_footer" .}}

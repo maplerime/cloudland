@@ -240,6 +240,8 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 		authGroup.GET("/api/v1/tasks", taskAPI.List)
 		authGroup.GET("/api/v1/tasks/:id", taskAPI.Get)
 
+		authGroup.GET("/api/v1/check_connection", checkConnectionAPI.List)
+		authGroup.POST("/api/v1/check_connection", checkConnectionAPI.Create)
 		authGroup.GET("/api/v1/ip-whitelist", ipWhitelistAPI.List)
 		authGroup.POST("/api/v1/ip-whitelist", ipWhitelistAPI.Create)
 		authGroup.DELETE("/api/v1/ip-whitelist/:uuid", ipWhitelistAPI.Delete)
