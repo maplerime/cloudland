@@ -11,6 +11,8 @@ vm_mac=$3
 vm_name=$4
 vm_ip=${5%%/*}
 domain=$6
+# IPv6 guests use static config-drive networking, not the IPv4 dnsmasq pool.
+[[ "$vm_ip" == *:* ]] && exit 0
 [ -z "$domain" ] && domain=$cloud_domain
 
 vlan_dir=$cache_dir/router/$router/$vlan

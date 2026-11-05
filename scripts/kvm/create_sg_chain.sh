@@ -10,6 +10,23 @@ ip=${2%%/*}
 mac=$3
 allow_spoofing=$4
 
+# A NIC may have both families through its additional addresses.
+more_addresses=$(cat)
+has_ipv4=false
+has_ipv6=false
+while IFS= read -r address; do
+    [ -z "$address" ] && continue
+    if [[ "$address" == *:* ]]; then
+        has_ipv6=true
+    else
+        has_ipv4=true
+    fi
+done < <(printf '%s\n' "$ip"; jq -r '.[]?' <<< "$more_addresses")
+if [ "$has_ipv6" = true ]; then
+    ./create_sg_chain6.sh "$vnic" "$ip" "$mac" "$allow_spoofing" <<< "$more_addresses" || exit 1
+fi
+[ "$has_ipv4" = true ] || exit 0
+
 apply_fw -I FORWARD -m physdev --physdev-out $vnic --physdev-is-bridged -j secgroup-chain
 apply_fw -I FORWARD -m physdev --physdev-in $vnic --physdev-is-bridged -j secgroup-chain
 
@@ -31,12 +48,11 @@ else
     # ipset: single hash:ip,mac set replaces per-IP RETURN rules
     ipset create sgas-$vnic hash:ip,mac -exist
     ipset flush sgas-$vnic
-    ipset add sgas-$vnic $ip,$mac -exist
+    [[ "$ip" != *:* ]] && ipset add sgas-$vnic $ip,$mac -exist
     apply_fw -A $chain_as -m set --match-set sgas-$vnic src,src -j RETURN
     apply_fw -A $chain_as -j DROP
 fi
 
-more_addresses=$(cat)
 naddrs=$(jq length <<< $more_addresses)
 
 if [ "$allow_spoofing" != true ]; then
@@ -51,6 +67,7 @@ if [ "$allow_spoofing" != true ]; then
     fi
     ipset_restore=""
     for extra_ip in $extra_ips; do
+        [[ "$extra_ip" == *:* ]] && continue
         ipset_restore="${ipset_restore}add sgas-$vnic $extra_ip,$mac -exist"$'\n'
     done
     [ -n "$ipset_restore" ] && printf '%s' "$ipset_restore" | ipset restore -exist

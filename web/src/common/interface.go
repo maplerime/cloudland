@@ -134,15 +134,13 @@ func AllocateAddress(ctx context.Context, subnet *model.Subnet, ifaceID int64, i
 	if ipaddr == "" {
 		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address != ?", subnet.ID, false, false, subnet.Gateway).Order("address::inet").Take(address).Error
 	} else {
-		if !strings.Contains(ipaddr, "/") {
-			ip, network, parseErr := net.ParseCIDR(subnet.Network)
-			requestedIP := net.ParseIP(ipaddr)
-			if parseErr != nil || requestedIP == nil || !network.Contains(requestedIP) || (ip.To4() == nil) != (requestedIP.To4() == nil) {
-				return nil, fmt.Errorf("requested address must belong to the subnet")
-			}
-			preSize, _ := network.Mask.Size()
-			ipaddr = fmt.Sprintf("%s/%d", requestedIP.String(), preSize)
+		ip, network, parseErr := net.ParseCIDR(subnet.Network)
+		requestedIP := net.ParseIP(strings.SplitN(ipaddr, "/", 2)[0])
+		if parseErr != nil || requestedIP == nil || !network.Contains(requestedIP) || (ip.To4() == nil) != (requestedIP.To4() == nil) {
+			return nil, fmt.Errorf("requested address must belong to the subnet")
 		}
+		preSize, _ := network.Mask.Size()
+		ipaddr = fmt.Sprintf("%s/%d", requestedIP.String(), preSize)
 		err = db.Set("gorm:query_option", "FOR UPDATE").Where("subnet_id = ? and allocated = ? and reserved = ? and address = ?", subnet.ID, false, false, ipaddr).Order("address::inet").Take(address).Error
 	}
 	if err != nil {
@@ -307,8 +305,8 @@ func DerivePublicInterface(ctx context.Context, instance *model.Instance, iface 
 }
 
 func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64, hyper int32, inbound, outbound int32, address, mac, ifaceName, ifType string, secgroups []*model.SecurityGroup, allowSpoofing bool) (iface *model.Interface, err error) {
-	if ifType != "floating" && strings.Contains(subnet.Network, ":") {
-		return nil, fmt.Errorf("IPv6 currently supports only namespace floating IP interfaces")
+	if strings.Contains(subnet.Network, ":") && ifType != "floating" && !(ifType == "instance" && subnet.Type == "public") {
+		return nil, fmt.Errorf("IPv6 VM interfaces require a public subnet")
 	}
 	ctx, db := GetContextDB(ctx)
 	primary := false
@@ -524,7 +522,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 		instNetwork := &InstanceNetwork{
 			Address: address,
 			Netmask: subnet.Netmask,
-			Type:    "ipv4",
+			Type:    IPAddressType(address),
 			Link:    iface.Name,
 			ID:      fmt.Sprintf("network%d", netID),
 		}
@@ -539,6 +537,10 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 			}
 			gateway := strings.Split(subnet.Gateway, "/")[0]
 			instRoute := &NetworkRoute{Network: "0.0.0.0", Netmask: "0.0.0.0", Gateway: gateway}
+			if instNetwork.Type == "ipv6" {
+				instRoute.Network, instRoute.Netmask = "::", "::"
+			}
+			instNetwork.Link = iface.Name
 			instNetwork.Routes = append(instNetwork.Routes, instRoute)
 			instNetworks = append(instNetworks, instNetwork)
 			moreAddresses = []string{}
@@ -549,7 +551,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 					instNetworks = append(instNetworks, &InstanceNetwork{
 						Address: address,
 						Netmask: subnet.Netmask,
-						Type:    "ipv4",
+						Type:    IPAddressType(address),
 						Link:    iface.Name,
 						ID:      fmt.Sprintf("network%d", netID),
 					})
@@ -570,7 +572,7 @@ func GetInstanceNetworks(ctx context.Context, instance *model.Instance, ifaces [
 							instNetworks = append(instNetworks, &InstanceNetwork{
 								Address: address,
 								Netmask: site.Netmask,
-								Type:    "ipv4",
+								Type:    IPAddressType(address),
 								Link:    iface.Name,
 								ID:      fmt.Sprintf("network%d", netID),
 							})

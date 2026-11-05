@@ -54,7 +54,7 @@ type InterfaceResponse struct {
 type InterfacePayload struct {
 	Subnet          *BaseReference   `json:"subnet" binding:"omitempty"`
 	Subnets         []*BaseReference `json:"subnets" binding:"omitempty,gte=1,lte=16"`
-	IpAddress       string           `json:"ip_address", binding:"omitempty,ipv4"`
+	IpAddress       string           `json:"ip_address" binding:"omitempty,ip"`
 	MacAddress      string           `json:"mac_address" binding:"omitempty,mac"`
 	PublicAddresses []*BaseReference `json:"public_addresses,omitempty"`
 	Count           int              `json:"count" binding:"omitempty,gte=1,lte=512"`

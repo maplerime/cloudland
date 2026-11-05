@@ -3,6 +3,8 @@
 #from scapy.all import *
 import os
 import sys
+import ipaddress
+from scapy.layers.inet6 import IPv6, ICMPv6ND_NA, ICMPv6NDOptDstLLAddr
 from scapy.layers.l2 import ARP, Ether
 from scapy.sendrecv import sendp
 
@@ -24,8 +26,15 @@ def send_spoofed_arp(iface, src_ips, src_mac):
         sys.exit(1)
     pkts = []
     for src_ip in src_ips:
-        arp_packet = ARP(op=2, pdst=src_ip, psrc=src_ip, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=src_mac)
-        pkts.append(Ether(dst="ff:ff:ff:ff:ff:ff", src=src_mac)/arp_packet)
+        if ipaddress.ip_address(src_ip).version == 6:
+            packet = (Ether(dst="33:33:00:00:00:01", src=src_mac) /
+                      IPv6(src=src_ip, dst="ff02::1", hlim=255) /
+                      ICMPv6ND_NA(tgt=src_ip, S=0, O=1, R=0) /
+                      ICMPv6NDOptDstLLAddr(lladdr=src_mac))
+        else:
+            packet = (Ether(dst="ff:ff:ff:ff:ff:ff", src=src_mac) /
+                      ARP(op=2, pdst=src_ip, psrc=src_ip, hwdst="ff:ff:ff:ff:ff:ff", hwsrc=src_mac))
+        pkts.append(packet)
     try:
         # Send all packets in a single batch over one socket
         sendp(pkts, iface=iface, verbose=False)
@@ -41,7 +50,7 @@ if __name__ == "__main__":
         sys.exit(1)
     iface = sys.argv[1]
     # Legacy 3-arg form: <interface> <source_ip> <source_mac>
-    if len(sys.argv) == 4 and ":" in sys.argv[3] and ":" not in sys.argv[2]:
+    if len(sys.argv) == 4 and len(sys.argv[3].split(":")) == 6 and all(len(part) == 2 for part in sys.argv[3].split(":")):
         src_ips = [sys.argv[2]]
         src_mac = sys.argv[3]
     else:

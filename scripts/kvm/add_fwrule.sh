@@ -20,9 +20,11 @@ while [ $i -lt $len ]; do
         [ $? -eq 0 ] && bridge fdb del $inner_mac dev v-$vni
         bridge fdb add $inner_mac dev v-$vni dst $outer_ip self permanent
 	in_ip=${inner_ip%%/*}
-	ip neighbor | grep "\<$in_ip\> dev v-$vni\>"
-        [ $? -eq 0 ] && ip neighbor del $in_ip dev v-$vni
-        ip neighbor add $in_ip lladdr $inner_mac dev v-$vni nud permanent
+	family=-4
+        [[ "$in_ip" == *:* ]] && family=-6
+	ip "$family" neighbor | grep "\<$in_ip\> dev v-$vni\>"
+        [ $? -eq 0 ] && ip "$family" neighbor del $in_ip dev v-$vni
+        ip "$family" neighbor add $in_ip lladdr $inner_mac dev v-$vni nud permanent
     fi
     let i=$i+1
 done

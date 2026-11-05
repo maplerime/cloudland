@@ -6,12 +6,36 @@ source ../cloudrc
 [ $# -lt 1 ] && echo "$0 <interface>" && exit -1
 
 vnic=$1
+family=${2:-auto}
+if [ "$family" = auto ]; then
+    sec_data=$(cat)
+    # create_sg_chain.sh creates only the families allocated to this NIC.
+    if iptables -w -S "secgroup-in-$vnic" >/dev/null 2>&1; then
+        ./apply_sg_rule.sh "$vnic" ipv4 <<< "$sec_data" || exit 1
+    fi
+    if ip6tables -w -S "secgroup6-in-$vnic" >/dev/null 2>&1; then
+        ./apply_sg_rule.sh "$vnic" ipv6 <<< "$sec_data" || exit 1
+    fi
+    exit 0
+fi
+restore=iptables-restore
+icmp_protocol=icmp
+icmp_option=--icmp-type
+if [ "$family" = ipv6 ]; then
+    restore=ip6tables-restore
+    icmp_protocol=ipv6-icmp
+    icmp_option=--icmpv6-type
+fi
 # Build all rules for this nic's chains and apply them in a single
 # iptables-restore transaction (noflush) instead of one fork per rule.
 # Rules are inserted at the head (-I chain 1), ahead of the chain's
 # terminating DROP built by create_sg_chain.sh.
 chain_in=secgroup-in-$vnic
 chain_out=secgroup-out-$vnic
+if [ "$family" = ipv6 ]; then
+    chain_in=secgroup6-in-$vnic
+    chain_out=secgroup6-out-$vnic
+fi
 
 rules=""
 
@@ -20,7 +44,12 @@ function emit()
 {
     chain=$1
     shift
-    rules="${rules}-I ${chain} 1 $*"$'\n'
+    position=1
+    if [ "$family" = ipv6 ]; then
+        # Insert application rules after NDP and source validation, before DROP.
+        position=$(ip6tables -w -S "$chain" | awk '$1 == "-A" {n++} END {print n}')
+    fi
+    rules="${rules}-I ${chain} ${position} $*"$'\n'
 }
 
 # Valid TCP/UDP port is 1-65535. Returns 0 if in range, 1 otherwise.
@@ -65,9 +94,9 @@ function allow_icmp()
     if [ "$ptype" != "-1" ]; then
         typecode=$ptype
         [ "$pcode" != "-1" ] && typecode=$ptype/$pcode
-        args="$args --icmp-type $typecode"
+        args="$args $icmp_option $typecode"
     fi
-    emit "$chain" "-p icmp $args -j RETURN"
+    emit "$chain" "-p $icmp_protocol $args -j RETURN"
 }
 
 sec_data=$(cat)
@@ -76,12 +105,23 @@ len=$(jq length <<< $sec_data)
 while [ $i -lt $len ]; do
     # Read the 5 fields into an array so empty fields (e.g. blank remote_ip)
     # keep their position instead of collapsing and shifting later fields.
-    mapfile -t fields < <(jq -r ".[$i] | .direction, .remote_ip, .protocol, .port_min, .port_max" <<<$sec_data)
+    mapfile -t fields < <(jq -r ".[$i] | .direction, .remote_ip, .protocol, .port_min, .port_max, .ip_version" <<<$sec_data)
     direction=${fields[0]}
     remote_ip=${fields[1]}
     protocol=${fields[2]}
     port_min=${fields[3]}
     port_max=${fields[4]}
+    rule_family=${fields[5]:-ipv4}
+    if [ -n "$remote_ip" ] && [ "$remote_ip" != null ]; then
+        rule_family=ipv4
+        [[ "$remote_ip" == *:* ]] && rule_family=ipv6
+    else
+        remote_ip=""
+    fi
+    if [ "$rule_family" != "$family" ]; then
+        let i=i+1
+        continue
+    fi
     chain=$chain_in
     [ "$direction" = "egress" ] && chain=$chain_out
     args=""
@@ -115,7 +155,7 @@ done
 # (i.e. all inbound allow rules gone -> VM traffic blackholed). Fail loud so
 # this never happens silently: log to syslog on failure.
 if [ -n "$rules" ]; then
-    restore_err=$(printf '*filter\n%sCOMMIT\n' "$rules" | iptables-restore --noflush 2>&1)
+    restore_err=$(printf '*filter\n%sCOMMIT\n' "$rules" | "$restore" --noflush 2>&1)
     if [ $? -ne 0 ]; then
         logger -t apply_sg_rule "FAILED to apply security group rules for $vnic (whole batch rejected, chain left with skeleton only): $restore_err"
         echo "apply_sg_rule: iptables-restore failed for $vnic: $restore_err" >&2
