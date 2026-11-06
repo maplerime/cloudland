@@ -1118,7 +1118,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		outbound = ifaceInfo.Outbound
 		iface, subnet, err = a.createInterface(ctx, ifaceInfo, instance, ifname)
 		if err != nil {
-			logger.Errorf("Allocate address for secondary subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
+			logger.Errorf("Allocate address for secondary interface %s failed, %v", ifname, err)
 			return
 		}
 		interfaces = append(interfaces, iface)
