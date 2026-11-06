@@ -1,0 +1,111 @@
+---
+- name: Set vmagent node monitoring variables
+  set_fact:
+    node_exporter_port: "{{ node_exporter_port | default(9101) }}"
+    node_exporter_textfile_dir: "{{ node_exporter_textfile_dir | default('/var/lib/node_exporter') }}"
+
+- name: Install node exporter on vmagent hosts
+  delegate_to: "{{ item }}"
+  apt:
+    name: prometheus-node-exporter
+    state: present
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Create node exporter textfile directory
+  delegate_to: "{{ item }}"
+  file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Create node exporter systemd override directory
+  delegate_to: "{{ item }}"
+  file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Configure node exporter port and custom metric directory
+  delegate_to: "{{ item }}"
+  copy:
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/override.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/bin/prometheus-node-exporter --web.listen-address=:{{ node_exporter_port }} --collector.textfile.directory={{ node_exporter_textfile_dir }}
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ groups['vmagent'] | default([]) }}"
+  register: vmagent_node_exporter_config
+
+- name: Apply node exporter configuration
+  delegate_to: "{{ item.item }}"
+  systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    daemon_reload: "{{ item.changed }}"
+    state: "{{ 'restarted' if item.changed else 'started' }}"
+  loop: "{{ vmagent_node_exporter_config.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check vmagent node metrics connectivity from the Prometheus server
+  uri:
+    url: "http://{{ hostvars[item].ansible_host | default(hostvars[item].ansible_ssh_host) | default(item) }}:{{ node_exporter_port }}/metrics"
+    timeout: 10
+    status_code: 200
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Generate vmagent node service discovery targets
+  template:
+    src: vmagent_node_exporters.json.j2
+    dest: /etc/prometheus/lists/vmagent_node_exporters.json
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+- name: Copy vmagent node alarm template for the existing rule API
+  copy:
+    src: "{{ role_path }}/templates/vmagent-availability.yml.j2"
+    dest: /etc/prometheus/node_templates/vmagent-availability.yml.j2
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+- name: Configure vmagent node exporter scraping
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    marker: '# {mark} ANSIBLE MANAGED BLOCK - Node Exporters'
+    insertafter: '^scrape_configs:'
+    block: "{{ node_exporters_block | indent(2, true) }}"
+    validate: 'promtool check config %s'
+
+- name: Reload Prometheus configuration
+  uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: 200
+
+- name: Route vmagent node alerts to the internal service Teams receiver
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    marker: '    # {mark} ANSIBLE MANAGED BLOCK - VMAgent Alerts'
+    insertbefore: '^    # Route node alarms to node-webhook'
+    block: |2
+          - match:
+              alert_type: internal-service
+              node_type: vmagent
+            receiver: teams-internal-service
+            group_by: ['alertname', 'host', 'instance', 'severity']
+  register: vmagent_alert_route
+
+- name: Apply Alertmanager configuration
+  command: docker restart alertmanager
+  when: vmagent_alert_route.changed

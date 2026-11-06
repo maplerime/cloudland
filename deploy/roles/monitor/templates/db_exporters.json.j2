@@ -1,0 +1,14 @@
+[
+{% set comma = joiner(',') %}
+{% for ip in db_hosts %}
+  {{ comma() }}
+  {
+    "targets": ["{{ ip }}:{{ item.port }}"],
+    "labels": {
+      "host": "{{ db_inventory_data._meta.hostvars[ip].hostname | default(ip) }}",
+      "node_type": "database",
+      "cluster": "{{ db_cluster_name }}"
+    }
+  }
+{% endfor %}
+]

@@ -27,6 +27,8 @@
                                         <option value="compute_node">{{.i18n.Tr "Compute_Node"}}</option>
                                         <option value="hypervisor_resource">{{.i18n.Tr "Node_Hypervisor_Resource"}}</option>
                                         <option value="node_reboot">{{.i18n.Tr "Node_Reboot_Detection"}}</option>
+                                        <option value="db_cluster">{{.i18n.Tr "DB_Cluster"}}</option>
+                                        <option value="vmagent">{{.i18n.Tr "VMAgent_Node"}}</option>
                                         <option value="packet_drop">{{.i18n.Tr "Packet_Drop"}}</option>
 										<option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
 										<option value="ipgroup_available_ip">{{.i18n.Tr "IP_Group_Available_IP"}}</option>
@@ -110,6 +112,17 @@ document.addEventListener('DOMContentLoaded', function() {
         'node_reboot': {
             "reboot_detect_window": 3600
         },
+        'db_cluster': {
+            "node_down_duration": "2m",
+            "replica_unhealthy_for": "3m",
+            "replica_lag_bytes": 104857600,
+            "dcs_stale_seconds": 120,
+            "etcd_leader_changes": 3,
+            "etcd_fsync_seconds": 0.05
+        },
+        'vmagent': {
+            "node_down_duration": "2m"
+        },
         'packet_drop': {
             "for_duration": "1m",
             "severity": "warning",
@@ -141,4 +154,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 
-{{template "_footer" .}} 
+{{template "_footer" .}}

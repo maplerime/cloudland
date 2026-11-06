@@ -17,6 +17,9 @@
       connectors:
       - vm_alerts:        "{{ slack_webhook_url }}"
       - node_status:      "{{ slack_node_status_webhook_url }}"
+      {% if teams_internal_service_webhook_url | default('') | trim | length > 0 %}
+      - internal_service: {{ teams_internal_service_webhook_url | trim | to_json }}
+      {% endif %}
       - resource_alerts:  "{{ slack_resource_webhook_url }}"
       - drop_package:     "{{ slack_security_webhook_url }}"
       - ipgroup:          "{{ slack_resource_webhook_url }}"

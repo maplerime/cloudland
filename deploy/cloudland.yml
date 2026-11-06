@@ -66,6 +66,25 @@
   roles:
     - {role: monitor, become: yes, tags: [monitor]}
 
+# DB monitoring is opt-in and uses its own tasks, not monitor/tasks/main.yml.
+- name: configure database monitoring
+  hosts: monitor
+  become: yes
+  tasks:
+    - import_role:
+        name: monitor
+        tasks_from: monitor_db
+      tags: [never, monitor_db]
+
+- name: configure vmagent node monitoring
+  hosts: monitor
+  become: yes
+  tasks:
+    - import_role:
+        name: monitor
+        tasks_from: monitor_vmagent
+      tags: [never, monitor_vmagent]
+
 # deploy monitor for cland nodes
 - name: install monitor for cland
   hosts: cland
@@ -80,7 +99,7 @@
 
 # update prometheus file_sd target json
 - name: update prometheus monitor sd
-  hosts: hyper:hyper_localdisk:cland
+  hosts: hyper:hyper_localdisk:cland:vmagent
   tasks:
     - name: render prometheus file_sd json
       include_role:

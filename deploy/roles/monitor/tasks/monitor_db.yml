@@ -1,0 +1,169 @@
+---
+- name: Set DB monitoring variables
+  set_fact:
+    db_inventory_path: "{{ monitor_db_inventory | default(inventory_dir + '/postgres/inventory') }}"
+    node_exporter_port: "{{ node_exporter_port | default(9101) }}"
+    node_exporter_textfile_dir: "{{ node_exporter_textfile_dir | default('/var/lib/node_exporter') }}"
+    etcd_metrics_port: "{{ etcd_metrics_port | default(2379) }}"
+
+- name: Read DB cluster name and Patroni port from existing deployment variables
+  set_fact:
+    db_cluster_name: "{{ patroni_cluster_name | default((lookup('file', (db_inventory_path | dirname) + '/main.yml') | from_yaml).patroni_cluster_name) }}"
+    db_patroni_port: "{{ patroni_restapi_port | default((lookup('file', (db_inventory_path | dirname) + '/main.yml') | from_yaml).get('patroni_restapi_port', 8008)) }}"
+
+- name: Read PostgreSQL inventory on deployer
+  delegate_to: localhost
+  become: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+  command:
+    argv: [ansible-inventory, -i, "{{ db_inventory_path }}", --list]
+  register: db_inventory_result
+  changed_when: false
+
+- name: Resolve complete DB and etcd membership
+  set_fact:
+    db_inventory_data: "{{ db_inventory_result.stdout | from_json }}"
+
+- name: Collect the shared DB cluster hosts
+  set_fact:
+    db_hosts: "{{ db_inventory_data.etcd_cluster.hosts | default([]) | unique | list }}"
+
+- name: Check DB membership and existing SSH settings
+  assert:
+    that:
+      - db_hosts | length > 0
+      - groups['database'] | default([]) | length > 0
+    fail_msg: 'DB monitoring requires cluster members and database SSH settings in the main inventory.'
+
+# The main database group supplies the shared login; postgres all:vars may use a different key.
+- name: Install and configure DB node exporter
+  vars:
+    ansible_user: "{{ hostvars[groups['database'][0]].ansible_user }}"
+    ansible_ssh_private_key_file: "{{ hostvars[groups['database'][0]].ansible_ssh_private_key_file }}"
+    ansible_port: "{{ hostvars[groups['database'][0]].ansible_port | default(hostvars[groups['database'][0]].ansible_ssh_port | default(22)) }}"
+  block:
+    - name: Install node exporter on DB members
+      delegate_to: "{{ db_inventory_data._meta.hostvars[item].ansible_host | default(item) }}"
+      apt:
+        name: prometheus-node-exporter
+        state: present
+      loop: "{{ db_hosts }}"
+
+    - name: Create node exporter textfile directory
+      delegate_to: "{{ db_inventory_data._meta.hostvars[item].ansible_host | default(item) }}"
+      file:
+        path: "{{ node_exporter_textfile_dir }}"
+        state: directory
+        owner: prometheus
+        group: prometheus
+        mode: '0755'
+      loop: "{{ db_hosts }}"
+
+    - name: Create node exporter systemd override directory
+      delegate_to: "{{ db_inventory_data._meta.hostvars[item].ansible_host | default(item) }}"
+      file:
+        path: /etc/systemd/system/prometheus-node-exporter.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      loop: "{{ db_hosts }}"
+
+    - name: Configure node exporter port and custom metric directory
+      delegate_to: "{{ db_inventory_data._meta.hostvars[item].ansible_host | default(item) }}"
+      copy:
+        dest: /etc/systemd/system/prometheus-node-exporter.service.d/override.conf
+        content: |
+          [Service]
+          ExecStart=
+          ExecStart=/usr/bin/prometheus-node-exporter --web.listen-address=:{{ node_exporter_port }} --collector.textfile.directory={{ node_exporter_textfile_dir }}
+        owner: root
+        group: root
+        mode: '0644'
+      loop: "{{ db_hosts }}"
+      register: db_node_exporter_config
+
+    - name: Apply node exporter configuration
+      delegate_to: "{{ db_inventory_data._meta.hostvars[item.item].ansible_host | default(item.item) }}"
+      systemd:
+        name: prometheus-node-exporter
+        enabled: true
+        daemon_reload: "{{ item.changed }}"
+        state: "{{ 'restarted' if item.changed else 'started' }}"
+      loop: "{{ db_node_exporter_config.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+- name: Check DB metrics connectivity from the Prometheus server
+  uri:
+    url: "http://{{ item.0 }}:{{ item.1 }}/metrics"
+    timeout: 10
+    status_code: 200
+  loop: "{{ db_hosts | product([node_exporter_port, db_patroni_port, etcd_metrics_port]) | list }}"
+  loop_control:
+    label: "{{ item.0 }}:{{ item.1 }}"
+
+- name: Generate DB service discovery targets from inventory
+  template:
+    src: db_exporters.json.j2
+    dest: "/etc/prometheus/lists/{{ item.dest }}"
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+  with_items:
+    - {dest: db_node_exporters.json, port: "{{ node_exporter_port }}"}
+    - {dest: db_patroni.json, port: "{{ db_patroni_port }}"}
+    - {dest: db_etcd.json, port: "{{ etcd_metrics_port }}"}
+
+- name: Copy DB alarm template for the existing rule API
+  copy:
+    src: "{{ role_path }}/templates/db-cluster.yml.j2"
+    dest: /etc/prometheus/node_templates/db-cluster.yml.j2
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+- name: Configure node exporter, Patroni and etcd scrape jobs
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    marker: '# {mark} ANSIBLE MANAGED BLOCK - Node Exporters'
+    insertafter: '^scrape_configs:'
+    block: "{{ node_exporters_block | indent(2, true) }}"
+    validate: 'promtool check config %s'
+
+- name: Reload Prometheus configuration
+  uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: 200
+
+- name: Remove legacy unmarked or misplaced DB alert routes
+  replace:
+    path: /etc/alertmanager/alertmanager.yml
+    regexp: "{{ item }}"
+    replace: ''
+  loop:
+    # Remove the old route from the full monitor configuration, leaving managed routes intact.
+    - '(?m)^    - match:\n        alert_type: db-ha\n        node_type: database\n      receiver: teams-node-status\n      group_by: [^\n]+\n(?!    # END ANSIBLE MANAGED BLOCK - DB Alerts)'
+    # Remove the old managed block only when it precedes the ECC forwarding route.
+    - '(?ms)^    # BEGIN ANSIBLE MANAGED BLOCK - DB Alerts\n.*?^    # END ANSIBLE MANAGED BLOCK - DB Alerts\n(?=\s*(?:# BEGIN ANSIBLE MANAGED BLOCK - ECC Forward Route|- matchers:))'
+  register: db_alert_route_cleanup
+
+- name: Route DB alerts to the internal service Teams receiver
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    marker: '    # {mark} ANSIBLE MANAGED BLOCK - DB Alerts'
+    insertbefore: '^    # Route node alarms to node-webhook'
+    block: |2
+          - match:
+              alert_type: internal-service
+              node_type: database
+            receiver: teams-internal-service
+            group_by: ['alertname', 'cluster', 'host', 'instance', 'severity']
+  register: db_alert_route
+
+- name: Apply Alertmanager configuration
+  command: docker restart alertmanager
+  when: db_alert_route.changed or db_alert_route_cleanup.changed
