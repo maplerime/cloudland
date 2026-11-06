@@ -94,3 +94,20 @@ func TestUpdateKeys_ValidationErrorCodes(t *testing.T) {
 		t.Errorf("invalid action: code %v, want %v", c, ErrInvalidParameter)
 	}
 }
+
+func TestShellQuote(t *testing.T) {
+	cases := map[string]string{
+		"abc":       `'abc'`,
+		"a'b":       `'a'\''b'`,
+		"x';rm -rf": `'x'\'';rm -rf'`,
+		"":          `''`,
+	}
+	for in, want := range cases {
+		if got := shellQuote(in); got != want {
+			t.Errorf("shellQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if !hasControlChar("a\nb") || !hasControlChar("a\x00") || hasControlChar("pa ss'w0rd") {
+		t.Error("hasControlChar misclassified input")
+	}
+}
