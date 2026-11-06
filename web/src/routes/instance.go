@@ -900,7 +900,7 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		return
 	}
 	if !(instance.Status == model.InstanceStatusRunning || instance.Status == model.InstanceStatusRescuing) {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running state", nil)
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running or rescuing state", nil)
 		logger.Error(err)
 		return
 	}
