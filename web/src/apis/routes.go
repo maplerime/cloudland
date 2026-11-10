@@ -48,10 +48,10 @@ func Register() (r *gin.Engine) {
 
 	r.POST("/api/v1/login", userAPI.LoginPost)
 	r.GET("/api/v1/version", versionAPI.Get)
-	r.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
-	r.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 	authGroup := r.Group("").Use(Authorize())
 	{
+		authGroup.POST("/api/v1/alerts/process", alarmAPI.ProcessAlertWebhook)
+		authGroup.POST("/api/v1/alerts/resource-adjustment", adjustAPI.ProcessResourceAdjustmentWebhook)
 		//authGroup.GET("/api/v1/version", versionAPI.Get)
 		authGroup.GET("/api/v1/zones", zoneAPI.List)
 		authGroup.POST("/api/v1/zones", zoneAPI.Create)

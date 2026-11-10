@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
@@ -42,6 +43,26 @@ const MaxmumSnapshot = 64
 type InstanceAdmin struct{}
 
 type InstanceView struct{}
+
+// loadInstanceRouter tolerates stale VPC references on instances rediscovered
+// after deletion. Keep RouterID intact for cleanup; a report cannot restore the
+// VPC's network resources.
+func loadInstanceRouter(db *gorm.DB, instance *model.Instance) error {
+	instance.Router = nil
+	if instance.RouterID <= 0 {
+		return nil
+	}
+	router := &model.Router{Model: model.Model{ID: instance.RouterID}}
+	if err := db.Take(router).Error; err != nil {
+		if gorm.IsRecordNotFoundError(err) {
+			return nil
+		}
+		logger.Errorf("Failed to query router for instance %d, %v", instance.ID, err)
+		return NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
+	}
+	instance.Router = router
+	return nil
+}
 
 type ExecutionCommand struct {
 	Control string
@@ -878,19 +899,35 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		logger.Error(err)
 		return
 	}
-	if instance.Status != model.InstanceStatusRunning {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running state", nil)
+	if !(instance.Status == model.InstanceStatusRunning || instance.Status == model.InstanceStatusRescuing) {
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running or rescuing state", nil)
+		logger.Error(err)
+		return
+	}
+	// user and password come from API/web input: reject control chars and shell-quote them
+	if hasControlChar(user) || hasControlChar(password) {
+		err = NewCLError(ErrInvalidParameter, "User name or password contains invalid characters", nil)
 		logger.Error(err)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' '%s' '%s'", instance.ID, user, password)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' %s %s", instance.ID, shellQuote(user), shellQuote(password))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set password command execution failed", err)
 		return
 	}
 	return
+}
+
+// shellQuote wraps s in single quotes for a POSIX shell; each embedded single quote is closed, escaped and reopened.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// hasControlChar reports whether s has a control character (newline, NUL, ...) that must never reach a command line.
+func hasControlChar(s string) bool {
+	return strings.IndexFunc(s, unicode.IsControl) >= 0
 }
 
 var guestUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
@@ -1098,7 +1135,7 @@ func (a *InstanceAdmin) buildMetadata(ctx context.Context, primaryIface *Interfa
 		outbound = ifaceInfo.Outbound
 		iface, subnet, err = a.createInterface(ctx, ifaceInfo, instance, ifname)
 		if err != nil {
-			logger.Errorf("Allocate address for secondary subnet %s--%s/%s failed, %v", subnet.Name, subnet.Network, subnet.Netmask, err)
+			logger.Errorf("Allocate address for secondary interface %s failed, %v", ifname, err)
 			return
 		}
 		interfaces = append(interfaces, iface)
@@ -1461,13 +1498,8 @@ func (a *InstanceAdmin) Get(ctx context.Context, id int64) (instance *model.Inst
 		logger.Errorf("Failed to query interfaces %v", err)
 		return nil, NewCLError(ErrSQLSyntaxError, "Failed to query interfaces for instance", err)
 	}
-	if instance.RouterID > 0 {
-		instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
-		if err = db.Take(instance.Router).Error; err != nil {
-			logger.Errorf("Failed to query router, %v", err)
-			err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
-			return
-		}
+	if err = loadInstanceRouter(db, instance); err != nil {
+		return
 	}
 	permit := memberShip.ValidateOwner(model.Reader, instance.Owner)
 	if !permit {
@@ -1611,13 +1643,8 @@ func (a *InstanceAdmin) List(ctx context.Context, offset, limit int64, order, qu
 			return
 		}
 
-		if instance.RouterID > 0 {
-			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
-			if err = db.Take(instance.Router).Error; err != nil {
-				logger.Errorf("Failed to query router, %v", err)
-				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
-				return
-			}
+		if err = loadInstanceRouter(db, instance); err != nil {
+			return
 		}
 		permit := memberShip.CheckPermission(model.Admin)
 		if permit {
@@ -1738,13 +1765,8 @@ func (a *InstanceAdmin) List4View(ctx context.Context, offset, limit int64, orde
 			return
 		}
 
-		if instance.RouterID > 0 {
-			instance.Router = &model.Router{Model: model.Model{ID: instance.RouterID}}
-			if err = db.Take(instance.Router).Error; err != nil {
-				logger.Errorf("Failed to query router, %v", err)
-				err = NewCLError(ErrRouterNotFound, "Failed to query router for instance", err)
-				return
-			}
+		if err = loadInstanceRouter(db, instance); err != nil {
+			return
 		}
 		permit := memberShip.CheckPermission(model.Admin)
 		if permit {

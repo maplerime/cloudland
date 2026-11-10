@@ -352,7 +352,7 @@ func CreateInterface(ctx context.Context, subnet *model.Subnet, ID, owner int64,
 	err = db.Create(iface).Error
 	if err != nil {
 		logger.Error("Failed to create interface, ", err)
-		return
+		return nil, err
 	}
 	iface.Address, err = AllocateAddress(ctx, subnet, iface.ID, address, "native")
 	if err != nil {

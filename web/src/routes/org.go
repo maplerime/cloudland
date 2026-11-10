@@ -97,6 +97,8 @@ func (a *OrgAdmin) Create(ctx context.Context, name, owner, uuid string) (org *m
 	sgCtx := ms.SetContext(ctx)
 	if _, sgErr := secgroupAdmin.GetDefaultSecgroup(sgCtx); sgErr != nil {
 		logger.Errorf("Failed to create default SG for org %s: %+v", name, sgErr)
+		err = sgErr
+		return
 	}
 	return
 }

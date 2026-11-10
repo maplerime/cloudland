@@ -77,6 +77,15 @@
         and ((ecc_webhook_url | trim) != '')
       }}
 
+- name: Validate Cloudland webhook API key
+  assert:
+    that:
+      - alert_webhook_api_key | default('') | trim is match('^cl_[0-9a-f-]{36}_[0-9a-f]{64}$')
+    fail_msg: "Set alert_webhook_api_key in netconf.yml to a Cloudland admin API key."
+    quiet: true
+  no_log: true
+  tags: [monitor, resource_adjustment]
+
 - name: Validate Alertmanager variables
   fail:
     msg: "Must define {{ item }} for task"
@@ -141,7 +150,6 @@
   shell: |
     rm -f /etc/apt/sources.list.d/grafana*.list
     rm -f /etc/apt/sources.list.d/packages_grafana*.list
-    rm -f /etc/apt/keyrings/grafana*
     rm -f /usr/share/keyrings/grafana*
   ignore_errors: true
   tags: [monitor]
@@ -155,19 +163,32 @@
     mode: '0755'
   tags: [monitor]
 
+- name: Download Grafana GPG key
+  delegate_to: localhost
+  become: false
+  run_once: true
+  get_url:
+    url: https://packages.grafana.com/gpg.key
+    dest: "{{ playbook_dir }}/grafana.asc"
+    mode: '0644'
+    timeout: 20
+    force: true
+  tags: [monitor]
+
 - name: Install Grafana GPG key
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
-  shell: |
-    curl -fsSL https://packages.grafana.com/gpg.key | gpg --dearmor -o /etc/apt/keyrings/grafana.gpg
-    chmod 644 /etc/apt/keyrings/grafana.gpg
+  copy:
+    src: "{{ playbook_dir }}/grafana.asc"
+    dest: /etc/apt/keyrings/grafana.asc
+    mode: '0644'
   tags: [monitor]
 
 - name: Add Grafana repository
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   apt_repository:
-    repo: "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://packages.grafana.com/oss/deb stable main"
+    repo: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://packages.grafana.com/oss/deb stable main"
     state: present
     filename: grafana
     update_cache: "{{ 'grafana' not in ansible_facts.packages }}"
@@ -192,7 +213,6 @@
       shell: |
         rm -f /etc/apt/sources.list.d/docker*.list
         rm -f /etc/apt/sources.list.d/download_docker_com_linux_ubuntu.list
-        rm -f /etc/apt/keyrings/docker*
         rm -f /usr/share/keyrings/docker*
       ignore_errors: true
 
@@ -202,12 +222,22 @@
         state: directory
         mode: '0755'
 
-    - name: Install Docker GPG key
+    - name: Download Docker GPG key
+      delegate_to: localhost
+      become: false
+      run_once: true
       get_url:
         url: https://download.docker.com/linux/ubuntu/gpg
+        dest: "{{ playbook_dir }}/docker.asc"
+        mode: '0644'
+        timeout: 20
+        force: true
+
+    - name: Install Docker GPG key
+      copy:
+        src: "{{ playbook_dir }}/docker.asc"
         dest: /etc/apt/keyrings/docker.asc
         mode: '0644'
-        force: true
 
     - name: Add Docker repository
       apt_repository:
@@ -260,7 +290,7 @@
     - name: Pull Alertmanager image
       docker_image:
         name: quay.io/prometheus/alertmanager
-        tag: v0.26.0
+        tag: v0.28.0
         state: present
         source: pull
       check_mode: no
@@ -279,7 +309,7 @@
     - name: Stop existing alertmanager container
       docker_container:
         name: alertmanager
-        image: "{{ alertmanager_info.container.Config.Image if alertmanager_info.exists else 'quay.io/prometheus/alertmanager:v0.26.0' }}"
+        image: "{{ alertmanager_info.container.Config.Image if alertmanager_info.exists else 'quay.io/prometheus/alertmanager:v0.28.0' }}"
         state: stopped
         stop_timeout: 30
       register: stop_result
@@ -574,6 +604,11 @@
               http_config:
                 tls_config:
                   insecure_skip_verify: true
+                http_headers:
+                  X-API-Key:
+                    secrets:
+                      - '{{ alert_webhook_api_key | trim }}'
+                follow_redirects: false
 
           - name: 'vm-alerts-webhook'
             webhook_configs:
@@ -582,6 +617,11 @@
               http_config:
                 tls_config:
                   insecure_skip_verify: true
+                http_headers:
+                  X-API-Key:
+                    secrets:
+                      - '{{ alert_webhook_api_key | trim }}'
+                follow_redirects: false
 
           - name: 'node-webhook'
             webhook_configs:
@@ -590,6 +630,11 @@
               http_config:
                 tls_config:
                   insecure_skip_verify: true
+                http_headers:
+                  X-API-Key:
+                    secrets:
+                      - '{{ alert_webhook_api_key | trim }}'
+                follow_redirects: false
 
           - name: 'teams-notifications'
             webhook_configs:
@@ -625,6 +670,8 @@
         group: prometheus
         mode: 0644
         force: yes
+      no_log: true
+      diff: false
       tags: [monitor]
 
     - name: Define ECC forward route block (no indent, keep original text)
@@ -644,6 +691,7 @@
 
     # Insert after "  routes:" and indent the entire block by 4 spaces (including the first line)
     - name: Add ECC forward route to Alertmanager
+      diff: false
       blockinfile:
         path: /etc/alertmanager/alertmanager.yml
         state: "{{ 'present' if ecc_webhook_enabled | bool else 'absent' }}"
@@ -652,6 +700,7 @@
         block: "{{ ecc_route_block | indent(4, true) }}"
 
     - name: Add ECC webhook receiver to Alertmanager receivers list
+      diff: false
       blockinfile:
         path: /etc/alertmanager/alertmanager.yml
         state: "{{ 'present' if ecc_webhook_enabled | bool else 'absent' }}"
@@ -667,7 +716,7 @@
     - name: Run Alertmanager container
       docker_container:
         name: alertmanager
-        image: quay.io/prometheus/alertmanager:v0.26.0
+        image: quay.io/prometheus/alertmanager:v0.28.0
         state: started
         restart_policy: unless-stopped
         network_mode: host

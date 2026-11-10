@@ -50,7 +50,7 @@ groups:
         and on(domain, rule_id, target_device)
         (
           (vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"} == 0) or
-          (max by (domain, target_device, rule_id, instance_id) (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1) unless vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"})
+          (max by (domain, target_device, rule_id, instance_id) (up{job="vm-group-metadata", rule_id=~"adjust-bw-.*-{{ rule_group_original }}"} == 1) unless on(domain, rule_id, target_device) vm_bandwidth_adjustment_status{rule_id=~"adjust-bw-.*-{{ rule_group_original }}", type="out"})
         )
       )
       * on(domain, target_device) group_left()
