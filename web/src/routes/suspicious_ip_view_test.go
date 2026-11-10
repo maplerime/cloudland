@@ -84,6 +84,18 @@ func TestCheckConnectionTabs(t *testing.T) {
 	})
 	m.Get("/check_connection", checkConnectionView.List)
 	m.Get("/check_connection/suspicious", suspiciousIPView.List)
+	m.Post("/check_connection/suspicious/:uuid/block", suspiciousIPView.Block)
+	m.Post("/check_connection/suspicious/:uuid/unblock", suspiciousIPView.Unblock)
+	previousAdmin := suspiciousIPAdmin
+	t.Cleanup(func() { suspiciousIPAdmin = previousAdmin })
+	var blockCommands []string
+	suspiciousIPAdmin = &SuspiciousIPAdmin{execute: func(_ context.Context, control, command string) error {
+		if control != "toall=" {
+			t.Fatalf("unexpected block control: %s", control)
+		}
+		blockCommands = append(blockCommands, command)
+		return nil
+	}}
 	request := func(path string, code int) *httptest.ResponseRecorder {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -109,10 +121,44 @@ func TestCheckConnectionTabs(t *testing.T) {
 	if strings.Contains(output, "192.0.2.250") || strings.Contains(output, `name="ips"`) {
 		t.Fatal("suspicious tab contains the connection check form or records")
 	}
+	entry := &model.SuspiciousIP{}
+	if err := db.Where("ip = ?", "198.51.100.1").Take(entry).Error; err != nil {
+		t.Fatal(err)
+	}
+	postAction := func(action, body string, code int) {
+		t.Helper()
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/check_connection/suspicious/"+entry.UUID+"/"+action, strings.NewReader(body))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		m.ServeHTTP(w, r)
+		if w.Code != code {
+			t.Fatalf("web block returned %d: %s", w.Code, w.Body.String())
+		}
+		if code == 302 && w.Header().Get("Location") != "/check_connection/suspicious" {
+			t.Fatal("block did not return to suspicious IP tab")
+		}
+	}
+	postAction("block", "timeout=-1", 400)
+	postAction("block", "timeout=1800", 302)
+	if len(blockCommands) != 1 || blockCommands[0] != "/opt/cloudland/scripts/kvm/operation/block_ip.sh '198.51.100.1' 'block_dst' '1800'" {
+		t.Fatalf("web timeout not dispatched correctly: %q", blockCommands)
+	}
+	postAction("unblock", "", 302)
+	if len(blockCommands) != 2 || blockCommands[1] != "/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '198.51.100.1'" {
+		t.Fatalf("web unblock not dispatched correctly: %q", blockCommands)
+	}
+	if _, err := suspiciousIPAdmin.Get(ctx, entry.UUID); err != nil {
+		t.Fatal("web unblock deleted record")
+	}
 	ctx = (&MemberShip{UserID: 7, OrgID: 8, Role: model.Writer}).SetContext(SetContextDB(context.Background(), db))
 	output = request("/check_connection", 200).Body.String()
 	if strings.Contains(output, `href="/check_connection/suspicious"`) || !strings.Contains(output, "192.0.2.250") {
 		t.Fatal("admin tab visible to writer or check list missing")
 	}
 	request("/check_connection/suspicious", 403)
+	postAction("block", "timeout=1800", 403)
+	postAction("unblock", "", 403)
+	if len(blockCommands) != 2 {
+		t.Fatal("non-admin issued a block")
+	}
 }

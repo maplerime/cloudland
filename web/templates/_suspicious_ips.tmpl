@@ -16,10 +16,44 @@
             <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td><td>{{if .LastSeenNode}}{{.LastSeenNode}}{{end}}</td>
             <td>{{if .BlockedAt}}{{.BlockedAt.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td><td>{{.BlockError}}</td>
             <td>
-                <a class="ui tiny button" href="/check_connection/suspicious/{{.UUID}}/edit">{{$.i18n.Tr "Edit"}}</a>
-                <form style="display:inline" action="/check_connection/suspicious/{{.UUID}}/block" method="post"><button class="ui orange tiny button">{{$.i18n.Tr "Suspicious_IP_Block"}}</button></form>
-                <form style="display:inline" action="/check_connection/suspicious/{{.UUID}}/delete" method="post"><button class="ui red tiny button">{{$.i18n.Tr "Delete"}}</button></form>
+                <div class="ui compact dropdown button suspicious-ip-actions" tabindex="0" data-base-url="/check_connection/suspicious/{{.UUID}}" data-ip="{{.IP}}">
+                    {{$.i18n.Tr "Actions"}} <i class="dropdown icon"></i>
+                    <div class="menu">
+                        <a class="item" href="#" data-action="block"><i class="ban icon"></i>{{$.i18n.Tr "Suspicious_IP_Block"}}</a>
+                        <a class="item" href="#" data-action="unblock"><i class="unlock icon"></i>{{$.i18n.Tr "Suspicious_IP_Unblock"}}</a>
+                        <a class="item" href="/check_connection/suspicious/{{.UUID}}/edit"><i class="edit icon"></i>{{$.i18n.Tr "Edit"}}</a>
+                        <div class="divider"></div>
+                        <a class="item" href="#" data-action="delete"><i class="trash icon"></i>{{$.i18n.Tr "Delete"}}</a>
+                    </div>
+                </div>
             </td>
         </tr>{{else}}<tr><td colspan="7">{{.i18n.Tr "Suspicious_IP_Empty"}}</td></tr>{{end}}</tbody>
     </table></div>
 </section>
+<div class="ui small modal" id="suspicious-block-modal">
+    <div class="header">{{.i18n.Tr "Suspicious_IP_Block"}} <span class="suspicious-selected-ip"></span></div>
+    <div class="content">
+        <form class="ui form" id="suspicious-block-form" method="post">
+            <div class="required field"><label for="suspicious-block-timeout">{{.i18n.Tr "Suspicious_IP_BlockTimeout"}}</label>
+                <input id="suspicious-block-timeout" name="timeout" type="number" value="3600" min="0" max="2147483" step="1" required>
+            </div>
+        </form>
+    </div>
+    <div class="actions">
+        <button type="button" class="ui cancel button">{{.i18n.Tr "Cancel"}}</button>
+        <button type="submit" form="suspicious-block-form" class="ui orange button">{{.i18n.Tr "Suspicious_IP_Block"}}</button>
+    </div>
+</div>
+<div class="ui small modal" id="suspicious-delete-modal">
+    <div class="header">{{.i18n.Tr "Delete"}} <span class="suspicious-selected-ip"></span></div>
+    <div class="content">
+        <p>{{.i18n.Tr "Suspicious_IP_Delete_Confirm"}}</p>
+        <form id="suspicious-delete-form" method="post"></form>
+    </div>
+    <div class="actions">
+        <button type="button" class="ui cancel button">{{.i18n.Tr "Cancel"}}</button>
+        <button type="submit" form="suspicious-delete-form" class="ui red button">{{.i18n.Tr "Suspicious_IP_ConfirmDelete"}}</button>
+    </div>
+</div>
+<form id="suspicious-unblock-form" method="post" hidden></form>
+<script src="/js/suspicious_ips.js"></script>

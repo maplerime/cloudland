@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	. "web/src/common"
 	"web/src/model"
@@ -104,14 +105,43 @@ func (v *SuspiciousIPView) Block(c *macaron.Context) {
 	if !v.permitted(c) {
 		return
 	}
+	var timeout *int64
+	if value := c.QueryTrim("timeout"); value != "" {
+		seconds, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			v.fail(c, err)
+			return
+		}
+		timeout = &seconds
+		if err := ValidateIPBlockTimeout(timeout); err != nil {
+			v.fail(c, err)
+			return
+		}
+	}
 	entry, err := suspiciousIPAdmin.Get(c.Req.Context(), c.Params(":uuid"))
 	if err != nil {
 		v.fail(c, err)
 		return
 	}
-	entry, err = suspiciousIPAdmin.Block(c.Req.Context(), entry.IP)
+	entry, err = suspiciousIPAdmin.Block(c.Req.Context(), entry.IP, timeout)
 	// Dispatch failures are visible in the list alongside the retained record.
 	if err != nil && entry == nil {
+		v.fail(c, err)
+		return
+	}
+	c.Redirect("/check_connection/suspicious")
+}
+
+func (v *SuspiciousIPView) Unblock(c *macaron.Context) {
+	if !v.permitted(c) {
+		return
+	}
+	entry, err := suspiciousIPAdmin.Get(c.Req.Context(), c.Params(":uuid"))
+	if err != nil {
+		v.fail(c, err)
+		return
+	}
+	if err := suspiciousIPAdmin.Unblock(c.Req.Context(), entry.IP); err != nil {
 		v.fail(c, err)
 		return
 	}

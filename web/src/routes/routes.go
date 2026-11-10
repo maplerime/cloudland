@@ -297,6 +297,7 @@ func New() (m *macaron.Macaron) {
 	m.Post("/check_connection/suspicious/:uuid/edit", suspiciousIPView.Save)
 	m.Post("/check_connection/suspicious/:uuid/delete", suspiciousIPView.Delete)
 	m.Post("/check_connection/suspicious/:uuid/block", suspiciousIPView.Block)
+	m.Post("/check_connection/suspicious/:uuid/unblock", suspiciousIPView.Unblock)
 	m.Get("/ip-whitelists", ipWhitelistView.List)
 	m.Get("/ip-whitelists/new", ipWhitelistView.New)
 	m.Post("/ip-whitelists/new", ipWhitelistView.Create)

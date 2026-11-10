@@ -2,6 +2,7 @@ package apis
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"time"
@@ -51,6 +52,10 @@ type SuspiciousIPPayload struct {
 type SuspiciousIPPatchPayload struct {
 	IP   *string `json:"ip" binding:"omitempty,ip"`
 	Note *string `json:"note" binding:"omitempty,max=4096"`
+}
+
+type SuspiciousIPBlockOptions struct {
+	Timeout *int64 `json:"timeout" binding:"omitempty,gte=0,lte=2147483"`
 }
 
 type SuspiciousIPResponse struct {
@@ -176,15 +181,47 @@ func (a *SuspiciousIPAPI) Block(c *gin.Context) {
 	}
 	payload := &struct {
 		IP string `json:"ip" binding:"required,ip"`
+		SuspiciousIPBlockOptions
 	}{}
 	if err := c.ShouldBindJSON(payload); err != nil {
 		suspiciousIPError(c, err)
 		return
 	}
-	a.block(c, payload.IP)
+	a.block(c, payload.IP, payload.Timeout)
 }
 
 func (a *SuspiciousIPAPI) BlockRecord(c *gin.Context) {
+	if !suspiciousIPAPIPermitted(c) {
+		return
+	}
+	payload := &SuspiciousIPBlockOptions{}
+	if err := c.ShouldBindJSON(payload); err != nil && !errors.Is(err, io.EOF) {
+		suspiciousIPError(c, err)
+		return
+	}
+	entry, err := suspiciousIPAdminAPI.Get(c.Request.Context(), c.Param("uuid"))
+	if err != nil {
+		suspiciousIPError(c, err)
+		return
+	}
+	a.block(c, entry.IP, payload.Timeout)
+}
+
+func (a *SuspiciousIPAPI) Unblock(c *gin.Context) {
+	if !suspiciousIPAPIPermitted(c) {
+		return
+	}
+	payload := &struct {
+		IP string `json:"ip" binding:"required,ip"`
+	}{}
+	if err := c.ShouldBindJSON(payload); err != nil {
+		suspiciousIPError(c, err)
+		return
+	}
+	a.unblock(c, payload.IP)
+}
+
+func (a *SuspiciousIPAPI) UnblockRecord(c *gin.Context) {
 	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
@@ -193,11 +230,19 @@ func (a *SuspiciousIPAPI) BlockRecord(c *gin.Context) {
 		suspiciousIPError(c, err)
 		return
 	}
-	a.block(c, entry.IP)
+	a.unblock(c, entry.IP)
 }
 
-func (a *SuspiciousIPAPI) block(c *gin.Context, ip string) {
-	entry, err := suspiciousIPAdminAPI.Block(c.Request.Context(), ip)
+func (a *SuspiciousIPAPI) unblock(c *gin.Context, ip string) {
+	if err := suspiciousIPAdminAPI.Unblock(c.Request.Context(), ip); err != nil {
+		suspiciousIPError(c, err)
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"ip": ip, "message": "unblock request submitted"})
+}
+
+func (a *SuspiciousIPAPI) block(c *gin.Context, ip string, timeout *int64) {
+	entry, err := suspiciousIPAdminAPI.Block(c.Request.Context(), ip, timeout)
 	if err != nil {
 		if entry != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": err.Error(), "entry": suspiciousIPResponse(entry)})

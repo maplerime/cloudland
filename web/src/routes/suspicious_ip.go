@@ -20,6 +20,15 @@ type SuspiciousIPAdmin struct {
 	execute func(context.Context, string, string) error
 }
 
+const MaxIPBlockTimeout int64 = 2147483
+
+func ValidateIPBlockTimeout(timeout *int64) error {
+	if timeout != nil && (*timeout < 0 || *timeout > MaxIPBlockTimeout) {
+		return fmt.Errorf("timeout must be between 0 and %d seconds (0 means permanent)", MaxIPBlockTimeout)
+	}
+	return nil
+}
+
 func normalizeSuspiciousIP(value string) (string, error) {
 	ip := net.ParseIP(strings.TrimSpace(value))
 	if ip == nil {
@@ -139,9 +148,35 @@ func (a *SuspiciousIPAdmin) Delete(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
-	ip, err := normalizeSuspiciousIP(entry.IP)
+	if _, err := a.submitUnblock(ctx, entry.IP); err != nil {
+		return err
+	}
+	_, db := GetContextDB(ctx)
+	// The unique IP may be discovered again after an operator deletes the record.
+	return db.Unscoped().Delete(entry).Error
+}
+
+// Unblock retains an existing suspicious IP record. An address supplied through
+// the API need not already have a record in order to be unblocked.
+func (a *SuspiciousIPAdmin) Unblock(ctx context.Context, value string) error {
+	if err := suspiciousIPPermitted(ctx); err != nil {
+		return err
+	}
+	ip, err := a.submitUnblock(ctx, value)
 	if err != nil {
 		return err
+	}
+	_, db := GetContextDB(ctx)
+	return db.Model(&model.SuspiciousIP{}).Where("ip = ?", ip).Updates(map[string]interface{}{
+		"status": model.SuspiciousIPPending, "blocked_at": nil, "block_error": "",
+	}).Error
+}
+
+// Both explicit unblocking and deletion share this fleet-wide dispatch path.
+func (a *SuspiciousIPAdmin) submitUnblock(ctx context.Context, value string) (string, error) {
+	ip, err := normalizeSuspiciousIP(value)
+	if err != nil {
+		return "", err
 	}
 	execute := a.execute
 	if execute == nil {
@@ -149,17 +184,18 @@ func (a *SuspiciousIPAdmin) Delete(ctx context.Context, id string) error {
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '%s'", ip)
 	if err := execute(ctx, "toall=", command); err != nil {
-		return fmt.Errorf("failed to submit IP unblock: %w", err)
+		return "", fmt.Errorf("failed to submit IP unblock: %w", err)
 	}
-	_, db := GetContextDB(ctx)
-	// The unique IP may be discovered again after an operator deletes the record.
-	return db.Unscoped().Delete(entry).Error
+	return ip, nil
 }
 
 // Block also accepts addresses never observed before, so API initiated blocks
 // are always represented in the same list as node observations.
-func (a *SuspiciousIPAdmin) Block(ctx context.Context, value string) (*model.SuspiciousIP, error) {
+func (a *SuspiciousIPAdmin) Block(ctx context.Context, value string, timeout *int64) (*model.SuspiciousIP, error) {
 	if err := suspiciousIPPermitted(ctx); err != nil {
+		return nil, err
+	}
+	if err := ValidateIPBlockTimeout(timeout); err != nil {
 		return nil, err
 	}
 	ip, err := normalizeSuspiciousIP(value)
@@ -185,7 +221,11 @@ func (a *SuspiciousIPAdmin) Block(ctx context.Context, value string) (*model.Sus
 	if execute == nil {
 		execute = HyperExecute
 	}
-	dispatchErr := execute(ctx, "toall=", fmt.Sprintf("/opt/cloudland/scripts/kvm/operation/block_ip.sh '%s' 'block_dst'", ip))
+	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/operation/block_ip.sh '%s' 'block_dst'", ip)
+	if timeout != nil {
+		command += fmt.Sprintf(" '%d'", *timeout)
+	}
+	dispatchErr := execute(ctx, "toall=", command)
 	updates := map[string]interface{}{"status": model.SuspiciousIPBlocked, "blocked_at": now, "block_error": ""}
 	if dispatchErr != nil {
 		updates = map[string]interface{}{"status": model.SuspiciousIPBlockFailed, "block_error": dispatchErr.Error()}

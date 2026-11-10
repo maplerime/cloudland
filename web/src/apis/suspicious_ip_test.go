@@ -40,7 +40,9 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	router.PATCH(base+"/suspicious/:uuid", suspiciousIPAPI.Patch)
 	router.DELETE(base+"/suspicious/:uuid", suspiciousIPAPI.Delete)
 	router.POST(base+"/suspicious/:uuid/block", suspiciousIPAPI.BlockRecord)
+	router.POST(base+"/suspicious/:uuid/unblock", suspiciousIPAPI.UnblockRecord)
 	router.POST(base+"/block", suspiciousIPAPI.Block)
+	router.POST(base+"/unblock", suspiciousIPAPI.Unblock)
 	request := func(method, path, body string, code int) *httptest.ResponseRecorder {
 		t.Helper()
 		w := httptest.NewRecorder()
@@ -75,14 +77,24 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	defer func() { http.DefaultClient.Transport = previous }()
 	commands := 0
 	failRequest := false
+	expectedCommands := []string{
+		"/opt/cloudland/scripts/kvm/operation/block_ip.sh '192.0.2.1' 'block_dst' '900'",
+		"/opt/cloudland/scripts/kvm/operation/block_ip.sh '198.51.100.20' 'block_dst'",
+		"/opt/cloudland/scripts/kvm/operation/block_ip.sh '192.0.2.1' 'block_dst'",
+		"/opt/cloudland/scripts/kvm/operation/block_ip.sh '203.0.113.2' 'block_dst' '0'",
+		"/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'",
+		"/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'",
+		"/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '198.51.100.20'",
+		"/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '203.0.113.55'",
+		"/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'",
+		"/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'",
+	}
 	http.DefaultClient.Transport = suspiciousIPTransport(func(r *http.Request) (*http.Response, error) {
 		var command ExecuteRequest
 		if err := json.NewDecoder(r.Body).Decode(&command); err != nil {
 			t.Fatal(err)
 		}
-		isBlock := strings.Contains(command.Command, "/operation/block_ip.sh '") && strings.HasSuffix(command.Command, " 'block_dst'")
-		isUnblock := command.Command == "/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'"
-		if command.Control != "toall=" || (!isBlock && !isUnblock) {
+		if commands >= len(expectedCommands) || command.Control != "toall=" || command.Command != expectedCommands[commands] {
 			t.Fatalf("bad broadcast: %+v", command)
 		}
 		commands++
@@ -91,8 +103,13 @@ func TestSuspiciousIPAPI(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"Status":"accepted"}`))}, nil
 	})
-	request("POST", "/suspicious/"+id+"/block", "", 202)
+	for _, value := range []string{"-1", "2147484", "0.5", `"invalid"`} {
+		request("POST", "/suspicious/"+id+"/block", `{"timeout":`+value+`}`, 400)
+		request("POST", "/block", `{"ip":"192.0.2.1","timeout":`+value+`}`, 400)
+	}
+	request("POST", "/suspicious/"+id+"/block", `{"timeout":900}`, 202)
 	request("POST", "/block", `{"ip":"198.51.100.20"}`, 202)
+	request("POST", "/suspicious/"+id+"/block", "", 202)
 	w = request("GET", "/suspicious", "", 200)
 	if strings.Contains(w.Body.String(), `"status":`) {
 		t.Fatal("list response includes status")
@@ -110,7 +127,7 @@ func TestSuspiciousIPAPI(t *testing.T) {
 		}
 	}
 	failRequest = true
-	request("POST", "/block", `{"ip":"203.0.113.2"}`, 502)
+	request("POST", "/block", `{"ip":"203.0.113.2","timeout":0}`, 502)
 	w = request("GET", "/suspicious?status=block_failed", "", 200)
 	if err = json.Unmarshal(w.Body.Bytes(), &list); err != nil || list.Total != 3 {
 		t.Fatalf("obsolete status parameter filtered results: %s %v", w.Body.String(), err)
@@ -118,9 +135,25 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "203.0.113.2") {
 		t.Fatal("failed block not retained")
 	}
-	if commands != 3 {
-		t.Fatalf("expected 3 block calls, got %d", commands)
+	if commands != 4 {
+		t.Fatalf("expected 4 block calls, got %d", commands)
 	}
+	request("POST", "/suspicious/"+id+"/unblock", "", 400)
+	failRequest = false
+	request("POST", "/suspicious/"+id+"/unblock", "", 202)
+	w = request("GET", "/suspicious/"+id, "", 200)
+	if err = json.Unmarshal(w.Body.Bytes(), &entry); err != nil || entry.BlockedAt != nil || entry.Note != "updated" {
+		t.Fatalf("unblock removed record or left block metadata: %s %v", w.Body.String(), err)
+	}
+	request("POST", "/unblock", `{"ip":"198.51.100.20"}`, 202)
+	request("POST", "/unblock", `{"ip":"203.0.113.55"}`, 202)
+	w = request("GET", "/suspicious?ip=203.0.113.55", "", 200)
+	if err = json.Unmarshal(w.Body.Bytes(), &list); err != nil || list.Total != 0 {
+		t.Fatal("unblocking unknown IP created a suspicious record")
+	}
+	request("POST", "/unblock", `{"ip":"invalid"}`, 400)
+	request("POST", "/suspicious/missing/unblock", "", 404)
+	failRequest = true
 	request("DELETE", "/suspicious/"+id, "", 400)
 	request("GET", "/suspicious/"+id, "", 200)
 	failRequest = false
@@ -132,7 +165,9 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	request("POST", "/suspicious", `{"ip":"192.0.2.4"}`, 403)
 	request("PATCH", "/suspicious/missing", `{"note":"bad"}`, 403)
 	request("DELETE", "/suspicious/missing", "", 403)
-	if commands != 5 {
+	request("POST", "/unblock", `{"ip":"192.0.2.4"}`, 403)
+	request("POST", "/suspicious/missing/unblock", "", 403)
+	if commands != 10 {
 		t.Fatalf("unexpected block/unblock calls: %d", commands)
 	}
 }
