@@ -39,8 +39,8 @@ fi
                         IPSET_FIXTURE=str(self.fixture))
         self.target = self.root / 'run/check_connection.ip_list'
 
-    def run_check(self, ip):
-        return subprocess.run([str(self.script), ip], env=self.env,
+    def run_check(self, ip, *args):
+        return subprocess.run([str(self.script), ip, *args], env=self.env,
                               capture_output=True, text=True)
 
     def test_exact_match_and_duplicate(self):
@@ -92,6 +92,32 @@ fi
         (self.root / 'ipset').write_text('#!/bin/sh\nexit 1\n')
         self.assertNotEqual(self.run_check('192.0.2.10').returncode, 0)
         self.assertFalse(self.target.exists())
+
+    def test_delete_is_exact_idempotent_and_does_not_need_ipset(self):
+        self.assertEqual(self.run_check('192.0.2.10', 'delete').returncode, 0)
+        self.target.parent.mkdir()
+        self.target.write_text('192.0.2.10\n192.0.2.100\n2001:db8::10\n')
+        inode = self.target.stat().st_ino
+        (self.root / 'ipset').write_text('#!/bin/sh\nexit 1\n')
+        self.assertEqual(self.run_check('192.0.2.10', 'delete').returncode, 0)
+        self.assertEqual(self.target.read_text(), '192.0.2.100\n2001:db8::10\n')
+        self.assertEqual(self.run_check('192.0.2.10', 'delete').returncode, 0)
+        self.assertEqual(self.run_check('2001:db8::10', 'delete').returncode, 0)
+        self.assertEqual(self.run_check('192.0.2.100', 'delete').returncode, 0)
+        self.assertEqual(self.target.read_text(), '')
+        self.assertEqual(self.target.stat().st_ino, inode)
+
+    def test_concurrent_add_and_delete_keep_other_ips(self):
+        self.assertEqual(self.run_check('192.0.2.10').returncode, 0)
+        processes = []
+        for _ in range(5):
+            for args in (['192.0.2.10', 'delete'], ['2001:db8::10']):
+                processes.append(subprocess.Popen([str(self.script), *args], env=self.env,
+                                                   stdout=subprocess.PIPE, stderr=subprocess.PIPE))
+        for process in processes:
+            _, error = process.communicate(timeout=10)
+            self.assertEqual(process.returncode, 0, error)
+        self.assertEqual(self.target.read_text(), '2001:db8::10\n')
 
 
 if __name__ == '__main__':

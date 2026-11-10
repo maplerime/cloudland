@@ -88,6 +88,134 @@ func TestCheckConnectionInput(t *testing.T) {
 	}
 }
 
+func TestCheckConnectionDelete(t *testing.T) {
+	db, err := gorm.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = db.AutoMigrate(&model.CheckConnection{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Writer}).SetContext(SetContextDB(context.Background(), db))
+	entries := []*model.CheckConnection{
+		{Owner: 8, IP: "192.0.2.1", Status: "submitted"}, {Owner: 8, IP: "192.0.2.1", Status: "submitted"},
+		{Owner: 9, IP: "192.0.2.1", Status: "submitted"}, {Owner: 8, IP: "192.0.2.2", Status: "submitted"},
+	}
+	for _, entry := range entries {
+		if err = db.Create(entry).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	commands := []string{}
+	fail := false
+	a := &CheckConnectionAdmin{execute: func(_ context.Context, control, command string) error {
+		if control != "toall=" {
+			t.Fatal(control)
+		}
+		commands = append(commands, command)
+		if fail {
+			return errors.New("SCI unavailable")
+		}
+		return nil
+	}}
+	reader := (&MemberShip{OrgID: 8, Role: model.Reader}).SetContext(ctx)
+	if err = a.Delete(reader, entries[0].UUID); err == nil {
+		t.Fatal("reader delete allowed")
+	}
+	if err = a.Delete(ctx, entries[2].UUID); err == nil {
+		t.Fatal("cross-organization delete allowed")
+	}
+	for _, entry := range entries[:2] {
+		if err = a.Delete(ctx, entry.UUID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(commands) != 0 {
+		t.Fatal("IP still requested by another record was removed from nodes")
+	}
+	other := (&MemberShip{OrgID: 9, Role: model.Writer}).SetContext(ctx)
+	if err = a.Delete(other, entries[2].UUID); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 1 || commands[0] != "/opt/cloudland/scripts/kvm/check_connection.sh '192.0.2.1' 'delete'" {
+		t.Fatalf("wrong removal: %q", commands)
+	}
+	fail = true
+	if err = a.Delete(ctx, entries[3].UUID); err == nil {
+		t.Fatal("cleanup failure ignored")
+	}
+	var stored model.CheckConnection
+	if err = db.Where("uuid = ?", entries[3].UUID).Take(&stored).Error; err != nil {
+		t.Fatal("failed cleanup deleted record")
+	}
+	fail = false
+	if err = a.Delete(ctx, entries[3].UUID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckConnectionInstanceCleanup(t *testing.T) {
+	db, err := gorm.Open("sqlite3", ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	if err = db.AutoMigrate(&model.CheckConnection{}, &model.Interface{}, &model.Address{}, &model.FloatingIp{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := SetContextDB(context.Background(), db)
+	iface := &model.Interface{Instance: 11}
+	if err = db.Create(iface).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, addr := range []*model.Address{{Address: "192.0.2.1", Interface: iface.ID}, {Address: "2001:db8::10", SecondInterface: iface.ID}} {
+		if err = db.Create(addr).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	fip := &model.FloatingIp{InstanceID: 11, FipAddress: "198.51.100.10", IntAddress: "192.0.2.1"}
+	if err = db.Create(fip).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, ip := range []string{"192.0.2.1", "2001:db8::10", "198.51.100.10", "203.0.113.99"} {
+		if err = db.Create(&model.CheckConnection{Owner: int64(i + 1), IP: ip, Status: "submitted"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	commands := map[string]bool{}
+	a := &CheckConnectionAdmin{execute: func(_ context.Context, control, command string) error {
+		if control != "toall=" {
+			t.Fatal(control)
+		}
+		commands[command] = true
+		return nil
+	}}
+	ips, err := a.instanceIPs(ctx, 11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The normal deletion flow detaches floating IPs before final cleanup.
+	if err = db.Model(fip).Update("instance_id", 0).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err = a.DeleteByIPs(ctx, ips); err != nil {
+		t.Fatal(err)
+	}
+	for _, ip := range []string{"192.0.2.1", "2001:db8::10", "198.51.100.10"} {
+		if !commands[fmt.Sprintf("/opt/cloudland/scripts/kvm/check_connection.sh '%s' 'delete'", ip)] {
+			t.Fatalf("IP %s was not removed", ip)
+		}
+	}
+	var entries []model.CheckConnection
+	if err = db.Find(&entries).Error; err != nil || len(entries) != 1 || entries[0].IP != "203.0.113.99" {
+		t.Fatalf("unrelated checks changed: %+v %v", entries, err)
+	}
+	if err = a.DeleteByInstance(ctx, &model.Instance{Model: model.Model{ID: 11}}); err != nil || len(commands) != 3 {
+		t.Fatalf("duplicate callback cleanup: %v %q", err, commands)
+	}
+}
+
 func TestCheckConnectionTemplate(t *testing.T) {
 	content, err := os.ReadFile("../../templates/check_connection.tmpl")
 	if err != nil {

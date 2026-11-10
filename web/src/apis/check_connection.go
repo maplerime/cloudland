@@ -84,3 +84,15 @@ func (a *CheckConnectionAPI) List(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"offset": offset, "total": total, "limit": len(entries), "entries": response})
 }
+
+func (a *CheckConnectionAPI) Delete(c *gin.Context) {
+	if !GetMemberShip(c.Request.Context()).CheckPermission(model.Writer) {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized", nil)
+		return
+	}
+	if err := checkConnectionAdminAPI.Delete(c.Request.Context(), c.Param("uuid")); err != nil {
+		ErrorResponse(c, http.StatusBadRequest, "Failed to delete connection check", err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

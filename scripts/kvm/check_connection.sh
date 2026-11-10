@@ -3,10 +3,28 @@
 cd "$(dirname "$0")"
 source ../cloudrc
 
-[ $# -ne 1 ] && echo "$0 <ip>" && exit 1
+if [ $# -lt 1 ] || [ $# -gt 2 ] || { [ $# -eq 2 ] && [ "$2" != delete ]; }; then
+    echo "$0 <ip> [delete]"
+    exit 1
+fi
 
 ip=$1
 file=$run_dir/check_connection.ip_list
+
+if [ "${2:-}" = delete ]; then
+    [ -f "$file" ] || exit 0
+    (
+        flock -x 9 || exit 1
+        remaining=$(grep -Fxv -- "$ip" "$file")
+        [ $? -gt 1 ] && exit 1
+        if [ -n "$remaining" ]; then
+            printf '%s\n' "$remaining" > "$file"
+        else
+            : > "$file"
+        fi
+    ) 9<>"$file"
+    exit $?
+fi
 
 sets=$(ipset list -name) || exit 1
 for set in $sets; do

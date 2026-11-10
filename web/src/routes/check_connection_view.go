@@ -28,8 +28,8 @@ func (v *CheckConnectionView) List(c *macaron.Context) {
 	c.Data["CanManageSuspicious"] = GetMemberShip(c.Req.Context()).CheckPermission(model.Admin)
 	c.Data["CanWrite"] = GetMemberShip(c.Req.Context()).CheckPermission(model.Writer)
 	SetPaginationData(c, "check_connection", total, limit, offset, config,
-		`["UUID", "IP", "Status", "DispatchError", "CreatedAt"]`,
-		[]string{"UUID", "IP", "Status", "DispatchError", "CreatedAt"})
+		`["UUID", "IP", "Status", "DispatchError", "CreatedAt", "Delete"]`,
+		[]string{"UUID", "IP", "Status", "DispatchError", "CreatedAt", "Delete"})
 	c.HTML(http.StatusOK, "check_connection")
 }
 
@@ -48,6 +48,20 @@ func (v *CheckConnectionView) Create(c *macaron.Context) {
 	if _, err := checkConnectionAdmin.Create(c.Req.Context(), ips); err != nil {
 		c.Data["ErrorMsg"] = err.Error()
 		c.HTML(http.StatusInternalServerError, "500")
+		return
+	}
+	c.Redirect("/check_connection")
+}
+
+func (v *CheckConnectionView) Delete(c *macaron.Context) {
+	if !GetMemberShip(c.Req.Context()).CheckPermission(model.Writer) {
+		c.Data["ErrorMsg"] = "Not authorized for this operation"
+		c.HTML(http.StatusForbidden, "error")
+		return
+	}
+	if err := checkConnectionAdmin.Delete(c.Req.Context(), c.Params(":uuid")); err != nil {
+		c.Data["ErrorMsg"] = err.Error()
+		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
 	c.Redirect("/check_connection")

@@ -23,11 +23,12 @@
         </div>
         <div class="ui unstackable attached table segment">
             <table class="ui unstackable very basic striped table">
-                <thead><tr><th>{{.i18n.Tr "UUID"}}</th><th>{{.i18n.Tr "IP"}}</th><th>{{.i18n.Tr "Check_Connection_Status"}}</th><th>{{.i18n.Tr "Check_Connection_Error"}}</th><th>{{.i18n.Tr "Check_Connection_CreatedAt"}}</th></tr></thead>
+                <thead><tr><th>{{.i18n.Tr "UUID"}}</th><th>{{.i18n.Tr "IP"}}</th><th>{{.i18n.Tr "Check_Connection_Status"}}</th><th>{{.i18n.Tr "Check_Connection_Error"}}</th><th>{{.i18n.Tr "Check_Connection_CreatedAt"}}</th>{{if .CanWrite}}<th>{{.i18n.Tr "Delete"}}</th>{{end}}</tr></thead>
                 <tbody>{{range .Checks}}
                     <tr><td>{{.UUID}}</td><td>{{.IP}}</td><td>{{$.i18n.Tr (printf "Check_Connection_Status_%s" .Status)}}</td><td>{{.DispatchError}}</td><td>{{.CreatedAt}}</td>
+                        {{if $.CanWrite}}<td><form action="/check_connection/{{.UUID}}/delete" method="post" data-confirm="{{$.i18n.Tr "Check_Connection_Delete_Confirm"}}" onsubmit="return window.confirm(this.getAttribute('data-confirm'))"><button class="ui red tiny button">{{$.i18n.Tr "Delete"}}</button></form></td>{{end}}
                     </tr>
-                {{else}}<tr><td colspan="5">{{.i18n.Tr "Check_Connection_Empty"}}</td></tr>{{end}}</tbody>
+                {{else}}<tr><td colspan="{{if .CanWrite}}6{{else}}5{{end}}">{{.i18n.Tr "Check_Connection_Empty"}}</td></tr>{{end}}</tbody>
             </table>
         </div>
         {{end}}

@@ -1380,6 +1380,10 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 		logger.Errorf("Failed to query floating ip(s), %v", err)
 		return NewCLError(ErrSQLSyntaxError, "Failed to query floating ip(s) for instance", err)
 	}
+	checkConnectionIPs, err := checkConnectionAdmin.instanceIPs(ctx, instance.ID)
+	if err != nil {
+		return err
+	}
 	if instance.FloatingIps != nil {
 		for _, fip := range instance.FloatingIps {
 			fip.Instance = instance
@@ -1463,6 +1467,10 @@ func (a *InstanceAdmin) Delete(ctx context.Context, instance *model.Instance) (e
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
 	if instance.Hyper == -1 {
 		control = "toall="
+	}
+	if err = checkConnectionAdmin.DeleteByIPs(ctx, checkConnectionIPs); err != nil {
+		logger.Error("Failed to remove instance connection checks", err)
+		return
 	}
 	command := fmt.Sprintf("/opt/cloudland/scripts/backend/clear_vm.sh '%d' '%d' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, instance.RouterID, bootVolumeUUID, imagePrefix, moreAddrsJson)
 	err = HyperExecute(ctx, control, command)

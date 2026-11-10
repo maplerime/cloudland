@@ -83,6 +83,7 @@ func TestCheckConnectionTabs(t *testing.T) {
 		c.Data["Link"] = c.Req.URL.Path
 	})
 	m.Get("/check_connection", checkConnectionView.List)
+	m.Post("/check_connection/:uuid/delete", checkConnectionView.Delete)
 	m.Get("/check_connection/suspicious", suspiciousIPView.List)
 	m.Post("/check_connection/suspicious/:uuid/block", suspiciousIPView.Block)
 	m.Post("/check_connection/suspicious/:uuid/unblock", suspiciousIPView.Unblock)
@@ -160,5 +161,31 @@ func TestCheckConnectionTabs(t *testing.T) {
 	postAction("unblock", "", 403)
 	if len(blockCommands) != 2 {
 		t.Fatal("non-admin issued a block")
+	}
+	var check model.CheckConnection
+	if err := db.Where("ip = ?", "192.0.2.250").Take(&check).Error; err != nil {
+		t.Fatal(err)
+	}
+	previousCheckAdmin := checkConnectionAdmin
+	t.Cleanup(func() { checkConnectionAdmin = previousCheckAdmin })
+	removals := 0
+	checkConnectionAdmin = &CheckConnectionAdmin{execute: func(_ context.Context, control, command string) error {
+		removals++
+		if control != "toall=" || command != "/opt/cloudland/scripts/kvm/check_connection.sh '192.0.2.250' 'delete'" {
+			t.Fatalf("unexpected check removal: %s %s", control, command)
+		}
+		return nil
+	}}
+	ctx = (&MemberShip{OrgID: 8, Role: model.Reader}).SetContext(ctx)
+	w := httptest.NewRecorder()
+	m.ServeHTTP(w, httptest.NewRequest("POST", "/check_connection/"+check.UUID+"/delete", nil))
+	if w.Code != 403 || removals != 0 {
+		t.Fatal("reader deleted connection check")
+	}
+	ctx = (&MemberShip{OrgID: 8, Role: model.Writer}).SetContext(ctx)
+	w = httptest.NewRecorder()
+	m.ServeHTTP(w, httptest.NewRequest("POST", "/check_connection/"+check.UUID+"/delete", nil))
+	if w.Code != 302 || w.Header().Get("Location") != "/check_connection" || removals != 1 {
+		t.Fatalf("web check delete: %d %s", w.Code, w.Body.String())
 	}
 }

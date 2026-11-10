@@ -290,6 +290,7 @@ func New() (m *macaron.Macaron) {
 	m.Delete("/alarms/node/:uuid", alarmView.DeleteNodeAlarmRule)
 	m.Get("/check_connection", checkConnectionView.List)
 	m.Post("/check_connection", checkConnectionView.Create)
+	m.Post("/check_connection/:uuid/delete", checkConnectionView.Delete)
 	m.Get("/check_connection/suspicious", suspiciousIPView.List)
 	m.Get("/check_connection/suspicious/new", suspiciousIPView.New)
 	m.Post("/check_connection/suspicious/new", suspiciousIPView.Save)

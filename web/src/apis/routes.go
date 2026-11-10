@@ -242,6 +242,7 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 
 		authGroup.GET("/api/v1/check_connection", checkConnectionAPI.List)
 		authGroup.POST("/api/v1/check_connection", checkConnectionAPI.Create)
+		authGroup.DELETE("/api/v1/check_connection/:uuid", checkConnectionAPI.Delete)
 		authGroup.GET("/api/v1/check_connection/suspicious", suspiciousIPAPI.List)
 		authGroup.POST("/api/v1/check_connection/suspicious", suspiciousIPAPI.Create)
 		authGroup.GET("/api/v1/check_connection/suspicious/:uuid", suspiciousIPAPI.Get)
