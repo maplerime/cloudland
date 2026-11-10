@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 	. "web/src/common"
 	"web/src/dbs"
 	"web/src/model"
@@ -899,18 +900,34 @@ func (a *InstanceAdmin) SetUserPassword(ctx context.Context, id int64, user, pas
 		return
 	}
 	if !(instance.Status == model.InstanceStatusRunning || instance.Status == model.InstanceStatusRescuing) {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running state", nil)
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in running or rescuing state", nil)
+		logger.Error(err)
+		return
+	}
+	// user and password come from API/web input: reject control chars and shell-quote them
+	if hasControlChar(user) || hasControlChar(password) {
+		err = NewCLError(ErrInvalidParameter, "User name or password contains invalid characters", nil)
 		logger.Error(err)
 		return
 	}
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' '%s' '%s'", instance.ID, user, password)
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/set_user_passwd.sh '%d' %s %s", instance.ID, shellQuote(user), shellQuote(password))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Set password command execution failed", err)
 		return
 	}
 	return
+}
+
+// shellQuote wraps s in single quotes for a POSIX shell; each embedded single quote is closed, escaped and reopened.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// hasControlChar reports whether s has a control character (newline, NUL, ...) that must never reach a command line.
+func hasControlChar(s string) bool {
+	return strings.IndexFunc(s, unicode.IsControl) >= 0
 }
 
 var guestUserPattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
