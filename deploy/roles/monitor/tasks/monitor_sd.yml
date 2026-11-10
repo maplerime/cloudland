@@ -37,6 +37,7 @@
     mode: 0644
   with_items:
     - { src: 'node_exporters.json.j2', dest: '/etc/prometheus/lists/node_exporters.json' }
+    - { src: 'vmagent_node_exporters.json.j2', dest: '/etc/prometheus/lists/vmagent_node_exporters.json' }
     - { src: 'libvirt_exporters.json.j2', dest: '/etc/prometheus/lists/libvirt_exporters.json' }
     - { src: 'cloudland_exporters.json.j2', dest: '/etc/prometheus/lists/cloudland_exporters.json' }
   tags: [monitor_sd]

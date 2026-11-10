@@ -38,8 +38,17 @@
     node_exporters_block: |
       - job_name: 'prometheus_node_exporter'
         file_sd_configs:
-          - files: ['/etc/prometheus/lists/node_exporters.json']
+          - files: ['/etc/prometheus/lists/node_exporters.json', '/etc/prometheus/lists/db_node_exporters*.json', '/etc/prometheus/lists/vmagent_node_exporters*.json']
             refresh_interval: 30s
+      - job_name: 'pg_patroni'
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/db_patroni*.json']
+            refresh_interval: 30s
+      - job_name: 'pg_etcd'
+        file_sd_configs:
+          - files: ['/etc/prometheus/lists/db_etcd*.json']
+            refresh_interval: 30s
+  tags: [monitor, monitor_db, monitor_vmagent]
 
 - name: Generate libvirt exporters config block
   set_fact:
@@ -482,6 +491,22 @@
             receiver: '{{ receiver_name }}'
 
             routes:
+              # BEGIN ANSIBLE MANAGED BLOCK - DB Alerts
+              - match:
+                  alert_type: internal-service
+                  node_type: database
+                receiver: teams-internal-service
+                group_by: ['alertname', 'cluster', 'host', 'instance', 'severity']
+              # END ANSIBLE MANAGED BLOCK - DB Alerts
+
+              # BEGIN ANSIBLE MANAGED BLOCK - VMAgent Alerts
+              - match:
+                  alert_type: internal-service
+                  node_type: vmagent
+                receiver: teams-internal-service
+                group_by: ['alertname', 'host', 'instance', 'severity']
+              # END ANSIBLE MANAGED BLOCK - VMAgent Alerts
+
               # Route node alarms to node-webhook (one group per unique alert/host/IP/type/severity)
               - match_re:
                   alert_type: node-(unavailable|cpu|disk|network|hypervisor-resource|syn-(inbound|outbound))
@@ -645,6 +670,14 @@
             webhook_configs:
             - url: 'http://localhost:2000/node_status'
               send_resolved: true
+
+          # An empty URL disables internal-service Teams delivery; ECC forwarding remains independent.
+          - name: 'teams-internal-service'
+          {% if teams_internal_service_webhook_url | default('') | trim | length > 0 %}
+            webhook_configs:
+            - url: 'http://localhost:2000/internal_service'
+              send_resolved: true
+          {% endif %}
 
           - name: 'teams-resource-alerts'
             webhook_configs:
@@ -823,6 +856,7 @@
     mode: 0644
   with_items:
     - { src: 'node_exporters.json.j2', dest: '/etc/prometheus/lists/node_exporters.json' }
+    - { src: 'vmagent_node_exporters.json.j2', dest: '/etc/prometheus/lists/vmagent_node_exporters.json' }
     - { src: 'libvirt_exporters.json.j2', dest: '/etc/prometheus/lists/libvirt_exporters.json' }
     - { src: 'cloudland_exporters.json.j2', dest: '/etc/prometheus/lists/cloudland_exporters.json' }
   tags: [monitor]

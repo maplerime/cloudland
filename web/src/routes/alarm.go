@@ -44,6 +44,8 @@ const (
 	RuleTypeIPBlock            = "ip_block"
 	RuleTypeIPGroupAvailableIP = "ipgroup_available_ip"
 	RuleTypeNodeReboot         = "node_reboot"
+	RuleTypeDBCluster          = "db_cluster"
+	RuleTypeVMAgent            = "vmagent"
 	RulesEnabled               = "/etc/prometheus/rules_enabled"
 	RulesGeneral               = "/etc/prometheus/general_rules"
 	RulesSpecial               = "/etc/prometheus/special_rules"
@@ -2113,6 +2115,10 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml.j2"}
 	case RuleTypeNodeReboot:
 		templateFiles = []string{"node-reboot-detection.yml.j2"}
+	case RuleTypeDBCluster:
+		templateFiles = []string{"db-cluster.yml.j2"}
+	case RuleTypeVMAgent:
+		templateFiles = []string{"vmagent-availability.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
@@ -2383,6 +2389,10 @@ func deleteNodeAlarmRuleInternal(ctx context.Context, uuid string) ([]string, er
 		templateFiles = []string{"ipgroup-available-ip-monitor.yml"}
 	case RuleTypeNodeReboot:
 		templateFiles = []string{"node-reboot-detection.yml"}
+	case RuleTypeDBCluster:
+		templateFiles = []string{"db-cluster.yml"}
+	case RuleTypeVMAgent:
+		templateFiles = []string{"vmagent-availability.yml"}
 	case "service_monitoring":
 		templateFiles = []string{"service_monitoring.yml"}
 	}

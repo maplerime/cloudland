@@ -1,7 +1,7 @@
 {{/* =========================================================
   总入口：按 alert_type 分发到对应子模板
   优先级：packet_drop → ipgroup_low_ips → node-hypervisor-resource
-          → node-(unavailable|cpu|memory|disk|network|reboot-(abnormal|command|detection-broken)) → 默认(cpu|memory|bw)
+          → internal-service → node-(unavailable|cpu|memory|disk|network|reboot-(abnormal|command|detection-broken)) → 默认(cpu|memory|bw)
   注：match 若不可用，将 node-* 分支改为明确枚举（见注释）
   ========================================================= */}}
 {{ define "teams.card" -}}
@@ -11,6 +11,8 @@
 {{ template "teams.ipgroup.card" . }}
 {{- else if eq .CommonLabels.alert_type "node-hypervisor-resource" -}}
 {{ template "teams.resource.card" . }}
+{{- else if eq .CommonLabels.alert_type "internal-service" -}}
+{{ template "teams.node_status.card" . }}
 {{- else if match "^node-(unavailable|cpu|memory|disk|network|reboot-(abnormal|command|detection-broken))$" .CommonLabels.alert_type -}}
 {{ template "teams.node_status.card" . }}
 {{- else -}}
@@ -66,9 +68,9 @@
 {{- end }}
 
 {{/* =========================================================
-  节点状态告警（node-unavailable|cpu|memory|disk|network）
+  内部服务及节点状态告警（internal-service|node-unavailable|cpu|memory|disk|network）
   原 Slack receiver：slack-node-status
-  原标题：alert_type | alertname | instance/hostname/N/A
+  标题：[region/N/A] alert_type | alertname | instance/hostname/N/A
   ========================================================= */}}
 {{ define "teams.node_status.card" -}}
 {
@@ -84,7 +86,7 @@
       "body": [
         {
           "type": "TextBlock",
-          "text": {{ printf "%s | %s | %s" .CommonLabels.alert_type .CommonLabels.alertname (or .CommonLabels.instance .CommonLabels.hostname "N/A") | toJson }},
+          "text": {{ printf "[%s] %s | %s | %s" (or .CommonLabels.region "N/A") .CommonLabels.alert_type .CommonLabels.alertname (or .CommonLabels.instance .CommonLabels.hostname "N/A") | toJson }},
           "weight": "Bolder",
           "size": "Medium",
           "color": "{{ if eq .Status "firing" }}Attention{{ else }}Good{{ end }}",
@@ -101,6 +103,7 @@
             {"title": "告警类型", "value": {{ .CommonLabels.alert_type | toJson }}},
             {"title": "告警名称", "value": {{ .CommonLabels.alertname | toJson }}},
             {"title": "级别", "value": {{ .CommonLabels.severity | toJson }}},
+            {"title": "机房 / Region", "value": {{ or .CommonLabels.region "N/A" | toJson }}},
             {"title": "实例/主机名", "value": {{ or .CommonLabels.instance .CommonLabels.hostname "N/A" | toJson }}},
             {"title": "标签", "value": {{ printf "%v" .CommonLabels | toJson }}}
           ]
