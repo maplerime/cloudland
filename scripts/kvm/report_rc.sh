@@ -198,6 +198,11 @@ function check_conntrack()
     $base_dir/operation/check_halfopen_connections.sh $syn_threshold_src_dst $syn_threshold_src $syn_threshold_dst
 }
 
+function observe_connection()
+{
+    "$base_dir/observe_connection.sh"
+}
+
 function recover_loadbalancer()
 {
     lb_flag_file=$run_dir/need_to_sync_lb
@@ -340,6 +345,7 @@ check_system_router
 #probe_arp >/dev/null 2>&1
 inst_status
 check_conntrack
+observe_connection
 daily_job
 halfday_job
 #vlan_status

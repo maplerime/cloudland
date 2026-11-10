@@ -1,5 +1,41 @@
 # arphole
 
+## Observe ARP source IPs
+
+`observe_ip.py` records unique source IPs (`ARP.psrc`) from ARP requests and
+replies on a specified interface and VLAN, regardless of destination MAC
+(broadcast or unicast). It appends one IP per line,
+flushes each new record immediately, and loads existing records on restart to
+avoid duplicates. It also prints newly observed IPs to stdout. Each new IP queues
+an ARP sweep of its /24 subnet (.1 through .254) on the same interface and VLAN.
+Different new IPs in the same subnet each trigger a sweep; already recorded IPs
+do not trigger another sweep on restart. A background worker sends sweeps in order
+while capture continues. Target IPs (`ARP.pdst`) are ignored: they are neither
+recorded nor used to trigger scans. Frames from the interface's own MAC are
+ignored to prevent recursion.
+
+```bash
+sudo python3 observe_ip.py -i eth0 -v 25 -o observed_ips.txt
+```
+
+Use `-v 0` for untagged traffic; tagged VLAN IDs are `1–4094`. For tagged traffic,
+listen on the parent interface (for example `eth0`, rather than `eth0.25`).
+Stacked VLAN tags are excluded. If `-o` is omitted, the filename is
+`observed_ips_<interface>_vlan<VLAN>.txt`. Source `0.0.0.0` is ignored
+and is neither recorded nor scanned. Multicast, loopback and 255.x.x.x addresses also
+do not trigger scans. Probes use sender IP `0.0.0.0` by default; use
+`--source-ip <IPv4>` to override it. `--interval` controls the delay between
+requests (default 0.01 seconds, about 100 packets/second). Stop with Ctrl+C;
+pending sweeps are cancelled on exit. Run only one observer per output file.
+
+With `-v 0`, startup first records the interface's primary IPv4 address (if new),
+then queues its /24 sweep once capture is ready. This initial sweep runs on every
+startup even if the local IP is already recorded. If the interface has no IPv4
+address, the initial sweep is skipped with a message; ARP observation continues.
+
+Install dependencies with `pip install -r requirements.txt`; capturing requires
+root or `CAP_NET_RAW`, as with the other utilities in this directory.
+
 Sniffs broadcast ARP "who-has" requests on one or more interfaces and,
 after the same (iface, target IP) is requested THRESHOLD times within a
 rolling WINDOW, fires probes and reclaims the IP with a locally-

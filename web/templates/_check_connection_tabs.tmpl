@@ -1,0 +1,4 @@
+<div class="ui attached tabular menu">
+    <a class="item {{if eq .Tab "connections"}}active{{end}}" href="/check_connection">{{.i18n.Tr "Check_Connection"}}</a>
+    {{if .CanManageSuspicious}}<a class="item {{if eq .Tab "suspicious"}}active{{end}}" href="/check_connection/suspicious">{{.i18n.Tr "Suspicious_IPs"}}</a>{{end}}
+</div>

@@ -154,6 +154,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		reason = err.Error()
 		return
 	}
+	if err = (&routes.CheckConnectionAdmin{}).DeleteByInstance(ctx, instance); err != nil {
+		logger.Error("Failed to remove instance connection checks", err)
+		return
+	}
 	err = deleteInterfaces(ctx, instance, nil, nil)
 	if err != nil {
 		logger.Error("Failed to delete interfaces", err)
