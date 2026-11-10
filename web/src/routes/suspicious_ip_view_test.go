@@ -83,6 +83,7 @@ func TestCheckConnectionTabs(t *testing.T) {
 		c.Data["Link"] = c.Req.URL.Path
 	})
 	m.Get("/check_connection", checkConnectionView.List)
+	m.Post("/check_connection", checkConnectionView.Create)
 	m.Post("/check_connection/:uuid/delete", checkConnectionView.Delete)
 	m.Get("/check_connection/suspicious", suspiciousIPView.List)
 	m.Post("/check_connection/suspicious/:uuid/block", suspiciousIPView.Block)
@@ -156,6 +157,9 @@ func TestCheckConnectionTabs(t *testing.T) {
 	if strings.Contains(output, `href="/check_connection/suspicious"`) || !strings.Contains(output, "192.0.2.250") {
 		t.Fatal("admin tab visible to writer or check list missing")
 	}
+	if strings.Contains(output, `name="ips"`) || strings.Contains(output, "data-confirm=") {
+		t.Fatal("writer sees global check write controls")
+	}
 	request("/check_connection/suspicious", 403)
 	postAction("block", "timeout=1800", 403)
 	postAction("unblock", "", 403)
@@ -176,14 +180,23 @@ func TestCheckConnectionTabs(t *testing.T) {
 		}
 		return nil
 	}}
-	ctx = (&MemberShip{OrgID: 8, Role: model.Reader}).SetContext(ctx)
-	w := httptest.NewRecorder()
-	m.ServeHTTP(w, httptest.NewRequest("POST", "/check_connection/"+check.UUID+"/delete", nil))
-	if w.Code != 403 || removals != 0 {
-		t.Fatal("reader deleted connection check")
+	for _, role := range []model.Role{model.None, model.Reader, model.Writer, model.Owner} {
+		ctx = (&MemberShip{OrgID: 8, Role: role}).SetContext(ctx)
+		w := httptest.NewRecorder()
+		m.ServeHTTP(w, httptest.NewRequest("POST", "/check_connection/"+check.UUID+"/delete", nil))
+		if w.Code != 403 || removals != 0 {
+			t.Fatalf("role %s deleted connection check", role)
+		}
+		w = httptest.NewRecorder()
+		r := httptest.NewRequest("POST", "/check_connection", strings.NewReader("ips=192.0.2.1"))
+		r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		m.ServeHTTP(w, r)
+		if w.Code != 403 || removals != 0 {
+			t.Fatalf("role %s submitted connection check", role)
+		}
 	}
-	ctx = (&MemberShip{OrgID: 8, Role: model.Writer}).SetContext(ctx)
-	w = httptest.NewRecorder()
+	ctx = (&MemberShip{OrgID: 8, Role: model.Admin}).SetContext(ctx)
+	w := httptest.NewRecorder()
 	m.ServeHTTP(w, httptest.NewRequest("POST", "/check_connection/"+check.UUID+"/delete", nil))
 	if w.Code != 302 || w.Header().Get("Location") != "/check_connection" || removals != 1 {
 		t.Fatalf("web check delete: %d %s", w.Code, w.Body.String())

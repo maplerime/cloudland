@@ -14,7 +14,15 @@ $dns_server $dns6_server $observe_connection_ignore_ips"
 # Override in cloudrc.local; an empty value disables service exclusions.
 ignore_services=${observe_connection_ignore_services-"tcp:53 udp:53 tcp:853 udp:853 udp:123"}
 
-connections=$(conntrack -L 2>/dev/null) || exit 1
+# Query only watched original sources; never collect the whole conntrack table.
+connections=$(
+    while read -r ip || [ -n "$ip" ]; do
+        [ -n "$ip" ] || continue
+        family=ipv4
+        [[ "$ip" == *:* ]] && family=ipv6
+        conntrack -L -f "$family" --orig-src "$ip" 2>/dev/null || exit 1
+    done < "$file"
+) || exit 1
 ips=$(echo "$connections" | awk -v ignore_ips="$ignore_ips" -v ignore_services="$ignore_services" '
     BEGIN {
         n = split(ignore_ips, values, /[[:space:],]+/)

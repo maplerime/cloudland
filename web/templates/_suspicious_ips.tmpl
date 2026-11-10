@@ -16,7 +16,7 @@
             <td>{{if .LastSeenAt}}{{.LastSeenAt.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td><td>{{if .LastSeenNode}}{{.LastSeenNode}}{{end}}</td>
             <td>{{if .BlockedAt}}{{.BlockedAt.Format "2006-01-02 15:04:05 UTC"}}{{end}}</td><td>{{.BlockError}}</td>
             <td>
-                <div class="ui compact dropdown button suspicious-ip-actions" tabindex="0" data-base-url="/check_connection/suspicious/{{.UUID}}" data-ip="{{.IP}}">
+                <div class="ui compact dropdown button suspicious-ip-actions" tabindex="0" data-uuid="{{.UUID}}" data-ip="{{.IP}}">
                     {{$.i18n.Tr "Actions"}} <i class="dropdown icon"></i>
                     <div class="menu">
                         <a class="item" href="#" data-action="block"><i class="ban icon"></i>{{$.i18n.Tr "Suspicious_IP_Block"}}</a>

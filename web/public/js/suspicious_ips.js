@@ -4,7 +4,11 @@ $(function () {
     $('#suspicious-ips').on('click', '[data-action]', function (event) {
         event.preventDefault();
         var menu = $(this).closest('.suspicious-ip-actions');
-        var baseURL = menu.attr('data-base-url');
+        var uuid = menu.attr('data-uuid');
+        if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(uuid || '')) {
+            return;
+        }
+        var baseURL = '/check_connection/suspicious/' + encodeURIComponent(uuid);
         var ip = menu.attr('data-ip');
         var action = $(this).attr('data-action');
         menu.dropdown('hide');

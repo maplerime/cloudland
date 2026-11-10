@@ -41,7 +41,7 @@ func NormalizeCheckConnectionIPs(input []string) ([]string, error) {
 
 func (a *CheckConnectionAdmin) Create(ctx context.Context, input []string) (entries []*model.CheckConnection, err error) {
 	m := GetMemberShip(ctx)
-	if !m.CheckPermission(model.Writer) {
+	if !m.CheckPermission(model.Admin) {
 		return nil, fmt.Errorf("not authorized for this operation")
 	}
 	ips, err := NormalizeCheckConnectionIPs(input)
@@ -87,7 +87,7 @@ func (a *CheckConnectionAdmin) List(ctx context.Context, offset, limit int64) (t
 
 func (a *CheckConnectionAdmin) Delete(ctx context.Context, id string) error {
 	m := GetMemberShip(ctx)
-	if !m.CheckPermission(model.Writer) {
+	if !m.CheckPermission(model.Admin) {
 		return fmt.Errorf("not authorized for this operation")
 	}
 	_, db := GetContextDB(ctx)

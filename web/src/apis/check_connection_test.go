@@ -32,7 +32,7 @@ func TestCheckConnectionAPI(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Writer}).SetContext(SetContextDB(context.Background(), db))
+	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Admin}).SetContext(SetContextDB(context.Background(), db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) { c.Request = c.Request.WithContext(ctx) })
 	router.GET("/check_connection", checkConnectionAPI.List)
@@ -100,13 +100,29 @@ func TestCheckConnectionAPI(t *testing.T) {
 		}
 		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"Status":"accepted"}`))}, nil
 	})
-	ctx = (&MemberShip{OrgID: 8, Role: model.Writer}).SetContext(ctx)
+	for _, role := range []model.Role{model.None, model.Reader, model.Writer, model.Owner} {
+		ctx = (&MemberShip{UserID: 7, OrgID: 8, Role: role}).SetContext(ctx)
+		w := httptest.NewRecorder()
+		r := httptest.NewRequest(http.MethodPost, "/check_connection", strings.NewReader(`{"ips":["198.51.100.1"]}`))
+		r.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(w, r)
+		if w.Code != 403 {
+			t.Fatalf("role %s submitted global check: %d", role, w.Code)
+		}
+		deleteRecord(owned.UUID, 403)
+	}
+	var count int
+	db.Model(&model.CheckConnection{}).Count(&count)
+	if commands != 0 || count != 2 {
+		t.Fatal("unauthorized request wrote records or broadcast commands")
+	}
+	ctx = (&MemberShip{OrgID: 8, Role: model.Admin}).SetContext(ctx)
 	deleteRecord(other.UUID, 400)
 	deleteRecord(owned.UUID, 204)
 	if commands != 0 {
 		t.Fatal("shared IP was removed while another check still uses it")
 	}
-	ctx = (&MemberShip{OrgID: 9, Role: model.Writer}).SetContext(ctx)
+	ctx = (&MemberShip{OrgID: 9, Role: model.Admin}).SetContext(ctx)
 	fail = true
 	deleteRecord(other.UUID, 400)
 	var retained model.CheckConnection

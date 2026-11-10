@@ -40,7 +40,7 @@ func checkConnectionResponse(e *model.CheckConnection) *CheckConnectionResponse 
 // @Success 202 {object} map[string]interface{}
 // @Router /check_connection [post]
 func (a *CheckConnectionAPI) Create(c *gin.Context) {
-	if !GetMemberShip(c.Request.Context()).CheckPermission(model.Writer) {
+	if !GetMemberShip(c.Request.Context()).CheckPermission(model.Admin) {
 		ErrorResponse(c, http.StatusForbidden, "Not authorized", nil)
 		return
 	}
@@ -86,7 +86,7 @@ func (a *CheckConnectionAPI) List(c *gin.Context) {
 }
 
 func (a *CheckConnectionAPI) Delete(c *gin.Context) {
-	if !GetMemberShip(c.Request.Context()).CheckPermission(model.Writer) {
+	if !GetMemberShip(c.Request.Context()).CheckPermission(model.Admin) {
 		ErrorResponse(c, http.StatusForbidden, "Not authorized", nil)
 		return
 	}

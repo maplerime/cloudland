@@ -27,7 +27,7 @@ func TestCheckConnectionBatch(t *testing.T) {
 	if err = db.AutoMigrate(&model.CheckConnection{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Writer}).SetContext(SetContextDB(context.Background(), db))
+	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Admin}).SetContext(SetContextDB(context.Background(), db))
 	calls := 0
 	a := &CheckConnectionAdmin{execute: func(_ context.Context, control, command string) error {
 		calls++
@@ -40,6 +40,12 @@ func TestCheckConnectionBatch(t *testing.T) {
 		return nil
 	}}
 	// Validate the whole batch before persisting or broadcasting any address.
+	for _, role := range []model.Role{model.None, model.Reader, model.Writer, model.Owner} {
+		denied := (&MemberShip{UserID: 7, OrgID: 8, Role: role}).SetContext(ctx)
+		if _, err = a.Create(denied, []string{"192.0.2.1"}); err == nil {
+			t.Fatalf("role %s can submit global check", role)
+		}
+	}
 	if _, err = a.Create(ctx, []string{"192.0.2.1", "192.0.2.2'; touch /tmp/injected"}); err == nil {
 		t.Fatal("accepted invalid IP")
 	}
@@ -97,7 +103,7 @@ func TestCheckConnectionDelete(t *testing.T) {
 	if err = db.AutoMigrate(&model.CheckConnection{}).Error; err != nil {
 		t.Fatal(err)
 	}
-	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Writer}).SetContext(SetContextDB(context.Background(), db))
+	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Admin}).SetContext(SetContextDB(context.Background(), db))
 	entries := []*model.CheckConnection{
 		{Owner: 8, IP: "192.0.2.1", Status: "submitted"}, {Owner: 8, IP: "192.0.2.1", Status: "submitted"},
 		{Owner: 9, IP: "192.0.2.1", Status: "submitted"}, {Owner: 8, IP: "192.0.2.2", Status: "submitted"},
@@ -119,9 +125,11 @@ func TestCheckConnectionDelete(t *testing.T) {
 		}
 		return nil
 	}}
-	reader := (&MemberShip{OrgID: 8, Role: model.Reader}).SetContext(ctx)
-	if err = a.Delete(reader, entries[0].UUID); err == nil {
-		t.Fatal("reader delete allowed")
+	for _, role := range []model.Role{model.None, model.Reader, model.Writer, model.Owner} {
+		denied := (&MemberShip{OrgID: 8, Role: role}).SetContext(ctx)
+		if err = a.Delete(denied, entries[0].UUID); err == nil {
+			t.Fatalf("role %s can delete global check", role)
+		}
 	}
 	if err = a.Delete(ctx, entries[2].UUID); err == nil {
 		t.Fatal("cross-organization delete allowed")
@@ -134,7 +142,7 @@ func TestCheckConnectionDelete(t *testing.T) {
 	if len(commands) != 0 {
 		t.Fatal("IP still requested by another record was removed from nodes")
 	}
-	other := (&MemberShip{OrgID: 9, Role: model.Writer}).SetContext(ctx)
+	other := (&MemberShip{OrgID: 9, Role: model.Admin}).SetContext(ctx)
 	if err = a.Delete(other, entries[2].UUID); err != nil {
 		t.Fatal(err)
 	}
