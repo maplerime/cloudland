@@ -23,7 +23,10 @@
                         &middot; {{.i18n.Tr "Measured_Samples"}}: {{.WindowSamples}}
                     </div>
                     {{ end }}
-                    {{template "_blocked_ip_tabs" .}}
+                    <div class="ui attached tabular menu">
+                        <a class="item {{if eq .Tab "current"}}active{{end}}" href="/blocked-ips">{{.i18n.Tr "Current_Blocked"}}</a>
+                        <a class="item {{if eq .Tab "history"}}active{{end}}" href="/blocked-ips/history">{{.i18n.Tr "Blocked_History"}}</a>
+                    </div>
                     <div class="ui attached segment">
                         <form class="ui form" method="get">
                             <input type="hidden" id="timezone_offset_minutes" name="timezone_offset_minutes">

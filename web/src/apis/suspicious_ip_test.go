@@ -3,6 +3,7 @@ package apis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -32,7 +33,7 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	ctx := (&MemberShip{UserID: 7, OrgID: 8, Role: model.Admin}).SetContext(SetContextDB(context.Background(), db))
 	router := gin.New()
 	router.Use(func(c *gin.Context) { c.Request = c.Request.WithContext(ctx) })
-	base := "/api/v1/metrics/blocked-ips"
+	base := "/api/v1/check_connection"
 	router.GET(base+"/suspicious", suspiciousIPAPI.List)
 	router.POST(base+"/suspicious", suspiciousIPAPI.Create)
 	router.GET(base+"/suspicious/:uuid", suspiciousIPAPI.Get)
@@ -57,7 +58,10 @@ func TestSuspiciousIPAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := entry.UUID
-	request("GET", "/suspicious/"+id, "", 200)
+	w = request("GET", "/suspicious/"+id, "", 200)
+	if strings.Contains(w.Body.String(), `"status":`) {
+		t.Fatal("detail response includes status")
+	}
 	w = request("PATCH", "/suspicious/"+id, `{"note":"updated"}`, 200)
 	if !strings.Contains(w.Body.String(), `"note":"updated"`) {
 		t.Fatal(w.Body.String())
@@ -69,21 +73,30 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	// Intercept the actual SCI HTTP request. No network or block scripts run.
 	previous := http.DefaultClient.Transport
 	defer func() { http.DefaultClient.Transport = previous }()
-	responseCode, commands := 200, 0
+	commands := 0
+	failRequest := false
 	http.DefaultClient.Transport = suspiciousIPTransport(func(r *http.Request) (*http.Response, error) {
 		var command ExecuteRequest
 		if err := json.NewDecoder(r.Body).Decode(&command); err != nil {
 			t.Fatal(err)
 		}
-		if command.Control != "toall=" || !strings.Contains(command.Command, "/operation/block_ip.sh '") || !strings.HasSuffix(command.Command, " 'block_dst'") {
+		isBlock := strings.Contains(command.Command, "/operation/block_ip.sh '") && strings.HasSuffix(command.Command, " 'block_dst'")
+		isUnblock := command.Command == "/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'"
+		if command.Control != "toall=" || (!isBlock && !isUnblock) {
 			t.Fatalf("bad broadcast: %+v", command)
 		}
 		commands++
-		return &http.Response{StatusCode: responseCode, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"Status":"accepted"}`))}, nil
+		if failRequest {
+			return nil, errors.New("SCI unavailable")
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"Status":"accepted"}`))}, nil
 	})
 	request("POST", "/suspicious/"+id+"/block", "", 202)
 	request("POST", "/block", `{"ip":"198.51.100.20"}`, 202)
-	w = request("GET", "/suspicious?status=blocked", "", 200)
+	w = request("GET", "/suspicious", "", 200)
+	if strings.Contains(w.Body.String(), `"status":`) {
+		t.Fatal("list response includes status")
+	}
 	var list struct {
 		Total   int                    `json:"total"`
 		Entries []SuspiciousIPResponse `json:"entries"`
@@ -92,19 +105,25 @@ func TestSuspiciousIPAPI(t *testing.T) {
 		t.Fatalf("API block missing from list: %s %v", w.Body.String(), err)
 	}
 	for _, e := range list.Entries {
-		if e.Status != "blocked" || e.BlockedAt == nil {
-			t.Fatalf("missing status: %+v", e)
+		if e.BlockedAt == nil {
+			t.Fatalf("missing block submission time: %+v", e)
 		}
 	}
-	responseCode = 503
+	failRequest = true
 	request("POST", "/block", `{"ip":"203.0.113.2"}`, 502)
 	w = request("GET", "/suspicious?status=block_failed", "", 200)
+	if err = json.Unmarshal(w.Body.Bytes(), &list); err != nil || list.Total != 3 {
+		t.Fatalf("obsolete status parameter filtered results: %s %v", w.Body.String(), err)
+	}
 	if !strings.Contains(w.Body.String(), "203.0.113.2") {
 		t.Fatal("failed block not retained")
 	}
 	if commands != 3 {
 		t.Fatalf("expected 3 block calls, got %d", commands)
 	}
+	request("DELETE", "/suspicious/"+id, "", 400)
+	request("GET", "/suspicious/"+id, "", 200)
+	failRequest = false
 	request("DELETE", "/suspicious/"+id, "", 204)
 	request("GET", "/suspicious/"+id, "", 404)
 	ctx = (&MemberShip{Role: model.Writer}).SetContext(ctx)
@@ -113,7 +132,7 @@ func TestSuspiciousIPAPI(t *testing.T) {
 	request("POST", "/suspicious", `{"ip":"192.0.2.4"}`, 403)
 	request("PATCH", "/suspicious/missing", `{"note":"bad"}`, 403)
 	request("DELETE", "/suspicious/missing", "", 403)
-	if commands != 3 {
-		t.Fatal("non-admin issued a block")
+	if commands != 5 {
+		t.Fatalf("unexpected block/unblock calls: %d", commands)
 	}
 }

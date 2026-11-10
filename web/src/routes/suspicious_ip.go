@@ -69,7 +69,7 @@ func RecordObservedSuspiciousIPs(ctx context.Context, node int32, input []string
 	return nil
 }
 
-func (a *SuspiciousIPAdmin) List(ctx context.Context, offset, limit int64, ip, status string) (total int64, entries []*model.SuspiciousIP, err error) {
+func (a *SuspiciousIPAdmin) List(ctx context.Context, offset, limit int64, ip string) (total int64, entries []*model.SuspiciousIP, err error) {
 	if err = suspiciousIPPermitted(ctx); err != nil {
 		return
 	}
@@ -77,9 +77,6 @@ func (a *SuspiciousIPAdmin) List(ctx context.Context, offset, limit int64, ip, s
 	query := db.Model(&model.SuspiciousIP{})
 	if ip != "" {
 		query = query.Where("ip LIKE ?", "%"+ip+"%")
-	}
-	if status != "" {
-		query = query.Where("status = ?", status)
 	}
 	entries = []*model.SuspiciousIP{}
 	if err = query.Count(&total).Error; err != nil {
@@ -141,6 +138,18 @@ func (a *SuspiciousIPAdmin) Delete(ctx context.Context, id string) error {
 	entry, err := a.Get(ctx, id)
 	if err != nil {
 		return err
+	}
+	ip, err := normalizeSuspiciousIP(entry.IP)
+	if err != nil {
+		return err
+	}
+	execute := a.execute
+	if execute == nil {
+		execute = HyperExecute
+	}
+	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '%s'", ip)
+	if err := execute(ctx, "toall=", command); err != nil {
+		return fmt.Errorf("failed to submit IP unblock: %w", err)
 	}
 	_, db := GetContextDB(ctx)
 	// The unique IP may be discovered again after an operator deletes the record.

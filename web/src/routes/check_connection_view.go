@@ -24,6 +24,8 @@ func (v *CheckConnectionView) List(c *macaron.Context) {
 		return
 	}
 	c.Data["Checks"] = entries
+	c.Data["Tab"] = "connections"
+	c.Data["CanManageSuspicious"] = GetMemberShip(c.Req.Context()).CheckPermission(model.Admin)
 	c.Data["CanWrite"] = GetMemberShip(c.Req.Context()).CheckPermission(model.Writer)
 	SetPaginationData(c, "check_connection", total, limit, offset, config,
 		`["UUID", "IP", "Status", "DispatchError", "CreatedAt"]`,

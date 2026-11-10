@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestHyperExecuteHTTPStatus(t *testing.T) {
+func TestHyperExecuteLegacyHTTPStatus(t *testing.T) {
 	previous := remoteExecPath
 	defer func() { remoteExecPath = previous }()
 	status := http.StatusServiceUnavailable
@@ -22,8 +22,8 @@ func TestHyperExecuteHTTPStatus(t *testing.T) {
 	}))
 	defer server.Close()
 	remoteExecPath = server.URL
-	if err := HyperExecute(context.Background(), "toall=", "check_connection.sh"); err == nil {
-		t.Fatal("HTTP failure was treated as a successful dispatch")
+	if err := HyperExecute(context.Background(), "toall=", "check_connection.sh"); err != nil {
+		t.Fatalf("legacy behavior must not turn HTTP status into an error: %v", err)
 	}
 	status = http.StatusOK
 	if err := HyperExecute(context.Background(), "toall=", "check_connection.sh"); err != nil {

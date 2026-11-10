@@ -97,13 +97,13 @@ func TestCheckConnectionTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = tmpl.Parse(`{{define "_head"}}{{end}}{{define "_left"}}{{end}}{{define "_pagination"}}{{end}}{{define "_footer"}}{{end}}`)
+	_, err = tmpl.Parse(`{{define "_head"}}{{end}}{{define "_left"}}{{end}}{{define "_pagination"}}{{end}}{{define "_suspicious_ips"}}{{end}}{{define "_check_connection_tabs"}}{{end}}{{define "_footer"}}{{end}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct{ lang, title, status, otherTitle string }{
-		{"zh-CN", "连接检查", "下发失败", "Check Connection"},
-		{"en-US", "Check Connection", "Failed", "连接检查"},
+		{"zh-CN", "连接检查", "下发失败", "Check Connections"},
+		{"en-US", "Check Connections", "Failed", "连接检查"},
 	} {
 		t.Run(tc.lang, func(t *testing.T) {
 			if !i18n.IsExist(tc.lang) {

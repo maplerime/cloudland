@@ -3,6 +3,7 @@ package apis
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,31 @@ var suspiciousIPAdminAPI = &routes.SuspiciousIPAdmin{}
 
 type SuspiciousIPAPI struct{}
 
+func suspiciousIPAPIPermitted(c *gin.Context) bool {
+	if !GetMemberShip(c.Request.Context()).CheckPermission(model.Admin) {
+		ErrorResponse(c, http.StatusForbidden, "Not authorized for this operation", nil)
+		return false
+	}
+	return true
+}
+
+func suspiciousIPAPIPagination(c *gin.Context) (offset, limit int, ok bool) {
+	offset, err := strconv.Atoi(c.DefaultQuery("offset", "0"))
+	if err != nil || offset < 0 {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid offset", err)
+		return
+	}
+	limit, err = strconv.Atoi(c.DefaultQuery("limit", "1000"))
+	if err != nil || limit < 0 {
+		ErrorResponse(c, http.StatusBadRequest, "Invalid limit", err)
+		return
+	}
+	if limit == 0 || limit > 10000 {
+		limit = 10000
+	}
+	return offset, limit, true
+}
+
 type SuspiciousIPPayload struct {
 	IP   string `json:"ip" binding:"required,ip"`
 	Note string `json:"note" binding:"max=4096"`
@@ -30,7 +56,6 @@ type SuspiciousIPPatchPayload struct {
 type SuspiciousIPResponse struct {
 	UUID         string     `json:"uuid"`
 	IP           string     `json:"ip"`
-	Status       string     `json:"status"`
 	Note         string     `json:"note"`
 	LastSeenAt   *time.Time `json:"last_seen_at"`
 	LastSeenNode *int32     `json:"last_seen_node"`
@@ -41,7 +66,7 @@ type SuspiciousIPResponse struct {
 }
 
 func suspiciousIPResponse(e *model.SuspiciousIP) *SuspiciousIPResponse {
-	return &SuspiciousIPResponse{UUID: e.UUID, IP: e.IP, Status: e.Status, Note: e.Note, LastSeenAt: e.LastSeenAt,
+	return &SuspiciousIPResponse{UUID: e.UUID, IP: e.IP, Note: e.Note, LastSeenAt: e.LastSeenAt,
 		LastSeenNode: e.LastSeenNode, BlockedAt: e.BlockedAt, BlockError: e.BlockError, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
 }
 
@@ -57,14 +82,14 @@ func suspiciousIPError(c *gin.Context, err error) {
 }
 
 func (a *SuspiciousIPAPI) List(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
-	offset, limit, ok := blockedIPPagination(c)
+	offset, limit, ok := suspiciousIPAPIPagination(c)
 	if !ok {
 		return
 	}
-	total, entries, err := suspiciousIPAdminAPI.List(c.Request.Context(), int64(offset), int64(limit), c.Query("ip"), c.Query("status"))
+	total, entries, err := suspiciousIPAdminAPI.List(c.Request.Context(), int64(offset), int64(limit), c.Query("ip"))
 	if err != nil {
 		suspiciousIPError(c, err)
 		return
@@ -77,7 +102,7 @@ func (a *SuspiciousIPAPI) List(c *gin.Context) {
 }
 
 func (a *SuspiciousIPAPI) Get(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
 	entry, err := suspiciousIPAdminAPI.Get(c.Request.Context(), c.Param("uuid"))
@@ -89,7 +114,7 @@ func (a *SuspiciousIPAPI) Get(c *gin.Context) {
 }
 
 func (a *SuspiciousIPAPI) Create(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
 	payload := &SuspiciousIPPayload{}
@@ -106,7 +131,7 @@ func (a *SuspiciousIPAPI) Create(c *gin.Context) {
 }
 
 func (a *SuspiciousIPAPI) Patch(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
 	payload := &SuspiciousIPPatchPayload{}
@@ -134,7 +159,7 @@ func (a *SuspiciousIPAPI) Patch(c *gin.Context) {
 }
 
 func (a *SuspiciousIPAPI) Delete(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
 	if err := suspiciousIPAdminAPI.Delete(c.Request.Context(), c.Param("uuid")); err != nil {
@@ -146,7 +171,7 @@ func (a *SuspiciousIPAPI) Delete(c *gin.Context) {
 
 // Block accepts a raw IP even when it has not yet been observed.
 func (a *SuspiciousIPAPI) Block(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
 	payload := &struct {
@@ -160,7 +185,7 @@ func (a *SuspiciousIPAPI) Block(c *gin.Context) {
 }
 
 func (a *SuspiciousIPAPI) BlockRecord(c *gin.Context) {
-	if !blockedIPPermitted(c) {
+	if !suspiciousIPAPIPermitted(c) {
 		return
 	}
 	entry, err := suspiciousIPAdminAPI.Get(c.Request.Context(), c.Param("uuid"))

@@ -51,7 +51,7 @@ func TestSuspiciousIPRecordAndBlock(t *testing.T) {
 	if err != nil || entry.Status != model.SuspiciousIPBlocked || entry.Note != "operator note" || *entry.LastSeenNode != 4 {
 		t.Fatalf("observation overwrote manual state: %+v %v", entry, err)
 	}
-	total, _, err := a.List(ctx, 0, 50, "192.0.2", model.SuspiciousIPBlocked)
+	total, _, err := a.List(ctx, 0, 50, "192.0.2")
 	if err != nil || total != 1 {
 		t.Fatalf("filtered list: %d %v", total, err)
 	}
@@ -76,7 +76,7 @@ func TestSuspiciousIPDirectBlockAndFailure(t *testing.T) {
 	if err != nil || entry.Status != model.SuspiciousIPBlocked || entry.BlockError != "" {
 		t.Fatalf("success not persisted: %+v %v", entry, err)
 	}
-	total, entries, err := a.List(ctx, 0, 50, "", "")
+	total, entries, err := a.List(ctx, 0, 50, "")
 	if err != nil || total != 1 || entries[0].IP != entry.IP {
 		t.Fatalf("direct block absent from list: %+v %v", entries, err)
 	}
@@ -84,7 +84,14 @@ func TestSuspiciousIPDirectBlockAndFailure(t *testing.T) {
 
 func TestSuspiciousIPCRUDAndPermissions(t *testing.T) {
 	ctx, db := suspiciousIPTestContext(t)
-	a := &SuspiciousIPAdmin{}
+	unblocks := 0
+	a := &SuspiciousIPAdmin{execute: func(_ context.Context, control, command string) error {
+		unblocks++
+		if control != "toall=" || command != "/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'" {
+			t.Fatalf("unexpected unblock: %s %s", control, command)
+		}
+		return nil
+	}}
 	entry, err := a.Create(ctx, "2001:0db8::1", "note")
 	if err != nil || entry.IP != "2001:db8::1" {
 		t.Fatalf("create: %+v %v", entry, err)
@@ -94,7 +101,7 @@ func TestSuspiciousIPCRUDAndPermissions(t *testing.T) {
 		t.Fatalf("update: %+v %v", entry, err)
 	}
 	denied := (&MemberShip{Role: model.Writer}).SetContext(ctx)
-	if _, _, err = a.List(denied, 0, 10, "", ""); !errors.Is(err, ErrSuspiciousIPPermission) {
+	if _, _, err = a.List(denied, 0, 10, ""); !errors.Is(err, ErrSuspiciousIPPermission) {
 		t.Fatal("non-admin list allowed")
 	}
 	if _, err = a.Create(denied, "192.0.2.2", ""); !errors.Is(err, ErrSuspiciousIPPermission) {
@@ -111,6 +118,9 @@ func TestSuspiciousIPCRUDAndPermissions(t *testing.T) {
 	}
 	if err = a.Delete(ctx, entry.UUID); err != nil {
 		t.Fatal(err)
+	}
+	if unblocks != 1 {
+		t.Fatalf("expected exactly one authorized unblock, got %d", unblocks)
 	}
 	if _, err = a.Get(ctx, entry.UUID); !gorm.IsRecordNotFoundError(err) {
 		t.Fatalf("deleted record found: %v", err)
@@ -129,5 +139,37 @@ func TestSuspiciousIPCRUDAndPermissions(t *testing.T) {
 	db.Model(&model.SuspiciousIP{}).Count(&count)
 	if count != 1 {
 		t.Fatal("invalid batch partially saved")
+	}
+}
+
+func TestSuspiciousIPDeleteUnblockFailure(t *testing.T) {
+	ctx, db := suspiciousIPTestContext(t)
+	failure := errors.New("SCI unavailable")
+	a := &SuspiciousIPAdmin{execute: func(context.Context, string, string) error { return failure }}
+	entry, err := a.Create(ctx, "192.0.2.1", "retain on failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = a.Delete(ctx, entry.UUID); !errors.Is(err, failure) {
+		t.Fatalf("missing unblock error: %v", err)
+	}
+	if _, err = a.Get(ctx, entry.UUID); err != nil {
+		t.Fatalf("failed unblock deleted record: %v", err)
+	}
+	a.execute = func(_ context.Context, control, command string) error {
+		var count int
+		if err := db.Model(&model.SuspiciousIP{}).Where("uuid = ?", entry.UUID).Count(&count).Error; err != nil || count != 1 {
+			t.Fatal("record deleted before unblock submission")
+		}
+		if control != "toall=" || command != "/opt/cloudland/scripts/kvm/operation/unblock_ip.sh '192.0.2.1'" {
+			t.Fatalf("unexpected unblock: %s %s", control, command)
+		}
+		return nil
+	}
+	if err = a.Delete(ctx, entry.UUID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = a.Get(ctx, entry.UUID); !gorm.IsRecordNotFoundError(err) {
+		t.Fatal("record not deleted after submission")
 	}
 }

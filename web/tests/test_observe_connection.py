@@ -21,7 +21,8 @@ class ObserveConnectionTest(unittest.TestCase):
         shutil.copy2(SCRIPT_DIR / self.script.name, self.script)
         self.run_dir = self.root / 'run'
         self.run_dir.mkdir()
-        (script_dir.parent / 'cloudrc').write_text('run_dir="' + str(self.run_dir) + '"\n')
+        self.cloudrc = script_dir.parent / 'cloudrc'
+        self.cloudrc.write_text('run_dir="' + str(self.run_dir) + '"\n')
         self.watched = self.run_dir / 'check_connection.ip_list'
         self.watched.write_text('192.0.2.10\n192.0.2.20\n')
         self.fixture = self.root / 'connections'
@@ -72,6 +73,52 @@ tcp 6 100 ESTABLISHED src=192.0.2.100 dst=198.51.100.3 sport=1 dport=2 src=198.5
         self.assertEqual([len(report) - 3 for report in reports], [100, 100, 5])
         self.assertEqual(sorted(ip for report in reports for ip in report[3:]), sorted(destinations))
         self.assertTrue(all(report[:3] == ['|:-COMMAND-:|', 'observe_connection.sh', '7'] for report in reports))
+
+    def test_dns_encrypted_dns_and_ntp_are_excluded(self):
+        self.fixture.write_text(''.join(
+            f'{proto} 6 100 src=192.0.2.10 dst=198.51.100.{index} sport=45000 dport={port}\n'
+            for index, (proto, port) in enumerate(
+                [('tcp', 53), ('udp', 53), ('tcp', 853), ('udp', 853), ('udp', 123)], 1)))
+        self.assertEqual(self.observe().stdout, '')
+
+    def test_public_dns_and_site_dns_are_excluded(self):
+        with self.cloudrc.open('a') as config:
+            config.write('dns_server=10.0.0.53\ndns6_server=2001:db8::53\n')
+        self.fixture.write_text(''.join(
+            f'tcp 6 100 src=192.0.2.10 dst={ip} sport=45000 dport=443\n'
+            for ip in ['8.8.8.8', '1.1.1.1', '223.5.5.5', '10.0.0.53',
+                       '2001:4860:4860::8888', '2001:db8::53']))
+        result = self.observe()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '')
+
+    def test_additional_trusted_ips_and_exact_match(self):
+        with self.cloudrc.open('a') as config:
+            config.write('observe_connection_ignore_ips="198.51.100.1,198.51.100.2"\n')
+        self.fixture.write_text(''.join(
+            f'tcp 6 100 src=192.0.2.10 dst={ip} sport=45000 dport=443\n'
+            for ip in ['198.51.100.1', '198.51.100.2', '198.51.100.10', '8.8.8.80']))
+        result = self.observe()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(shlex.split(result.stdout)[3:], ['198.51.100.10', '8.8.8.80'])
+
+    def test_only_original_destination_service_is_filtered(self):
+        self.fixture.write_text('''tcp 6 100 ESTABLISHED src=192.0.2.10 dst=198.51.100.1 sport=53 dport=443 src=198.51.100.1 dst=192.0.2.10 sport=443 dport=53
+tcp 6 100 ESTABLISHED src=192.0.2.10 dst=198.51.100.2 sport=45000 dport=123 src=198.51.100.2 dst=192.0.2.10 sport=123 dport=45000
+''')
+        result = self.observe()
+        self.assertEqual(shlex.split(result.stdout)[3:], ['198.51.100.1', '198.51.100.2'])
+
+    def test_service_exclusions_can_be_overridden_or_disabled(self):
+        self.fixture.write_text('''tcp 6 100 src=192.0.2.10 dst=198.51.100.1 sport=45000 dport=53
+tcp 6 100 src=192.0.2.10 dst=198.51.100.2 sport=45000 dport=8443
+''')
+        with self.cloudrc.open('a') as config:
+            config.write('observe_connection_ignore_services="tcp:8443"\n')
+        self.assertEqual(shlex.split(self.observe().stdout)[3:], ['198.51.100.1'])
+        with self.cloudrc.open('a') as config:
+            config.write('observe_connection_ignore_services=""\n')
+        self.assertEqual(shlex.split(self.observe().stdout)[3:], ['198.51.100.1', '198.51.100.2'])
 
 
 if __name__ == '__main__':

@@ -16,7 +16,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -55,9 +54,6 @@ func HyperExecute(ctx context.Context, control, command string) (err error) {
 		return NewCLError(ErrExecuteOnHyperFailed, "Error posting data", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return NewCLError(ErrExecuteOnHyperFailed, "Error posting data", fmt.Errorf("SCI returned HTTP %d", resp.StatusCode))
-	}
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {

@@ -10,3 +10,9 @@ mem_over_ratio=1
 disk_over_ratio=1
 use_lb=true
 proxy_mode=yes
+
+# Connection observation: additional trusted destination IPs (space/comma separated).
+# Site DNS (dns_server/dns6_server) and common public DNS IPs are always excluded.
+observe_connection_ignore_ips=""
+# Ignored original destination services, as protocol:port. Set to "" to disable.
+observe_connection_ignore_services="tcp:53 udp:53 tcp:853 udp:853 udp:123"
