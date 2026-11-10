@@ -106,8 +106,10 @@ func TestCheckConnectionTemplate(t *testing.T) {
 		{"en-US", "Check Connection", "Failed", "连接检查"},
 	} {
 		t.Run(tc.lang, func(t *testing.T) {
-			if err := i18n.SetMessage(tc.lang, "../../conf/locale/locale_"+tc.lang+".ini"); err != nil {
-				t.Fatal(err)
+			if !i18n.IsExist(tc.lang) {
+				if err := i18n.SetMessage(tc.lang, "../../conf/locale/locale_"+tc.lang+".ini"); err != nil {
+					t.Fatal(err)
+				}
 			}
 			var rendered bytes.Buffer
 			err := tmpl.Execute(&rendered, map[string]interface{}{"i18n": i18n.Locale{Lang: tc.lang}, "Total": 1, "CanWrite": true, "Checks": []*model.CheckConnection{{IP: "192.0.2.1", Status: "failed", DispatchError: "<unavailable>"}}})

@@ -21,19 +21,20 @@ class CheckConnectionScriptTest(unittest.TestCase):
         (script_dir.parent / 'cloudrc').write_text('run_dir="' + str(self.root / 'run') + '"\n')
         mock = self.root / 'ipset'
         mock.write_text('''#!/bin/sh
-[ "$1" = list ] || exit 9
-if [ "$2" = -name ]; then
+if [ "$1" = list ] && [ "$2" = -name ]; then
     ls "$IPSET_FIXTURE"
-else
+elif [ "$1" = save ]; then
     cat "$IPSET_FIXTURE/$2"
+else
+    exit 9
 fi
 ''')
         mock.chmod(0o755)
         self.fixture = self.root / 'sets'
         self.fixture.mkdir()
-        (self.fixture / 'sgas-tap1').write_text('Name: sgas-tap1\nMembers:\n192.0.2.10,aa:bb:cc:dd:ee:ff\n')
-        (self.fixture / 'sgas-tap2').write_text('Name: sgas-tap2\nMembers:\n2001:db8::10,aa:bb:cc:dd:ee:ff\n')
-        (self.fixture / 'blocked_ips').write_text('Name: blocked_ips\nMembers:\n192.0.2.1\n')
+        (self.fixture / 'sgas-tap1').write_text('create sgas-tap1 hash:ip,mac family inet\nadd sgas-tap1 192.0.2.10,aa:bb:cc:dd:ee:ff\n')
+        (self.fixture / 'sgas-tap2').write_text('create sgas-tap2 hash:ip,mac family inet6\nadd sgas-tap2 2001:db8::10,aa:bb:cc:dd:ee:ff\n')
+        (self.fixture / 'blocked_ips').write_text('create blocked_ips hash:ip\nadd blocked_ips 192.0.2.1\n')
         self.env = dict(os.environ, PATH=str(self.root) + ':' + os.environ['PATH'],
                         IPSET_FIXTURE=str(self.fixture))
         self.target = self.root / 'run/check_connection.ip_list'
@@ -74,6 +75,17 @@ fi
             self.assertEqual(process.returncode, 0, error)
         self.assertEqual(sorted(self.target.read_text().splitlines()),
                          ['192.0.2.10', '2001:db8::10'])
+
+    def test_only_member_address_is_matched(self):
+        with (self.fixture / 'sgas-tap1').open('a') as fixture:
+            fixture.write('add sgas-tap1 192.0.2.20,aa:bb:cc:dd:ee:ff comment "192.0.2.30"\n')
+            fixture.write('add other-set 192.0.2.40,aa:bb:cc:dd:ee:ff\n')
+        for value in ('create sgas-tap1 hash:ip', '192.0.2.30', '192.0.2.40', 'aa:bb:cc:dd:ee:ff'):
+            with self.subTest(value=value):
+                self.assertEqual(self.run_check(value).returncode, 0)
+                self.assertFalse(self.target.exists())
+        self.assertEqual(self.run_check('192.0.2.20').returncode, 0)
+        self.assertEqual(self.target.read_text(), '192.0.2.20\n')
 
     def test_missing_argument_and_ipset_failure(self):
         self.assertNotEqual(subprocess.run([str(self.script)], env=self.env, capture_output=True).returncode, 0)

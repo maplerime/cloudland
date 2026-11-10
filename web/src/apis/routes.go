@@ -265,6 +265,13 @@ authGroup.GET("/api/v1/consistency_groups", consistencyGroupAPI.List)
 
 			metricsGroup.GET("/blocked-ips", blockedIPAPI.List)
 			metricsGroup.GET("/blocked-ips/history", blockedIPAPI.History)
+			metricsGroup.GET("/blocked-ips/suspicious", suspiciousIPAPI.List)
+			metricsGroup.POST("/blocked-ips/suspicious", suspiciousIPAPI.Create)
+			metricsGroup.GET("/blocked-ips/suspicious/:uuid", suspiciousIPAPI.Get)
+			metricsGroup.PATCH("/blocked-ips/suspicious/:uuid", suspiciousIPAPI.Patch)
+			metricsGroup.DELETE("/blocked-ips/suspicious/:uuid", suspiciousIPAPI.Delete)
+			metricsGroup.POST("/blocked-ips/suspicious/:uuid/block", suspiciousIPAPI.BlockRecord)
+			metricsGroup.POST("/blocked-ips/block", suspiciousIPAPI.Block)
 			metricsGroup.GET("/ip-instance-map", ipInstanceMapAPI.List)
 
 			metricsGroup.POST("/alarm/cpu/rules", alarmAPI.CreateCPURule)

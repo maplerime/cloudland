@@ -1,0 +1,5 @@
+<div class="ui attached tabular menu">
+    <a class="item {{if eq .Tab "current"}}active{{end}}" href="/blocked-ips">{{.i18n.Tr "Current_Blocked"}}</a>
+    <a class="item {{if eq .Tab "history"}}active{{end}}" href="/blocked-ips/history">{{.i18n.Tr "Blocked_History"}}</a>
+    <a class="item {{if eq .Tab "suspicious"}}active{{end}}" href="/blocked-ips/suspicious">{{.i18n.Tr "Suspicious_IPs"}}</a>
+</div>

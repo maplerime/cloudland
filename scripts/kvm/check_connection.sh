@@ -11,8 +11,9 @@ file=$run_dir/check_connection.ip_list
 sets=$(ipset list -name) || exit 1
 for set in $sets; do
     [[ $set == sgas-* ]] || continue
-    entries=$(ipset list "$set") || exit 1
-    if echo "$entries" | cut -d, -f1 | grep -Fxq -- "$ip"; then
+    entries=$(ipset save "$set") || exit 1
+    # Only add records contain members; ignore set definitions and metadata.
+    if echo "$entries" | awk -v set="$set" '$1 == "add" && $2 == set {split($3, entry, ","); print entry[1]}' | grep -Fxq -- "$ip"; then
         mkdir -p "$run_dir" || exit 1
         (
             flock -x 9 || exit 1
