@@ -222,17 +222,20 @@ virsh autostart $vm_ID --disable
 # Reattach existing XML files for the current data volumes only.
 for data_id in $(jq -r '.volumes[] | select(.booting == false) | .id' <<< "$metadata"); do
     vol_xml=$xml_dir/$vm_ID/disk-${data_id}.xml
+    if [ ! -f "$vol_xml" ]; then
+        log_debug $ID "Skipping data volume $data_id: XML file $vol_xml does not exist"
+        continue
+    fi
     virsh attach-device $vm_ID "$vol_xml" --config --persistent
     if [ $? -eq 0 ]; then
         log_debug $ID "Successfully attached data volume $data_id to VM $vm_ID"
     else
-        log_debug $ID "Failed to attach data volume $data_id to VM $vm_ID"
-        echo "|:-COMMAND-:| launch_vm.sh '$ID' 'reinstall_error' '$SCI_CLIENT_ID' 'failed to attach data volume $data_id' '$snapshot'"
-        exit -1
+        log_debug $ID "Failed to attach data volume $data_id to VM $vm_ID: XML file $vol_xml"
     fi
 done
 
 jq .vlans <<< $metadata | ./sync_nic_info.sh "$ID" "$vm_name" "$os_code"
+virsh dumpxml --security-info $vm_ID 2>/dev/null | sed "s/autoport='yes'/autoport='no'/g" > $vm_xml.dump && mv -f $vm_xml.dump $vm_xml
 state=reinstall_error
 reason="failed to start domain"
 virsh start $vm_ID

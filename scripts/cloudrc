@@ -184,7 +184,7 @@ function wds_get_image_snapshot()
 
     # 1. Read the latest two entries; a missing list must not mean no snapshots.
     local latest_ret code latest_snapshots latest_snapshot latest_name
-    if ! latest_ret=$(wds_curl_v3 GET "manager/block/v3/volume/$image_volume_id/snap?current_page=1&page_size=2&sort_by=create_time&order=descend"); then
+    if ! latest_ret=$(wds_curl_v3 GET "manager/block/v3/volume/$image_volume_id/snap?status=CREATE_SUCCESS&current_page=1&page_size=2&sort_by=create_time&order=descend"); then
         log_debug "$image_volume_id" "Failed to query WDS latest snapshots"
         return 1
     fi
