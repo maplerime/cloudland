@@ -180,6 +180,7 @@ function wds_get_image_snapshot()
 {
     local image_volume_id=$1
     local image_prefix=$2
+    log_debug "$image_volume_id" "wds_get_image_snapshot: start image_prefix=$image_prefix region=$wds_region az=$wds_az"
 
     # 1. Read the latest two entries; a missing list must not mean no snapshots.
     local latest_ret code latest_snapshots latest_snapshot latest_name
@@ -187,6 +188,7 @@ function wds_get_image_snapshot()
         log_debug "$image_volume_id" "Failed to query WDS latest snapshots"
         return 1
     fi
+    log_debug "$image_volume_id" "wds_get_image_snapshot: latest snapshots response=$latest_ret"
     code=$(jq -r '.code' <<< "$latest_ret")
     if [ "$code" != "000000" ]; then
         log_debug "$image_volume_id" "Invalid WDS latest snapshot response"
@@ -199,7 +201,9 @@ function wds_get_image_snapshot()
     fi
     latest_snapshot=$(jq -c '.[0]' <<< "$latest_snapshots")
     latest_name=$(jq -r '.show_vol_name' <<< "$latest_snapshot")
+    log_debug "$image_volume_id" "wds_get_image_snapshot: first snapshot name=$latest_name"
     if [ "$latest_name" = "$image_prefix" ]; then
+        log_debug "$image_volume_id" "wds_get_image_snapshot: first entry matches source volume, using second entry"
         latest_snapshot=$(jq -c '.[1]' <<< "$latest_snapshots")
         latest_name=$(jq -r '.show_vol_name' <<< "$latest_snapshot")
     fi
@@ -209,14 +213,17 @@ function wds_get_image_snapshot()
     local sequence=1
     local create_snapshot=false
     if [ "$latest_snapshot" = null ]; then
+        log_debug "$image_volume_id" "wds_get_image_snapshot: no numbered snapshot, creating sequence=1"
         create_snapshot=true
     else
         sequence=${latest_name##*-}
         latest_id=$(jq -r '.id' <<< "$latest_snapshot")
+        log_debug "$image_volume_id" "wds_get_image_snapshot: selected snapshot id=$latest_id name=$latest_name sequence=$sequence"
         if ! relation_ret=$(wds_curl_v3 GET "manager/block/v3/snap/$latest_id/relation_tree?current_page=0&page_size=1"); then
             log_debug "$image_volume_id" "Failed to query WDS snapshot relations"
             return 1
         fi
+        log_debug "$image_volume_id" "wds_get_image_snapshot: relation response=$relation_ret"
         code=$(jq -r '.code' <<< "$relation_ret")
         if [ "$code" != "000000" ]; then
             log_debug "$image_volume_id" "Invalid WDS snapshot relation response"
@@ -227,17 +234,21 @@ function wds_get_image_snapshot()
             log_debug "$image_volume_id" "Missing WDS snapshot relation count"
             return 1
         fi
+        log_debug "$image_volume_id" "wds_get_image_snapshot: clone count=$count threshold=96 snapshot_id=$latest_id"
         if [ "$count" -ge 96 ]; then
             sequence=$((sequence + 1))
             create_snapshot=true
+            log_debug "$image_volume_id" "wds_get_image_snapshot: threshold reached, next sequence=$sequence"
         fi
     fi
 
     # 3. Create directly when needed, without an existence query.
     local snapshot_name create_ret ret_code
     snapshot_name=$image_prefix-$sequence
+    log_debug "$image_volume_id" "wds_get_image_snapshot: decision name=$snapshot_name sequence=$sequence create_snapshot=$create_snapshot"
     if [ "$create_snapshot" = true ]; then
         create_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
+        log_debug "$image_volume_id" "wds_get_image_snapshot: create response=$create_ret"
         ret_code=$(jq -r '.ret_code' <<< "$create_ret")
         if [ "$ret_code" != "0" ]; then
             log_debug "$image_volume_id" "Failed to create WDS image snapshot: $snapshot_name"
@@ -247,7 +258,9 @@ function wds_get_image_snapshot()
 
     # 4. Resolve both reused and new snapshots with one common exact-name query.
     local snapshot_ret snapshot_id snap_size
+    log_debug "$image_volume_id" "wds_get_image_snapshot: exact lookup name=$snapshot_name"
     snapshot_ret=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" '{}')
+    log_debug "$image_volume_id" "wds_get_image_snapshot: exact lookup response=$snapshot_ret"
     ret_code=$(jq -r '.ret_code' <<< "$snapshot_ret")
     if [ "$ret_code" != "0" ]; then
         log_debug "$image_volume_id" "Invalid WDS exact snapshot response"
@@ -260,6 +273,7 @@ function wds_get_image_snapshot()
     fi
     snapshot_name=$(jq -r '.snaps[0].name' <<< "$snapshot_ret")
     snap_size=$(jq -r '.snaps[0].snap_size' <<< "$snapshot_ret")
+    log_debug "$image_volume_id" "wds_get_image_snapshot: result snapshot_id=$snapshot_id name=$snapshot_name sequence=$sequence snap_size=$snap_size"
 
     # 5. Output the JSON result for callers using result=$(wds_get_image_snapshot ...).
     jq -cn --arg id "$snapshot_id" --arg name "$snapshot_name" \
