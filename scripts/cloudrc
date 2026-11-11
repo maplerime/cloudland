@@ -182,7 +182,7 @@ function wds_get_image_snapshot()
     local image_prefix=$2
     log_debug "$image_volume_id" "wds_get_image_snapshot: start image_prefix=$image_prefix region=$wds_region az=$wds_az"
 
-    # 1. Read the latest two entries; a missing list must not mean no snapshots.
+    # 1. Read the latest two entries after confirming the query succeeded.
     local latest_ret code latest_snapshots latest_snapshot latest_name
     if ! latest_ret=$(wds_curl_v3 GET "manager/block/v3/volume/$image_volume_id/snap?status=CREATE_SUCCESS&current_page=1&page_size=2&sort_by=create_time&order=descend"); then
         log_debug "$image_volume_id" "Failed to query WDS latest snapshots"
@@ -195,10 +195,12 @@ function wds_get_image_snapshot()
         return 1
     fi
     latest_snapshots=$(jq -c '.data.list.snaps' <<< "$latest_ret")
-    if [ -z "$latest_snapshots" ] || [ "$latest_snapshots" = null ]; then
-        log_debug "$image_volume_id" "Missing WDS latest snapshot list"
-        return 1
+    # WDS returns a null list when the snapshot count is zero.
+    if [ "$(jq -r '.data.totalCount' <<< "$latest_ret")" = "0" ]; then
+        latest_snapshots='[]'
     fi
+
+    # If there are no snapshots, the first entry is null.
     latest_snapshot=$(jq -c '.[0]' <<< "$latest_snapshots")
     latest_name=$(jq -r '.show_vol_name' <<< "$latest_snapshot")
     log_debug "$image_volume_id" "wds_get_image_snapshot: first snapshot name=$latest_name"
