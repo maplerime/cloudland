@@ -162,6 +162,111 @@ function wds_curl()
     echo
 }
 
+# v3 needs Region/Az. Curl outputs the body; a trailing echo would mask its status.
+function wds_curl_v3()
+{
+    local action=$1
+    local path=$2
+    local data=${3:-}
+    [ -z "$data" ] && data='{}'
+    get_wds_token
+    curl -s -L -X"$action" -H 'Content-Type: application/json' \
+        -H "Authorization: $wds_token" -H "Region: $wds_region" -H "Az: $wds_az" \
+        -k "$wds_address/$path" -d "$data"
+}
+
+# Select by the real clone count; stdout contains only the resulting JSON.
+function wds_get_image_snapshot()
+{
+    local image_volume_id=$1
+    local image_prefix=$2
+
+    # 1. Read the latest two entries; a missing list must not mean no snapshots.
+    local latest_ret code latest_snapshots latest_snapshot latest_name
+    if ! latest_ret=$(wds_curl_v3 GET "manager/block/v3/volume/$image_volume_id/snap?current_page=1&page_size=2&sort_by=create_time&order=descend"); then
+        log_debug "$image_volume_id" "Failed to query WDS latest snapshots"
+        return 1
+    fi
+    code=$(jq -r '.code' <<< "$latest_ret")
+    if [ "$code" != "000000" ]; then
+        log_debug "$image_volume_id" "Invalid WDS latest snapshot response"
+        return 1
+    fi
+    latest_snapshots=$(jq -c '.data.list.snaps' <<< "$latest_ret")
+    if [ -z "$latest_snapshots" ] || [ "$latest_snapshots" = null ]; then
+        log_debug "$image_volume_id" "Missing WDS latest snapshot list"
+        return 1
+    fi
+    latest_snapshot=$(jq -c '.[0]' <<< "$latest_snapshots")
+    latest_name=$(jq -r '.show_vol_name' <<< "$latest_snapshot")
+    if [ "$latest_name" = "$image_prefix" ]; then
+        latest_snapshot=$(jq -c '.[1]' <<< "$latest_snapshots")
+        latest_name=$(jq -r '.show_vol_name' <<< "$latest_snapshot")
+    fi
+
+    # 2. Reuse the numbered snapshot until its real clone count reaches 96.
+    local latest_id relation_ret count
+    local sequence=1
+    local create_snapshot=false
+    if [ "$latest_snapshot" = null ]; then
+        create_snapshot=true
+    else
+        sequence=${latest_name##*-}
+        latest_id=$(jq -r '.id' <<< "$latest_snapshot")
+        if ! relation_ret=$(wds_curl_v3 GET "manager/block/v3/snap/$latest_id/relation_tree?current_page=0&page_size=1"); then
+            log_debug "$image_volume_id" "Failed to query WDS snapshot relations"
+            return 1
+        fi
+        code=$(jq -r '.code' <<< "$relation_ret")
+        if [ "$code" != "000000" ]; then
+            log_debug "$image_volume_id" "Invalid WDS snapshot relation response"
+            return 1
+        fi
+        count=$(jq -r '.data.totalCount' <<< "$relation_ret")
+        if [ -z "$count" ] || [ "$count" = null ]; then
+            log_debug "$image_volume_id" "Missing WDS snapshot relation count"
+            return 1
+        fi
+        if [ "$count" -ge 96 ]; then
+            sequence=$((sequence + 1))
+            create_snapshot=true
+        fi
+    fi
+
+    # 3. Create directly when needed, without an existence query.
+    local snapshot_name create_ret ret_code
+    snapshot_name=$image_prefix-$sequence
+    if [ "$create_snapshot" = true ]; then
+        create_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
+        ret_code=$(jq -r '.ret_code' <<< "$create_ret")
+        if [ "$ret_code" != "0" ]; then
+            log_debug "$image_volume_id" "Failed to create WDS image snapshot: $snapshot_name"
+            return 1
+        fi
+    fi
+
+    # 4. Resolve both reused and new snapshots with one common exact-name query.
+    local snapshot_ret snapshot_id snap_size
+    snapshot_ret=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" '{}')
+    ret_code=$(jq -r '.ret_code' <<< "$snapshot_ret")
+    if [ "$ret_code" != "0" ]; then
+        log_debug "$image_volume_id" "Invalid WDS exact snapshot response"
+        return 1
+    fi
+    snapshot_id=$(jq -r '.snaps[0].id' <<< "$snapshot_ret")
+    if [ -z "$snapshot_id" ] || [ "$snapshot_id" = null ]; then
+        log_debug "$image_volume_id" "Missing WDS clone snapshot: $snapshot_name"
+        return 1
+    fi
+    snapshot_name=$(jq -r '.snaps[0].name' <<< "$snapshot_ret")
+    snap_size=$(jq -r '.snaps[0].snap_size' <<< "$snapshot_ret")
+
+    # 5. Output the JSON result for callers using result=$(wds_get_image_snapshot ...).
+    jq -cn --arg id "$snapshot_id" --arg name "$snapshot_name" \
+        --argjson sequence "$sequence" --argjson size "$snap_size" \
+        '{snapshot_id:$id,snapshot_name:$name,snapshot_sequence:$sequence,snap_size:$size}'
+}
+
 # Select pool with lowest usage (real_data_size/valid_size) from comma-separated list.
 # Skips pools with valid_size=0 or API failure; fallback to first pool if none valid.
 # Usage: pool_ID=$(select_pool_lowest_usage "id1, id2, id3")

@@ -21,7 +21,7 @@ func init() {
 
 func updateInstance(ctx context.Context, volume *model.Volume, status string, reason string) (err error) {
 	ctx, db := GetContextDB(ctx)
-	if volume.Booting && status == "error" {
+	if volume.Booting && (status == "error" || status == "reinstall_error") {
 		instance := &model.Instance{Model: model.Model{ID: volume.InstanceID}}
 		if err = db.Take(&instance).Error; err != nil {
 			logger.Error("Invalid instance ID", err)

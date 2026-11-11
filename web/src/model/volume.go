@@ -15,16 +15,18 @@ type VolumeStatus string
 type BackupStatus string
 
 const (
-	VolumeStatusResizing  VolumeStatus = "resizing"
-	VolumeStatusAvailable VolumeStatus = "available"
-	VolumeStatusAttached  VolumeStatus = "attached"
-	VolumeStatusAttaching VolumeStatus = "attaching"
-	VolumeStatusDetaching VolumeStatus = "detaching"
-	VolumeStatusRestoring VolumeStatus = "restoring"
-	VolumeStatusBackuping VolumeStatus = "backuping"
-	VolumeStatusExporting VolumeStatus = "exporting"
-	VolumeStatusError     VolumeStatus = "error"
-	VolumeStatusPending   VolumeStatus = "pending"
+	VolumeStatusResizing       VolumeStatus = "resizing"
+	VolumeStatusAvailable      VolumeStatus = "available"
+	VolumeStatusAttached       VolumeStatus = "attached"
+	VolumeStatusAttaching      VolumeStatus = "attaching"
+	VolumeStatusDetaching      VolumeStatus = "detaching"
+	VolumeStatusRestoring      VolumeStatus = "restoring"
+	VolumeStatusBackuping      VolumeStatus = "backuping"
+	VolumeStatusExporting      VolumeStatus = "exporting"
+	VolumeStatusError          VolumeStatus = "error"
+	VolumeStatusPending        VolumeStatus = "pending"
+	VolumeStatusReinstalling   VolumeStatus = "reinstalling"
+	VolumeStatusReinstallError VolumeStatus = "reinstall_error"
 )
 
 func (s VolumeStatus) String() string {
@@ -88,14 +90,15 @@ func (v *Volume) IsBusy() bool {
 		v.Status == VolumeStatusDetaching ||
 		v.Status == VolumeStatusRestoring ||
 		v.Status == VolumeStatusBackuping ||
-		v.Status == VolumeStatusExporting {
+		v.Status == VolumeStatusExporting ||
+		v.Status == VolumeStatusReinstalling {
 		return true
 	}
 	return false
 }
 
 func (v *Volume) IsError() bool {
-	return v.Status == VolumeStatusError
+	return v.Status == VolumeStatusError || v.Status == VolumeStatusReinstallError
 }
 
 func (v *Volume) IsAvailable() bool {
