@@ -83,7 +83,7 @@
     - import_role:
         name: monitor
         tasks_from: monitor_vmagent
-      tags: [never, monitor_vmagent]
+      tags: [monitor, monitor_vmagent]
 
 # deploy monitor for cland nodes
 - name: install monitor for cland
