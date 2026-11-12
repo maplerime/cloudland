@@ -5,11 +5,51 @@
     node_exporter_textfile_dir: "{{ node_exporter_textfile_dir | default('/var/lib/node_exporter') }}"
 
 - name: Install node exporter on vmagent hosts
-  delegate_to: "{{ item }}"
-  apt:
-    name: prometheus-node-exporter
-    state: present
-  loop: "{{ groups['vmagent'] | default([]) }}"
+  when: groups['vmagent'] | default([]) | length > 0
+  block:
+    - name: Download node exporter package on deployer
+      delegate_to: localhost
+      become: false
+      run_once: true
+      environment:
+        NODE_EXPORTER_CACHE: "{{ playbook_dir }}/node-exporter-packages"
+      shell: |
+        set -eu
+        mkdir -p "$NODE_EXPORTER_CACHE"
+        set -- "$NODE_EXPORTER_CACHE"/prometheus-node-exporter_*.deb
+        if [ ! -f "$1" ]; then
+          cd "$NODE_EXPORTER_CACHE"
+          apt-get download prometheus-node-exporter >&2
+          set -- "$NODE_EXPORTER_CACHE"/prometheus-node-exporter_*.deb
+        fi
+        [ "$#" -eq 1 ] && [ -f "$1" ] || {
+          echo "Expected exactly one node exporter deb in $NODE_EXPORTER_CACHE" >&2
+          exit 1
+        }
+        [ "$(dpkg-deb -f "$1" Package)" = prometheus-node-exporter ]
+        printf '%s\n' "$1"
+      register: vmagent_node_exporter_deb
+      changed_when: false
+
+    - name: Copy node exporter package to vmagent hosts
+      delegate_to: "{{ item }}"
+      copy:
+        src: "{{ vmagent_node_exporter_deb.stdout }}"
+        dest: /tmp/prometheus-node-exporter.deb
+        mode: '0644'
+      loop: "{{ groups['vmagent'] | default([]) }}"
+
+    - name: Install node exporter package offline on vmagent hosts
+      delegate_to: "{{ item }}"
+      shell: |
+        if [ "$(dpkg-query -W -f='${db:Status-Status}' prometheus-node-exporter 2>/dev/null)" = installed ]; then
+          printf 'already installed\n'
+        else
+          dpkg --install /tmp/prometheus-node-exporter.deb
+        fi
+      register: vmagent_node_exporter_install
+      changed_when: vmagent_node_exporter_install.stdout != 'already installed'
+      loop: "{{ groups['vmagent'] | default([]) }}"
 
 - name: Create node exporter textfile directory
   delegate_to: "{{ item }}"
