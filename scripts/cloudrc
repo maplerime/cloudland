@@ -249,16 +249,13 @@ function wds_get_image_snapshot()
     snapshot_name=$image_prefix-$sequence
     log_debug "$image_volume_id" "wds_get_image_snapshot: decision name=$snapshot_name sequence=$sequence create_snapshot=$create_snapshot"
     if [ "$create_snapshot" = true ]; then
+        # Always query by name afterward; a concurrent request may have created the snapshot.
         create_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
         log_debug "$image_volume_id" "wds_get_image_snapshot: create response=$create_ret"
-        ret_code=$(jq -r '.ret_code' <<< "$create_ret")
-        if [ "$ret_code" != "0" ]; then
-            log_debug "$image_volume_id" "Failed to create WDS image snapshot: $snapshot_name"
-            return 1
-        fi
     fi
 
     # 4. Resolve both reused and new snapshots with one common exact-name query.
+    # Continue only if the query succeeds and returns a snapshot ID, regardless of the create result.
     local snapshot_ret snapshot_id snap_size
     log_debug "$image_volume_id" "wds_get_image_snapshot: exact lookup name=$snapshot_name"
     snapshot_ret=$(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" '{}')
