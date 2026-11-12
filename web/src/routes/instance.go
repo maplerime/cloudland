@@ -38,8 +38,6 @@ var (
 	instanceView  = &InstanceView{}
 )
 
-const MaxmumSnapshot = 64
-
 type InstanceAdmin struct{}
 
 type InstanceView struct{}
@@ -85,7 +83,6 @@ type VolumeInfo struct {
 
 type PoolRelationItem struct {
 	ImageVolumeID string `json:"image_volume_id"`
-	Snapshot      int64  `json:"snapshot"`
 }
 
 type InstanceData struct {
@@ -202,7 +199,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 				err = NewCLError(ErrImageStorageNotFound, "Image storage not found", err)
 				return
 			}
-			poolRelation[pid] = PoolRelationItem{ImageVolumeID: storage.VolumeID, Snapshot: 0}
+			poolRelation[pid] = PoolRelationItem{ImageVolumeID: storage.VolumeID}
 		}
 		logger.Debugf("Using volume driver %s with pool IDs %v, relation %+v", driver, poolIDs, poolRelation)
 	}
@@ -214,29 +211,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 		if count > 1 {
 			hostname = fmt.Sprintf("%s-%d", prefix, i+1)
 		}
-		total := 0
 
-		if poolID == "local" {
-			if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-				logger.Error("Failed to query total instances with the image", err)
-				return nil, NewCLError(ErrSQLSyntaxError, "Failed to query total instances with the image", err)
-			}
-		} else {
-			for pid, rel := range poolRelation {
-				var poolTotal int
-				if err = db.Model(&model.Instance{}).
-					Unscoped().
-					Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
-					Where("v.pool_id = ?", pid).
-					Where("instances.image_id = ?", image.ID).
-					Count(&poolTotal).Error; err != nil {
-					logger.Errorf("Failed to count instances for pool %s, %v", pid, err)
-					continue
-				}
-				poolSnap := poolTotal/MaxmumSnapshot + 1
-				poolRelation[pid] = PoolRelationItem{ImageVolumeID: rel.ImageVolumeID, Snapshot: int64(poolSnap)}
-			}
-		}
 		instance := &model.Instance{
 			Model:          model.Model{Creater: memberShip.UserID},
 			Owner:          memberShip.OrgID,
@@ -256,6 +231,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			Cpu:            cpu,
 			Memory:         memory,
 			Disk:           disk,
+			NestedEnable:   nestedEnable,
 		}
 		err = db.Create(instance).Error
 		if err != nil {
@@ -332,7 +308,7 @@ func (a *InstanceAdmin) Create(ctx context.Context, count int, prefix, userdata 
 			// Fallback to hyper group selection
 			control = "select=" + hyperGroup + " " + rcNeeded
 		}
-		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, nestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+		command := fmt.Sprintf("/opt/cloudland/scripts/backend/launch_vm.sh '%d' '%s.%s' '%t' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' <<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, image.QAEnabled, hostname, instance.Cpu, instance.Memory, instance.Disk, bootVolume.ID, instance.NestedEnable, image.BootLoader, instance.UUID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 		execCommands = append(execCommands, &ExecutionCommand{
 			Control: control,
 			Command: command,
@@ -743,14 +719,15 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 	imagePrefix := fmt.Sprintf("image-%d-%s", image.ID, strings.Split(image.UUID, "-")[0])
 	driver := bootVolume.GetVolumeDriver()
 	poolID := bootVolume.GetVolumePoolID()
+	if poolID == "" {
+		poolID = bootVolume.PoolID
+	}
+	oldWDSVolumeID := ""
+	if driver != "local" && bootVolume.Path != "" {
+		oldWDSVolumeID = bootVolume.GetOriginVolumeID()
+	}
 	imageVolumeID := ""
-	total := 0
-	if driver == "local" {
-		if err = db.Unscoped().Model(&model.Instance{}).Where("image_id = ?", image.ID).Count(&total).Error; err != nil {
-			logger.Error("Failed to query total instances with the image", err)
-			return NewCLError(ErrInstanceNotFound, "Failed to query total instances with the image", err)
-		}
-	} else {
+	if driver != "local" {
 		storage := model.ImageStorage{}
 		err = db.Where("image_id = ? and pool_id = ? and status = ?", image.ID, poolID, model.StorageStatusSynced).First(&storage).Error
 		if err != nil {
@@ -759,14 +736,6 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 			return
 		}
 		imageVolumeID = storage.VolumeID
-		if err = db.Model(&model.Instance{}).
-			Unscoped().
-			Joins("LEFT JOIN volumes v ON instances.id = v.instance_id AND v.booting = ?", true).
-			Where("v.pool_id = ?", poolID).
-			Where("instances.image_id = ?", image.ID).
-			Count(&total).Error; err != nil {
-			logger.Error("Failed to count instances with volumes matching pool_id", err)
-		}
 	}
 	if image.Size > int64(disk)*1024*1024*1024 {
 		err = NewCLError(ErrDiskTooSmall, "Flavor disk size is not enough for the image", nil)
@@ -837,16 +806,49 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return NewCLError(ErrInstanceUpdateFailed, "Failed to update keys association", err)
 	}
 
-	// change volume status to reinstalling
-	bootVolume.Status = "reinstalling"
-	bootVolume.Size = disk
-	err = db.Model(&model.Volume{}).Where("id = ?", bootVolume.ID).Updates(map[string]interface{}{
-		"status": bootVolume.Status,
-		"size":   bootVolume.Size,
-	}).Error
+	// Keep the old record for history and create a fresh boot volume without QoS defaults.
+	err = db.Delete(bootVolume).Error
 	if err != nil {
-		logger.Error("Failed to save volume", err)
-		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to save volume", err)
+		logger.Error("Failed to delete old boot volume", err)
+		return NewCLError(ErrBootVolumeDeleteFailed, "Failed to delete old boot volume", err)
+	}
+	newBootVolume := &model.Volume{
+		Model:      model.Model{Creater: bootVolume.Creater},
+		Name:       bootVolume.Name,
+		Owner:      bootVolume.Owner,
+		InstanceID: instance.ID,
+		Booting:    true,
+		Size:       disk,
+		Format:     bootVolume.Format,
+		Target:     bootVolume.Target,
+		IopsLimit:  bootVolume.IopsLimit,
+		IopsBurst:  bootVolume.IopsBurst,
+		BpsLimit:   bootVolume.BpsLimit,
+		BpsBurst:   bootVolume.BpsBurst,
+		PoolID:     poolID,
+		Hyper:      bootVolume.Hyper,
+		Status:     model.VolumeStatusReinstalling,
+	}
+	if driver == "local" {
+		// Preserve the known local path for retries. WDS gets its new path from the callback.
+		newBootVolume.Path = bootVolume.Path
+	}
+	err = db.Create(newBootVolume).Error
+	if err != nil {
+		logger.Error("Failed to create reinstall boot volume", err)
+		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to create reinstall boot volume", err)
+	}
+	// Write the original Hyper explicitly so GORM defaults cannot replace zero.
+	err = db.Model(newBootVolume).Update("hyper", bootVolume.Hyper).Error
+	if err != nil {
+		logger.Error("Failed to save boot volume hypervisor", err)
+		return NewCLError(ErrBootVolumeUpdateFailed, "Failed to save boot volume hypervisor", err)
+	}
+	// Metadata must contain only current volumes, including the new boot record.
+	err = db.Where("instance_id = ?", instance.ID).Find(&instance.Volumes).Error
+	if err != nil {
+		logger.Error("Failed to reload instance volumes", err)
+		return
 	}
 
 	// rebuild metadata
@@ -864,9 +866,8 @@ func (a *InstanceAdmin) Reinstall(ctx context.Context, instance *model.Instance,
 		return
 	}
 
-	snapshot := total/MaxmumSnapshot + 1 // Same snapshot reference can not be over 128, so use 96 here
 	control := fmt.Sprintf("inter=%d", instance.Hyper)
-	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%d' '%d' '%s' '%s' '%d' '%d' '%d' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, snapshot, bootVolume.ID, poolID, bootVolume.GetOriginVolumeID(), cpu, memory, disk, instance.Hostname, image.BootLoader, instance.UUID, imageVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
+	command := fmt.Sprintf("/opt/cloudland/scripts/backend/reinstall_vm.sh '%d' '%s.%s' '%s' '%s' '%d' '%d' '%d' '%d' '%t' '%s' '%s' '%s' '%s'<<EOF\n%s\nEOF\n", instance.ID, imagePrefix, image.Format, imageVolumeID, instance.Hostname, cpu, memory, disk, newBootVolume.ID, instance.NestedEnable, image.BootLoader, instance.UUID, poolID, oldWDSVolumeID, base64.StdEncoding.EncodeToString([]byte(metadata)))
 	err = HyperExecute(ctx, control, command)
 	if err != nil {
 		logger.Error("Reinstall remote exec failed", err)
