@@ -360,6 +360,17 @@ definitions:
       updated_at:
         type: string
     type: object
+  apis.CheckConnectionPayload:
+    properties:
+      ips:
+        items:
+          type: string
+        maxItems: 256
+        minItems: 1
+        type: array
+    required:
+    - ips
+    type: object
   apis.ConsistencyGroupListResponse:
     properties:
       consistency_groups:
@@ -3302,6 +3313,28 @@ paths:
       summary: restore volume from a backup/snapshot
       tags:
       - Compute
+  /check_connection:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: IPs to check
+        in: body
+        name: message
+        required: true
+        schema:
+          $ref: '#/definitions/apis.CheckConnectionPayload'
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Accepted
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Submit IPs for local VM ownership checks on all cloudlets
+      tags:
+      - Network
   /consistency_groups:
     get:
       consumes:

@@ -603,6 +603,40 @@ const docTemplatev1 = `{
                 }
             }
         },
+        "/check_connection": {
+            "post": {
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Network"
+                ],
+                "summary": "Submit IPs for local VM ownership checks on all cloudlets",
+                "parameters": [
+                    {
+                        "description": "IPs to check",
+                        "name": "message",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apis.CheckConnectionPayload"
+                        }
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Accepted",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
         "/consistency_groups": {
             "get": {
                 "description": "List consistency groups with pagination",
@@ -7340,6 +7374,22 @@ const docTemplatev1 = `{
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "apis.CheckConnectionPayload": {
+            "type": "object",
+            "required": [
+                "ips"
+            ],
+            "properties": {
+                "ips": {
+                    "type": "array",
+                    "maxItems": 256,
+                    "minItems": 1,
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
