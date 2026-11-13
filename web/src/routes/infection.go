@@ -88,13 +88,28 @@ func (*VMInspectionOperator) StartVMInspection(ctx context.Context, input VMInsp
 		return fmt.Errorf("inspection rule type/region mismatch")
 	}
 	settings, err := GetVMInspectionSettings(ctx, inst.Hyper)
+	skipReason := ""
+	if !settings.IsolationEnabled {
+		skipReason = "configuration_disabled"
+	}
 	if err != nil {
+		skipReason = "settings_unavailable"
 		logger.Errorf("[VM-INSPECTION] VM=%s settings unavailable, automatic isolation disabled: %v", inst.UUID, err)
 	}
-	return dispatchVMInspection(ctx, inst, settings.IsolationEnabled, settings.MatchPolicy)
+	whitelisted, err := isVMInspectionPinWhitelisted(ctx, inst.UUID)
+	if err != nil {
+		settings.IsolationEnabled = false
+		skipReason = "whitelist_unavailable"
+		logger.Errorf("[VM-INSPECTION] VM=%s whitelist unavailable, automatic isolation disabled: %v", inst.UUID, err)
+	} else if whitelisted {
+		settings.IsolationEnabled = false
+		skipReason = "whitelist"
+		logger.Infof("[VM-INSPECTION] VM=%s automatic pin exemption applies; inspection remains enabled", inst.UUID)
+	}
+	return dispatchVMInspection(ctx, inst, settings.IsolationEnabled, settings.MatchPolicy, skipReason)
 }
 
-func dispatchVMInspection(ctx context.Context, inst *model.Instance, enabled bool, policy VMInspectionMatchPolicy) error {
+func dispatchVMInspection(ctx context.Context, inst *model.Instance, enabled bool, policy VMInspectionMatchPolicy, skipReason string) error {
 	if policy == nil {
 		policy = defaultVMInspectionMatchPolicy()
 	}
@@ -102,7 +117,7 @@ func dispatchVMInspection(ctx context.Context, inst *model.Instance, enabled boo
 	if err != nil {
 		return err
 	}
-	command := fmt.Sprintf("/opt/cloudland/scripts/kvm/inspect_vm.sh '%s' '%t' '%s'", inst.Domain, enabled, string(data))
+	command := fmt.Sprintf("VM_INSPECTION_SKIP_REASON='%s' /opt/cloudland/scripts/kvm/inspect_vm.sh '%s' '%t' '%s'", skipReason, inst.Domain, enabled, string(data))
 	if err := common.HyperExecute(ctx, fmt.Sprintf("inter=%d", inst.Hyper), command); err != nil {
 		return err
 	}
@@ -393,33 +408,146 @@ func UpdateVMInspectionSettings(ctx context.Context, p VMInspectionSettingsPatch
 		return VMInspectionSettingsResponse{}, err
 	}
 	if hiveChanged {
-		go syncHiveNodes(common.SetContextDB(context.Background(), db))
+		go syncHiveNodes(common.SetContextDB(context.WithoutCancel(ctx), db))
 	}
 	logger.Infof("[VM-INSPECTION] settings updated operator=%d nodes=%d global=%t", member.UserID, len(ids), globalChanged)
 	return out, nil
 }
 
+func CreateVMInspectionPinWhitelist(ctx context.Context, instanceUUID, reason string) (*model.VMInspectionPinWhitelist, error) {
+	if err := requireVMInspectionAdmin(ctx); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(instanceUUID)
+	if err != nil {
+		return nil, common.NewCLError(common.ErrInvalidParameter, "invalid instance UUID", err)
+	}
+	instanceUUID = id.String()
+	reason = strings.TrimSpace(reason)
+	if len(reason) > 1024 || len([]rune(reason)) > 255 {
+		return nil, common.NewCLError(common.ErrInvalidParameter, "reason exceeds 255 characters", nil)
+	}
+	inst, err := instanceAdmin.GetInstanceByUUID(ctx, instanceUUID)
+	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrInstanceNotFound {
+			return nil, gorm.ErrRecordNotFound
+		}
+		return nil, err
+	}
+	_, db := common.GetContextDB(ctx)
+	tx := db.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+	defer tx.Rollback()
+	// Serialize additions with each other and with deletion of this VM.
+	if err := tx.Set("gorm:query_option", "FOR UPDATE").Where("id = ?", inst.ID).Take(inst).Error; err != nil {
+		return nil, err
+	}
+	if inst.Status == model.InstanceStatusDeleting || inst.Status == model.InstanceStatusDeleted {
+		return nil, common.NewCLError(common.ErrInvalidParameter, "instance is being deleted", nil)
+	}
+	var count int64
+	if err := tx.Model(&model.VMInspectionPinWhitelist{}).Where("instance_uuid = ?", instanceUUID).Count(&count).Error; err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, fmt.Errorf("conflict: instance already has an automatic pin exemption")
+	}
+	entry := &model.VMInspectionPinWhitelist{
+		Model: model.Model{Creater: common.GetMemberShip(ctx).UserID}, InstanceUUID: instanceUUID, Reason: reason,
+	}
+	if err := tx.Create(entry).Error; err != nil {
+		return nil, err
+	}
+	if err := tx.Commit().Error; err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+func ListVMInspectionPinWhitelists(ctx context.Context, instanceUUID string, offset, limit int) ([]model.VMInspectionPinWhitelist, int, error) {
+	if err := requireVMInspectionAdmin(ctx); err != nil {
+		return nil, 0, err
+	}
+	if offset < 0 || limit < 1 || limit > 200 {
+		return nil, 0, common.NewCLError(common.ErrInvalidParameter, "invalid pagination", nil)
+	}
+	_, db := common.GetContextDB(ctx)
+	query := db.Model(&model.VMInspectionPinWhitelist{})
+	if instanceUUID != "" {
+		id, err := uuid.Parse(instanceUUID)
+		if err != nil {
+			return nil, 0, common.NewCLError(common.ErrInvalidParameter, "invalid instance UUID", err)
+		}
+		query = query.Where("instance_uuid = ?", id.String())
+	}
+	var total int
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	rows := []model.VMInspectionPinWhitelist{}
+	err := query.Order("id DESC").Offset(offset).Limit(limit).Find(&rows).Error
+	return rows, total, err
+}
+
+func GetVMInspectionPinWhitelist(ctx context.Context, recordUUID string) (*model.VMInspectionPinWhitelist, error) {
+	if err := requireVMInspectionAdmin(ctx); err != nil {
+		return nil, err
+	}
+	id, err := uuid.Parse(recordUUID)
+	if err != nil {
+		return nil, common.NewCLError(common.ErrInvalidParameter, "invalid whitelist record UUID", err)
+	}
+	_, db := common.GetContextDB(ctx)
+	entry := &model.VMInspectionPinWhitelist{}
+	if err := db.Where("uuid = ?", id.String()).Take(entry).Error; err != nil {
+		return nil, err
+	}
+	return entry, nil
+}
+
+func DeleteVMInspectionPinWhitelist(ctx context.Context, recordUUID string) error {
+	entry, err := GetVMInspectionPinWhitelist(ctx, recordUUID)
+	if err != nil {
+		return err
+	}
+	_, db := common.GetContextDB(ctx)
+	return db.Delete(entry).Error
+}
+
+func isVMInspectionPinWhitelisted(ctx context.Context, instanceUUID string) (bool, error) {
+	_, db := common.GetContextDB(ctx)
+	var entry model.VMInspectionPinWhitelist
+	err := db.Select("id").Where("instance_uuid = ?", instanceUUID).Take(&entry).Error
+	if gorm.IsRecordNotFoundError(err) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // This DTO carries node observations and optional judgment/disposition results.
 type VMInfectionSummary struct {
-	SchemaVersion    int             `json:"schema_version"`
-	InstanceUUID     string          `json:"instance_uuid"`
-	Domain           string          `json:"domain"`
-	SourceHyper      int32           `json:"source_hyper"`
-	InspectionResult json.RawMessage `json:"inspection_result"`
-	CollectedAt      *time.Time      `json:"collected_at"`
-	RulesetVersion   string          `json:"ruleset_version"`
-	MatchSummary     string          `json:"match_summary"`
-	Verdict          string          `json:"verdict"`
-	MatchRuleIDs     []string        `json:"match_rule_ids"`
-	IsolationStatus  string          `json:"isolation_status"`
-	IsolationCPUs    string          `json:"isolation_cpus"`
-	IsolationSource  string          `json:"isolation_source"`
-	OperationAt      time.Time       `json:"operation_at"`
-	Action           string          `json:"action"`
-	ActionSource     string          `json:"action_source"`
-	ScanID           string          `json:"scan_id"`
-	Remark           string          `json:"remark"`
-	ErrorMessage     string          `json:"error_message"`
+	SchemaVersion       int             `json:"schema_version"`
+	InstanceUUID        string          `json:"instance_uuid"`
+	Domain              string          `json:"domain"`
+	SourceHyper         int32           `json:"source_hyper"`
+	InspectionResult    json.RawMessage `json:"inspection_result"`
+	CollectedAt         *time.Time      `json:"collected_at"`
+	RulesetVersion      string          `json:"ruleset_version"`
+	MatchSummary        string          `json:"match_summary"`
+	Verdict             string          `json:"verdict"`
+	MatchRuleIDs        []string        `json:"match_rule_ids"`
+	IsolationStatus     string          `json:"isolation_status"`
+	IsolationSkipReason string          `json:"isolation_skip_reason"`
+	IsolationCPUs       string          `json:"isolation_cpus"`
+	IsolationSource     string          `json:"isolation_source"`
+	OperationAt         time.Time       `json:"operation_at"`
+	Action              string          `json:"action"`
+	ActionSource        string          `json:"action_source"`
+	ScanID              string          `json:"scan_id"`
+	Remark              string          `json:"remark"`
+	ErrorMessage        string          `json:"error_message"`
 }
 
 func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSummary) error {
@@ -443,6 +571,14 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	}
 	if e.ActionSource != "automatic" && e.ActionSource != "manual" {
 		return fmt.Errorf("invalid action source")
+	}
+	switch e.IsolationSkipReason {
+	case "", "whitelist", "configuration_disabled", "settings_unavailable", "whitelist_unavailable", "match_policy", "no_match", "not_evaluated", "affinity_query_failed":
+	default:
+		return fmt.Errorf("invalid isolation skip reason")
+	}
+	if e.IsolationSkipReason != "" && (e.Action != "record" || (e.IsolationStatus != "not_requested" && e.IsolationStatus != "disabled" && e.IsolationStatus != "")) {
+		return fmt.Errorf("isolation skip reason is only valid for an unisolated observation")
 	}
 	if e.IsolationSource != "" && e.IsolationSource != "automatic" && e.IsolationSource != "manual" && e.IsolationSource != "existing" {
 		return fmt.Errorf("invalid isolation source")
@@ -522,13 +658,18 @@ func validateVMInfectionResult(ctx context.Context, source int32, e *VMInfection
 	if e.OperationAt.IsZero() || e.OperationAt.After(now.Add(5*time.Minute)) || latest.Before(now.AddDate(0, 0, -settings.RecordRetentionDays)) {
 		return fmt.Errorf("expired or invalid result time")
 	}
-	adminCtx, err := CreateAdminContext(ctx)
-	if err != nil {
+	// SCI callbacks use the reporting node and current VM assignment, not a user login.
+	_, db := common.GetContextDB(ctx)
+	var inst model.Instance
+	if err := db.Where("uuid = ?", e.InstanceUUID).Take(&inst).Error; err != nil {
 		return err
 	}
-	inst, err := resolveInspectionInstance(adminCtx, e.InstanceUUID, e.Domain)
-	if err != nil {
-		return err
+	expected := inst.Domain
+	if expected == "" {
+		expected = fmt.Sprintf("inst-%d", inst.ID)
+	}
+	if e.Domain != expected {
+		return fmt.Errorf("VM domain mismatch")
 	}
 	if inst.Hyper != source {
 		return fmt.Errorf("VM moved or result source mismatched")
@@ -588,6 +729,7 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 		}
 		if old.HyperID == source && ((e.Action == "record" && e.IsolationStatus == "") || (e.IsolationStatus == "disabled" && old.IsolationStatus != "") || e.OperationAt.Before(old.OperationAt)) {
 			e.IsolationStatus, e.IsolationCPUs, e.IsolationSource = old.IsolationStatus, old.IsolationCPUs, old.IsolationSource
+			e.IsolationSkipReason = old.IsolationSkipReason
 			e.OperationAt = old.OperationAt
 			if e.ErrorMessage == "" || e.Action != "record" {
 				e.ErrorMessage = old.ErrorMessage
@@ -612,12 +754,14 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 	updates["collected_at"] = e.CollectedAt
 	updates["ruleset_version"] = e.RulesetVersion
 	updates["match_summary"] = e.MatchSummary
+	updates["isolation_skip_reason"] = e.IsolationSkipReason
 	if fresh {
 		row := model.VMInfectionRecord{Model: model.Model{Creater: 1}, InstanceUUID: e.InstanceUUID, HyperID: source, Verdict: e.Verdict, MatchRuleIDs: string(ids), IsolationStatus: e.IsolationStatus, IsolationCPUs: e.IsolationCPUs, IsolationSource: e.IsolationSource, OperationAt: e.OperationAt, ScanID: e.ScanID, Remark: e.Remark, ErrorMessage: e.ErrorMessage}
 		row.InspectionResult = string(e.InspectionResult)
 		row.CollectedAt = e.CollectedAt
 		row.RulesetVersion = e.RulesetVersion
 		row.MatchSummary = e.MatchSummary
+		row.IsolationSkipReason = e.IsolationSkipReason
 		err = tx.Create(&row).Error
 		old.UUID = row.UUID
 	} else {
@@ -764,6 +908,7 @@ type vmInfectionKey struct {
 	source int32
 }
 type vmInfectionBuffer struct {
+	ctx        context.Context
 	key        vmInfectionKey
 	total      int
 	hash       string
@@ -780,28 +925,28 @@ type vmInfectionRuntime struct {
 	completed                      map[vmInfectionKey]time.Time
 	maxBytes, maxChunks, maxActive int
 	timeout, ttl                   time.Duration
-	process                        func(int32, *VMInfectionSummary) error
+	process                        func(context.Context, int32, *VMInfectionSummary) error
 	cleanupTimer                   *time.Timer
 }
 
-func newVMInfectionRuntime(maxBytes, maxChunks, maxActive int, timeout, ttl time.Duration, process func(int32, *VMInfectionSummary) error) *vmInfectionRuntime {
+func newVMInfectionRuntime(maxBytes, maxChunks, maxActive int, timeout, ttl time.Duration, process func(context.Context, int32, *VMInfectionSummary) error) *vmInfectionRuntime {
 	return &vmInfectionRuntime{active: make(map[vmInfectionKey]*vmInfectionBuffer), completed: make(map[vmInfectionKey]time.Time), maxBytes: maxBytes, maxChunks: maxChunks, maxActive: maxActive, timeout: timeout, ttl: ttl, process: process}
 }
 
 var infectionRuntimeOnce sync.Once
 var infectionRuntime *vmInfectionRuntime
 
-func ReceiveVMInfectionChunk(_ context.Context, source int32, chunk VMInfectionChunkInput) error {
+func ReceiveVMInfectionChunk(ctx context.Context, source int32, chunk VMInfectionChunkInput) error {
 	infectionRuntimeOnce.Do(func() {
-		infectionRuntime = newVMInfectionRuntime(262144, 512, 128, 60*time.Second, 300*time.Second, func(source int32, e *VMInfectionSummary) error {
-			ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		infectionRuntime = newVMInfectionRuntime(262144, 512, 128, 60*time.Second, 300*time.Second, func(ctx context.Context, source int32, e *VMInfectionSummary) error {
+			ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 			defer cancel()
 			return SaveVMInfectionResult(ctx, source, e)
 		})
 	})
-	return infectionRuntime.receive(source, chunk)
+	return infectionRuntime.receive(ctx, source, chunk)
 }
-func (r *vmInfectionRuntime) receive(source int32, c VMInfectionChunkInput) error {
+func (r *vmInfectionRuntime) receive(ctx context.Context, source int32, c VMInfectionChunkInput) error {
 	if _, err := uuid.Parse(c.InstanceUUID); err != nil || len(c.InstanceUUID) != 36 {
 		return fmt.Errorf("invalid infection instance UUID")
 	}
@@ -834,7 +979,7 @@ func (r *vmInfectionRuntime) receive(source int32, c VMInfectionChunkInput) erro
 		if len(r.active) >= r.maxActive {
 			return fmt.Errorf("inspection result capacity reached")
 		}
-		b = &vmInfectionBuffer{key: key, total: c.Total, hash: strings.ToLower(c.SHA256), chunks: make([]string, c.Total)}
+		b = &vmInfectionBuffer{ctx: context.WithoutCancel(ctx), key: key, total: c.Total, hash: strings.ToLower(c.SHA256), chunks: make([]string, c.Total)}
 		r.active[key] = b
 		b.timer = time.AfterFunc(r.timeout, func() { r.expireVMInfectionBuffer(key) })
 	}
@@ -892,7 +1037,7 @@ func (r *vmInfectionRuntime) processVMInfectionResult(b *vmInfectionBuffer) {
 	defer func() { r.mu.Lock(); defer r.mu.Unlock(); r.releaseLocked(b.key) }()
 	e, err := assembleVMInfection(b, r.maxBytes)
 	if err == nil {
-		err = r.process(b.key.source, e)
+		err = r.process(b.ctx, b.key.source, e)
 	}
 	if err != nil {
 		logger.Errorf("[VM-INFECTION] VM=%s source=%d save failed: %v", b.key.vm, b.key.source, err)

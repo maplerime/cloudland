@@ -30,6 +30,15 @@ build_vm_infection_summary() {
        action:$o.action,action_source:$o.action_source,operation_at:$now,
        collected_at:($o.collected_at // null),inspection_result:($o.inspection_result // null),
        isolation_status:$status,isolation_cpus:$cpus,scan_id:($o.scan_id // ""),
+       isolation_skip_reason:(if $o.action!="record" then ""
+         elif $status=="" then "affinity_query_failed"
+         elif $status!="not_requested" and $status!="disabled" then ""
+         elif $e.verdict=="no_match" then "no_match"
+         elif $e.verdict=="not_evaluated" then "not_evaluated"
+         elif ($o.isolation_skip_reason // "")!="" then $o.isolation_skip_reason
+         elif $o.isolation_enabled==false then "configuration_disabled"
+         elif $e.pin_requested==false then "match_policy"
+         else "" end),
        error_message:($error|.[0:512])}' > "$work/summary.json"
 }
 

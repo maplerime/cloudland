@@ -2636,8 +2636,9 @@ func (a *AdjustAPI) tryStartVMInspection(ctx context.Context, alert routes.Adjus
 	input := routes.VMInspectionStartInput{InstanceUUID: alert.Labels["instance_id"], Domain: alert.Labels["domain"], RegionID: alert.Labels["region_id"], RuleGroupUUID: alert.Labels["rule_group"], GlobalRuleID: alert.Labels["global_rule_id"]}
 	logger.Infof("[VM-INSPECTION] request=%s VM=%q domain=%q rule=%q triggered",
 		requestID, input.InstanceUUID, input.Domain, alert.Labels["rule_id"])
+	taskCtx := context.WithoutCancel(ctx)
 	go func() {
-		if err := (&routes.VMInspectionOperator{}).StartVMInspection(context.Background(), input); err != nil {
+		if err := (&routes.VMInspectionOperator{}).StartVMInspection(taskCtx, input); err != nil {
 			logger.Errorf("[VM-INSPECTION] request=%s start failed: %v", requestID, err)
 		}
 	}()

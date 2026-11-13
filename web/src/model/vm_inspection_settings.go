@@ -1,6 +1,9 @@
 package model
 
-import "web/src/dbs"
+import (
+	"github.com/jinzhu/gorm"
+	"web/src/dbs"
+)
 
 // HyperID -1 is the regional default; other rows override one Hyper.Hostid.
 type VMInspectionSetting struct {
@@ -15,4 +18,20 @@ type VMInspectionSetting struct {
 }
 
 func (VMInspectionSetting) TableName() string { return "vm_inspection_settings" }
-func init()                                   { dbs.AutoMigrate(&VMInspectionSetting{}) }
+
+// VMInspectionPinWhitelist exempts one VM from automatic inspection-triggered pinning.
+type VMInspectionPinWhitelist struct {
+	Model
+	InstanceUUID string `gorm:"type:varchar(64);not null"`
+	Reason       string `gorm:"type:varchar(255)"`
+}
+
+func (VMInspectionPinWhitelist) TableName() string { return "vm_inspection_pin_whitelists" }
+
+func init() {
+	dbs.AutoMigrate(&VMInspectionSetting{}, &VMInspectionPinWhitelist{})
+	dbs.AutoUpgrade("vm_inspection_pin_whitelists_instance_active", func(db *gorm.DB) error {
+		return db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vm_inspection_pin_whitelists_instance_active
+			ON vm_inspection_pin_whitelists (instance_uuid) WHERE deleted_at IS NULL`).Error
+	})
+}

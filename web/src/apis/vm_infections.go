@@ -33,6 +33,7 @@ type VMInfectionResponse struct {
 }
 type VMIsolationResult struct {
 	Status       string     `json:"status"`
+	SkipReason   string     `json:"skip_reason"`
 	CPUs         string     `json:"cpus"`
 	Source       string     `json:"source"`
 	OperationAt  *time.Time `json:"operation_at"`
@@ -70,7 +71,7 @@ func convertVMInfection(row model.VMInfectionRecord) VMInfectionResponse {
 		InstanceUUID: row.InstanceUUID, HyperHostname: row.HyperHostname, InspectionResult: inspection, CollectedAt: collected,
 		RulesetVersion: row.RulesetVersion, MatchSummary: row.MatchSummary, Verdict: row.Verdict, MatchRuleIDs: ids, ScanID: row.ScanID,
 		IsolationResult: VMIsolationResult{Status: row.IsolationStatus, CPUs: row.IsolationCPUs, Source: row.IsolationSource,
-			OperationAt: operation, Remark: row.Remark, ErrorMessage: row.ErrorMessage}}
+			SkipReason: row.IsolationSkipReason, OperationAt: operation, Remark: row.Remark, ErrorMessage: row.ErrorMessage}}
 
 }
 

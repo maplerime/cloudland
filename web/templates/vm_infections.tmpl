@@ -46,6 +46,7 @@
                             <th>{{.i18n.Tr "InstanceUUID"}}</th><th>{{.i18n.Tr "Compute_Node"}}</th>
                             <th>{{.i18n.Tr "VM_Collection_Result"}}</th><th>{{.i18n.Tr "VM_Collection_Time"}} (UTC)</th>
                             <th>{{.i18n.Tr "VM_Verdict"}}</th><th>{{.i18n.Tr "VM_Isolation_Status"}}</th>
+                            <th>{{.i18n.Tr "VM_Isolation_Skip_Reason"}}</th>
                             <th>{{.i18n.Tr "VM_Isolation_CPUs"}}</th><th>{{.i18n.Tr "VM_Isolation_Source"}}</th>
                             <th>{{.i18n.Tr "VM_Isolation_Operation_Time"}} (UTC)</th><th>{{.i18n.Tr "VM_Record_Detail"}}</th>
                         </tr></thead>
@@ -57,12 +58,14 @@
                                 <td>{{if .CollectionStatus}}{{$.i18n.Tr (printf "VM_Collection_%s" .CollectionStatus)}}{{else}}NA{{end}}</td>
                                 <td>{{call $.DisplayTime .CollectedAt}}</td>
                                 <td>{{if .Verdict}}{{$.i18n.Tr (printf "VM_Verdict_%s" .Verdict)}}{{else}}NA{{end}}{{if .MatchSummary}}<div>{{.MatchSummary}}</div>{{end}}</td>
-                                <td>{{if .IsolationStatus}}{{$.i18n.Tr (printf "VM_Status_%s" .IsolationStatus)}}{{else}}NA{{end}}</td><td>{{call $.Display .IsolationCPUs}}</td>
+                                <td>{{if .IsolationStatus}}{{$.i18n.Tr (printf "VM_Status_%s" .IsolationStatus)}}{{else}}NA{{end}}</td>
+                                <td>{{if and .IsolationSkipReason (ne .IsolationStatus "isolated")}}{{$.i18n.Tr (printf "VM_Skip_%s" .IsolationSkipReason)}}{{else}}NA{{end}}</td>
+                                <td>{{call $.Display .IsolationCPUs}}</td>
                                 <td>{{if .IsolationSource}}{{$.i18n.Tr (printf "VM_Source_%s" .IsolationSource)}}{{else}}NA{{end}}</td>
                                 <td>{{if and .IsolationStatus (ne .IsolationStatus "disabled") (ne .IsolationStatus "not_requested")}}{{call $.DisplayTime .OperationAt}}{{else}}NA{{end}}</td>
                                 <td><a href="/vm-infections/{{.UUID}}">{{$.i18n.Tr "VM_Record_Detail"}}</a></td>
                             </tr>
-                            {{else}}<tr><td colspan="10">{{.i18n.Tr "None"}}</td></tr>{{end}}
+                            {{else}}<tr><td colspan="11">{{.i18n.Tr "None"}}</td></tr>{{end}}
                         </tbody>
                     </table>
                     {{template "_pagination" .}}

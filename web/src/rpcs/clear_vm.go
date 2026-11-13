@@ -172,6 +172,10 @@ func ClearVM(ctx context.Context, args []string) (status string, err error) {
 		logger.Errorf("Failed to delete VM inspection records for %s: %v", instance.UUID, err)
 		return
 	}
+	if err = db.Unscoped().Where("instance_uuid = ?", instance.UUID).Delete(&model.VMInspectionPinWhitelist{}).Error; err != nil {
+		logger.Errorf("Failed to delete VM automatic pin whitelist for %s: %v", instance.UUID, err)
+		return
+	}
 	if err = volumeAdmin.UpdateDataVolumeStatus(ctx, instance.ID, model.VolumeStatusAvailable); err != nil {
 		logger.Error("Failed to update attached volumes", err)
 		return
