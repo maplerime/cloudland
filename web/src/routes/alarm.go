@@ -46,6 +46,7 @@ const (
 	RuleTypeNodeReboot         = "node_reboot"
 	RuleTypeDBCluster          = "db_cluster"
 	RuleTypeVMAgent            = "vmagent"
+	RuleTypeVMMalware          = "vm_malware" // Retained only to reject creation and clean up legacy rules.
 	RulesEnabled               = "/etc/prometheus/rules_enabled"
 	RulesGeneral               = "/etc/prometheus/general_rules"
 	RulesSpecial               = "/etc/prometheus/special_rules"
@@ -2075,9 +2076,7 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		if err := requireVMInspectionAdmin(ctx); err != nil {
 			return nil, err
 		}
-		if _, err := validateVMMalwareRuleConfig(rule.Config.RawMessage); err != nil {
-			return nil, err
-		}
+		return nil, common.NewCLError(common.ErrInvalidParameter, "invalid rule type: vm_malware is retired; VM inspection notifications use Pushservice", nil)
 	}
 	if err := validateNodeAlarmRule(rule); err != nil {
 		return nil, err
@@ -2127,8 +2126,6 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		templateFiles = []string{"db-cluster.yml.j2"}
 	case RuleTypeVMAgent:
 		templateFiles = []string{"vmagent-availability.yml.j2"}
-	case RuleTypeVMMalware:
-		templateFiles = []string{"vm-malware.yml.j2"}
 	default:
 		operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 		return nil, fmt.Errorf("unsupported rule type: %s", rule.RuleType)
@@ -2139,14 +2136,6 @@ func createNodeAlarmRuleInternal(ctx context.Context, rule *model.NodeAlarmRule)
 		if err = json.Unmarshal(rule.Config.RawMessage, &configData); err != nil {
 			operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
 			return nil, fmt.Errorf("failed to parse config JSON: %v", err)
-		}
-
-		if rule.RuleType == RuleTypeVMMalware {
-			configData, err = validateVMMalwareRuleConfig(rule.Config.RawMessage)
-			if err != nil {
-				operator.DeleteNodeAlarmRules(ctx, newRule.UUID)
-				return nil, err
-			}
 		}
 
 		if rule.RuleType == RuleTypeAvailable {

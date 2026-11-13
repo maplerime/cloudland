@@ -67,7 +67,7 @@ PoC 的进程、RPC、CUPS 和文件查询仍按独立文件维护。guest 不�
 
 每台计算节点最多同时运行 6 个检测；满额等待任一空闲槽位，取得槽位后才开始 90 秒采集预算。
 管理接入 `vm_inspection.enabled` 缺省 true，显式 false 才关闭；部署模板仅在关闭时输出这一项。
-木马规则复用 node alarm 的 `rule_type=vm_malware` 和 config JSON；Teams 沿用 slack_security_webhook_url，不增加接收地址或分组时间配置。
+扫描结果由 report_rc 回传控制节点；新扫描发现威胁并保存成功后，复用 callback 的 Pushservice 配置发送一条包含威胁及实际隔离结果或未隔离原因的通知，不再创建 vm_malware Prometheus 通知规则。
 
 节点使用现有 scripts 整目录发布，依赖 jq、Python 3、coreutils、util-linux 和现有 virsh。
 WDS 查询失败或无法确认可用 CPU 时不隔离。

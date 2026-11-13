@@ -588,14 +588,10 @@
                 receiver: 'teams-ipgroup-alerts'
                 continue: true
 
-              # Completed inspection notifications are independent of the intelligent CPU webhook.
+              # VM inspection notifications now use Pushservice; suppress legacy alerts.
               - match:
                   alert_type: vm_malware
-                group_by: ['alertname', 'region_id', 'source_hyper', 'instance_id', 'scan_id']
-                group_wait: 10s
-                group_interval: 1m
-                repeat_interval: 3h
-                receiver: 'teams-vm-malware'
+                receiver: 'null'
                 continue: false
 
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
@@ -670,11 +666,6 @@
                     secrets:
                       - '{{ alert_webhook_api_key | trim }}'
                 follow_redirects: false
-
-          - name: 'teams-vm-malware'
-            webhook_configs:
-            - url: 'http://localhost:2000/vm_malware'
-              send_resolved: false
 
           - name: 'teams-notifications'
             webhook_configs:
@@ -1402,6 +1393,14 @@
   loop:
     - node_rules
     - node_templates
+  tags: [monitor]
+
+- name: Remove retired VM inspection notification template
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/prometheus/node_templates/vm-malware.yml.j2
+    state: absent
   tags: [monitor]
 
 - name: Find all rule template files

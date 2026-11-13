@@ -2679,6 +2679,10 @@ func (a *AlarmAPI) CreateNodeAlarmRule(c *gin.Context) {
 
 	rulePtr, err := a.alarmAdmin.CreateNodeAlarmRule(c.Request.Context(), &rule)
 	if err != nil {
+		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrInvalidParameter {
+			c.JSON(http.StatusBadRequest, gin.H{"error": clErr.Message})
+			return
+		}
 		if clErr, ok := err.(*common.CLError); ok && clErr.Code == common.ErrPermissionDenied {
 			c.JSON(http.StatusForbidden, gin.H{"error": clErr.Message})
 			return

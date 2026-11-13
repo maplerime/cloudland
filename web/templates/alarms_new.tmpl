@@ -29,9 +29,6 @@
                                         <option value="node_reboot">{{.i18n.Tr "Node_Reboot_Detection"}}</option>
                                         <option value="db_cluster">{{.i18n.Tr "DB_Cluster"}}</option>
                                         <option value="vmagent">{{.i18n.Tr "VMAgent_Node"}}</option>
-                                        {{if .IsAdmin}}
-                                        <option value="vm_malware">{{.i18n.Tr "VM_Inspection_Notification"}}</option>
-                                        {{end}}
                                         <option value="packet_drop">{{.i18n.Tr "Packet_Drop"}}</option>
 										<option value="ip_block">{{.i18n.Tr "IP_Block"}}</option>
 										<option value="ipgroup_available_ip">{{.i18n.Tr "IP_Group_Available_IP"}}</option>
@@ -125,9 +122,6 @@ document.addEventListener('DOMContentLoaded', function() {
         },
         'vmagent': {
             "node_down_duration": "2m"
-        },
-        'vm_malware': {
-            "for_duration": "0s"
         },
         'packet_drop': {
             "for_duration": "1m",

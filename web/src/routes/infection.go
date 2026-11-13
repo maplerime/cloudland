@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -25,7 +24,6 @@ import (
 	"github.com/go-co-op/gocron"
 	"github.com/google/uuid"
 	"github.com/jinzhu/gorm"
-	"github.com/spf13/viper"
 	macaron "gopkg.in/macaron.v1"
 
 	"web/src/callback"
@@ -1197,40 +1195,6 @@ func cleanupExpiredVMInfections(ctx context.Context, now time.Time) {
 			return
 		}
 	}
-}
-
-const RuleTypeVMMalware = "vm_malware"
-
-func validateVMMalwareRuleConfig(raw json.RawMessage) (map[string]interface{}, error) {
-	config := struct {
-		ForDuration string `json:"for_duration"`
-	}{ForDuration: "0s"}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&config); err != nil {
-		return nil, fmt.Errorf("invalid VM malware rule config: %w", err)
-	}
-	duration, err := time.ParseDuration(config.ForDuration)
-	if err != nil || duration < 0 {
-		return nil, fmt.Errorf("invalid for_duration")
-	}
-	base := ""
-	if host := viper.GetString("console.host"); host != "" {
-		port := viper.GetInt("console.port")
-		if port <= 0 {
-			port = 443
-		}
-		base = "https://" + net.JoinHostPort(host, strconv.Itoa(port))
-	}
-	// Keep the already-scraped snapshot available while a configured `for` elapses,
-	// even after report_rc removes the node's five-minute textfile.
-	windowSeconds := int64(duration/time.Second) + 300
-	return map[string]interface{}{
-		"for_duration":                config.ForDuration,
-		"notification_window":         fmt.Sprintf("%ds", windowSeconds),
-		"notification_window_seconds": windowSeconds,
-		"query_url":                   strconv.Quote(base + "/vm-infections?instance_uuid={{ $labels.instance_id }}"),
-	}, nil
 }
 
 var vmInspectionView = &VMInspectionView{}
