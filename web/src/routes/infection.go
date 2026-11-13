@@ -28,6 +28,7 @@ import (
 	"github.com/spf13/viper"
 	macaron "gopkg.in/macaron.v1"
 
+	"web/src/callback"
 	"web/src/common"
 	"web/src/model"
 )
@@ -706,9 +707,9 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 	if err != nil && !fresh {
 		return err
 	}
+	hasInspection := len(e.InspectionResult) > 0 && string(e.InspectionResult) != "null"
+	newInspection := hasInspection && e.CollectedAt != nil && (fresh || old.CollectedAt == nil || e.CollectedAt.After(*old.CollectedAt) || (e.CollectedAt.Equal(*old.CollectedAt) && e.ScanID > old.ScanID))
 	if !fresh {
-		hasInspection := len(e.InspectionResult) > 0 && string(e.InspectionResult) != "null"
-		newInspection := hasInspection && e.CollectedAt != nil && (old.CollectedAt == nil || e.CollectedAt.After(*old.CollectedAt) || (e.CollectedAt.Equal(*old.CollectedAt) && e.ScanID > old.ScanID))
 		if e.Action == "record" && !newInspection {
 			return nil
 		}
@@ -774,7 +775,58 @@ func saveVMInfectionResult(ctx context.Context, source int32, e *VMInfectionSumm
 		return err
 	}
 	logger.Infof("[VM-INFECTION] record=%s VM=%s source=%d scan=%q collected_at=%v verdict=%q status=%q saved", old.UUID, e.InstanceUUID, source, e.ScanID, e.CollectedAt, e.Verdict, e.IsolationStatus)
+	if newInspection && e.ActionSource == "automatic" {
+		pushVMInspectionThreat(db, &inst, e)
+	}
 	return nil
+}
+
+// Called only after a new scan has been committed; retained .done files use the
+// same stale-result checks as normal collection and cannot enqueue another event.
+func pushVMInspectionThreat(db *gorm.DB, inst *model.Instance, e *VMInfectionSummary) {
+	if !callback.IsEnabled() || (e.Verdict != "confirmed" && e.Verdict != "suspected") {
+		return
+	}
+	var org model.Organization
+	if err := db.Select("uuid").Where("id = ?", inst.Owner).Take(&org).Error; err != nil || org.UUID == "" {
+		logger.Errorf("[VM-INFECTION] VM=%s scan=%q notification skipped: tenant lookup failed: %v", inst.UUID, e.ScanID, err)
+		return
+	}
+	result := map[string]string{
+		"isolated": "已隔离", "failed": "隔离失败", "disabled": "未隔离", "not_requested": "未隔离",
+		"released": "已解除隔离", "release_failed": "解除隔离失败", "": "隔离状态查询失败",
+	}[e.IsolationStatus]
+	reason := map[string]string{
+		"whitelist": "实例在自动隔离白名单中", "configuration_disabled": "配置禁止自动隔离",
+		"settings_unavailable": "隔离配置读取失败", "whitelist_unavailable": "白名单查询失败",
+		"match_policy": "匹配策略不要求隔离", "affinity_query_failed": "CPU 亲和性查询失败",
+	}[e.IsolationSkipReason]
+	description := fmt.Sprintf("实例：%s（%s）\n威胁判定：%s\n匹配详情：%s\n隔离结果：%s", inst.Hostname, inst.UUID, e.Verdict, e.MatchSummary, result)
+	if reason != "" {
+		description += "\n未隔离原因：" + reason
+	}
+	if e.IsolationCPUs != "" {
+		description += "\n隔离 CPU：" + e.IsolationCPUs
+	}
+	if e.ErrorMessage != "" {
+		description += "\n错误信息：" + e.ErrorMessage
+	}
+	event := &callback.Event{
+		EventType: "instance_inspection_threat", Source: "Cloudland", OccurredAt: *e.CollectedAt,
+		TenantID: org.UUID,
+		Resource: callback.Resource{Type: callback.ResourceTypeInstance.String(), ID: inst.UUID, Name: inst.Hostname, Region: callback.GetRegion()},
+		Data: map[string]interface{}{
+			"summary": "虚拟机检测发现威胁", "description": description,
+			"instance_uuid": inst.UUID, "domain": e.Domain, "hyper_id": e.SourceHyper, "scan_id": e.ScanID,
+			"verdict": e.Verdict, "ruleset_version": e.RulesetVersion, "match_rule_ids": append([]string(nil), e.MatchRuleIDs...), "match_summary": e.MatchSummary,
+			"status": e.IsolationStatus, "isolation_status": e.IsolationStatus, "isolation_skip_reason": e.IsolationSkipReason,
+			"isolation_source": e.IsolationSource, "isolation_cpus": e.IsolationCPUs,
+			"action": e.Action, "action_source": e.ActionSource, "operation_at": e.OperationAt, "error_message": e.ErrorMessage,
+		},
+	}
+	if !callback.PushEvent(event) {
+		logger.Errorf("[VM-INFECTION] VM=%s scan=%q notification enqueue failed", inst.UUID, e.ScanID)
+	}
 }
 
 type VMInfectionListInput struct {
