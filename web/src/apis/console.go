@@ -58,10 +58,10 @@ func (v *ConsoleAPI) Create(c *gin.Context) {
 		ErrorResponse(c, http.StatusBadRequest, "Not able to create", err)
 		return
 	}
-	consoleURL := fmt.Sprintf("wss://%s/websockify?token=%s", c.Request.Host, token)
-	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	accessAddr := viper.GetString("console.host")
 	accessPort := viper.GetInt("console.port")
+	consoleURL := fmt.Sprintf("wss://%s/websockify?token=%s", accessAddr, token)
+	owner := orgAdmin.GetOrgName(ctx, instance.Owner)
 	consoleResp := &ConsoleResponse{
 		Instance: &ResourceReference{
 			ID:    instance.UUID,
