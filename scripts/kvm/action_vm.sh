@@ -22,7 +22,12 @@ elif [ "$action" = "hard_restart" ]; then
 elif [ "$action" = "pause" ]; then
     virsh suspend $vm_ID
 elif [ "$action" = "resume" ]; then
-    virsh resume $vm_ID
+    state=$(virsh domstate $vm_ID)
+    if [ "$state" = "pmsuspended" ]; then
+        virsh dompmwakeup $vm_ID
+    else
+        virsh resume $vm_ID
+    fi
 else
     die "Invalid action: $action"
 fi

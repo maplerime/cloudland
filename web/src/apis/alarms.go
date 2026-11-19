@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"web/src/common"
 	"web/src/model"
 	"web/src/routes"
 
@@ -177,6 +178,15 @@ func (a *AlarmAPI) UpdateMatchedVMsJSON(ctx context.Context, vmUUIDs []string, g
 // This supports incremental addition of VMs to rules (alarm or adjust)
 func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		memberShip := common.GetMemberShip(c.Request.Context())
+		if memberShip.UserID <= 0 || memberShip.OrgID <= 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Missing authenticated user or organization context",
+				"code":  "AUTH_CONTEXT_REQUIRED",
+			})
+			return
+		}
+
 		var req struct {
 			GroupUUID string `json:"group_uuid,omitempty"`
 			RuleID    string `json:"rule_id,omitempty"`
@@ -443,6 +453,15 @@ func (a *AlarmAPI) LinkRuleToVMWithType(ruleCategory string) gin.HandlerFunc {
 // UnlinkRuleFromVMWithType returns a closure that handles VM unlinking based on rule category
 func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		memberShip := common.GetMemberShip(c.Request.Context())
+		if memberShip.UserID <= 0 || memberShip.OrgID <= 0 {
+			c.JSON(http.StatusUnauthorized, gin.H{
+				"error": "Missing authenticated user or organization context",
+				"code":  "AUTH_CONTEXT_REQUIRED",
+			})
+			return
+		}
+
 		var req struct {
 			GroupUUID string `json:"group_uuid,omitempty"`
 			RuleID    string `json:"rule_id,omitempty"`
@@ -530,6 +549,16 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 
 		logger.Debugf("Processing VM unlinks for %s rule: groupUUID=%s, vmCount=%d, batchDelete=%v",
 			ruleCategory, groupUUID, len(req.VMLinks), isBatchDelete)
+
+		// Keep the actual interfaces for recovery after unlink succeeds.
+		var linkedVMs []model.VMRuleLink
+		if ruleCategory == "adjust" {
+			linkedVMs, err = a.operator.GetLinkedVMs(c.Request.Context(), groupUUID)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve VM links: " + err.Error()})
+				return
+			}
+		}
 
 		if isBatchDelete {
 			// Batch delete: delete all interfaces for each VM
@@ -664,6 +693,35 @@ func (a *AlarmAPI) UnlinkRuleFromVMWithType(ruleCategory string) gin.HandlerFunc
 		// Force reload Prometheus configuration
 		if err := routes.ReloadPrometheusViaHTTP(); err != nil {
 			logger.Errorf("Warning: Failed to reload Prometheus: %v", err)
+		}
+
+		// Restore only successfully unlinked resources; a recovery error does not relink them.
+		if ruleCategory == "adjust" {
+			adjustOperator := &routes.AdjustOperator{}
+			for _, deleted := range successfulDeletes {
+				for _, linked := range linkedVMs {
+					if linked.VMUUID != deleted.VMUUID || (deleted.Interface != "" && linked.Interface != deleted.Interface) {
+						continue
+					}
+					domain, err := routes.GetDomainByInstanceUUID(c.Request.Context(), linked.VMUUID)
+					if err == nil {
+						record := &routes.AdjustmentRecord{RuleGroupUUID: groupUUID, AdjustType: groupType, TargetDevice: linked.Interface}
+						switch groupType {
+						case model.RuleTypeAdjustCPU:
+							err = adjustOperator.RestoreCPUResource(c.Request.Context(), record, domain, linked.VMUUID)
+						case model.RuleTypeAdjustInBW, model.RuleTypeAdjustOutBW:
+							err = adjustOperator.RestoreBandwidthResource(c.Request.Context(), record, domain, linked.Interface, linked.VMUUID)
+						default:
+							err = fmt.Errorf("unsupported adjustment rule type: %s", groupType)
+						}
+					}
+					if err != nil {
+						logger.Errorf("Failed to restore resources after unlinking VM %s: %v", linked.VMUUID, err)
+						c.JSON(http.StatusInternalServerError, gin.H{"error": "VM unlinked, but failed to restore resources: " + err.Error(), "vm_uuid": linked.VMUUID, "interface": linked.Interface})
+						return
+					}
+				}
+			}
 		}
 
 		logger.Infof("Successfully unlinked VMs from %s rule, rule_category: %s, group_uuid: %s, unlinked_count: %d",

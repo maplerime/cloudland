@@ -63,6 +63,7 @@
 
 # Insert after "  routes:" and indent the entire block by 4 spaces (including the first line)
 - name: Add resource adjustment route to existing routes in Alertmanager
+  diff: false
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   blockinfile:
@@ -74,6 +75,8 @@
   tags: [monitor, resource_adjustment]
 
 - name: Add resource adjustment webhook receiver to Alertmanager receivers list
+  no_log: true
+  diff: false
   delegate_to: "{{ prometheus_server_ip }}"
   become: true
   blockinfile:
@@ -87,6 +90,11 @@
           http_config:
             tls_config:
               insecure_skip_verify: true
+            http_headers:
+              X-API-Key:
+                secrets:
+                  - '{{ alert_webhook_api_key | trim }}'
+            follow_redirects: false
     marker: "# {mark} ANSIBLE MANAGED BLOCK - Resource Adjustment Receiver"
   tags: [monitor, resource_adjustment]
 

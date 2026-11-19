@@ -37,7 +37,7 @@ type UserAdmin struct{}
 
 type UserView struct{}
 
-func (a *UserAdmin) Create(ctx context.Context, username, password, uuid string) (user *model.User, err error) {
+func (a *UserAdmin) Create(ctx context.Context, username, password, userUUID, orgUUID string) (user *model.User, org *model.Organization, err error) {
 	memberShip := GetMemberShip(ctx)
 	permit := memberShip.CheckPermission(model.Admin)
 	if username != "admin" && !permit {
@@ -55,13 +55,14 @@ func (a *UserAdmin) Create(ctx context.Context, username, password, uuid string)
 		return
 	}
 	user = &model.User{Model: model.Model{Creater: memberShip.UserID}, Username: username, Password: password}
-	if uuid != "" {
-		logger.Infof("Creating new user with uuid %s", uuid)
-		user.UUID = uuid
+	if userUUID != "" {
+		logger.Infof("Creating new user with uuid %s", userUUID)
+		user.UUID = userUUID
 	}
 	err = db.Create(user).Error
 	if err != nil {
 		logger.Error("DB failed to create user, %v", err)
+		return
 	}
 	if memberShip.OrgName != "admin" {
 		member := &model.Member{UserID: user.ID, UserName: username, OrgID: memberShip.OrgID, OrgName: memberShip.OrgName, Role: model.Reader}
@@ -71,6 +72,11 @@ func (a *UserAdmin) Create(ctx context.Context, username, password, uuid string)
 			err = NewCLError(ErrMemberCreationFailed, "DB failed to create organization member", err)
 			return
 		}
+	}
+	org, err = orgAdmin.Create(ctx, username, username, orgUUID)
+	if err != nil {
+		logger.Errorf("Failed to create organization for user %s: %+v", username, err)
+		return
 	}
 	return
 }
@@ -597,15 +603,9 @@ func (v *UserView) Create(c *macaron.Context, store session.Store) {
 		c.HTML(http.StatusBadRequest, "error")
 		return
 	}
-	_, err := userAdmin.Create(c.Req.Context(), username, password, "")
+	_, _, err := userAdmin.Create(c.Req.Context(), username, password, "", "")
 	if err != nil {
 		logger.Error("Failed to create user, %v", err)
-		c.HTML(500, "500")
-		return
-	}
-	_, err = orgAdmin.Create(c.Req.Context(), username, username, "")
-	if err != nil {
-		logger.Error("Failed to create organization, %v", err)
 		c.HTML(500, "500")
 		return
 	}

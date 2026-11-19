@@ -89,6 +89,16 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 				continue
 			}
 		}
+		// Both source and target reports can resume migration cleanup even
+		// when ownership is unchanged. Keep the existing active-migration guard.
+		if hyperID >= 0 {
+			reportedInstance := *instance
+			reportedInstance.Hyper = hyperID
+			reportedInstance.Status = model.InstanceStatus(status)
+			if syncErr := syncMigration(ctx, &reportedInstance); syncErr != nil {
+				logger.Error("Failed to sync migration info", syncErr)
+			}
+		}
 		if instance.Status.String() != status {
 			instance.Status = model.InstanceStatus(status)
 			err = db.Model(instance).Update(map[string]interface{}{
@@ -109,12 +119,6 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 		}
 		if instance.Hyper != hyperID {
 			instance.Hyper = hyperID
-			if instance.Hyper >= 0 {
-				err = syncMigration(ctx, instance)
-				if err != nil {
-					logger.Error("Failed to sync migration info", err)
-				}
-			}
 			err = db.Unscoped().Model(instance).Update(map[string]interface{}{
 				"hyper": hyperID,
 			}).Error

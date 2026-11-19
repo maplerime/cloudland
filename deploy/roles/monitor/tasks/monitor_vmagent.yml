@@ -1,0 +1,151 @@
+---
+- name: Set vmagent node monitoring variables
+  set_fact:
+    node_exporter_port: "{{ node_exporter_port | default(9101) }}"
+    node_exporter_textfile_dir: "{{ node_exporter_textfile_dir | default('/var/lib/node_exporter') }}"
+
+- name: Install node exporter on vmagent hosts
+  when: groups['vmagent'] | default([]) | length > 0
+  block:
+    - name: Download node exporter package on deployer
+      delegate_to: localhost
+      become: false
+      run_once: true
+      environment:
+        NODE_EXPORTER_CACHE: "{{ playbook_dir }}/node-exporter-packages"
+      shell: |
+        set -eu
+        mkdir -p "$NODE_EXPORTER_CACHE"
+        set -- "$NODE_EXPORTER_CACHE"/prometheus-node-exporter_*.deb
+        if [ ! -f "$1" ]; then
+          cd "$NODE_EXPORTER_CACHE"
+          apt-get download prometheus-node-exporter >&2
+          set -- "$NODE_EXPORTER_CACHE"/prometheus-node-exporter_*.deb
+        fi
+        [ "$#" -eq 1 ] && [ -f "$1" ] || {
+          echo "Expected exactly one node exporter deb in $NODE_EXPORTER_CACHE" >&2
+          exit 1
+        }
+        [ "$(dpkg-deb -f "$1" Package)" = prometheus-node-exporter ]
+        printf '%s\n' "$1"
+      register: vmagent_node_exporter_deb
+      changed_when: false
+
+    - name: Copy node exporter package to vmagent hosts
+      delegate_to: "{{ item }}"
+      copy:
+        src: "{{ vmagent_node_exporter_deb.stdout }}"
+        dest: /tmp/prometheus-node-exporter.deb
+        mode: '0644'
+      loop: "{{ groups['vmagent'] | default([]) }}"
+
+    - name: Install node exporter package offline on vmagent hosts
+      delegate_to: "{{ item }}"
+      shell: |
+        if [ "$(dpkg-query -W -f='${db:Status-Status}' prometheus-node-exporter 2>/dev/null)" = installed ]; then
+          printf 'already installed\n'
+        else
+          dpkg --install /tmp/prometheus-node-exporter.deb
+        fi
+      register: vmagent_node_exporter_install
+      changed_when: vmagent_node_exporter_install.stdout != 'already installed'
+      loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Create node exporter textfile directory
+  delegate_to: "{{ item }}"
+  file:
+    path: "{{ node_exporter_textfile_dir }}"
+    state: directory
+    owner: prometheus
+    group: prometheus
+    mode: '0755'
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Create node exporter systemd override directory
+  delegate_to: "{{ item }}"
+  file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Configure node exporter port and custom metric directory
+  delegate_to: "{{ item }}"
+  copy:
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/override.conf
+    content: |
+      [Service]
+      ExecStart=
+      ExecStart=/usr/bin/prometheus-node-exporter --web.listen-address=:{{ node_exporter_port }} --collector.textfile.directory={{ node_exporter_textfile_dir }}
+    owner: root
+    group: root
+    mode: '0644'
+  loop: "{{ groups['vmagent'] | default([]) }}"
+  register: vmagent_node_exporter_config
+
+- name: Apply node exporter configuration
+  delegate_to: "{{ item.item }}"
+  systemd:
+    name: prometheus-node-exporter
+    enabled: true
+    daemon_reload: "{{ item.changed }}"
+    state: "{{ 'restarted' if item.changed else 'started' }}"
+  loop: "{{ vmagent_node_exporter_config.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Check vmagent node metrics connectivity from the Prometheus server
+  uri:
+    url: "http://{{ hostvars[item].ansible_host | default(hostvars[item].ansible_ssh_host) | default(item) }}:{{ node_exporter_port }}/metrics"
+    timeout: 10
+    status_code: 200
+  loop: "{{ groups['vmagent'] | default([]) }}"
+
+- name: Generate vmagent node service discovery targets
+  template:
+    src: vmagent_node_exporters.json.j2
+    dest: /etc/prometheus/lists/vmagent_node_exporters.json
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+- name: Copy vmagent node alarm template for the existing rule API
+  copy:
+    src: "{{ role_path }}/templates/vmagent-availability.yml.j2"
+    dest: /etc/prometheus/node_templates/vmagent-availability.yml.j2
+    owner: prometheus
+    group: prometheus
+    mode: '0644'
+
+- name: Configure vmagent node exporter scraping
+  blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    marker: '# {mark} ANSIBLE MANAGED BLOCK - Node Exporters'
+    insertafter: '^scrape_configs:'
+    block: "{{ node_exporters_block | indent(2, true) }}"
+    validate: 'promtool check config %s'
+
+- name: Reload Prometheus configuration
+  uri:
+    url: http://localhost:9090/-/reload
+    method: POST
+    status_code: 200
+
+- name: Route vmagent node alerts to the internal service Teams receiver
+  blockinfile:
+    path: /etc/alertmanager/alertmanager.yml
+    marker: '    # {mark} ANSIBLE MANAGED BLOCK - VMAgent Alerts'
+    insertbefore: '^    # Route node alarms to node-webhook'
+    block: |2
+          - match:
+              alert_type: internal-service
+              node_type: vmagent
+            receiver: teams-internal-service
+            group_by: ['alertname', 'host', 'instance', 'severity']
+  register: vmagent_alert_route
+
+- name: Apply Alertmanager configuration
+  command: docker restart alertmanager
+  when: vmagent_alert_route.changed

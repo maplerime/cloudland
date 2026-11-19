@@ -10,6 +10,12 @@ router=router-$ID
 
 [ -z "$router" -o "$router" = "router-0" ] && exit 1
 
+if [ -e "/var/run/netns/$router" ]; then
+    exec 9<"/var/run/netns/$router" || exit 1
+    flock -x 9 || exit 1
+    export CLOUDLAND_FLOATING_NS_LOCK_FD=9
+fi
+
 ns_links=$(ip netns exec $router ip link show | grep ns- | awk '{print $2}' | cut -d'@' -f1)
 for link in $ns_links; do
     vlan=${link/ns-/}
@@ -19,6 +25,12 @@ for link in $ns_links; do
         exit 0
     fi
 done
+
+# NAT64 resources are discovered in the kernel, never from local state files.
+namespaces=$(ip netns list) || exit 1
+if awk -v prefix="fip6-$ID-" 'index($1, prefix) == 1 {found=1} END {exit !found}' <<<"$namespaces"; then
+    bash ./clear_floating6.sh --router "$ID" || exit 1
+fi
 
 for link in $ns_links; do
     vlan=${link/ns-/}

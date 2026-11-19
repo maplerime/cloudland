@@ -1,0 +1,13 @@
+groups:
+- name: vmagent-availability
+  rules:
+  - alert: VMAgentNodeDown
+    expr: up{job="prometheus_node_exporter",node_type="vmagent"} == 0
+    for: {{ node_down_duration | default("2m") }}
+    labels:
+      severity: critical
+      node_type: vmagent
+      alert_type: internal-service
+    annotations:
+      summary: 'vmagent 节点 {{ $labels.host }} 的监控端点不可达'
+      description: 'vmagent 节点 {{ $labels.host }}（{{ $labels.instance }}）的 node exporter 监控端点已持续 {{ node_down_duration | default("2m") }} 无法访问。'

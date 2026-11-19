@@ -60,6 +60,7 @@
         <a {{ if eq .Link "/secgroups" }} class="active item" {{ else }} class="item" {{ end }} href="/secgroups">
             {{.i18n.Tr "SecurityGroups"}}
         </a>
+        <a {{ if HasPrefix .Link "/check_connection" }} class="active item" {{ else }} class="item" {{ end }} href="/check_connection">{{.i18n.Tr "Check_Connection"}}</a>
         <a {{ if eq .Link "/ip-whitelists" }} class="active item" {{ else }} class="item" {{ end }} href="/ip-whitelists">
             {{.i18n.Tr "IP_Whitelists"}}
         </a>

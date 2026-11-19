@@ -3,6 +3,11 @@
 cd `dirname $0`
 source ../cloudrc
 
+# Cross-family IPv6 floating IPs use the namespace NAT64 backend.
+if [[ "$2" == *:* ]]; then
+    exec bash "./create_floating6.sh" "$@"
+fi
+
 [ $# -lt 7 ] && echo "$0 <router> <ext_ip> <ext_gw> <ext_vlan> <int_ip> <int_vlan> <mark_id> <inbound> <outbound>" && exit -1
 
 ID=$1
@@ -21,6 +26,11 @@ outbound=$9
 [ -z "$router" -o "$router" = "router-0" -o  -z "$ext_ip" -o -z "$int_ip" ] && exit 1
 ip netns list | grep -q $router
 [ $? -ne 0 ] && echo "Router $router does not exist" && exit -1
+
+# Share the namespace lock with IPv6 creation/cleanup, without requiring Python.
+exec 9<"/var/run/netns/$router" || exit 1
+flock -x 9 || exit 1
+export CLOUDLAND_FLOATING_NS_LOCK_FD=9
 
 rtID=$(( $ext_vlan % 250 + 2 ))
 table=fip-$ext_vlan

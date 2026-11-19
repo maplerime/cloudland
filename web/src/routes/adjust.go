@@ -100,17 +100,14 @@ func CreateAdminContext(ctx context.Context) (context.Context, error) {
 	return adminCtx, nil
 }
 
-// GetInstanceByUUIDWithAuth helper function to get instance with admin auth
-// This function is specifically for webhook calls
+// GetInstanceByUUIDWithAuth uses the identity established by API authentication.
 func GetInstanceByUUIDWithAuth(ctx context.Context, instanceID string) (*model.Instance, error) {
-	// Create admin context
-	adminCtx, err := CreateAdminContext(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create admin context: %v", err)
+	memberShip := common.GetMemberShip(ctx)
+	if memberShip.UserID <= 0 || memberShip.OrgID <= 0 {
+		return nil, fmt.Errorf("authenticated user or organization context is required")
 	}
 
-	// Get instance with admin context
-	instance, err := instanceAdmin.GetInstanceByUUID(adminCtx, instanceID)
+	instance, err := instanceAdmin.GetInstanceByUUID(ctx, instanceID)
 	if err != nil {
 		logger.Errorf("Failed to get instance: %v", err)
 		return nil, fmt.Errorf("failed to get instance: %v", err)
@@ -531,9 +528,14 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 	var instance *model.Instance
 	var err error
 
+	getInstance := GetInstanceByUUIDWithAuth
+	if memberShip := common.GetMemberShip(ctx); memberShip.UserID > 0 && memberShip.OrgID > 0 {
+		getInstance = instanceAdmin.GetInstanceByUUID
+	}
+
 	// Get instance by ID if provided
 	if instanceID != "" {
-		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
+		instance, err = getInstance(ctx, instanceID)
 		if err != nil {
 			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
@@ -546,7 +548,7 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
-		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
+		instance, err = getInstance(ctx, uuid)
 		if err != nil {
 			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
@@ -760,9 +762,14 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 	var instance *model.Instance
 	var err error
 
+	getInstance := GetInstanceByUUIDWithAuth
+	if memberShip := common.GetMemberShip(ctx); memberShip.UserID > 0 && memberShip.OrgID > 0 {
+		getInstance = instanceAdmin.GetInstanceByUUID
+	}
+
 	// Get instance by ID if provided
 	if instanceID != "" {
-		instance, err = GetInstanceByUUIDWithAuth(ctx, instanceID)
+		instance, err = getInstance(ctx, instanceID)
 		if err != nil {
 			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
@@ -775,7 +782,7 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 			return fmt.Errorf("failed to get instance UUID: %v", err)
 		}
 
-		instance, err = GetInstanceByUUIDWithAuth(ctx, uuid)
+		instance, err = getInstance(ctx, uuid)
 		if err != nil {
 			logger.Errorf("Failed to get instance: %v", err)
 			return fmt.Errorf("failed to get instance: %v", err)
@@ -817,8 +824,8 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		bwType = "out"
 	}
 
-	// For restore operation, execute if any original bandwidth limit exists (non-zero value)
-	if originalInBw > 0 || originalOutBw > 0 {
+	// A directional restore must also apply zero (unlimited) business bandwidth.
+	if bwType != "" || originalInBw > 0 || originalOutBw > 0 {
 		needActualRestore = true
 	}
 
@@ -841,6 +848,11 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		// Restore bandwidth to original configuration values
 		command := fmt.Sprintf("/opt/cloudland/scripts/kvm/set_nic_speed.sh '%s' '%s' '%d' '%d'",
 			vmID, nicName, originalInBw, originalOutBw)
+		if bwType == "in" {
+			command += " --inbound-only"
+		} else if bwType == "out" {
+			command += " --outbound-only"
+		}
 
 		// Execute command
 		err = common.HyperExecute(ctx, control, command)

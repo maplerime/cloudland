@@ -1,0 +1,100 @@
+groups:
+- name: db-cluster-records
+  rules:
+  - record: db_primary_timeline
+    expr: max by (cluster) (patroni_postgres_timeline{job="pg_patroni"} and on (cluster,host) (patroni_primary{job="pg_patroni"} == 1))
+  - record: db_primary_wal
+    expr: max by (cluster) (patroni_xlog_location{job="pg_patroni"} and on (cluster,host) (patroni_primary{job="pg_patroni"} == 1))
+- name: db-cluster
+  rules:
+  - alert: DatabaseNodeDown
+    expr: up{job="prometheus_node_exporter",node_type="database"} == 0
+    for: {{ node_down_duration | default("2m") }}
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '数据库节点 {{ $labels.host }} 的监控端点不可达'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）的 node exporter 监控端点已持续 {{ node_down_duration | default("2m") }} 无法访问。'
+  - alert: DatabaseServiceTargetDown
+    expr: up{job=~"pg_patroni|pg_etcd"} == 0
+    for: {{ node_down_duration | default("2m") }}
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '数据库节点 {{ $labels.host }} 的 {{ $labels.job }} 监控端点不可达'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）的 {{ $labels.job }} 监控端点已持续 {{ node_down_duration | default("2m") }} 无法访问。'
+  - alert: PatroniMetricsMissing
+    expr: up{job="pg_patroni"} unless on (cluster,host) (count by (cluster,host) ({job="pg_patroni",__name__=~"patroni_postgres_running|patroni_primary|patroni_replica|patroni_postgres_streaming|patroni_postgres_timeline|patroni_xlog_location|patroni_xlog_replayed_location|patroni_dcs_last_seen"}) == 8)
+    for: {{ node_down_duration | default("2m") }}
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 Patroni 关键监控指标缺失'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）未提供完整的 Patroni 关键监控指标，已持续 {{ node_down_duration | default("2m") }}，无法完整判断数据库运行和复制状态。'
+  - alert: PatroniPostgresDown
+    expr: patroni_postgres_running{job="pg_patroni"} == 0
+    for: {{ node_down_duration | default("2m") }}
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 PostgreSQL 未运行'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）被 Patroni 报告为 PostgreSQL 未运行，已持续 {{ node_down_duration | default("2m") }}。'
+  - alert: PatroniReplicaNotStreaming
+    expr: (patroni_replica{job="pg_patroni"} == 1) and on (cluster,host) (patroni_postgres_streaming{job="pg_patroni"} == 0)
+    for: {{ replica_unhealthy_for | default("3m") }}
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '数据库副本 {{ $labels.host }} 未处于流复制状态'
+      description: '数据库集群 {{ $labels.cluster }} 的副本 {{ $labels.host }}（{{ $labels.instance }}）未处于流复制状态，已持续 {{ replica_unhealthy_for | default("3m") }}，可能导致副本数据同步中断。'
+  - alert: PatroniTimelineMismatch
+    expr: (patroni_postgres_timeline{job="pg_patroni"} != on (cluster) group_left() db_primary_timeline) and on (cluster,host) (patroni_replica{job="pg_patroni"} == 1)
+    for: {{ replica_unhealthy_for | default("3m") }}
+    labels: {severity: warning, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '数据库副本 {{ $labels.host }} 与主节点的时间线不一致'
+      description: '数据库集群 {{ $labels.cluster }} 的副本 {{ $labels.host }}（{{ $labels.instance }}）与主节点的 PostgreSQL 时间线不一致，已持续 {{ replica_unhealthy_for | default("3m") }}，请检查主从切换及副本复制状态。'
+  - alert: PatroniReplicaLagHigh
+    expr: ((db_primary_wal - on (cluster) group_right() patroni_xlog_replayed_location{job="pg_patroni"}) > {{ replica_lag_bytes | default(104857600) }}) and on (cluster,host) (patroni_replica{job="pg_patroni"} == 1) and on (cluster,host) (patroni_postgres_timeline{job="pg_patroni"} == on (cluster) group_left() db_primary_timeline)
+    for: {{ replica_unhealthy_for | default("3m") }}
+    labels: {severity: warning, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '数据库副本 {{ $labels.host }} 的 WAL 回放积压过高'
+      description: '数据库集群 {{ $labels.cluster }} 的副本 {{ $labels.host }}（{{ $labels.instance }}）与主节点处于同一时间线，但 WAL 回放积压已超过 {{ replica_lag_bytes | default(104857600) }} 字节，且持续 {{ replica_unhealthy_for | default("3m") }}。'
+  - alert: PatroniMultiplePrimaries
+    expr: sum by (cluster) (patroni_primary{job="pg_patroni"}) > 1
+    for: 1m
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '数据库集群 {{ $labels.cluster }} 检测到多个 PostgreSQL 主节点'
+      description: '数据库集群 {{ $labels.cluster }} 中有多个节点被 Patroni 标记为主节点，已持续 1 分钟，存在脑裂风险，请立即核查主节点角色与写入状态。'
+  - alert: PatroniDcsStale
+    expr: time() - patroni_dcs_last_seen{job="pg_patroni"} > {{ dcs_stale_seconds | default(120) }}
+    for: 1m
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 Patroni 与 DCS 联系超时'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）距离 Patroni 最近一次成功联系分布式配置存储（DCS）已超过 {{ dcs_stale_seconds | default(120) }} 秒，且该异常持续 1 分钟。'
+  - alert: EtcdMetricsMissing
+    expr: up{job="pg_etcd"} unless on (cluster,host) (count by (cluster,host) ({job="pg_etcd",__name__=~"etcd_server_has_leader|etcd_server_is_leader|etcd_server_leader_changes_seen_total"}) == 3)
+    for: {{ node_down_duration | default("2m") }}
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 etcd 关键监控指标缺失'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）未提供完整的 etcd 关键监控指标，已持续 {{ node_down_duration | default("2m") }}，无法完整判断 etcd 选主状态。'
+  - alert: EtcdNoLeader
+    expr: etcd_server_has_leader{job="pg_etcd"} == 0
+    for: 1m
+    labels: {severity: critical, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 etcd 报告无领导者'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）报告 etcd 当前没有领导者，已持续 1 分钟，可能影响 Patroni 的集群协调和主节点选举。'
+  - alert: EtcdLeaderFlapping
+    expr: increase(etcd_server_leader_changes_seen_total{job="pg_etcd"}[1h]) > {{ etcd_leader_changes | default(3) }}
+    for: 0s
+    labels: {severity: warning, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 etcd 领导者切换频繁'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）在最近 1 小时内观测到的 etcd 领导者切换次数超过 {{ etcd_leader_changes | default(3) }} 次，请检查集群稳定性。'
+  - alert: EtcdSlowWalFsync
+    expr: histogram_quantile(0.99, sum by (cluster,host,instance,le) (rate(etcd_disk_wal_fsync_duration_seconds_bucket{job="pg_etcd"}[5m]))) > {{ etcd_fsync_seconds | default(0.05) }}
+    for: 10m
+    labels: {severity: warning, node_type: database, alert_type: internal-service}
+    annotations:
+      summary: '节点 {{ $labels.host }} 的 etcd WAL 刷盘延迟过高'
+      description: '数据库集群 {{ $labels.cluster }} 的节点 {{ $labels.host }}（{{ $labels.instance }}）最近 5 分钟的 etcd WAL 刷盘延迟第 99 百分位超过 {{ etcd_fsync_seconds | default(0.05) }} 秒，且持续 10 分钟，可能影响 etcd 写入性能。'

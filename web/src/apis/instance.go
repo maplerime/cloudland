@@ -328,6 +328,10 @@ func (v *InstanceAPI) Reinstall(c *gin.Context) {
 
 	// old data compatibility
 	if payload.Flavor == "" && instance.Cpu == 0 {
+		if instance.Flavor == nil {
+			ErrorResponse(c, http.StatusBadRequest, "Flavor must be specified for this instance", nil)
+			return
+		}
 		payload.Flavor = instance.Flavor.Name
 	}
 	cpu, memory, disk := instance.Cpu, instance.Memory, instance.Disk
@@ -625,6 +629,11 @@ func (v *InstanceAPI) Create(c *gin.Context) {
 	for _, ky := range payload.Keys {
 		var key *model.Key
 		key, err = keyAdmin.GetKey(ctx, ky)
+		if err != nil {
+			logger.Errorf("Failed to get key %+v, %+v", ky, err)
+			ErrorResponse(c, http.StatusBadRequest, "Invalid key", err)
+			return
+		}
 		keys = append(keys, key)
 	}
 	var routerID int64

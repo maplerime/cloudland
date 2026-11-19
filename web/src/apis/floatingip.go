@@ -69,7 +69,7 @@ type FloatingIpPayload struct {
 	PublicSubnet    *BaseReference   `json:"public_subnet" binding:"omitempty"`
 	PublicSubnets   []*BaseReference `json:"public_subnets" binding:"omitempty"`
 	SiteSubnets     []*BaseReference `json:"site_subnets" binding:"omitempty"`
-	PublicIp        string           `json:"public_ip" binding:"omitempty,ipv4"`
+	PublicIp        string           `json:"public_ip" binding:"omitempty,ip"`
 	Name            string           `json:"name" binding:"required,min=2,max=32"`
 	Instance        *BaseID          `json:"instance" binding:"omitempty"`
 	LoadBalancer    *BaseID          `json:"load_balancer" binding:"omitempty"`

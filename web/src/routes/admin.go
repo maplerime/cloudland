@@ -45,11 +45,7 @@ func adminInit() {
 			defer func() { DB = dbFunc }()
 			DB = func() *gorm.DB { return db }
 			password := adminPassword()
-			user, err = userAdmin.Create(ctx, username, password, "")
-			if err != nil {
-				return
-			}
-			org, err = orgAdmin.Create(ctx, username, username, "")
+			user, org, err = userAdmin.Create(ctx, username, password, "", "")
 			if err != nil {
 				return
 			}

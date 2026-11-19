@@ -65,6 +65,10 @@ func (v *AddressAPI) Remark(c *gin.Context) {
 
 	addresses := make([]*model.Address, 0, len(payload.Addresses))
 	for _, addr := range payload.Addresses {
+		if addr == nil {
+			ErrorResponse(c, http.StatusBadRequest, "Address reference cannot be null", nil)
+			return
+		}
 		address, err := addressAdmin.GetAddressByUUID(ctx, addr.ID)
 		if err != nil {
 			logger.Errorf("Failed to query address %s, %v", addr.ID, err)
@@ -116,6 +120,10 @@ func (v *AddressAPI) UpdateLock(c *gin.Context) {
 
 	addresses := make([]*model.Address, 0, len(payload.Addresses))
 	for _, addr := range payload.Addresses {
+		if addr == nil {
+			ErrorResponse(c, http.StatusBadRequest, "Address reference cannot be null", nil)
+			return
+		}
 		address, err := addressAdmin.GetAddressByUUID(ctx, addr.ID)
 		if err != nil {
 			logger.Errorf("Failed to query address %s, %v", addr.ID, err)

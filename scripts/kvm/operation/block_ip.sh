@@ -3,9 +3,12 @@
 cd `dirname $0`
 source ../../cloudrc
 
-[ $# -lt 1 ] && echo "Usage: $0 <ip_address> [info_ipset_name]" && exit 1
+if [ $# -lt 1 ] || [ $# -gt 3 ]; then
+    echo "Usage: $0 <ip_address> [info_ipset_name] [timeout_seconds]"
+    exit 1
+fi
 
-LOG_DIR="/opt/cloudland/log"
+LOG_DIR="${log_dir:-/opt/cloudland/log}"
 LOG_FILE="$LOG_DIR/black_list.log"
 
 # Create log directory if not exists
@@ -19,6 +22,11 @@ log() {
 
 ip=$1
 info_ipset=$2
+blocking_timeout=${3:-${blocking_timeout:-3600}}
+if [[ ! "$blocking_timeout" =~ ^[0-9]+$ ]] || [ ${#blocking_timeout} -gt 7 ] || [ "$blocking_timeout" -gt 2147483 ]; then
+    echo "timeout must be an integer between 0 and 2147483 seconds (0 means permanent)" >&2
+    exit 1
+fi
 IPSET_NAME="blacklist"
 CHAIN_NAME="BLACKLIST"
 
@@ -56,11 +64,10 @@ else
     fi
 fi
 
-[ -z "$blocking_timeout" ] && blocking_timeout=3600
-ipset add "$IPSET_NAME" "$ip" timeout $blocking_timeout
+ipset add "$IPSET_NAME" "$ip" timeout "$blocking_timeout" -exist || exit 1
 [ -z "$info_timeout" ] && info_timeout=300
-[ -n "$info_ipset" ] && ipset add "$info_ipset" "$ip" timeout "$info_timeout"
-log "ACTION: Added $ip to blacklist"
+[ -n "$info_ipset" ] && ipset add "$info_ipset" "$ip" timeout "$info_timeout" -exist
+log "ACTION: Added $ip to blacklist (timeout: $blocking_timeout seconds)"
 
 # Ensure iptables rule exists
 if ! iptables -C "$CHAIN_NAME" -m set --match-set "$IPSET_NAME" src -j DROP &>/dev/null; then
