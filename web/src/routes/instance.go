@@ -328,8 +328,8 @@ func (a *InstanceAdmin) Rescue(ctx context.Context, instance *model.Instance, re
 			EndTransaction(ctx, err)
 		}
 	}()
-	if instance.Status == "rescuing" {
-		err = NewCLError(ErrInstanceInvalidState, "Instance is already in rescue status", nil)
+	if !instance.CanRescue() {
+		err = NewCLError(ErrInstanceInvalidState, "Instance is not in the right state for rescue", nil)
 		return
 	}
 	err = a.CheckVolumeIsRestoring(ctx, instance.ID)

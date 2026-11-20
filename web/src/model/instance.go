@@ -14,6 +14,7 @@ type InstanceStatus string
 
 const (
 	InstanceStatusPending        InstanceStatus = "pending"
+	InstanceStatusError          InstanceStatus = "error"
 	InstanceStatusRunning        InstanceStatus = "running"
 	InstanceStatusShutoff        InstanceStatus = "shut_off"
 	InstanceStatusPaused         InstanceStatus = "paused"
@@ -80,6 +81,19 @@ type Instance struct {
 	Zone           *Zone `gorm:"foreignkey:ZoneID"`
 	RouterID       int64 `gorm:"unique_index:idx_router_instance"`
 	Router         *Router
+}
+
+// CanRescue reports whether the instance state allows entering rescue.
+func (i *Instance) CanRescue() bool {
+	switch i.Status {
+	case InstanceStatusPending,
+		InstanceStatusReinstalling,
+		InstanceStatusReinstallError,
+		InstanceStatusRescuing,
+		InstanceStatusError:
+		return false
+	}
+	return true
 }
 
 func init() {
