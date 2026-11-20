@@ -13,19 +13,21 @@ import (
 type InstanceStatus string
 
 const (
-	InstanceStatusPending      InstanceStatus = "pending"
-	InstanceStatusRunning      InstanceStatus = "running"
-	InstanceStatusShutoff      InstanceStatus = "shut_off"
-	InstanceStatusPaused       InstanceStatus = "paused"
-	InstanceStatusMigrating    InstanceStatus = "migrating"
-	InstanceStatusMigrated     InstanceStatus = "migrated"
-	InstanceStatusRollback     InstanceStatus = "rollback"
-	InstanceStatusUnknown      InstanceStatus = "unknown"
-	InstanceStatusReinstalling InstanceStatus = "reinstalling"
-	InstanceStatusResizing     InstanceStatus = "resizing"
-	InstanceStatusDeleting     InstanceStatus = "deleting"
-	InstanceStatusDeleted      InstanceStatus = "deleted"
-	InstanceStatusRescuing     InstanceStatus = "rescuing"
+	InstanceStatusPending        InstanceStatus = "pending"
+	InstanceStatusError          InstanceStatus = "error"
+	InstanceStatusRunning        InstanceStatus = "running"
+	InstanceStatusShutoff        InstanceStatus = "shut_off"
+	InstanceStatusPaused         InstanceStatus = "paused"
+	InstanceStatusMigrating      InstanceStatus = "migrating"
+	InstanceStatusMigrated       InstanceStatus = "migrated"
+	InstanceStatusRollback       InstanceStatus = "rollback"
+	InstanceStatusUnknown        InstanceStatus = "unknown"
+	InstanceStatusReinstalling   InstanceStatus = "reinstalling"
+	InstanceStatusReinstallError InstanceStatus = "reinstall_error"
+	InstanceStatusResizing       InstanceStatus = "resizing"
+	InstanceStatusDeleting       InstanceStatus = "deleting"
+	InstanceStatusDeleted        InstanceStatus = "deleted"
+	InstanceStatusRescuing       InstanceStatus = "rescuing"
 )
 
 func (s InstanceStatus) String() string {
@@ -61,6 +63,7 @@ type Instance struct {
 	Cpu            int32          `gorm:"default:0"`
 	Memory         int32          `gorm:"default:0"`
 	Disk           int32          `gorm:"default:0"`
+	NestedEnable   bool           `gorm:"default:false"`
 	FlavorID       int64
 	Flavor         *Flavor `gorm:"foreignkey:FlavorID"`
 	ImageID        int64
@@ -78,6 +81,19 @@ type Instance struct {
 	Zone           *Zone `gorm:"foreignkey:ZoneID"`
 	RouterID       int64 `gorm:"unique_index:idx_router_instance"`
 	Router         *Router
+}
+
+// CanRescue reports whether the instance state allows entering rescue.
+func (i *Instance) CanRescue() bool {
+	switch i.Status {
+	case InstanceStatusPending,
+		InstanceStatusReinstalling,
+		InstanceStatusReinstallError,
+		InstanceStatusRescuing,
+		InstanceStatusError:
+		return false
+	}
+	return true
 }
 
 func init() {

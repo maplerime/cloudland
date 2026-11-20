@@ -72,6 +72,9 @@ func InstanceStatus(ctx context.Context, args []string) (status string, err erro
 			}
 			continue
 		}
+		if instance.Status == model.InstanceStatusReinstalling || instance.Status == model.InstanceStatusReinstallError {
+			continue
+		}
 		if instance.Status == "rescuing" {
 			continue
 		}

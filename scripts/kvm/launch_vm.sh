@@ -62,11 +62,9 @@ else
             selected_pool=$(select_pool_lowest_usage "$pool_list")
             if [ -n "$selected_pool" ]; then
                 img_vol_from_rel=$(jq -r ".\"$selected_pool\".image_volume_id // empty" <<<$storage_pool_relation)
-                snap_from_rel=$(jq -r ".\"$selected_pool\".snapshot // empty" <<<$storage_pool_relation)
-                if [ -n "$img_vol_from_rel" ] && [ -n "$snap_from_rel" ]; then
+                if [ -n "$img_vol_from_rel" ]; then
                     pool_ID=$selected_pool
                     image_volume_id=$img_vol_from_rel
-                    snapshot=$snap_from_rel
                 fi
             fi
         fi
@@ -80,16 +78,14 @@ else
         image=${image}-${pool_prefix}
     fi
     vhost_name=instance-$ID-volume-$vol_ID-$RANDOM
-    snapshot_name=${image}-${snapshot}
-    read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
-    if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-        snapshot_ret=$(wds_curl POST "api/v2/sync/block/snaps" "{\"name\": \"$snapshot_name\", \"description\": \"$snapshot_name\", \"volume_id\": \"$image_volume_id\"}")
-        read -d'\n' -r snapshot_id volume_size <<< $(wds_curl GET "api/v2/sync/block/snaps?name=$snapshot_name" | jq -r '.snaps[0] | "\(.id) \(.snap_size)"')
-        if [ -z "$snapshot_id" -o "$snapshot_id" = null ]; then
-            echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create image snapshot, $snapshot_ret'"
-            exit -1
-        fi
+    if ! snapshot_json=$(wds_get_image_snapshot "$image_volume_id" "$image"); then
+        echo "|:-COMMAND-:| create_volume_wds_vhost '$vol_ID' '$vol_state' '' 'failed to create image snapshot'"
+        exit -1
     fi
+    snapshot_id=$(jq -r '.snapshot_id' <<< "$snapshot_json")
+    snapshot_name=$(jq -r '.snapshot_name' <<< "$snapshot_json")
+    snapshot=$(jq -r '.snapshot_sequence' <<< "$snapshot_json")
+    volume_size=$(jq -r '.snap_size' <<< "$snapshot_json")
     volume_ret=$(wds_curl POST "api/v2/sync/block/snaps/$snapshot_id/clone" "{\"name\": \"$vhost_name\"}")
     volume_id=$(echo $volume_ret | jq -r .id)
     if [ -z "$volume_id" -o "$volume_id" = null ]; then
