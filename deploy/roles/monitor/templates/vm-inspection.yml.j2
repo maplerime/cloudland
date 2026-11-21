@@ -1,0 +1,56 @@
+groups:
+  - name: vm-inspection
+    rules:
+      - alert: VMInspectionReady
+        expr: ((instance_scan_flag == 1) and on(instance_uuid, hyper_id, scan_id, instance, job) (instance_scan_process_count > 0) and on(instance_uuid, hyper_id, scan_id, instance, job) (instance_scan_collected_timestamp_seconds > 0) and on(instance, job) (up == 1) and on() (hive_available{job="cloudland_hive"} == 1)) and on() (hive_configured{job="cloudland_hive"} == 1)
+        labels:
+          alert_type: vm_inspection_ready
+        annotations:
+          summary: VM scan is ready for controller matching
+      - alert: VMInspectionCollectionFailed
+        expr: (instance_scan_failure == 1) and on() (hive_configured{job="cloudland_hive"} == 1)
+        labels:
+          severity: warning
+          alert_type: vm_inspection_health
+        annotations:
+          summary: VM inspection collection or RPC restoration failed
+          description: '{% raw %}VM {{ $labels.instance_uuid }} scan {{ $labels.scan_id }}: {{ $labels.error_code }}{% endraw %}'
+      - alert: VMInspectionCollectionStalled
+        expr: ((time() - instance_scan_started_timestamp_seconds > 180) unless on(instance_uuid, hyper_id, scan_id, instance, job) instance_scan_collected_timestamp_seconds) and on() (hive_configured{job="cloudland_hive"} == 1)
+        labels:
+          severity: warning
+          alert_type: vm_inspection_health
+        annotations:
+          summary: VM inspection task did not finish
+      - alert: VMInspectionDispositionStalled
+        expr: (time() - instance_scan_collected_timestamp_seconds > 600) and on() (hive_configured{job="cloudland_hive"} == 1)
+        labels:
+          severity: warning
+          alert_type: vm_inspection_health
+        annotations:
+          summary: VM scan is waiting for matching or disposition
+      - alert: HiveUpdateFailed
+        expr: (hive_configured{job="cloudland_hive"} == 1) and (hive_fetch_success{job="cloudland_hive"} == 0)
+        for: 1m
+        labels:
+          severity: warning
+          alert_type: vm_inspection_health
+          domain: {{ region_name | to_json }}
+        annotations:
+          summary: Hive 特征库下载或更新失败
+          monitor_host: '{{ inventory_hostname }}'
+          monitor_ip: '{{ ansible_host }}'
+          feature_library_url: '{% raw %}{{ with query (printf "hive_source_info{job=%q,instance=%q}" $labels.job $labels.instance) }}{{ first . | label "url" }}{{ end }}{% endraw %}'
+          description: '监控节点 {{ inventory_hostname }}（{{ ansible_host }}）{% raw %}无法下载或更新已配置的特征库。{{ with query (printf "hive_available{job=%q,instance=%q}" $labels.job $labels.instance) }}{{ if eq (first . | value) 1.0 }}当前有有效缓存，继续使用旧库检测。{{ else }}当前没有有效快照，已暂停扫描和自动隔离。{{ end }}{{ else }}快照状态未知，请检查特征库更新程序。{{ end }}具体错误请查看 VM 检测设置页面，并检查网络、证书及访问令牌。{% endraw %}'
+      - alert: HiveUpdaterUnavailable
+        expr: ((up{job="cloudland_hive"} == 0) or (time() - hive_updater_last_run_seconds{job="cloudland_hive"} > 300) or (up{job="cloudland_hive"} unless on(job, instance) hive_updater_last_run_seconds{job="cloudland_hive"}) or absent(up{job="cloudland_hive"})) and on() (hive_configured{job="cloudland_hive"} == 1)
+        for: 1m
+        labels:
+          severity: warning
+          alert_type: vm_inspection_health
+          domain: {{ region_name | to_json }}
+        annotations:
+          summary: Hive updater or its metrics are unavailable
+          monitor_host: '{{ inventory_hostname }}'
+          monitor_ip: '{{ ansible_host }}'
+          description: '监控节点 {{ inventory_hostname }}（{{ ansible_host }}）的 Hive 更新程序或指标不可用，请检查 cloudland-hive-update.timer、更新任务日志及 Node Exporter。'

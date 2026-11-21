@@ -1,0 +1,23 @@
+- name: Install VM inspection controller matching runtime
+  package:
+    name: python3
+    state: present
+  tags: [monitor]
+
+- name: Create VM inspection controller matcher directory
+  file:
+    path: /opt/cloudland/scripts/kvm/vm_inspection/common
+    state: directory
+    mode: '0755'
+  tags: [monitor]
+
+- name: Deploy existing matcher for the controller inspection webhook
+  copy:
+    src: "/opt/cloudland/scripts/kvm/vm_inspection/{{ item }}"
+    dest: "/opt/cloudland/scripts/kvm/vm_inspection/{{ item }}"
+    mode: '0644'
+  loop:
+    - common/match_inspection.py
+    - common/hive_client.py
+  tags: [monitor]
+

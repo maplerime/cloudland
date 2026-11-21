@@ -569,6 +569,11 @@ func (o *AdjustOperator) RestoreCPUResource(ctx context.Context, record *Adjustm
 		return fmt.Errorf("failed to restore CPU resources: %v", err)
 	}
 
+	// Whole-instance restoration (migration) has no individual rule metric to clear.
+	if record.RuleGroupUUID == "" {
+		return nil
+	}
+
 	// Update custom metric status
 	status := 0
 	updateCommand := fmt.Sprintf("/opt/cloudland/scripts/kvm/update_vm_cpu_adjustment_status.sh --domain '%s' --rule-id '%s' --status %d",
@@ -824,8 +829,8 @@ func (o *AdjustOperator) RestoreBandwidthResource(ctx context.Context, record *A
 		bwType = "out"
 	}
 
-	// A directional restore must also apply zero (unlimited) business bandwidth.
-	if bwType != "" || originalInBw > 0 || originalOutBw > 0 {
+	// Directional and whole-instance restores must also apply zero (unlimited) bandwidth.
+	if record.RuleGroupUUID == "" || bwType != "" || originalInBw > 0 || originalOutBw > 0 {
 		needActualRestore = true
 	}
 

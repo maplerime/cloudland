@@ -93,6 +93,7 @@ func (fb *FrontbackService) doExecute(ctx context.Context, id, extra int32, comm
 		cmd, args := DecodeCommand(command)
 		if cmd != "" {
 			ctx2 := context.WithValue(ctx, "hostid", id)
+			ctx2 = context.WithValue(ctx2, "source_hyper", extra)
 			reply.Status, err = fb.dispatchExecute(ctx2, cmd, args)
 		}
 	}

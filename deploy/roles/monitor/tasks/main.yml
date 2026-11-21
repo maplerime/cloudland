@@ -588,6 +588,12 @@
                 receiver: 'teams-ipgroup-alerts'
                 continue: true
 
+              # VM inspection notifications now use Pushservice; suppress legacy alerts.
+              - match:
+                  alert_type: vm_malware
+                receiver: 'null'
+                continue: false
+
               # Route VM alerts (CPU, Memory, BW) to unified VM webhook
               - match_re:
                   alert_type: (cpu|memory|bw)
@@ -1389,6 +1395,14 @@
     - node_templates
   tags: [monitor]
 
+- name: Remove retired VM inspection notification template
+  delegate_to: "{{ prometheus_server_ip }}"
+  become: true
+  file:
+    path: /etc/prometheus/node_templates/vm-malware.yml.j2
+    state: absent
+  tags: [monitor]
+
 - name: Find all rule template files
   delegate_to: localhost
   become: false
@@ -1521,4 +1535,8 @@
 
 - name: Import msteams relay tasks
   import_tasks: msteams_relay.yml
+  tags: [monitor]
+
+- name: Configure decoupled VM inspection monitoring
+  import_tasks: vm_inspection.yml
   tags: [monitor]

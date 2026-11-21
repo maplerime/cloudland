@@ -237,6 +237,25 @@ func (a *MigrationAdmin) Create(ctx context.Context, name string, instances []*m
 				logger.Infof("Scheduler selected hyper %d for migration of instance %d", selectedHyperID, instance.ID)
 			}
 		}
+		// Best-effort reset on the source; restoration failures must not block migration.
+		// No rule group is supplied: migration completion cleans up all adjustment metrics.
+		adjustOperator := NewAdjustOperator()
+		restoreRecord := &AdjustmentRecord{}
+		domain := fmt.Sprintf("inst-%d", instance.ID)
+		if restoreErr := adjustOperator.RestoreCPUResource(ctx, restoreRecord, domain, instance.UUID); restoreErr != nil {
+			logger.Warningf("Failed to restore CPU before migration of instance %d, continuing migration: %v", instance.ID, restoreErr)
+		}
+		for _, iface := range instance.Interfaces {
+			mac := strings.ReplaceAll(iface.MacAddr, ":", "")
+			if len(mac) != 12 {
+				logger.Warningf("Skipping bandwidth restoration for interface %d with invalid MAC %q, continuing migration", iface.ID, iface.MacAddr)
+				continue
+			}
+			device := "tap" + strings.ToLower(mac[6:])
+			if restoreErr := adjustOperator.RestoreBandwidthResource(ctx, restoreRecord, domain, device, instance.UUID); restoreErr != nil {
+				logger.Warningf("Failed to restore bandwidth before migration of instance %d interface %d, continuing migration: %v", instance.ID, iface.ID, restoreErr)
+			}
+		}
 		err = db.Model(instance).Update("status", model.InstanceStatusMigrating).Error
 		if err != nil {
 			logger.Error("Failed to update instance status to migrating, %v", err)
